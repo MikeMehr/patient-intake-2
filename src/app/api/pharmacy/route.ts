@@ -409,11 +409,12 @@ function parsePharmacyList(
     let manager = "";
     let phone = "";
     let fax = "";
+    let tdMatches: RegExpMatchArray | null = null;
     
     if (useHtmlRows) {
       // Parse HTML table row: <tr><td>...</td><td>...</td>...</tr>
       const rowHtml = rowMatch[1]; // Content between <tr> tags
-      const tdMatches = rowHtml.match(/<td[^>]*>([\s\S]*?)<\/td>/gi);
+      tdMatches = rowHtml.match(/<td[^>]*>([\s\S]*?)<\/td>/gi);
       
       if (!tdMatches || tdMatches.length < 5) continue; // Need at least 5 columns
       
@@ -480,17 +481,33 @@ function parsePharmacyList(
       }
       
       // Method 2: Check if there are more columns than expected in the regex match
-      if ((!fax || fax.length < 10) && row.length > 6) {
-        // Try columns 6, 7, 8, etc.
-        for (let i = 6; i < row.length; i++) {
-          const potentialFax = row[i]?.trim() || "";
-          if (potentialFax && /[\d\-\(\)\s]{10,}/.test(potentialFax)) {
-            const digits = potentialFax.replace(/[^\d]/g, "");
-            const phoneDigits = phone.replace(/[^\d]/g, "");
-            if (digits.length >= 10 && digits !== phoneDigits) {
-              fax = potentialFax;
-              console.log("[pharmacy-route] Method 2: Found fax in column", i, ":", fax);
-              break;
+      if (!fax || fax.length < 10) {
+        if (useHtmlRows && tdMatches && tdMatches.length > 6) {
+          // Try columns 6, 7, 8, etc. for HTML rows
+          for (let i = 6; i < tdMatches.length; i++) {
+            const potentialFax = tdMatches[i]?.replace(/<[^>]+>/g, "").trim() || "";
+            if (potentialFax && /[\d\-\(\)\s]{10,}/.test(potentialFax)) {
+              const digits = potentialFax.replace(/[^\d]/g, "");
+              const phoneDigits = phone.replace(/[^\d]/g, "");
+              if (digits.length >= 10 && digits !== phoneDigits) {
+                fax = potentialFax;
+                console.log("[pharmacy-route] Method 2: Found fax in HTML column", i, ":", fax);
+                break;
+              }
+            }
+          }
+        } else if (!useHtmlRows && pipeParts.length > 6) {
+          // Try columns 6, 7, 8, etc. for pipe-separated rows
+          for (let i = 6; i < pipeParts.length; i++) {
+            const potentialFax = pipeParts[i]?.trim() || "";
+            if (potentialFax && /[\d\-\(\)\s]{10,}/.test(potentialFax)) {
+              const digits = potentialFax.replace(/[^\d]/g, "");
+              const phoneDigits = phone.replace(/[^\d]/g, "");
+              if (digits.length >= 10 && digits !== phoneDigits) {
+                fax = potentialFax;
+                console.log("[pharmacy-route] Method 2: Found fax in pipe column", i, ":", fax);
+                break;
+              }
             }
           }
         }
@@ -699,10 +716,12 @@ function parsePharmacyList(
       
       // If still empty, try one more time with the full row text
       if (!cleanFax || cleanFax.length < 10) {
-        const rowText = row[0] || ""; // The full matched text
+        const rowTextForFax = useHtmlRows 
+          ? (rowMatch[0] || rowMatch[1] || "") // Full match or content
+          : (rowMatch[0] || ""); // Full match for pipe-separated
         
         // Split by pipes and check all segments after phone
-        const segments = rowText.split("|").map(s => s.trim());
+        const segments = rowTextForFax.split("|").map(s => s.trim());
         // Phone should be around index 4-5, check segments after that
         for (let i = 5; i < segments.length; i++) {
           const seg = segments[i];
