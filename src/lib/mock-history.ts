@@ -11,6 +11,7 @@ export const mockHistory: HistoryResponse = {
     "No cough, rhinorrhea, or lower respiratory complaints",
     "No recent travel, new medications, or known sick contacts",
   ],
+  physicalFindings: [],
   summary:
     "Patient describes a 48-hour history of progressively painful sore throat with low-grade fevers and tender anterior nodes but no airway compromise, systemic toxicity, or lower respiratory symptoms.",
   investigations: [

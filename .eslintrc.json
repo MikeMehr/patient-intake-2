@@ -1,0 +1,36 @@
+{
+  "root": true,
+  "extends": ["next/core-web-vitals"],
+  "ignorePatterns": [
+    "scripts/**",
+    "check-env.js",
+    "node_modules/**"
+  ],
+  "rules": {},
+  "overrides": [
+    {
+      "files": ["**/*.{ts,tsx,js,jsx}"],
+      "rules": {
+        "@typescript-eslint/no-explicit-any": "off",
+        "@typescript-eslint/ban-ts-comment": "warn",
+        "react/no-unescaped-entities": "off",
+        "react-hooks/exhaustive-deps": "off",
+        "react-hooks/rules-of-hooks": "error",
+        "react-hooks/set-state-in-effect": "off"
+      }
+    },
+    {
+      "files": ["src/app/api/**/*.{ts,tsx}"],
+      "rules": {
+        "no-console": ["error", { "allow": ["error", "warn"] }]
+      }
+    },
+    {
+      "files": ["src/lib/secure-logger.ts"],
+      "rules": {
+        "no-console": "off"
+      }
+    }
+  ]
+}
+

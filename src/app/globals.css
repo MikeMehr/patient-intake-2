@@ -25,3 +25,68 @@ body {
   font-family: var(--font-geist-sans), system-ui, -apple-system, sans-serif;
   min-height: 100vh;
 }
+
+/* Smooth scroll behavior */
+html {
+  scroll-behavior: smooth;
+}
+
+/* Fade-in animation */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.8s ease-out forwards;
+}
+
+/* Pulse animation delay */
+.delay-1000 {
+  animation-delay: 1s;
+}
+
+/* Swipe animation - image unfolds from left upper corner, pauses centered for 5 seconds, folds at right upper corner */
+/* Each image cycle: 1s entrance (0-4.17%), 5s pause (4.17%-29.17%), 1s exit (29.17%-33.33%), then hidden */
+@keyframes swipe {
+  0% {
+    transform: translate(calc(-50vw - 30vw), calc(-50vh - 30vh)) scale(0.1) rotateY(-180deg) rotateX(-90deg);
+    opacity: 0;
+    transform-origin: top left;
+  }
+  4.17% {
+    transform: translate(-50%, -50%) scale(1) rotateY(0deg) rotateX(0deg);
+    opacity: 1;
+    transform-origin: center;
+  }
+  29.17% {
+    transform: translate(-50%, -50%) scale(1) rotateY(0deg) rotateX(0deg);
+    opacity: 1;
+    transform-origin: center;
+  }
+  33.33% {
+    transform: translate(calc(50vw + 30vw), calc(-50vh - 30vh)) scale(0.05) rotateY(270deg) rotateX(-120deg);
+    opacity: 0;
+    transform-origin: top right;
+  }
+  100% {
+    transform: translate(calc(50vw + 30vw), calc(-50vh - 30vh)) scale(0.05) rotateY(270deg) rotateX(-120deg);
+    opacity: 0;
+    transform-origin: top right;
+  }
+}
+
+.animate-swipe {
+  animation: swipe 24s linear infinite backwards;
+  position: absolute;
+}
+
+.animate-scroll:hover {
+  animation-play-state: paused;
+}

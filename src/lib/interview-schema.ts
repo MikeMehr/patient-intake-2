@@ -55,15 +55,62 @@ export type PatientProfile = z.infer<typeof patientProfileSchema>;
 export const interviewRequestSchema = z.object({
   chiefComplaint: chiefComplaintField,
   patientProfile: patientProfileSchema,
+  patientEmail: z
+    .string()
+    .transform((value) => value.trim())
+    .pipe(z.string().email("Valid patient email is required.")),
+  physicianId: z
+    .string()
+    .transform((value) => value.trim())
+    .pipe(z.string().min(10, "physicianId is required.")),
   imageSummary: z
     .string()
     .transform((value) => value.trim())
     .pipe(z.string().min(1).max(800))
     .optional(),
+  labReportSummary: z
+    .string()
+    .transform((value) => value.trim())
+    .pipe(z.string().min(1).max(10000))
+    .optional(),
+  previousLabReportSummary: z
+    .string()
+    .transform((value) => value.trim())
+    .pipe(z.string().min(1).max(10000))
+    .optional(),
+  formSummary: z
+    .string()
+    .transform((value) => value.trim())
+    .pipe(z.string().min(1).max(10000))
+    .optional(),
+  medPmhSummary: z
+    .string()
+    .transform((value) => value.trim())
+    .pipe(z.string().min(1).max(10000))
+    .optional(),
+  patientBackground: z
+    .string()
+    .transform((value) => value.trim())
+    .pipe(z.string().min(1).max(10000))
+    .optional(),
+  interviewGuidance: z.preprocess(
+    (val) => {
+      if (val == null || typeof val !== "string") return undefined;
+      const trimmed = val.trim();
+      return trimmed.length > 0 ? trimmed : undefined;
+    },
+    z.string().min(1).max(50000).optional(),
+  ),
   transcript: z
     .array(interviewMessageSchema)
-    .max(100, "Conversation is too long.")
+    .max(200, "Conversation is too long.")
     .default([]),
+  forceSummary: z.boolean().optional().default(false),
+  language: z
+    .string()
+    .transform((value) => value.trim().toLowerCase())
+    .pipe(z.string().min(2).max(12))
+    .optional(),
 });
 
 export type InterviewRequest = z.infer<typeof interviewRequestSchema>;
@@ -73,7 +120,7 @@ const interviewQuestionSchema = z.object({
   question: z
     .string()
     .min(4, "Questions must include some detail.")
-    .max(240, "Questions must stay under 240 characters."),
+    .max(1000, "Questions must stay under 1000 characters."),
   rationale: z
     .string()
     .min(5, "Explain why you are asking.")

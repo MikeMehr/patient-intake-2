@@ -16,9 +16,10 @@ export type HistoryRequest = z.infer<typeof historyRequestSchema>;
 export const historyResponseSchema = z.object({
   positives: z.array(z.string()).min(1).max(6),
   negatives: z.array(z.string()).min(1).max(6),
-  summary: z.string().min(10).max(600),
+  physicalFindings: z.array(z.string()).min(0).max(6).optional(),
+  summary: z.string().min(10).max(1500),
   investigations: z.array(z.string()).min(0).max(6),
-  assessment: z.string().min(10).max(600),
+  assessment: z.string().min(10).max(1500),
   plan: z.array(z.string()).min(1).max(6),
 });
 

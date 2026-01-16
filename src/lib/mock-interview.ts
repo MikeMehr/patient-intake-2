@@ -119,6 +119,7 @@ export function mockInterviewStep(
     type: "summary",
     positives: mockHistory.positives,
     negatives: mockHistory.negatives,
+    physicalFindings: mockHistory.physicalFindings || [],
     summary: `${mockHistory.summary} Baseline: ${profile.sex} patient, age ${profile.age}, PMH ${profile.pmh}, current medications ${profile.currentMedications}, family doctor ${profile.familyDoctor}.`,
     investigations: mockHistory.investigations,
     assessment: mockHistory.assessment,

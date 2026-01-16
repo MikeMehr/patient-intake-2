@@ -7,13 +7,25 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "vitest run"
+    "lint:env": "node scripts/check-env-no-secrets.js",
+    "test": "vitest run",
+    "test:azure-openai": "node scripts/azure-sanity-test.js"
   },
   "dependencies": {
-    "next": "16.0.4",
+    "@google-cloud/text-to-speech": "^6.4.0",
+    "@google/generative-ai": "^0.24.1",
+    "@types/bcrypt": "^6.0.0",
+    "@types/pg": "^8.15.6",
+    "bcrypt": "^6.0.0",
+    "jspdf": "^4.0.0",
+    "lottie-react": "^2.4.1",
+    "next": "^16.0.10",
+    "next-auth": "^5.0.0-beta.30",
     "openai": "^6.9.1",
+    "pg": "^8.16.3",
     "react": "19.2.0",
     "react-dom": "19.2.0",
+    "resend": "^6.5.2",
     "zod": "^4.1.13"
   },
   "devDependencies": {
