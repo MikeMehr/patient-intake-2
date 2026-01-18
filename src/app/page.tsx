@@ -66,6 +66,8 @@ export default function Home() {
   const getLangTag = (code: string) => {
     const c = (code || "en").toLowerCase();
     switch (c) {
+      case "en":
+        return "en-US";
       case "fa":
         return "fa-IR";
       case "zh":
@@ -144,59 +146,12 @@ export default function Home() {
   };
   const updateSelectionRef = (target: HTMLTextAreaElement | null) => {
     if (!target) {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/9652e7f9-5ee8-4f7b-a684-b5806b3e6d60',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'pre-fix',hypothesisId:'D',location:'page.tsx:updateSelectionRef',message:'Selection update skipped (no target)',data:{},timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
       return;
     }
     selectionRef.current = {
       start: target.selectionStart,
       end: target.selectionEnd,
     };
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/9652e7f9-5ee8-4f7b-a684-b5806b3e6d60',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'pre-fix',hypothesisId:'D',location:'page.tsx:updateSelectionRef',message:'Selection updated',data:{start:target.selectionStart,end:target.selectionEnd},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
-  };
-
-  const getCurrentSelection = (baseLength: number) => {
-    // Prefer last saved selection; fallback to live selection; else append
-    if (selectionRef.current) {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/9652e7f9-5ee8-4f7b-a684-b5806b3e6d60',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'pre-fix',hypothesisId:'A',location:'page.tsx:getCurrentSelection',message:'Using cached selection',data:{start:selectionRef.current.start,end:selectionRef.current.end,baseLength},timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
-      return selectionRef.current;
-    }
-    const input = patientResponseInputRef.current;
-    if (input) {
-      const selStart = input.selectionStart ?? baseLength;
-      const selEnd = input.selectionEnd ?? baseLength;
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/9652e7f9-5ee8-4f7b-a684-b5806b3e6d60',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'pre-fix',hypothesisId:'A',location:'page.tsx:getCurrentSelection',message:'Using live selection',data:{start:selStart,end:selEnd,baseLength},timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
-      return {
-        start: selStart,
-        end: selEnd,
-      };
-    }
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/9652e7f9-5ee8-4f7b-a684-b5806b3e6d60',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'pre-fix',hypothesisId:'A',location:'page.tsx:getCurrentSelection',message:'Fallback to end',data:{baseLength},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
-    return { start: baseLength, end: baseLength };
-  };
-
-  const insertAtSelection = (base: string, insert: string) => {
-    const sel = getCurrentSelection(base.length);
-    const start = sel.start;
-    const end = sel.end;
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/9652e7f9-5ee8-4f7b-a684-b5806b3e6d60',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'pre-fix',hypothesisId:'B',location:'page.tsx:insertAtSelection',message:'Before insert',data:{baseLength:base.length,start,end,insertLength:insert.length},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
-    const text = base.slice(0, start) + insert + base.slice(end);
-    const caret = start + insert.length;
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/9652e7f9-5ee8-4f7b-a684-b5806b3e6d60',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'pre-fix',hypothesisId:'B',location:'page.tsx:insertAtSelection',message:'After insert',data:{resultLength:text.length,caret},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
-    return { text, caret };
   };
 
   const normalizePunctuation = (text: string) => {
@@ -208,6 +163,89 @@ export default function Home() {
       t = t + ".";
     }
     return t;
+  };
+  const lightCleanupTranscript = (text: string) => {
+    let t = text.trim();
+    t = t.replace(/\s+/g, " ");
+    // Remove obvious filler tokens when isolated
+    t = t.replace(/\b(um+|uh+|erm+|ah+)\b/gi, "");
+    t = t.replace(/\s+/g, " ").trim();
+    // Normalize common number words (1-10)
+    const numberMap: Record<string, string> = {
+      zero: "0",
+      one: "1",
+      two: "2",
+      three: "3",
+      four: "4",
+      five: "5",
+      six: "6",
+      seven: "7",
+      eight: "8",
+      nine: "9",
+      ten: "10",
+    };
+    t = t.replace(/\b(zero|one|two|three|four|five|six|seven|eight|nine|ten)\b/gi, (match) => {
+      const key = match.toLowerCase();
+      return numberMap[key] ?? match;
+    });
+    // Normalize common units
+    t = t.replace(/\bmilligrams?\b/gi, "mg");
+    t = t.replace(/\bmilliliters?\b/gi, "ml");
+    t = t.replace(/\bmicrograms?\b/gi, "mcg");
+    return t;
+  };
+  const resetDraftTranscript = (reason: string) => {
+    setDraftTranscript("");
+    setDraftTranscriptRaw("");
+    draftTranscriptRawRef.current = "";
+    setShowReview(false);
+    setMicWarning(null);
+    setInterimTranscript("");
+    interimTranscriptRef.current = "";
+  };
+  const appendDraftRaw = (text: string) => {
+    const combined = `${draftTranscriptRawRef.current} ${text}`.replace(/\s+/g, " ").trim();
+    draftTranscriptRawRef.current = combined;
+    setDraftTranscriptRaw(combined);
+  };
+  const finalizeDraftTranscript = async () => {
+    const interim = interimTranscriptRef.current.trim();
+    const raw = draftTranscriptRawRef.current.trim();
+    const combined = `${raw} ${interim}`.replace(/\s+/g, " ").trim();
+    setInterimTranscript("");
+    interimTranscriptRef.current = "";
+    if (!combined) {
+      setMicWarning("No speech detected. Please try again.");
+      setDraftTranscript("");
+      setShowReview(false);
+      return;
+    }
+    setMicWarning(null);
+    setCleaningTranscript(true);
+    const lightlyCleaned = lightCleanupTranscript(combined);
+    try {
+      const startTime = Date.now();
+      const cleaned = await cleanTranscript(lightlyCleaned, language);
+      const endTime = Date.now();
+      const normalized = normalizePunctuation(cleaned);
+      setDraftTranscript(normalized);
+      setShowReview(true);
+    } catch (error) {
+      const normalized = normalizePunctuation(lightlyCleaned);
+      setDraftTranscript(normalized);
+      setShowReview(true);
+    } finally {
+      setCleaningTranscript(false);
+    }
+  };
+  const handleNoButtonClick = () => {
+    setDraftTranscript("No");
+    setShowReview(true);
+    setMicWarning(null);
+    setInterimTranscript("");
+    interimTranscriptRef.current = "";
+    setDraftTranscriptRaw("");
+    draftTranscriptRawRef.current = "";
   };
   const [result, setResult] = useState<HistoryResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -267,7 +305,13 @@ export default function Home() {
   const [selectedVoice, setSelectedVoice] = useState<SpeechSynthesisVoice | null>(null);
   const [interimTranscript, setInterimTranscript] = useState<string>("");
   const [isPaused, setIsPaused] = useState(false);
+  const [isMuted, setIsMuted] = useState(false);
   const [cleaningTranscript, setCleaningTranscript] = useState(false);
+  const [draftTranscript, setDraftTranscript] = useState<string>("");
+  const [draftTranscriptRaw, setDraftTranscriptRaw] = useState<string>("");
+  const [showReview, setShowReview] = useState(false);
+  const [isHolding, setIsHolding] = useState(false);
+  const [micWarning, setMicWarning] = useState<string | null>(null);
   // Note: short "no" auto-submit removed (per request)
   const speechSynthesisRef = useRef<SpeechSynthesisUtterance | null>(null);
   const lastSpokenMessageRef = useRef<string>("");
@@ -275,13 +319,17 @@ export default function Home() {
   const patientResponseInputRef = useRef<HTMLTextAreaElement | null>(null);
   const patientResponseRef = useRef<string>("");
   const messagesRef = useRef<ChatMessage[]>([]); // Ref to track latest messages including edits
-  const lastAssistantClearedIndexRef = useRef<number | null>(null); // Track last assistant message we cleared input for
   const selectionRef = useRef<{ start: number; end: number } | null>(null);
   const pausedStatusRef = useRef<Status | null>(null); // Store the status before pausing
   const isCancellingRef = useRef<boolean>(false); // Track if we're intentionally cancelling
   const speechRecognitionRef = useRef<SpeechRecognition | null>(null); // Ref for speech recognition to access in callbacks
   const isListeningRef = useRef<boolean>(false); // Ref for isListening state to access in callbacks
   const interimTranscriptRef = useRef<string>(""); // Ref to track interim transcript for pause detection
+  const draftTranscriptRawRef = useRef<string>("");
+  const finalizeDraftOnEndRef = useRef<boolean>(false);
+  const isHoldingRef = useRef<boolean>(false);
+  const pendingStopOnResultRef = useRef<boolean>(false);
+  const hadResultRef = useRef<boolean>(false);
   
   const [hasPhysicianId, setHasPhysicianId] = useState<boolean>(false);
   const [editingMessageIndex, setEditingMessageIndex] = useState<number | null>(null);
@@ -296,6 +344,16 @@ export default function Home() {
   const interviewStartTimeRef = useRef<number | null>(null);
   const [elapsedTime, setElapsedTime] = useState<number>(0);
   const cleaningSchema = z.object({ cleaned: z.string().min(1) });
+  useEffect(() => {
+    isHoldingRef.current = isHolding;
+  }, [isHolding]);
+  useEffect(() => {
+  }, [draftTranscript]);
+  useEffect(() => {
+  }, [showReview]);
+  useEffect(() => {
+  }, [micWarning]);
+  const liveTranscript = `${draftTranscriptRaw} ${interimTranscript}`.replace(/\s+/g, " ").trim();
 
   const getMedPmhSummary = () => {
     const parts = [medListExtracted, pmhExtracted]
@@ -440,48 +498,7 @@ export default function Home() {
     }
   }, [interviewStartTime, status]);
 
-  // Also start listening when status changes to awaitingPatient (if we have a question and speech finished)
-  useEffect(() => {
-    if (status === "awaitingPatient" && speechRecognition && !isListening && !isSpeaking && messages.length > 0) {
-      const lastMessage = messages[messages.length - 1];
-      if (lastMessage && lastMessage.role === "assistant") {
-        // Wait a moment for any speech to finish, then start listening
-        const timeout = setTimeout(() => {
-          if (status === "awaitingPatient" && !isListening && !isSpeaking && !isListeningRef.current) {
-            try {
-              setInterimTranscript("");
-              interimTranscriptRef.current = "";
-              // Clear response only once per new assistant message to avoid wiping during auto-pause/resume
-              const lastAssistantIndex = messages.length - 1;
-              if (
-                lastAssistantIndex !== lastAssistantClearedIndexRef.current &&
-                lastMessage &&
-                lastMessage.role === "assistant"
-              ) {
-                // #region agent log
-                fetch('http://127.0.0.1:7242/ingest/9652e7f9-5ee8-4f7b-a684-b5806b3e6d60',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'pre-fix',hypothesisId:'CLR',location:'page.tsx:autoListen',message:'Clearing response for new assistant message',data:{lastAssistantIndex},timestamp:Date.now()})}).catch(()=>{});
-                // #endregion
-                setPatientResponse("");
-                patientResponseRef.current = "";
-                lastAssistantClearedIndexRef.current = lastAssistantIndex;
-              }
-              speechRecognition.start();
-            } catch (error) {
-              // Check if error is because recognition is already started
-              if (error instanceof Error && error.name === "InvalidStateError") {
-                console.log("[Speech Recognition] Recognition already started, skipping auto-start");
-                setIsListening(true);
-                isListeningRef.current = true;
-              } else {
-                console.log("Speech recognition auto-start:", error);
-              }
-            }
-          }
-        }, 1500);
-        return () => clearTimeout(timeout);
-      }
-    }
-  }, [status, speechRecognition, isListening, isSpeaking, messages]);
+  // Auto-start listening removed: use press-and-hold to talk.
 
   // Cleanup speech on unmount or status change
   useEffect(() => {
@@ -559,7 +576,7 @@ export default function Home() {
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.rate = 1.0; // Normal speed
     utterance.pitch = 1.0; // Normal pitch
-    utterance.volume = 1.0; // Full volume
+    utterance.volume = isMuted ? 0.0 : 1.0; // Respect mute setting
     
     const langTag = getLangTag(language);
     // Use selected voice if available; set lang to match selection
@@ -604,66 +621,6 @@ export default function Home() {
     utterance.onend = () => {
       setIsSpeaking(false);
       speechSynthesisRef.current = null;
-      
-      // Start listening immediately when speech ends - use requestAnimationFrame for immediate execution
-      // This ensures the microphone activates as soon as speech ends, preventing loss of patient's initial words
-      requestAnimationFrame(() => {
-        const recognition = speechRecognitionRef.current;
-        const currentStatus = statusRef.current;
-        const currentlyListening = isListeningRef.current;
-        
-        if (recognition && currentStatus === "awaitingPatient" && !currentlyListening) {
-          try {
-            setInterimTranscript("");
-            interimTranscriptRef.current = "";
-            // Clear response only once per new assistant message to avoid wiping during auto-pause/resume
-            const lastAssistantIndex = messagesRef.current.length - 1;
-            const lastMsg = messagesRef.current[lastAssistantIndex];
-            if (
-              lastAssistantIndex !== lastAssistantClearedIndexRef.current &&
-              lastMsg &&
-              lastMsg.role === "assistant"
-            ) {
-              // #region agent log
-              fetch('http://127.0.0.1:7242/ingest/9652e7f9-5ee8-4f7b-a684-b5806b3e6d60',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'pre-fix',hypothesisId:'CLR',location:'page.tsx:speak.onend',message:'Clearing response for new assistant message (speak end)',data:{lastAssistantIndex},timestamp:Date.now()})}).catch(()=>{});
-              // #endregion
-              setPatientResponse("");
-              patientResponseRef.current = "";
-              lastAssistantClearedIndexRef.current = lastAssistantIndex;
-            }
-            recognition.start();
-          } catch (error) {
-            // Check if error is because recognition is already started
-            if (error instanceof Error && error.name === "InvalidStateError") {
-              console.log("[Speech Recognition] Recognition already started, skipping start");
-              setIsListening(true);
-              isListeningRef.current = true;
-            } else {
-              // Other error - try again immediately
-              requestAnimationFrame(() => {
-                const retryRecognition = speechRecognitionRef.current;
-                const retryStatus = statusRef.current;
-                const retryListening = isListeningRef.current;
-                
-                if (retryRecognition && retryStatus === "awaitingPatient" && !retryListening) {
-                  try {
-                    retryRecognition.start();
-                  } catch (retryError) {
-                    // Check if error is because recognition is already started
-                    if (retryError instanceof Error && retryError.name === "InvalidStateError") {
-                      console.log("[Speech Recognition] Recognition already started after retry");
-                      setIsListening(true);
-                      isListeningRef.current = true;
-                    } else {
-                      console.error("Error starting speech recognition after retry:", retryError);
-                    }
-                  }
-                }
-              });
-            }
-          }
-        }
-      });
     };
 
     utterance.onerror = (event: SpeechSynthesisErrorEvent) => {
@@ -709,73 +666,35 @@ export default function Home() {
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
       if (SpeechRecognition) {
         const recognition = new SpeechRecognition();
-        // Use continuous mode to keep listening through pauses
+        // Set recognition properties in correct order
+        recognition.lang = getLangTag(language);
         recognition.continuous = true;
         recognition.interimResults = true;
-        recognition.lang = getLangTag(language);
+        recognition.maxAlternatives = 1;
         
-        // Track the last time we received a result to handle long pauses
+        // Track the last time we received a result for no-speech detection
         let lastResultTime = Date.now();
-        let recognitionStartTime = Date.now(); // Track when recognition started
-        let autoPauseTimeout: NodeJS.Timeout | null = null; // Timeout for auto-pausing after 20 seconds
-        const AUTO_PAUSE_TIMEOUT_MS = 20000; // 20 seconds of silence before auto-pausing
-        const RECOGNITION_MAX_DURATION_MS = 58000; // Web Speech API stops after ~60 seconds
-
-        // Helper function to reset the auto-pause timeout
-        const resetAutoPauseTimeout = () => {
-          // Clear any existing auto-pause timeout
-          if (autoPauseTimeout) {
-            clearTimeout(autoPauseTimeout);
-            autoPauseTimeout = null;
-          }
-          
-          // Only set auto-pause timeout if we're in awaitingPatient status and not already paused
-          if (statusRef.current === "awaitingPatient" && !isPaused) {
-            // Set a new timeout that will fire after 20 seconds of silence
-            autoPauseTimeout = setTimeout(() => {
-              // Check if we've actually had 20 seconds of silence (no new results)
-              const timeSinceLastResult = Date.now() - lastResultTime;
-              if (timeSinceLastResult >= AUTO_PAUSE_TIMEOUT_MS) {
-                // Check if there's an active interim transcript - if so, patient is still speaking
-                const hasActiveInterim = interimTranscriptRef.current.trim().length > 0;
-                
-                if (!hasActiveInterim && statusRef.current === "awaitingPatient" && !isPaused) {
-                  console.log("[Auto-pause] Pausing interview after 20 seconds of silence");
-                  // Auto-pause the interview
-                  pauseInterview();
-                } else {
-                  // Patient is still speaking or status changed, reset the timeout
-                  resetAutoPauseTimeout();
-                }
-              }
-            }, AUTO_PAUSE_TIMEOUT_MS);
-          }
-        };
 
         // Helper function to reset the pause timeout
         recognition.onstart = () => {
           setIsListening(true);
           isListeningRef.current = true;
           lastResultTime = Date.now();
-          recognitionStartTime = Date.now(); // Track when this recognition session started
           setError(null); // Clear any previous errors
-          // Start the auto-pause timeout when listening starts
-          resetAutoPauseTimeout();
-          // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/9652e7f9-5ee8-4f7b-a684-b5806b3e6d60',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'pre-fix',hypothesisId:'G',location:'page.tsx:recognition.onstart',message:'Recognition start',data:{selectionStart:patientResponseInputRef.current?.selectionStart ?? null,selectionEnd:patientResponseInputRef.current?.selectionEnd ?? null,hasSelectionRef:!!selectionRef.current},timestamp:Date.now()})}).catch(()=>{});
-          // #endregion
+          hadResultRef.current = false;
         };
 
         recognition.onresult = (event: any) => {
           // Update last result time whenever we get any result (including interim)
           // This tracks when the patient last spoke
           lastResultTime = Date.now();
+          hadResultRef.current = true;
           
           // If paused or not awaiting patient, ignore incoming speech
           if (statusRef.current !== "awaitingPatient" || isPaused) {
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/9652e7f9-5ee8-4f7b-a684-b5806b3e6d60',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'pre-fix',hypothesisId:'P',location:'page.tsx:onresult',message:'Ignoring onresult (not awaiting patient)',data:{status:statusRef.current,isPaused},timestamp:Date.now()})}).catch(()=>{});
-            // #endregion
+            return;
+          }
+          if (!isHoldingRef.current && !finalizeDraftOnEndRef.current) {
             return;
           }
           
@@ -795,96 +714,32 @@ export default function Home() {
           if (currentInterim) {
             setInterimTranscript(currentInterim);
             interimTranscriptRef.current = currentInterim; // Update ref immediately
-
-            // If we only have a very short interim like "no", surface it immediately so it doesn't get lost
-            const interimTrimmed = currentInterim.trim().toLowerCase();
-            const isShortNo =
-              interimTrimmed.length <= 5 &&
-              /^no[\s\.,!?]*$/.test(interimTrimmed);
-            if (
-              isShortNo &&
-              patientResponseRef.current.trim().length === 0 &&
-              statusRef.current === "awaitingPatient"
-            ) {
-              setPatientResponse(currentInterim.trim());
-              patientResponseRef.current = currentInterim.trim();
-
-            }
+          } else if (!finalTranscript && finalizeDraftOnEndRef.current && interimTranscriptRef.current.trim().length > 0) {
+            // Keep last interim when we're finalizing to avoid dropping short replies.
+          } else if (!finalTranscript && isHoldingRef.current && interimTranscriptRef.current.trim().length > 0) {
+            // Keep interim results while still holding, even if no new interim
           } else {
             setInterimTranscript("");
             interimTranscriptRef.current = ""; // Update ref immediately
           }
 
-          // Add final transcript to the response
+          // Add final transcript to the draft buffer
           if (finalTranscript) {
-            // Capture selection right before insertion to honor user cursor position
-            updateSelectionRef(patientResponseInputRef.current);
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/9652e7f9-5ee8-4f7b-a684-b5806b3e6d60',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'pre-fix',hypothesisId:'C',location:'page.tsx:onresult',message:'Before insert, selection snapshot',data:{hasInput:!!patientResponseInputRef.current,sel:selectionRef.current || null,baseLength:patientResponseRef.current.length},timestamp:Date.now()})}).catch(()=>{});
-            // #endregion
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/9652e7f9-5ee8-4f7b-a684-b5806b3e6d60',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'pre-fix',hypothesisId:'C',location:'page.tsx:onresult',message:'Final transcript received',data:{finalTranscriptLength:finalTranscript.length,baseLength:patientResponseRef.current.length},timestamp:Date.now()})}).catch(()=>{});
-            // #endregion
-            const base = patientResponseRef.current;
-            const { text: rawCombined, caret: newCaret } = insertAtSelection(base, finalTranscript);
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/9652e7f9-5ee8-4f7b-a684-b5806b3e6d60',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'pre-fix',hypothesisId:'H',location:'page.tsx:onresult',message:'Raw combined before clean',data:{rawCombined,caret:newCaret},timestamp:Date.now()})}).catch(()=>{});
-            // #endregion
-            setCleaningTranscript(true);
-            cleanTranscript(rawCombined, language)
-              .then((cleaned) => {
-                // #region agent log
-                fetch('http://127.0.0.1:7242/ingest/9652e7f9-5ee8-4f7b-a684-b5806b3e6d60',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'pre-fix',hypothesisId:'H',location:'page.tsx:onresult',message:'Cleaned transcript (success)',data:{cleanedLength:cleaned.length,cleaned},timestamp:Date.now()})}).catch(()=>{});
-                // #endregion
-                const normalized = normalizePunctuation(cleaned);
-                // #region agent log
-                fetch('http://127.0.0.1:7242/ingest/9652e7f9-5ee8-4f7b-a684-b5806b3e6d60',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'pre-fix',hypothesisId:'H2',location:'page.tsx:onresult',message:'Normalized transcript (success)',data:{normalized},timestamp:Date.now()})}).catch(()=>{});
-                // #endregion
-                setPatientResponse(normalized);
-                patientResponseRef.current = normalized;
-                if (patientResponseInputRef.current && typeof newCaret === "number") {
-                  const pos = Math.min(newCaret, normalized.length);
-                  requestAnimationFrame(() => {
-                    patientResponseInputRef.current?.setSelectionRange(pos, pos);
-                  });
-                }
-              })
-              .catch(() => {
-                // #region agent log
-                fetch('http://127.0.0.1:7242/ingest/9652e7f9-5ee8-4f7b-a684-b5806b3e6d60',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'pre-fix',hypothesisId:'H',location:'page.tsx:onresult',message:'Clean transcript failed, using raw',data:{rawCombinedLength:rawCombined.length,rawCombined},timestamp:Date.now()})}).catch(()=>{});
-                // #endregion
-                const normalized = normalizePunctuation(rawCombined);
-                // #region agent log
-                fetch('http://127.0.0.1:7242/ingest/9652e7f9-5ee8-4f7b-a684-b5806b3e6d60',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'pre-fix',hypothesisId:'H2',location:'page.tsx:onresult',message:'Normalized transcript (fallback raw)',data:{normalized},timestamp:Date.now()})}).catch(()=>{});
-                // #endregion
-                setPatientResponse(normalized);
-                patientResponseRef.current = normalized;
-                if (patientResponseInputRef.current && typeof newCaret === "number") {
-                  const pos = Math.min(newCaret, normalized.length);
-                  requestAnimationFrame(() => {
-                    patientResponseInputRef.current?.setSelectionRange(pos, pos);
-                  });
-                }
-              })
-              .finally(() => {
-                setCleaningTranscript(false);
-              });
-            setInterimTranscript(""); // Clear interim when we get final
-            interimTranscriptRef.current = ""; // Update ref immediately
+            appendDraftRaw(finalTranscript);
+            setInterimTranscript("");
+            interimTranscriptRef.current = "";
           }
-          
-          // Reset the auto-pause timeout every time we get a result
-          // This ensures we wait for a full 20 seconds of silence before auto-pausing
-          resetAutoPauseTimeout();
+          if (pendingStopOnResultRef.current && !isHoldingRef.current) {
+            pendingStopOnResultRef.current = false;
+            try {
+              speechRecognitionRef.current?.stop();
+            } catch {
+              // Ignore stop errors
+            }
+          }
         };
 
         recognition.onerror = (event: any) => {
-          // Clear auto-pause timeout on error
-          if (autoPauseTimeout) {
-            clearTimeout(autoPauseTimeout);
-            autoPauseTimeout = null;
-          }
-          
           // Handle different error types
           if (event.error === "not-allowed") {
             // Microphone permission denied
@@ -895,15 +750,14 @@ export default function Home() {
           } else if (event.error === "no-speech") {
             // "no-speech" is normal - don't log as error, just handle it
             // This can happen when the user pauses or hasn't started speaking yet
-            // Don't auto-submit immediately - let the pause timeout handle it
-            // Only show an error if we've been listening for a very long time with no speech at all
             const timeSinceStart = Date.now() - lastResultTime;
-            if (timeSinceStart > 10000 && patientResponseRef.current.trim().length === 0) {
+            const hasAnyDraft =
+              draftTranscriptRawRef.current.trim().length > 0 ||
+              interimTranscriptRef.current.trim().length > 0;
+            if (timeSinceStart > 10000 && !hasAnyDraft) {
               // Been listening for more than 10 seconds with no speech at all and no response
               console.log("Speech recognition: No speech detected after 10 seconds");
-              setIsListening(false);
-              isListeningRef.current = false;
-              setError("No speech detected. Please try again.");
+              setMicWarning("No speech detected. Please try again.");
             }
             // Otherwise, continue listening
           } else if (event.error === "aborted") {
@@ -936,119 +790,89 @@ export default function Home() {
 
         recognition.onend = () => {
           console.log("[Speech Recognition] onend - stopped listening, status:", statusRef.current);
-          // Clear auto-pause timeout
-          if (autoPauseTimeout) {
-            clearTimeout(autoPauseTimeout);
-            autoPauseTimeout = null;
-          }
-          
-          const timeSinceStart = Date.now() - recognitionStartTime;
-          const currentStatus = statusRef.current;
-          
-          // If recognition ended before emitting a final result (e.g., very short answers like "no"),
-          // promote the last interim transcript to the patient response so it isn't lost.
-          if (
-            currentStatus === "awaitingPatient" &&
-            !isPaused &&
-            interimTranscriptRef.current.trim().length > 0 &&
-            patientResponseRef.current.trim().length === 0
-          ) {
-            const interimFinal = interimTranscriptRef.current.trim();
-            const rawCombined = interimFinal;
-            setCleaningTranscript(true);
-            cleanTranscript(rawCombined, language)
-              .then((cleaned) => {
-                setPatientResponse(cleaned);
-                patientResponseRef.current = cleaned;
-              })
-              .catch(() => {
-                setPatientResponse(rawCombined);
-                patientResponseRef.current = rawCombined;
-              })
-              .finally(() => {
-                setCleaningTranscript(false);
-              });
-            setInterimTranscript("");
-            interimTranscriptRef.current = "";
-          }
-          
-          // If recognition stopped due to the ~60 second limit and we're still awaiting patient response,
-          // automatically restart recognition instead of stopping
-          if (timeSinceStart >= RECOGNITION_MAX_DURATION_MS - 2000 && // Within 2 seconds of the limit
-              currentStatus === "awaitingPatient" &&
-              !isCancellingRef.current &&
-              speechRecognitionRef.current) {
-            console.log("[Speech Recognition] Restarting after ~60 second limit, time since start:", timeSinceStart);
-            // Restart recognition after a brief delay to avoid immediate restart issues
-            setTimeout(() => {
-              // Check status again before restarting and ensure we have a valid recognition instance
-              if (statusRef.current === "awaitingPatient" && 
-                  !isCancellingRef.current && 
-                  speechRecognitionRef.current &&
-                  !isListeningRef.current) {
-                try {
-                  speechRecognitionRef.current.start();
-                  // Reset the start time for the new session
-                  recognitionStartTime = Date.now();
-                  lastResultTime = Date.now();
-                  // Restart the auto-pause timeout
-                  resetAutoPauseTimeout();
-                } catch (error) {
-                  // Check if error is because recognition is already started
-                  if (error instanceof Error && error.name === "InvalidStateError") {
-                    console.log("[Speech Recognition] Recognition already started, skipping restart");
-                    // Recognition is already active, just update the refs
-                    setIsListening(true);
-                    isListeningRef.current = true;
-                    recognitionStartTime = Date.now();
-                    lastResultTime = Date.now();
-                    resetAutoPauseTimeout();
-                  } else {
-                    console.error("[Speech Recognition] Error restarting after time limit:", error);
-                    // If restart fails, don't auto-submit - let the user manually submit
-                    setIsListening(false);
-                    isListeningRef.current = false;
-                  }
-                }
-              } else {
-                setIsListening(false);
-                isListeningRef.current = false;
-              }
-            }, 100);
-            return; // Don't set isListening to false yet - we're restarting
-          }
-          
           setIsListening(false);
           isListeningRef.current = false;
-          
-          // Don't clear the response here
-          // Only clear if we're not in awaitingPatient status (user manually stopped)
-          if (currentStatus !== "awaitingPatient") {
+          const shouldRestart =
+            statusRef.current === "awaitingPatient" &&
+            isHoldingRef.current &&
+            !hadResultRef.current &&
+            !isCancellingRef.current;
+          if (shouldRestart) {
+            try {
+              speechRecognitionRef.current?.start();
+              isListeningRef.current = true;
+              setIsListening(true);
+            } catch {
+              // Ignore restart errors
+            }
+            return;
+          }
+          const interimAtEnd = interimTranscriptRef.current.trim();
+          // Always preserve any interim results when holding, even if short
+          // This ensures speech that was detected but not finalized gets captured
+          if (isHoldingRef.current && interimAtEnd.length > 0) {
+            appendDraftRaw(interimAtEnd);
             setInterimTranscript("");
             interimTranscriptRef.current = "";
           }
+          if (finalizeDraftOnEndRef.current) {
+            finalizeDraftOnEndRef.current = false;
+            void finalizeDraftTranscript();
+            return;
+          }
+          setInterimTranscript("");
+          interimTranscriptRef.current = "";
         };
 
         setSpeechRecognition(recognition);
         speechRecognitionRef.current = recognition;
-        recognition.lang = language ? `${language}-${language.toUpperCase()}` : "en-US";
+        recognition.lang = getLangTag(language);
       } else {
         console.warn("Speech recognition not supported in this browser");
       }
     }
   }, [status, language]);
 
-  const startListening = () => {
+  const startListening = async () => {
     // Capture current selection before we start listening (in case focus shifts)
     updateSelectionRef(patientResponseInputRef.current);
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/9652e7f9-5ee8-4f7b-a684-b5806b3e6d60',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'pre-fix',hypothesisId:'E',location:'page.tsx:startListening',message:'Starting listening',data:{isSpeaking,status,isListening:isListeningRef.current},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
     if (isSpeaking) return; // Don't allow listening while AI is speaking
-    if (speechRecognition && status === "awaitingPatient" && !isListeningRef.current) {
+    if (showReview || cleaningTranscript) return;
+    if (speechRecognition && status === "awaitingPatient") {
       try {
-        speechRecognition.start();
-        isListeningRef.current = true;
+        if (isListeningRef.current) {
+          try {
+            speechRecognition.stop();
+          } catch {
+            // ignore stop errors
+          }
+          setIsListening(false);
+          isListeningRef.current = false;
+        }
+        // Create a fresh recognition instance for each attempt to avoid state corruption
+        const freshRecognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+        freshRecognition.lang = getLangTag(language);
+        freshRecognition.continuous = true;
+        freshRecognition.interimResults = true;
+        freshRecognition.maxAlternatives = 1;
+        // Re-apply all event handlers to the fresh instance
+        freshRecognition.onstart = speechRecognition.onstart;
+        freshRecognition.onresult = speechRecognition.onresult;
+        freshRecognition.onend = speechRecognition.onend;
+        freshRecognition.onerror = speechRecognition.onerror;
+        setSpeechRecognition(freshRecognition);
+        speechRecognitionRef.current = freshRecognition;
+        pendingStopOnResultRef.current = false;
+        resetDraftTranscript("startListening");
+        setIsHolding(true);
+        isHoldingRef.current = true;
+        finalizeDraftOnEndRef.current = false;
+        // Removed mic priming as it may interfere with speech recognition
+        // Small delay to allow microphone to stabilize before starting recognition
+        setTimeout(() => {
+          speechRecognition.start();
+          isListeningRef.current = true;
+        }, 200);
       } catch (error) {
         // Check if error is because recognition is already started
         if (error instanceof Error && error.name === "InvalidStateError") {
@@ -1063,12 +887,59 @@ export default function Home() {
     }
   };
 
-  const stopListening = () => {
+  const stopListening = (finalizeDraft = false) => {
+    setIsHolding(false);
+    isHoldingRef.current = false;
+    const rawLength = draftTranscriptRawRef.current.length;
+    const interimLength = interimTranscriptRef.current.length;
+
+    if (finalizeDraft && (rawLength > 0 || interimLength > 0)) {
+      // If we have transcripts and want to finalize, do it immediately
+      void finalizeDraftTranscript();
+      finalizeDraftOnEndRef.current = false;
+    } else if (finalizeDraft && rawLength === 0 && interimLength === 0) {
+      // No speech detected
+      setMicWarning("No speech detected. Please try again.");
+      setShowReview(false);
+      finalizeDraftOnEndRef.current = false;
+    } else if (finalizeDraft) {
+      // Set flag for onend handler
+      finalizeDraftOnEndRef.current = true;
+    }
+
     if (speechRecognition) {
       speechRecognition.stop();
       setIsListening(false);
       isListeningRef.current = false;
     }
+  };
+  const commitDraftToResponse = (mode: "use" | "edit", autoSubmit = false) => {
+    const draft = draftTranscript.trim();
+    if (!draft) {
+      return;
+    }
+    setPatientResponseWithRef(draft);
+    setShowReview(false);
+    setDraftTranscript("");
+    setDraftTranscriptRaw("");
+    draftTranscriptRawRef.current = "";
+    if (patientResponseInputRef.current) {
+      requestAnimationFrame(() => {
+        patientResponseInputRef.current?.focus();
+        const pos = draft.length;
+        patientResponseInputRef.current?.setSelectionRange(pos, pos);
+      });
+    }
+    if (mode === "use") {
+      setInterimTranscript("");
+      interimTranscriptRef.current = "";
+    }
+    if (autoSubmit && statusRef.current === "awaitingPatient") {
+      void handlePatientSubmit();
+    }
+  };
+  const redoDraftTranscript = () => {
+    resetDraftTranscript("redo");
   };
 
   async function handleStart(
@@ -1443,9 +1314,6 @@ export default function Home() {
   }
 
   function pauseInterview() {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/9652e7f9-5ee8-4f7b-a684-b5806b3e6d60',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'pre-fix',hypothesisId:'Q',location:'page.tsx:pauseInterview',message:'Pause invoked',data:{status:statusRef.current,isListening:isListeningRef.current,isPaused},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
     stopListening();
     stopSpeaking();
     pausedStatusRef.current = status;
@@ -2745,9 +2613,37 @@ export default function Home() {
                       </div>
                     )}
                   </div>
-                  <h2 className="text-2xl font-semibold text-slate-900 mt-1">
-                    Guided interview
-                  </h2>
+                  <div className="flex items-center justify-between mt-1">
+                    <h2 className="text-2xl font-semibold text-slate-900">
+                      Guided interview
+                    </h2>
+                    <button
+                      onClick={() => setIsMuted(!isMuted)}
+                      className={`inline-flex items-center justify-center rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ml-3 ${
+                        isMuted
+                          ? "bg-red-100 text-red-700 hover:bg-red-200"
+                          : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                      }`}
+                      title={isMuted ? "Unmute AI voice" : "Mute AI voice"}
+                    >
+                      {isMuted ? (
+                        <>
+                          <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" clipPath="url(#clip0)" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" />
+                          </svg>
+                          Muted
+                        </>
+                      ) : (
+                        <>
+                          <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072M18.364 5.636a9 9 0 010 12.728M12 9l-6 6H4a1 1 0 01-1-1v-4a1 1 0 011-1h2l6-6v14z" />
+                          </svg>
+                          Sound On
+                        </>
+                      )}
+                    </button>
+                  </div>
                 </div>
                 {isSpeaking && !isPaused && (
                   <video
@@ -3056,73 +2952,179 @@ export default function Home() {
               >
                 {interviewMode === "conversation" ? (
                   <>
-                    {/* Editable text area for corrections */}
-                    <div className="relative">
-                      <textarea
-                        ref={patientResponseInputRef}
-                        id="patient-response"
-                        name="patientResponse"
-                        rows={3}
-                        maxLength={1000}
-                        placeholder={
-                          status === "awaitingPatient"
-                            ? isListening
-                              ? "Listening... Speak your response (or type to correct)"
-                              : "Speak your response (or type to enter manually)"
-                            : status === "complete"
-                              ? "Interview complete."
-                              : "Start the interview to respond."
+                    <div className="flex flex-wrap items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={handleNoButtonClick}
+                        disabled={
+                          status !== "awaitingPatient" ||
+                          isPaused ||
+                          isSpeaking ||
+                          cleaningTranscript ||
+                          showReview
                         }
-                         value={patientResponse}
-                        onChange={(event) => {
-                          const val = event.target.value;
-                          setPatientResponse(val);
-                          patientResponseRef.current = val;
-                          updateSelectionRef(event.target);
+                        className="inline-flex items-center justify-center rounded-2xl bg-emerald-100 px-4 py-2 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-200 disabled:cursor-not-allowed disabled:bg-emerald-100 disabled:text-emerald-400"
+                      >
+                        No
+                      </button>
+                      <span className="text-sm text-slate-600">or</span>
+                      <button
+                        type="button"
+                        onPointerDown={(event) => {
+                          event.preventDefault();
+                          if (event.currentTarget.setPointerCapture) {
+                            event.currentTarget.setPointerCapture(event.pointerId);
+                          }
+                          startListening();
                         }}
-                        onSelect={(event) => updateSelectionRef(event.target as HTMLTextAreaElement)}
-                        onKeyUp={(event) => updateSelectionRef(event.target as HTMLTextAreaElement)}
-                        onClick={(event) => updateSelectionRef(event.target as HTMLTextAreaElement)}
-                        onMouseUp={(event) => updateSelectionRef(event.target as HTMLTextAreaElement)}
-                        onFocus={(event) => updateSelectionRef(event.target as HTMLTextAreaElement)}
-                        disabled={status !== "awaitingPatient" || isPaused}
-                        className={`w-full rounded-2xl border-2 bg-white px-5 py-4 pr-24 text-base text-slate-900 outline-none transition-all focus:ring-2 focus:ring-emerald-200 disabled:cursor-not-allowed disabled:opacity-70 resize-none ${
-                          isListening
-                            ? "border-emerald-500 ring-2 ring-emerald-200"
-                            : "border-slate-300 focus:border-emerald-500"
-                        }`}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-                            e.preventDefault();
-                            if (status === "awaitingPatient" && patientResponse.trim() !== "") {
-                              stopListening();
-                              handlePatientSubmit();
-                            }
+                        onPointerUp={(event) => {
+                          event.preventDefault();
+                          if (event.currentTarget.releasePointerCapture) {
+                            event.currentTarget.releasePointerCapture(event.pointerId);
+                          }
+                          stopListening(true);
+                        }}
+                        onPointerLeave={() => {
+                          if (isHoldingRef.current) {
+                            stopListening(true);
                           }
                         }}
-                      />
-                      {/* Submit button - show when listening or when there's text */}
-                      {status === "awaitingPatient" && (isListening || patientResponse.trim().length > 0) && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            stopListening();
-                            if (patientResponse.trim().length > 0) {
-                              handlePatientSubmit();
-                            }
-                          }}
-                          className="absolute bottom-3 right-3 inline-flex items-center justify-center rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600 disabled:cursor-not-allowed disabled:bg-emerald-300 disabled:opacity-50"
-                          disabled={patientResponse.trim().length === 0}
-                          title="Submit your response"
-                        >
-                          Submit
-                        </button>
+                        onPointerCancel={() => {
+                          if (isHoldingRef.current) {
+                            stopListening(true);
+                          }
+                        }}
+                        disabled={
+                          status !== "awaitingPatient" ||
+                          isPaused ||
+                          isSpeaking ||
+                          cleaningTranscript ||
+                          showReview
+                        }
+                        className={`inline-flex items-center justify-center rounded-2xl px-4 py-2 text-sm font-semibold transition ${
+                          isHolding
+                            ? "bg-red-500 text-white hover:bg-red-600"
+                            : "bg-emerald-600 text-white hover:bg-emerald-500"
+                        } disabled:cursor-not-allowed disabled:bg-emerald-200 disabled:text-emerald-600`}
+                        title={isHolding ? "Release to stop recording" : "Press and hold to talk"}
+                      >
+                        {isHolding ? "Release to stop" : "Press & hold to talk"}
+                      </button>
+                      {cleaningTranscript && (
+                        <span className="text-xs text-slate-500">Processing transcript...</span>
                       )}
                     </div>
+                    {/* Editable text area for corrections */}
+                    {!showReview && !isHolding && liveTranscript.length === 0 && (
+                      <div className="relative">
+                        <textarea
+                          ref={patientResponseInputRef}
+                          id="patient-response"
+                          name="patientResponse"
+                          rows={3}
+                          maxLength={1000}
+                          placeholder={
+                            status === "awaitingPatient"
+                              ? "Press & hold to talk (or type your response)"
+                              : status === "complete"
+                                ? "Interview complete."
+                                : "Start the interview to respond."
+                          }
+                          value={patientResponse}
+                          onChange={(event) => {
+                            const val = event.target.value;
+                            setPatientResponse(val);
+                            patientResponseRef.current = val;
+                            updateSelectionRef(event.target);
+                          }}
+                          onSelect={(event) => updateSelectionRef(event.target as HTMLTextAreaElement)}
+                          onKeyUp={(event) => updateSelectionRef(event.target as HTMLTextAreaElement)}
+                          onClick={(event) => updateSelectionRef(event.target as HTMLTextAreaElement)}
+                          onMouseUp={(event) => updateSelectionRef(event.target as HTMLTextAreaElement)}
+                          onFocus={(event) => updateSelectionRef(event.target as HTMLTextAreaElement)}
+                          disabled={status !== "awaitingPatient" || isPaused}
+                          className={`w-full rounded-2xl border-2 bg-white px-5 py-4 pr-24 text-base text-slate-900 outline-none transition-all focus:ring-2 focus:ring-emerald-200 disabled:cursor-not-allowed disabled:opacity-70 resize-none ${
+                            isListening
+                              ? "border-emerald-500 ring-2 ring-emerald-200"
+                              : "border-slate-300 focus:border-emerald-500"
+                          }`}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                              e.preventDefault();
+                              if (status === "awaitingPatient" && patientResponse.trim() !== "") {
+                                stopListening();
+                                handlePatientSubmit();
+                              }
+                            }
+                          }}
+                        />
+                        {/* Submit button - show when listening or when there's text */}
+                        {status === "awaitingPatient" && (isListening || patientResponse.trim().length > 0) && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              stopListening();
+                              if (patientResponse.trim().length > 0) {
+                                handlePatientSubmit();
+                              }
+                            }}
+                            className="absolute bottom-3 right-3 inline-flex items-center justify-center rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600 disabled:cursor-not-allowed disabled:bg-emerald-300 disabled:opacity-50"
+                            disabled={patientResponse.trim().length === 0}
+                            title="Submit your response"
+                          >
+                            Submit
+                          </button>
+                        )}
+                      </div>
+                    )}
                     {patientResponse.length > 800 && (
                       <p className="text-xs text-slate-500 -mt-2">
                         {1000 - patientResponse.length} characters remaining
                       </p>
+                    )}
+                    {!showReview && (isHolding || liveTranscript.length > 0) && (
+                      <div className="rounded-2xl border border-emerald-100 bg-emerald-50/60 px-4 py-3 text-sm text-emerald-900">
+                        <p className="text-xs uppercase tracking-wide text-emerald-700">Live transcript</p>
+                        <p className="mt-1">{liveTranscript || "Listening..."}</p>
+                      </div>
+                    )}
+                    {micWarning && (
+                      <p className="text-xs text-amber-600">{micWarning}</p>
+                    )}
+                    {showReview && draftTranscript.trim().length > 0 && (
+                      <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800">
+                        <p className="text-xs uppercase tracking-wide text-slate-500">Looks right?</p>
+                        <p className="mt-2 whitespace-pre-wrap">{draftTranscript}</p>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              commitDraftToResponse("use", true);
+                            }}
+                            className="inline-flex items-center justify-center rounded-xl bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-emerald-500"
+                          >
+                            Use this
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              commitDraftToResponse("edit");
+                            }}
+                            className="inline-flex items-center justify-center rounded-xl border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              redoDraftTranscript();
+                            }}
+                            className="inline-flex items-center justify-center rounded-xl border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
+                          >
+                            Redo
+                          </button>
+                        </div>
+                      </div>
                     )}
                     {/* Pause/Resume, End buttons and Thinking indicator - moved below Listening box */}
                     <div className="flex items-center justify-between gap-3 mt-4 relative z-0">
@@ -3245,9 +3247,7 @@ export default function Home() {
                           status === "awaitingPatient"
                             ? isSpeaking
                               ? "AI is speaking... please wait"
-                              : isListening
-                                ? "Listening... Speak now..."
-                                : "Type your answer or click the microphone to speak..."
+                              : "Press & hold to talk (or type your response)"
                             : status === "complete"
                               ? "Interview complete."
                               : "Start the interview to respond."
@@ -3258,65 +3258,106 @@ export default function Home() {
                           setPatientResponse(val);
                           patientResponseRef.current = val;
                           updateSelectionRef(event.target);
-                          // #region agent log
-                          fetch('http://127.0.0.1:7242/ingest/9652e7f9-5ee8-4f7b-a684-b5806b3e6d60',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'pre-fix',hypothesisId:'F',location:'page.tsx:textarea:onChange',message:'onChange selection',data:{start:event.target.selectionStart,end:event.target.selectionEnd,valueLength:val.length},timestamp:Date.now()})}).catch(()=>{});
-                          // #endregion
                         }}
                         onSelect={(event) => {
                           const target = event.target as HTMLTextAreaElement;
                           updateSelectionRef(target);
-                          // #region agent log
-                          fetch('http://127.0.0.1:7242/ingest/9652e7f9-5ee8-4f7b-a684-b5806b3e6d60',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'pre-fix',hypothesisId:'F',location:'page.tsx:textarea:onSelect',message:'onSelect selection',data:{start:target.selectionStart,end:target.selectionEnd},timestamp:Date.now()})}).catch(()=>{});
-                          // #endregion
                         }}
                         onKeyUp={(event) => updateSelectionRef(event.target as HTMLTextAreaElement)}
                         onClick={(event) => updateSelectionRef(event.target as HTMLTextAreaElement)}
                         onMouseUp={(event) => updateSelectionRef(event.target as HTMLTextAreaElement)}
                         onFocus={(event) => updateSelectionRef(event.target as HTMLTextAreaElement)}
                         disabled={status !== "awaitingPatient" || isSpeaking}
-                        className={`w-full rounded-2xl border bg-slate-50/60 px-4 py-3 pr-14 text-base text-slate-900 outline-none transition focus:bg-white disabled:cursor-not-allowed disabled:opacity-70 ${
+                        className={`w-full rounded-2xl border bg-slate-50/60 px-4 py-3 text-base text-slate-900 outline-none transition focus:bg-white disabled:cursor-not-allowed disabled:opacity-70 ${
                           isListening
                             ? "border-emerald-500 ring-2 ring-emerald-200"
                             : "border-slate-200 focus:border-slate-400"
                         }`}
                       />
-                      {status === "awaitingPatient" && (
-                        <button
-                          type="button"
-                          onClick={isListening ? stopListening : startListening}
-                          className={`absolute bottom-2 right-2 flex items-center justify-center w-9 h-9 rounded-full transition-all ${
-                            isListening
-                              ? "bg-red-500 hover:bg-red-600 text-white animate-pulse"
-                              : "bg-emerald-600 hover:bg-emerald-700 text-white"
-                          }`}
-                          disabled={isSpeaking}
-                          title={isListening ? "Stop listening" : "Start voice input"}
-                        >
-                          {isListening ? (
-                            <svg
-                              className="w-4 h-4"
-                              fill="currentColor"
-                              viewBox="0 0 24 24"
-                            >
-                              <path d="M6 6h12v12H6z" />
-                            </svg>
-                          ) : (
-                            <svg
-                              className="w-4 h-4"
-                              fill="currentColor"
-                              viewBox="0 0 24 24"
-                            >
-                              <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z" />
-                              <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z" />
-                            </svg>
-                          )}
-                        </button>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-3">
+                      <button
+                        type="button"
+                        onPointerDown={(event) => {
+                          event.preventDefault();
+                          if (event.currentTarget.setPointerCapture) {
+                            event.currentTarget.setPointerCapture(event.pointerId);
+                          }
+                          startListening();
+                        }}
+                        onPointerUp={(event) => {
+                          event.preventDefault();
+                          if (event.currentTarget.releasePointerCapture) {
+                            event.currentTarget.releasePointerCapture(event.pointerId);
+                          }
+                          stopListening(true);
+                        }}
+                        onPointerLeave={() => {
+                          if (isHoldingRef.current) {
+                            stopListening(true);
+                          }
+                        }}
+                        onPointerCancel={() => {
+                          if (isHoldingRef.current) {
+                            stopListening(true);
+                          }
+                        }}
+                        disabled={
+                          status !== "awaitingPatient" ||
+                          isPaused ||
+                          isSpeaking ||
+                          cleaningTranscript ||
+                          showReview
+                        }
+                        className={`inline-flex items-center justify-center rounded-2xl px-4 py-2 text-sm font-semibold transition ${
+                          isHolding
+                            ? "bg-red-500 text-white hover:bg-red-600"
+                            : "bg-emerald-600 text-white hover:bg-emerald-500"
+                        } disabled:cursor-not-allowed disabled:bg-emerald-200 disabled:text-emerald-600`}
+                        title={isHolding ? "Release to stop recording" : "Press and hold to talk"}
+                      >
+                        {isHolding ? "Release to stop" : "Press & hold to talk"}
+                      </button>
+                      {cleaningTranscript && (
+                        <span className="text-xs text-slate-500">Processing transcript...</span>
                       )}
                     </div>
-                    {isListening && (
-                      <div className="flex items-center gap-2 text-emerald-600 text-sm">
-                        <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></div>
-                        <span>Listening... Speak your response</span>
+                    {(isHolding || liveTranscript.length > 0) && (
+                      <div className="rounded-2xl border border-emerald-100 bg-emerald-50/60 px-4 py-3 text-sm text-emerald-900">
+                        <p className="text-xs uppercase tracking-wide text-emerald-700">Live transcript</p>
+                        <p className="mt-1">{liveTranscript || "Listening..."}</p>
+                      </div>
+                    )}
+                    {micWarning && (
+                      <p className="text-xs text-amber-600">{micWarning}</p>
+                    )}
+                    {showReview && draftTranscript.trim().length > 0 && (
+                      <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800">
+                        <p className="text-xs uppercase tracking-wide text-slate-500">Looks right?</p>
+                        <p className="mt-2 whitespace-pre-wrap">{draftTranscript}</p>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            onClick={() => commitDraftToResponse("use")}
+                            className="inline-flex items-center justify-center rounded-xl bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-emerald-500"
+                          >
+                            Use this
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => commitDraftToResponse("edit")}
+                            className="inline-flex items-center justify-center rounded-xl border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            onClick={redoDraftTranscript}
+                            className="inline-flex items-center justify-center rounded-xl border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
+                          >
+                            Redo
+                          </button>
+                        </div>
                       </div>
                     )}
                     {patientResponse.length > 800 && (
@@ -3595,3 +3636,9 @@ async function requestTurn(
 
   return responseData;
 }
+
+
+
+
+
+

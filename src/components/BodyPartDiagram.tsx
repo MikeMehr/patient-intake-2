@@ -142,31 +142,42 @@ export default function BodyPartDiagram({
 
     switch (bodyPart) {
       case "wrist":
+        if (side === "right") {
+          return (
+            <div className="relative w-full h-full">
+              <img
+                src="/RightWristBack.svg"
+                alt="Right wrist diagram (back)"
+                className="absolute inset-0 h-full w-full object-contain"
+              />
+            </div>
+          );
+        }
         return (
           <svg viewBox="0 0 100 100" className="w-full h-full">
             {/* Forearm (top) - clearly labeled */}
             <ellipse cx="50" cy="12" rx="16" ry="12" fill="#d1d5db" stroke="#374151" strokeWidth="2" />
             <text x="50" y="7" textAnchor="middle" className="text-[10px] font-medium fill-slate-700 pointer-events-none">Forearm</text>
-            
+
             {/* Wrist joint area - the main focus, larger */}
             <rect x="32" y="22" width="36" height="16" rx="8" fill="#e5e7eb" stroke="#374151" strokeWidth="2.5" />
             <text x="50" y="32" textAnchor="middle" className="text-[10px] font-medium fill-slate-700 pointer-events-none">Wrist</text>
-            
+
             {/* Hand/Palm (bottom) - clearly labeled */}
             <ellipse cx="50" cy="55" rx="26" ry="20" fill="#d1d5db" stroke="#374151" strokeWidth="2" />
             <text x="50" y="78" textAnchor="middle" className="text-[10px] font-medium fill-slate-700 pointer-events-none">Hand</text>
-            
+
             {/* Fingers outline - make it clear these are fingers */}
             <rect x="38" y="42" width="5" height="24" rx="2.5" fill="#cbd5e1" stroke="#64748b" strokeWidth="1.5" />
             <rect x="46" y="40" width="5" height="26" rx="2.5" fill="#cbd5e1" stroke="#64748b" strokeWidth="1.5" />
             <rect x="54" y="40" width="5" height="26" rx="2.5" fill="#cbd5e1" stroke="#64748b" strokeWidth="1.5" />
             <rect x="62" y="42" width="5" height="24" rx="2.5" fill="#cbd5e1" stroke="#64748b" strokeWidth="1.5" />
             <text x="50" y="70" textAnchor="middle" className="text-[9px] fill-slate-600 pointer-events-none">Fingers</text>
-            
+
             {/* Thumb outline - clearly visible */}
             <ellipse cx="18" cy="58" rx="8" ry="12" fill="#cbd5e1" stroke="#64748b" strokeWidth="1.5" />
             <text x="18" y="63" textAnchor="middle" className="text-[9px] fill-slate-600 pointer-events-none">Thumb</text>
-            
+
             {/* Numbered areas - spread out to avoid overlap */}
             {areas.map((area, idx) => (
               <g key={idx}>
