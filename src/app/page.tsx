@@ -23,6 +23,10 @@ interface SpeechRecognition extends EventTarget {
   onresult: ((this: SpeechRecognition, ev: any) => any) | null;
   onerror: ((this: SpeechRecognition, ev: any) => any) | null;
   onend: ((this: SpeechRecognition, ev: Event) => any) | null;
+  onaudiostart: ((this: SpeechRecognition, ev: Event) => any) | null;
+  onaudioend: ((this: SpeechRecognition, ev: Event) => any) | null;
+  onspeechstart: ((this: SpeechRecognition, ev: Event) => any) | null;
+  onspeechend: ((this: SpeechRecognition, ev: Event) => any) | null;
 }
 
 interface SpeechRecognitionConstructor {
@@ -228,17 +232,34 @@ export default function Home() {
       const cleaned = await cleanTranscript(lightlyCleaned, language);
       const endTime = Date.now();
       const normalized = normalizePunctuation(cleaned);
-      setDraftTranscript(normalized);
+      const existingDraft = draftTranscriptRef.current.trim();
+      const nextDraft = existingDraft ? `${existingDraft} ${normalized}` : normalized;
+      if (hasPendingSubmission) {
+        setHasPendingSubmission(false);
+      }
+      setDraftTranscript(nextDraft);
       setShowReview(true);
+      setDraftTranscriptRaw("");
+      draftTranscriptRawRef.current = "";
     } catch (error) {
       const normalized = normalizePunctuation(lightlyCleaned);
-      setDraftTranscript(normalized);
+      const existingDraft = draftTranscriptRef.current.trim();
+      const nextDraft = existingDraft ? `${existingDraft} ${normalized}` : normalized;
+      if (hasPendingSubmission) {
+        setHasPendingSubmission(false);
+      }
+      setDraftTranscript(nextDraft);
       setShowReview(true);
+      setDraftTranscriptRaw("");
+      draftTranscriptRawRef.current = "";
     } finally {
       setCleaningTranscript(false);
     }
   };
   const handleNoButtonClick = () => {
+    if (hasPendingSubmission) {
+      setHasPendingSubmission(false);
+    }
     setDraftTranscript("No");
     setShowReview(true);
     setMicWarning(null);
@@ -307,17 +328,28 @@ export default function Home() {
   const [isPaused, setIsPaused] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [cleaningTranscript, setCleaningTranscript] = useState(false);
+  const [isSubmittingResponse, setIsSubmittingResponse] = useState(false);
+  const [lastSubmittedDraft, setLastSubmittedDraft] = useState<string | null>(null);
+  const [hasPendingSubmission, setHasPendingSubmission] = useState(false);
+  const [showSubmitToast, setShowSubmitToast] = useState(false);
   const [draftTranscript, setDraftTranscript] = useState<string>("");
   const [draftTranscriptRaw, setDraftTranscriptRaw] = useState<string>("");
   const [showReview, setShowReview] = useState(false);
   const [isHolding, setIsHolding] = useState(false);
   const [micWarning, setMicWarning] = useState<string | null>(null);
+  const [isCoarsePointer, setIsCoarsePointer] = useState(false);
+  const [isEditingDraft, setIsEditingDraft] = useState(false);
   // Note: short "no" auto-submit removed (per request)
   const speechSynthesisRef = useRef<SpeechSynthesisUtterance | null>(null);
   const lastSpokenMessageRef = useRef<string>("");
   const chatRef = useRef<HTMLDivElement | null>(null);
   const patientResponseInputRef = useRef<HTMLTextAreaElement | null>(null);
   const patientResponseRef = useRef<string>("");
+  const draftTranscriptRef = useRef<string>("");
+  const mutedWhileSpeakingRef = useRef(false);
+  const holdStartTimeRef = useRef<number | null>(null);
+  const recognitionStartScheduledAtRef = useRef<number | null>(null);
+  const recognitionStartedAtRef = useRef<number | null>(null);
   const messagesRef = useRef<ChatMessage[]>([]); // Ref to track latest messages including edits
   const selectionRef = useRef<{ start: number; end: number } | null>(null);
   const pausedStatusRef = useRef<Status | null>(null); // Store the status before pausing
@@ -328,6 +360,10 @@ export default function Home() {
   const draftTranscriptRawRef = useRef<string>("");
   const finalizeDraftOnEndRef = useRef<boolean>(false);
   const isHoldingRef = useRef<boolean>(false);
+  const messagesLogRef = useRef<number>(-1);
+  const typingStateLogRef = useRef<string>("");
+  const draftLengthLogRef = useRef<number | null>(null);
+  const statusLogRef = useRef<string | null>(null);
   const pendingStopOnResultRef = useRef<boolean>(false);
   const hadResultRef = useRef<boolean>(false);
   
@@ -345,15 +381,110 @@ export default function Home() {
   const [elapsedTime, setElapsedTime] = useState<number>(0);
   const cleaningSchema = z.object({ cleaned: z.string().min(1) });
   useEffect(() => {
+    draftTranscriptRef.current = draftTranscript;
+  }, [draftTranscript]);
+
+  useEffect(() => {
+    if (typeof window !== "undefined" && "speechSynthesis" in window) {
+      if (isMuted) {
+        if (window.speechSynthesis.speaking) {
+          mutedWhileSpeakingRef.current = true;
+        }
+        window.speechSynthesis.cancel();
+      } else if (mutedWhileSpeakingRef.current) {
+        const lastMessage = messagesRef.current[messagesRef.current.length - 1];
+        if (lastMessage?.role === "assistant") {
+          speakText(lastMessage.content);
+        }
+        mutedWhileSpeakingRef.current = false;
+      }
+    }
+  }, [isMuted]);
+
+  const showSubmitBanner = hasPendingSubmission || isSubmittingResponse;
+  const showResponseBox =
+    showReview || status === "awaitingPatient" || isSubmittingResponse || hasPendingSubmission;
+  const showReviewActions =
+    (showReview || hasPendingSubmission) &&
+    (draftTranscript.trim().length > 0 || hasPendingSubmission);
+  useEffect(() => {
+  }, [showSubmitBanner, showResponseBox, hasPendingSubmission, isSubmittingResponse, showReview, status]);
+  useEffect(() => {
+  }, [hasPendingSubmission, showReview, isSubmittingResponse, status]);
+  useEffect(() => {
+  }, [showReviewActions, showReview, hasPendingSubmission, isSubmittingResponse, status, draftTranscript]);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const media = window.matchMedia("(pointer: coarse)");
+      const handleChange = () => setIsCoarsePointer(media.matches);
+      handleChange();
+      if (media.addEventListener) {
+        media.addEventListener("change", handleChange);
+        return () => media.removeEventListener("change", handleChange);
+      }
+      media.addListener(handleChange);
+      return () => media.removeListener(handleChange);
+    }
+    return undefined;
+  }, []);
+
+  useEffect(() => {
     isHoldingRef.current = isHolding;
   }, [isHolding]);
   useEffect(() => {
-  }, [draftTranscript]);
+    const trimmed = draftTranscript.trim();
+    if (!trimmed) {
+      typingStateLogRef.current = "";
+      return;
+    }
+    const key = `${trimmed.length}|${showReview}|${status}|${isEditingDraft}`;
+    if (key === typingStateLogRef.current) {
+      return;
+    }
+    typingStateLogRef.current = key;
+  }, [draftTranscript, showReview, status, isEditingDraft]);
   useEffect(() => {
-  }, [showReview]);
+    const nextLength = draftTranscript.trim().length;
+    if (draftLengthLogRef.current === nextLength) {
+      return;
+    }
+    draftLengthLogRef.current = nextLength;
+  }, [draftTranscript, showReview, status, isEditingDraft]);
+  useEffect(() => {
+  }, [showReview, draftTranscript, status, isEditingDraft]);
+  useEffect(() => {
+    if (statusLogRef.current === status) {
+      return;
+    }
+    statusLogRef.current = status;
+  }, [status]);
+  useEffect(() => {
+    if (status === "awaitingPatient" && !isSubmittingResponse && lastSubmittedDraft) {
+      setLastSubmittedDraft(null);
+    }
+  }, [status, isSubmittingResponse, lastSubmittedDraft]);
+  useEffect(() => {
+    if (status === "awaitingPatient" && !isSubmittingResponse && hasPendingSubmission) {
+    }
+  }, [status, isSubmittingResponse, hasPendingSubmission]);
+  useEffect(() => {
+    if (!hasPendingSubmission || messages.length === 0) {
+      return;
+    }
+    const lastMessage = messages[messages.length - 1];
+    if (lastMessage?.role === "assistant") {
+    }
+  }, [hasPendingSubmission, messages]);
+  useEffect(() => {
+    if (status === "awaitingPatient" && !isSubmittingResponse && showSubmitToast) {
+      setShowSubmitToast(false);
+    }
+  }, [status, isSubmittingResponse, showSubmitToast]);
+  useEffect(() => {
+  }, [isSubmittingResponse]);
   useEffect(() => {
   }, [micWarning]);
-  const liveTranscript = `${draftTranscriptRaw} ${interimTranscript}`.replace(/\s+/g, " ").trim();
 
   const getMedPmhSummary = () => {
     const parts = [medListExtracted, pmhExtracted]
@@ -447,7 +578,13 @@ export default function Home() {
       behavior: "smooth",
     });
   }, [messages]);
-
+  useEffect(() => {
+    if (messages.length === messagesLogRef.current) {
+      return;
+    }
+    messagesLogRef.current = messages.length;
+    const lastMessage = messages[messages.length - 1];
+  }, [messages, status, showReview]);
   // Speak assistant messages automatically and auto-start listening
   useEffect(() => {
     if (typeof window !== "undefined" && "speechSynthesis" in window) {
@@ -670,18 +807,26 @@ export default function Home() {
         recognition.lang = getLangTag(language);
         recognition.continuous = true;
         recognition.interimResults = true;
-        recognition.maxAlternatives = 1;
         
         // Track the last time we received a result for no-speech detection
         let lastResultTime = Date.now();
 
         // Helper function to reset the pause timeout
         recognition.onstart = () => {
+          recognitionStartedAtRef.current = Date.now();
           setIsListening(true);
           isListeningRef.current = true;
           lastResultTime = Date.now();
           setError(null); // Clear any previous errors
           hadResultRef.current = false;
+        };
+        recognition.onaudiostart = () => {
+        };
+        recognition.onaudioend = () => {
+        };
+        recognition.onspeechstart = () => {
+        };
+        recognition.onspeechend = () => {
         };
 
         recognition.onresult = (event: any) => {
@@ -710,24 +855,27 @@ export default function Home() {
             }
           }
 
-          // Show interim results in real-time for live transcription
+          // Track interim results for finalization (no live transcript UI)
           if (currentInterim) {
-            setInterimTranscript(currentInterim);
-            interimTranscriptRef.current = currentInterim; // Update ref immediately
+            // Track interim for finalization but do not display live transcript
+            interimTranscriptRef.current = currentInterim;
           } else if (!finalTranscript && finalizeDraftOnEndRef.current && interimTranscriptRef.current.trim().length > 0) {
             // Keep last interim when we're finalizing to avoid dropping short replies.
           } else if (!finalTranscript && isHoldingRef.current && interimTranscriptRef.current.trim().length > 0) {
             // Keep interim results while still holding, even if no new interim
           } else {
-            setInterimTranscript("");
             interimTranscriptRef.current = ""; // Update ref immediately
           }
 
           // Add final transcript to the draft buffer
           if (finalTranscript) {
             appendDraftRaw(finalTranscript);
-            setInterimTranscript("");
             interimTranscriptRef.current = "";
+          }
+          if (finalizeDraftOnEndRef.current && !isHoldingRef.current) {
+            finalizeDraftOnEndRef.current = false;
+            void finalizeDraftTranscript();
+            return;
           }
           if (pendingStopOnResultRef.current && !isHoldingRef.current) {
             pendingStopOnResultRef.current = false;
@@ -812,15 +960,22 @@ export default function Home() {
           // This ensures speech that was detected but not finalized gets captured
           if (isHoldingRef.current && interimAtEnd.length > 0) {
             appendDraftRaw(interimAtEnd);
-            setInterimTranscript("");
             interimTranscriptRef.current = "";
           }
           if (finalizeDraftOnEndRef.current) {
+            const hasAnyDraft =
+              draftTranscriptRawRef.current.trim().length > 0 ||
+              interimTranscriptRef.current.trim().length > 0;
+            if (!hasAnyDraft) {
+              setMicWarning("No speech detected. Please try again.");
+              setShowReview(false);
+              finalizeDraftOnEndRef.current = false;
+              return;
+            }
             finalizeDraftOnEndRef.current = false;
             void finalizeDraftTranscript();
             return;
           }
-          setInterimTranscript("");
           interimTranscriptRef.current = "";
         };
 
@@ -833,13 +988,22 @@ export default function Home() {
     }
   }, [status, language]);
 
-  const startListening = async () => {
+  const startListening = async (options?: { allowDuringReview?: boolean }) => {
     // Capture current selection before we start listening (in case focus shifts)
     updateSelectionRef(patientResponseInputRef.current);
+    const allowDuringReview = options?.allowDuringReview ?? false;
     if (isSpeaking) return; // Don't allow listening while AI is speaking
-    if (showReview || cleaningTranscript) return;
+    if (cleaningTranscript) return;
+    if (showReview && !allowDuringReview) return;
     if (speechRecognition && status === "awaitingPatient") {
       try {
+        if (hasPendingSubmission) {
+          setHasPendingSubmission(false);
+        }
+        setDraftTranscriptRaw("");
+        draftTranscriptRawRef.current = "";
+        setInterimTranscript("");
+        interimTranscriptRef.current = "";
         if (isListeningRef.current) {
           try {
             speechRecognition.stop();
@@ -854,7 +1018,6 @@ export default function Home() {
         freshRecognition.lang = getLangTag(language);
         freshRecognition.continuous = true;
         freshRecognition.interimResults = true;
-        freshRecognition.maxAlternatives = 1;
         // Re-apply all event handlers to the fresh instance
         freshRecognition.onstart = speechRecognition.onstart;
         freshRecognition.onresult = speechRecognition.onresult;
@@ -863,16 +1026,19 @@ export default function Home() {
         setSpeechRecognition(freshRecognition);
         speechRecognitionRef.current = freshRecognition;
         pendingStopOnResultRef.current = false;
-        resetDraftTranscript("startListening");
+        const hasDraft = draftTranscriptRef.current.trim().length > 0;
+        if (!showReview && !hasDraft) {
+          resetDraftTranscript("startListening");
+        } else {
+          setMicWarning(null);
+        }
         setIsHolding(true);
         isHoldingRef.current = true;
         finalizeDraftOnEndRef.current = false;
         // Removed mic priming as it may interfere with speech recognition
-        // Small delay to allow microphone to stabilize before starting recognition
-        setTimeout(() => {
-          speechRecognition.start();
-          isListeningRef.current = true;
-        }, 200);
+        recognitionStartScheduledAtRef.current = Date.now();
+        speechRecognitionRef.current?.start();
+        isListeningRef.current = true;
       } catch (error) {
         // Check if error is because recognition is already started
         if (error instanceof Error && error.name === "InvalidStateError") {
@@ -897,13 +1063,8 @@ export default function Home() {
       // If we have transcripts and want to finalize, do it immediately
       void finalizeDraftTranscript();
       finalizeDraftOnEndRef.current = false;
-    } else if (finalizeDraft && rawLength === 0 && interimLength === 0) {
-      // No speech detected
-      setMicWarning("No speech detected. Please try again.");
-      setShowReview(false);
-      finalizeDraftOnEndRef.current = false;
     } else if (finalizeDraft) {
-      // Set flag for onend handler
+      // Wait for late results before showing no-speech
       finalizeDraftOnEndRef.current = true;
     }
 
@@ -918,11 +1079,26 @@ export default function Home() {
     if (!draft) {
       return;
     }
+    if (mode === "edit") {
+      setIsEditingDraft(true);
+      setShowReview(true);
+      return;
+    }
+    if (autoSubmit) {
+      setIsSubmittingResponse(true);
+      setLastSubmittedDraft(draft);
+      setHasPendingSubmission(true);
+      setShowSubmitToast(true);
+      setShowReview(false);
+      setDraftTranscript("");
+      setDraftTranscriptRaw("");
+      draftTranscriptRawRef.current = "";
+      setInterimTranscript("");
+      interimTranscriptRef.current = "";
+      setIsEditingDraft(false);
+    }
+    setIsEditingDraft(false);
     setPatientResponseWithRef(draft);
-    setShowReview(false);
-    setDraftTranscript("");
-    setDraftTranscriptRaw("");
-    draftTranscriptRawRef.current = "";
     if (patientResponseInputRef.current) {
       requestAnimationFrame(() => {
         patientResponseInputRef.current?.focus();
@@ -934,8 +1110,10 @@ export default function Home() {
       setInterimTranscript("");
       interimTranscriptRef.current = "";
     }
-    if (autoSubmit && statusRef.current === "awaitingPatient") {
+    const shouldAutoSubmit = autoSubmit && statusRef.current === "awaitingPatient";
+    if (shouldAutoSubmit) {
       void handlePatientSubmit();
+    } else if (autoSubmit) {
     }
   };
   const redoDraftTranscript = () => {
@@ -1172,9 +1350,12 @@ export default function Home() {
     if (event) {
       event.preventDefault();
     }
+    setIsSubmittingResponse(true);
     
     // Don't allow submission when paused
     if (isPaused || status === "paused") {
+      setIsSubmittingResponse(false);
+      setShowSubmitToast(false);
       return;
     }
     
@@ -1182,6 +1363,8 @@ export default function Home() {
     const currentStatus = statusRef.current;
     if (currentStatus !== "awaitingPatient") {
       console.log("[handlePatientSubmit] Not awaiting patient, status:", currentStatus);
+      setIsSubmittingResponse(false);
+      setShowSubmitToast(false);
       return;
     }
     
@@ -1191,6 +1374,8 @@ export default function Home() {
     const profile = lockedProfile;
     if (!profile) {
       setError("Please start the interview before responding.");
+      setIsSubmittingResponse(false);
+      setShowSubmitToast(false);
       return;
     }
     
@@ -1198,9 +1383,11 @@ export default function Home() {
     const currentResponse = patientResponseRef.current.trim();
     if (!currentResponse) {
       console.log("[handlePatientSubmit] No response text");
+      setIsSubmittingResponse(false);
+      setShowSubmitToast(false);
       return;
     }
-    
+    setLastSubmittedDraft(currentResponse);
     let trimmed = currentResponse;
 
     // If a diagram area is selected, append it to the response
@@ -1272,8 +1459,11 @@ export default function Home() {
     setInterimTranscript("");
     interimTranscriptRef.current = "";
     setStatus("awaitingAi");
+    statusRef.current = "awaitingAi";
     setError(null);
 
+    setIsSubmittingResponse(true);
+    let submittedSuccessfully = false;
     try {
       const physicianIdToUse =
         physicianIdValue || (typeof window !== "undefined" ? sessionStorage.getItem("physicianId") : null);
@@ -1281,6 +1471,8 @@ export default function Home() {
         setStatus("awaitingPatient");
         statusRef.current = "awaitingPatient";
         setError("You weren’t invited to complete this form.");
+        setIsSubmittingResponse(false);
+        setShowSubmitToast(false);
         return;
       }
 
@@ -1300,16 +1492,20 @@ export default function Home() {
         language,
       );
       processTurn(turn);
+      submittedSuccessfully = true;
     } catch (err) {
       console.error(err);
       setMessages((current) => current.slice(0, -1));
       setPatientResponse(trimmed);
       setStatus("awaitingPatient");
+      statusRef.current = "awaitingPatient";
       setError(
         err instanceof Error
           ? err.message
           : "We couldn't deliver that message. Please retry.",
       );
+    } finally {
+      setIsSubmittingResponse(false);
     }
   }
 
@@ -2618,7 +2814,9 @@ export default function Home() {
                       Guided interview
                     </h2>
                     <button
-                      onClick={() => setIsMuted(!isMuted)}
+                      onClick={() => {
+                        setIsMuted(!isMuted);
+                      }}
                       className={`inline-flex items-center justify-center rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ml-3 ${
                         isMuted
                           ? "bg-red-100 text-red-700 hover:bg-red-200"
@@ -2645,7 +2843,7 @@ export default function Home() {
                     </button>
                   </div>
                 </div>
-                {isSpeaking && !isPaused && (
+                {isSpeaking && !isPaused && language.toLowerCase().startsWith("en") && (
                   <video
                     className="hidden sm:block w-40 h-24 rounded-xl object-cover border border-slate-200 shadow-sm"
                     autoPlay
@@ -2658,7 +2856,6 @@ export default function Home() {
                   </video>
                 )}
               </div>
-
               <div
                 ref={chatRef}
                 className={`mt-5 space-y-4 overflow-y-auto rounded-2xl border border-slate-100 bg-slate-50/60 px-4 py-4 text-sm text-slate-800 max-h-[360px] ${
@@ -2952,178 +3149,137 @@ export default function Home() {
               >
                 {interviewMode === "conversation" ? (
                   <>
-                    <div className="flex flex-wrap items-center gap-3">
-                      <button
-                        type="button"
-                        onClick={handleNoButtonClick}
-                        disabled={
-                          status !== "awaitingPatient" ||
-                          isPaused ||
-                          isSpeaking ||
-                          cleaningTranscript ||
-                          showReview
-                        }
-                        className="inline-flex items-center justify-center rounded-2xl bg-emerald-100 px-4 py-2 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-200 disabled:cursor-not-allowed disabled:bg-emerald-100 disabled:text-emerald-400"
-                      >
-                        No
-                      </button>
-                      <span className="text-sm text-slate-600">or</span>
-                      <button
-                        type="button"
-                        onPointerDown={(event) => {
-                          event.preventDefault();
-                          if (event.currentTarget.setPointerCapture) {
-                            event.currentTarget.setPointerCapture(event.pointerId);
-                          }
-                          startListening();
-                        }}
-                        onPointerUp={(event) => {
-                          event.preventDefault();
-                          if (event.currentTarget.releasePointerCapture) {
-                            event.currentTarget.releasePointerCapture(event.pointerId);
-                          }
-                          stopListening(true);
-                        }}
-                        onPointerLeave={() => {
-                          if (isHoldingRef.current) {
-                            stopListening(true);
-                          }
-                        }}
-                        onPointerCancel={() => {
-                          if (isHoldingRef.current) {
-                            stopListening(true);
-                          }
-                        }}
-                        disabled={
-                          status !== "awaitingPatient" ||
-                          isPaused ||
-                          isSpeaking ||
-                          cleaningTranscript ||
-                          showReview
-                        }
-                        className={`inline-flex items-center justify-center rounded-2xl px-4 py-2 text-sm font-semibold transition ${
-                          isHolding
-                            ? "bg-red-500 text-white hover:bg-red-600"
-                            : "bg-emerald-600 text-white hover:bg-emerald-500"
-                        } disabled:cursor-not-allowed disabled:bg-emerald-200 disabled:text-emerald-600`}
-                        title={isHolding ? "Release to stop recording" : "Press and hold to talk"}
-                      >
-                        {isHolding ? "Release to stop" : "Press & hold to talk"}
-                      </button>
-                      {cleaningTranscript && (
-                        <span className="text-xs text-slate-500">Processing transcript...</span>
-                      )}
-                    </div>
-                    {/* Editable text area for corrections */}
-                    {!showReview && !isHolding && liveTranscript.length === 0 && (
-                      <div className="relative">
-                        <textarea
-                          ref={patientResponseInputRef}
-                          id="patient-response"
-                          name="patientResponse"
-                          rows={3}
-                          maxLength={1000}
-                          placeholder={
-                            status === "awaitingPatient"
-                              ? "Press & hold to talk (or type your response)"
-                              : status === "complete"
-                                ? "Interview complete."
-                                : "Start the interview to respond."
-                          }
-                          value={patientResponse}
-                          onChange={(event) => {
-                            const val = event.target.value;
-                            setPatientResponse(val);
-                            patientResponseRef.current = val;
-                            updateSelectionRef(event.target);
-                          }}
-                          onSelect={(event) => updateSelectionRef(event.target as HTMLTextAreaElement)}
-                          onKeyUp={(event) => updateSelectionRef(event.target as HTMLTextAreaElement)}
-                          onClick={(event) => updateSelectionRef(event.target as HTMLTextAreaElement)}
-                          onMouseUp={(event) => updateSelectionRef(event.target as HTMLTextAreaElement)}
-                          onFocus={(event) => updateSelectionRef(event.target as HTMLTextAreaElement)}
-                          disabled={status !== "awaitingPatient" || isPaused}
-                          className={`w-full rounded-2xl border-2 bg-white px-5 py-4 pr-24 text-base text-slate-900 outline-none transition-all focus:ring-2 focus:ring-emerald-200 disabled:cursor-not-allowed disabled:opacity-70 resize-none ${
-                            isListening
-                              ? "border-emerald-500 ring-2 ring-emerald-200"
-                              : "border-slate-300 focus:border-emerald-500"
-                          }`}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-                              e.preventDefault();
-                              if (status === "awaitingPatient" && patientResponse.trim() !== "") {
-                                stopListening();
-                                handlePatientSubmit();
-                              }
-                            }
-                          }}
-                        />
-                        {/* Submit button - show when listening or when there's text */}
-                        {status === "awaitingPatient" && (isListening || patientResponse.trim().length > 0) && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              stopListening();
-                              if (patientResponse.trim().length > 0) {
-                                handlePatientSubmit();
-                              }
-                            }}
-                            className="absolute bottom-3 right-3 inline-flex items-center justify-center rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600 disabled:cursor-not-allowed disabled:bg-emerald-300 disabled:opacity-50"
-                            disabled={patientResponse.trim().length === 0}
-                            title="Submit your response"
-                          >
-                            Submit
-                          </button>
-                        )}
-                      </div>
-                    )}
-                    {patientResponse.length > 800 && (
-                      <p className="text-xs text-slate-500 -mt-2">
-                        {1000 - patientResponse.length} characters remaining
-                      </p>
-                    )}
-                    {!showReview && (isHolding || liveTranscript.length > 0) && (
-                      <div className="rounded-2xl border border-emerald-100 bg-emerald-50/60 px-4 py-3 text-sm text-emerald-900">
-                        <p className="text-xs uppercase tracking-wide text-emerald-700">Live transcript</p>
-                        <p className="mt-1">{liveTranscript || "Listening..."}</p>
-                      </div>
+                    {cleaningTranscript && (
+                      <span className="text-xs text-slate-500">Processing transcript...</span>
                     )}
                     {micWarning && (
                       <p className="text-xs text-amber-600">{micWarning}</p>
                     )}
-                    {showReview && draftTranscript.trim().length > 0 && (
-                      <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800">
-                        <p className="text-xs uppercase tracking-wide text-slate-500">Looks right?</p>
-                        <p className="mt-2 whitespace-pre-wrap">{draftTranscript}</p>
-                        <div className="mt-3 flex flex-wrap gap-2">
-                          <button
-                            type="button"
-                            onClick={() => {
+                    {showResponseBox && (
+                      <div className="relative rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 group">
+                        {draftTranscript.trim().length > 0 && !isEditingDraft ? (
+                          <p className="mt-1 whitespace-pre-wrap">{draftTranscript}</p>
+                        ) : (
+                          <textarea
+                            rows={2}
+                            maxLength={1000}
+                            placeholder="Hold the mic to speak or type your response."
+                            value={draftTranscript}
+                            disabled={isSubmittingResponse}
+                            onChange={(event) => {
+                              const nextValue = event.target.value;
+                              const nextTrimmedLength = nextValue.trim().length;
+                              if (hasPendingSubmission && nextTrimmedLength > 0) {
+                                setHasPendingSubmission(false);
+                              }
+                              if (status === "awaitingPatient") {
+                                if (nextTrimmedLength > 0) {
+                                  setShowReview(true);
+                                  setMicWarning(null);
+                                } else if (showReview && !draftTranscriptRef.current.trim()) {
+                                  setShowReview(false);
+                                }
+                              }
+                              setDraftTranscript(nextValue);
+                            }}
+                            onFocus={() => {
+                              setIsEditingDraft(true);
+                            }}
+                            onBlur={() => {
+                              setIsEditingDraft(false);
+                            }}
+                            className="mt-1 w-full resize-none rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
+                          />
+                        )}
+                        <button
+                          type="button"
+                          onPointerDown={(event) => {
+                            event.preventDefault();
+                            if (event.currentTarget.setPointerCapture) {
+                              event.currentTarget.setPointerCapture(event.pointerId);
+                            }
+                            holdStartTimeRef.current = Date.now();
+                            startListening({ allowDuringReview: true });
+                          }}
+                          onPointerUp={(event) => {
+                            event.preventDefault();
+                            if (event.currentTarget.releasePointerCapture) {
+                              event.currentTarget.releasePointerCapture(event.pointerId);
+                            }
+                            stopListening(true);
+                          }}
+                          onPointerLeave={() => {
+                            if (isHoldingRef.current) {
+                              stopListening(true);
+                            }
+                          }}
+                          onPointerCancel={() => {
+                            if (isHoldingRef.current) {
+                              stopListening(true);
+                            }
+                          }}
+                          disabled={status !== "awaitingPatient" || isPaused || isSpeaking || cleaningTranscript}
+                          className={`absolute bottom-3 right-3 inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold shadow-sm transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 ${
+                            isHolding
+                              ? "bg-red-500 text-white border border-red-500 focus-visible:outline-red-500"
+                              : "border border-slate-200 bg-white text-slate-700 focus-visible:outline-emerald-600"
+                          } ${isCoarsePointer ? "opacity-100" : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"}`}
+                          title={isHolding ? "Release to stop recording" : "Hold to record"}
+                        >
+                          {isHolding && (
+                            <span className="absolute inset-0 -m-1 rounded-full border border-red-400/70 animate-ping" aria-hidden="true" />
+                          )}
+                          <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 1a3 3 0 00-3 3v6a3 3 0 006 0V4a3 3 0 00-3-3z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 10v2a7 7 0 01-14 0v-2" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19v4m-4 0h8" />
+                          </svg>
+                          Hold
+                        </button>
+                      </div>
+                    )}
+                    {showReviewActions && (
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          disabled={isSubmittingResponse || hasPendingSubmission}
+                          onPointerDown={(event) => {
+                            event.preventDefault();
+                            if (!isSubmittingResponse && !hasPendingSubmission) {
                               commitDraftToResponse("use", true);
-                            }}
-                            className="inline-flex items-center justify-center rounded-xl bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-emerald-500"
-                          >
-                            Use this
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              commitDraftToResponse("edit");
-                            }}
-                            className="inline-flex items-center justify-center rounded-xl border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
-                          >
-                            Edit
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              redoDraftTranscript();
-                            }}
-                            className="inline-flex items-center justify-center rounded-xl border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
-                          >
-                            Redo
-                          </button>
-                        </div>
+                            }
+                          }}
+                          onPointerUp={() => {
+                          }}
+                          onClick={() => {
+                            if (!isSubmittingResponse && !hasPendingSubmission) {
+                              commitDraftToResponse("use", true);
+                            }
+                          }}
+                          className="inline-flex items-center justify-center rounded-xl bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-emerald-300"
+                        >
+                          Use this
+                        </button>
+                        <button
+                          type="button"
+                          disabled={isSubmittingResponse || hasPendingSubmission}
+                          onClick={() => {
+                            commitDraftToResponse("edit");
+                          }}
+                          className="inline-flex items-center justify-center rounded-xl border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          disabled={isSubmittingResponse || hasPendingSubmission}
+                          onClick={() => {
+                            redoDraftTranscript();
+                          }}
+                          className="inline-flex items-center justify-center rounded-xl border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          Redo
+                        </button>
                       </div>
                     )}
                     {/* Pause/Resume, End buttons and Thinking indicator - moved below Listening box */}
@@ -3322,14 +3478,11 @@ export default function Home() {
                         <span className="text-xs text-slate-500">Processing transcript...</span>
                       )}
                     </div>
-                    {(isHolding || liveTranscript.length > 0) && (
-                      <div className="rounded-2xl border border-emerald-100 bg-emerald-50/60 px-4 py-3 text-sm text-emerald-900">
-                        <p className="text-xs uppercase tracking-wide text-emerald-700">Live transcript</p>
-                        <p className="mt-1">{liveTranscript || "Listening..."}</p>
-                      </div>
-                    )}
                     {micWarning && (
                       <p className="text-xs text-amber-600">{micWarning}</p>
+                    )}
+                    {isSubmittingResponse && (
+                      <p className="text-xs text-slate-500">Submitting response...</p>
                     )}
                     {showReview && draftTranscript.trim().length > 0 && (
                       <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800">
@@ -3338,22 +3491,37 @@ export default function Home() {
                         <div className="mt-3 flex flex-wrap gap-2">
                           <button
                             type="button"
-                            onClick={() => commitDraftToResponse("use")}
-                            className="inline-flex items-center justify-center rounded-xl bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-emerald-500"
+                            disabled={isSubmittingResponse}
+                            onPointerDown={(event) => {
+                              event.preventDefault();
+                              if (!isSubmittingResponse && !hasPendingSubmission) {
+                                commitDraftToResponse("use");
+                              }
+                            }}
+                            onPointerUp={() => {
+                            }}
+                            onClick={() => {
+                              if (!isSubmittingResponse && !hasPendingSubmission) {
+                                commitDraftToResponse("use");
+                              }
+                            }}
+                            className="inline-flex items-center justify-center rounded-xl bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-emerald-300"
                           >
-                            Use this
+                            {isSubmittingResponse ? "Sending..." : "Use this"}
                           </button>
                           <button
                             type="button"
+                            disabled={isSubmittingResponse}
                             onClick={() => commitDraftToResponse("edit")}
-                            className="inline-flex items-center justify-center rounded-xl border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
+                            className="inline-flex items-center justify-center rounded-xl border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
                           >
                             Edit
                           </button>
                           <button
                             type="button"
+                            disabled={isSubmittingResponse}
                             onClick={redoDraftTranscript}
-                            className="inline-flex items-center justify-center rounded-xl border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
+                            className="inline-flex items-center justify-center rounded-xl border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
                           >
                             Redo
                           </button>
@@ -3636,6 +3804,11 @@ async function requestTurn(
 
   return responseData;
 }
+
+
+
+
+
 
 
 
