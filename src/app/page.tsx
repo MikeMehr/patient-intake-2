@@ -7,6 +7,11 @@ import type {
   PatientProfile,
 } from "@/lib/interview-schema";
 import { detectBodyParts, getPrimaryBodyPart } from "@/lib/body-parts";
+import {
+  getSpeechLocale,
+  languageOptions,
+  normalizeLanguageCode,
+} from "@/lib/speech-language";
 import BodyPartDiagram from "@/components/BodyPartDiagram";
 import { useEffect, useRef, useState } from "react";
 import { z } from "zod";
@@ -70,51 +75,9 @@ const closingMessageTranslations: Record<string, string> = {
 type ChatMessage = InterviewMessage;
 
 export default function Home() {
-  const languageOptions = [
-    { value: "en", label: "English (default)" },
-    { value: "es", label: "Spanish" },
-    { value: "fr", label: "French" },
-    { value: "de", label: "German" },
-    { value: "it", label: "Italian" },
-    { value: "pt", label: "Portuguese" },
-    { value: "zh", label: "Chinese (Simplified)" },
-    { value: "ja", label: "Japanese" },
-    { value: "ko", label: "Korean" },
-    { value: "ar", label: "Arabic" },
-    { value: "hi", label: "Hindi" },
-    { value: "fa", label: "Farsi (Persian)" },
-  ];
-  const getLangTag = (code: string) => {
-    const c = (code || "en").toLowerCase();
-    switch (c) {
-      case "en":
-        return "en-US";
-      case "fa":
-        return "fa-IR";
-      case "zh":
-        return "zh-CN";
-      case "pt":
-        return "pt-PT";
-      case "es":
-        return "es-ES";
-      case "fr":
-        return "fr-FR";
-      case "de":
-        return "de-DE";
-      case "it":
-        return "it-IT";
-      case "ja":
-        return "ja-JP";
-      case "ko":
-        return "ko-KR";
-      case "ar":
-        return "ar-SA";
-      case "hi":
-        return "hi-IN";
-      default:
-        return `${c}-${c.toUpperCase()}`;
-    }
-  };
+  const useAzureStt =
+    process.env.NEXT_PUBLIC_USE_AZURE_STT === "true" ||
+    process.env.USE_AZURE_STT === "true";
 
   async function cleanTranscript(raw: string, lang: string): Promise<string> {
     try {
@@ -132,6 +95,36 @@ export default function Home() {
       return raw;
     } catch {
       return raw;
+    }
+  }
+  async function transcribeAudio(audioBlob: Blob, lang: string): Promise<string> {
+    try {
+      const formData = new FormData();
+      const ext = audioBlob.type.includes("wav")
+        ? "wav"
+        : audioBlob.type.includes("ogg")
+          ? "ogg"
+          : audioBlob.type.includes("mp4")
+            ? "mp4"
+            : "webm";
+      const normalizedLanguage = normalizeLanguageCode(lang);
+      formData.append("audio", new File([audioBlob], `recording.${ext}`, { type: audioBlob.type || "audio/webm" }));
+      formData.append("language", normalizedLanguage);
+      const res = await fetch("/api/speech/stt", {
+        method: "POST",
+        body: formData,
+      });
+      if (!res.ok) {
+        return "";
+      }
+      const data = await res.json();
+      const parsed = sttSchema.safeParse(data);
+      if (!parsed.success) {
+        return "";
+      }
+      return parsed.data.text.trim();
+    } catch {
+      return "";
     }
   }
   const [chiefComplaint, setChiefComplaint] = useState("");
@@ -376,6 +369,10 @@ export default function Home() {
   const pauseCountdownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const isCancellingRef = useRef<boolean>(false); // Track if we're intentionally cancelling
   const speechRecognitionRef = useRef<SpeechRecognition | null>(null); // Ref for speech recognition to access in callbacks
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const mediaChunksRef = useRef<BlobPart[]>([]);
+  const finalizeMediaOnStopRef = useRef<boolean>(false);
   const isListeningRef = useRef<boolean>(false); // Ref for isListening state to access in callbacks
   const interimTranscriptRef = useRef<string>(""); // Ref to track interim transcript for pause detection
   const draftTranscriptRawRef = useRef<string>("");
@@ -402,6 +399,9 @@ export default function Home() {
   const interviewStartTimeRef = useRef<number | null>(null);
   const [elapsedTime, setElapsedTime] = useState<number>(0);
   const cleaningSchema = z.object({ cleaned: z.string().min(1) });
+  const sttSchema = z.object({
+    text: z.string().optional().default(""),
+  });
   const isEnglishLanguage = (code: string) =>
     code.trim().toLowerCase().startsWith("en");
   const getClosingMessageForLanguage = (code: string) =>
@@ -753,6 +753,17 @@ export default function Home() {
         window.speechSynthesis.cancel();
         setIsSpeaking(false);
       }
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+        try {
+          mediaRecorderRef.current.stop();
+        } catch {
+          // Ignore recorder stop errors on unmount
+        }
+      }
+      if (mediaStreamRef.current) {
+        mediaStreamRef.current.getTracks().forEach((track) => track.stop());
+        mediaStreamRef.current = null;
+      }
     };
   }, []);
 
@@ -761,7 +772,7 @@ export default function Home() {
       return;
     }
 
-    const langTag = getLangTag(language);
+    const langTag = getSpeechLocale(language);
     const pickVoice = () => {
       const voices = window.speechSynthesis.getVoices();
       if (!voices.length) {
@@ -824,7 +835,7 @@ export default function Home() {
     utterance.pitch = 1.0; // Normal pitch
     utterance.volume = isMuted ? 0.0 : 1.0; // Respect mute setting
     
-    const langTag = getLangTag(language);
+    const langTag = getSpeechLocale(language);
     // Use selected voice if available; set lang to match selection
     if (selectedVoice) {
       utterance.voice = selectedVoice;
@@ -908,12 +919,15 @@ export default function Home() {
 
   // Initialize speech recognition
   useEffect(() => {
+    if (useAzureStt) {
+      return;
+    }
     if (typeof window !== "undefined") {
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
       if (SpeechRecognition) {
         const recognition = new SpeechRecognition();
         // Set recognition properties in correct order
-        recognition.lang = getLangTag(language);
+        recognition.lang = getSpeechLocale(language);
         recognition.continuous = true;
         recognition.interimResults = true;
         
@@ -1090,12 +1104,12 @@ export default function Home() {
 
         setSpeechRecognition(recognition);
         speechRecognitionRef.current = recognition;
-        recognition.lang = getLangTag(language);
+        recognition.lang = getSpeechLocale(language);
       } else {
         console.warn("Speech recognition not supported in this browser");
       }
     }
-  }, [status, language]);
+  }, [status, language, useAzureStt]);
 
   const startListening = async (options?: { allowDuringReview?: boolean }) => {
     // Capture current selection before we start listening (in case focus shifts)
@@ -1104,6 +1118,126 @@ export default function Home() {
     if (isSpeaking) return; // Don't allow listening while AI is speaking
     if (cleaningTranscript) return;
     if (showReview && !allowDuringReview) return;
+    if (useAzureStt && status === "awaitingPatient") {
+      try {
+        if (hasPendingSubmission) {
+          setHasPendingSubmission(false);
+        }
+        setDraftTranscriptRaw("");
+        draftTranscriptRawRef.current = "";
+        setInterimTranscript("");
+        interimTranscriptRef.current = "";
+        const hasDraft = draftTranscriptRef.current.trim().length > 0;
+        if (!showReview && !hasDraft) {
+          resetDraftTranscript("startListening-azure");
+        } else {
+          setMicWarning(null);
+        }
+
+        if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+          try {
+            mediaRecorderRef.current.stop();
+          } catch {
+            // Ignore stop errors from previous recorder
+          }
+        }
+        if (mediaStreamRef.current) {
+          mediaStreamRef.current.getTracks().forEach((track) => track.stop());
+          mediaStreamRef.current = null;
+        }
+
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            noiseSuppression: true,
+            echoCancellation: true,
+            autoGainControl: true,
+          },
+        });
+
+        const mimeCandidates = [
+          "audio/webm;codecs=opus",
+          "audio/webm",
+          "audio/ogg;codecs=opus",
+        ];
+        const selectedMimeType = mimeCandidates.find((mime) =>
+          typeof MediaRecorder !== "undefined" &&
+          MediaRecorder.isTypeSupported?.(mime),
+        );
+        const recorder = selectedMimeType
+          ? new MediaRecorder(stream, { mimeType: selectedMimeType })
+          : new MediaRecorder(stream);
+
+        mediaChunksRef.current = [];
+        mediaStreamRef.current = stream;
+        mediaRecorderRef.current = recorder;
+        finalizeMediaOnStopRef.current = false;
+
+        recorder.ondataavailable = (event) => {
+          if (event.data && event.data.size > 0) {
+            mediaChunksRef.current.push(event.data);
+          }
+        };
+
+        recorder.onerror = () => {
+          setIsListening(false);
+          isListeningRef.current = false;
+          setError("Audio capture failed. Please check your microphone.");
+        };
+
+        recorder.onstop = async () => {
+          setIsListening(false);
+          isListeningRef.current = false;
+          const shouldFinalize = finalizeMediaOnStopRef.current;
+          finalizeMediaOnStopRef.current = false;
+          const chunks = [...mediaChunksRef.current];
+          mediaChunksRef.current = [];
+
+          if (mediaStreamRef.current) {
+            mediaStreamRef.current.getTracks().forEach((track) => track.stop());
+            mediaStreamRef.current = null;
+          }
+
+          if (!shouldFinalize) {
+            return;
+          }
+
+          const audioBlob = new Blob(chunks, {
+            type: recorder.mimeType || "audio/webm",
+          });
+
+          if (!audioBlob.size) {
+            setMicWarning("No speech detected. Please try again.");
+            return;
+          }
+
+          const rawTranscript = await transcribeAudio(audioBlob, language);
+          if (!rawTranscript) {
+            setMicWarning("We could not transcribe your speech. Please try again.");
+            return;
+          }
+
+          appendDraftRaw(rawTranscript);
+          await finalizeDraftTranscript();
+        };
+
+        recorder.start(250);
+        setIsHolding(true);
+        isHoldingRef.current = true;
+        setIsListening(true);
+        isListeningRef.current = true;
+        return;
+      } catch (error) {
+        setIsListening(false);
+        isListeningRef.current = false;
+        if (error instanceof DOMException && error.name === "NotAllowedError") {
+          setError("Microphone access denied. Please enable microphone permissions.");
+        } else {
+          console.error("Error starting Azure STT recording:", error);
+          setError("Unable to start voice input. Please try again.");
+        }
+        return;
+      }
+    }
     if (speechRecognition && status === "awaitingPatient") {
       try {
         if (hasPendingSubmission) {
@@ -1124,7 +1258,7 @@ export default function Home() {
         }
         // Create a fresh recognition instance for each attempt to avoid state corruption
         const freshRecognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
-        freshRecognition.lang = getLangTag(language);
+        freshRecognition.lang = getSpeechLocale(language);
         freshRecognition.continuous = true;
         freshRecognition.interimResults = true;
         // Re-apply all event handlers to the fresh instance
@@ -1165,6 +1299,22 @@ export default function Home() {
   const stopListening = (finalizeDraft = false) => {
     setIsHolding(false);
     isHoldingRef.current = false;
+    if (useAzureStt) {
+      finalizeMediaOnStopRef.current = finalizeDraft;
+      const recorder = mediaRecorderRef.current;
+      if (recorder && recorder.state !== "inactive") {
+        try {
+          recorder.stop();
+        } catch {
+          // Ignore recorder stop errors
+        }
+      } else if (finalizeDraft) {
+        setMicWarning("No speech detected. Please try again.");
+      }
+      setIsListening(false);
+      isListeningRef.current = false;
+      return;
+    }
     const rawLength = draftTranscriptRawRef.current.length;
     const interimLength = interimTranscriptRef.current.length;
 
