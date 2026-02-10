@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 // Generate or propagate a request ID, attach to request and response headers.
-export function middleware(req: NextRequest) {
+export function proxy(req: NextRequest) {
   const incomingId =
     req.headers.get("x-request-id") ||
     req.headers.get("x-correlation-id") ||
