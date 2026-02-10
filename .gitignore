@@ -45,3 +45,6 @@ next-env.d.ts
 google-cloud-cli*
 .cursor/
 .cursor/
+
+*.mp4
+*.mov
