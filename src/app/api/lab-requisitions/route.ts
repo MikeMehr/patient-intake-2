@@ -191,7 +191,7 @@ export async function GET(request: NextRequest) {
 
       const row = result.rows[0];
       if (row.pdf_bytes) {
-        const res = new NextResponse(row.pdf_bytes, {
+        const res = new NextResponse(new Uint8Array(row.pdf_bytes), {
           status: 200,
           headers: {
             "Content-Type": "application/pdf",
