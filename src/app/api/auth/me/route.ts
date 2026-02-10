@@ -48,7 +48,7 @@ export async function GET(request: NextRequest) {
 
     const res = NextResponse.json({
       physician: {
-        id: session.physicianId,
+        id: session.userId,
         username: session.username,
         firstName: session.firstName,
         lastName: session.lastName,
