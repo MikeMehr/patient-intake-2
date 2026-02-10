@@ -50,6 +50,23 @@ const statusCopy: Record<Status, string> = {
   paused: "Interview paused. Click Resume to continue.",
 };
 
+const closingMessageEnglish =
+  "We have reached the end of this interview. Thank you for taking the time to answer my questions. You will soon be contacted by your physician to discuss the diagnosis and management.";
+
+const closingMessageTranslations: Record<string, string> = {
+  es: "Hemos llegado al final de esta entrevista. Gracias por tomarse el tiempo para responder mis preguntas. Su médico se comunicará con usted pronto para hablar sobre el diagnóstico y el plan de manejo.",
+  fr: "Nous sommes arrivés à la fin de cet entretien. Merci d'avoir pris le temps de répondre à mes questions. Votre médecin vous contactera bientôt pour discuter du diagnostic et de la prise en charge.",
+  de: "Wir sind am Ende dieses Gesprächs angekommen. Vielen Dank, dass Sie sich die Zeit genommen haben, meine Fragen zu beantworten. Ihr Arzt wird sich in Kürze mit Ihnen in Verbindung setzen, um Diagnose und Behandlung zu besprechen.",
+  it: "Siamo arrivati alla fine di questa intervista. Grazie per aver dedicato del tempo a rispondere alle mie domande. Il suo medico la contatterà presto per discutere diagnosi e gestione.",
+  pt: "Chegamos ao fim desta entrevista. Obrigado(a) por dedicar seu tempo para responder às minhas perguntas. Em breve, seu médico entrará em contato para discutir o diagnóstico e o plano de manejo.",
+  zh: "我们已到达本次访谈的结束。感谢您抽出时间回答我的问题。您的医生将很快与您联系，讨论诊断和处理方案。",
+  ja: "この面接は終了です。ご質問にお答えいただきありがとうございました。担当医が近日中にご連絡し、診断と治療方針についてご説明します。",
+  ko: "이 면담은 여기서 마치겠습니다. 질문에 답해 주셔서 감사합니다. 담당 의사가 곧 연락하여 진단과 치료 계획에 대해 논의할 것입니다.",
+  ar: "لقد وصلنا إلى نهاية هذه المقابلة. شكرًا لك على تخصيص الوقت للإجابة عن أسئلتي. سيتواصل معك طبيبك قريبًا لمناقشة التشخيص وخطة العلاج.",
+  hi: "यह साक्षात्कार अब समाप्त हो गया है। मेरे प्रश्नों के उत्तर देने के लिए आपका धन्यवाद। आपका चिकित्सक शीघ्र ही आपसे संपर्क करेगा ताकि निदान और उपचार योजना पर चर्चा की जा सके।",
+  fa: "این مصاحبه به پایان رسید. از اینکه برای پاسخ به پرسش‌های من وقت گذاشتید سپاسگزارم. پزشک شما به‌زودی برای گفت‌وگو درباره تشخیص و برنامه درمان با شما تماس خواهد گرفت.",
+};
+
 type ChatMessage = InterviewMessage;
 
 export default function Home() {
@@ -269,6 +286,7 @@ export default function Home() {
     draftTranscriptRawRef.current = "";
   };
   const [result, setResult] = useState<HistoryResponse | null>(null);
+  const [translatedSummary, setTranslatedSummary] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [patientName, setPatientName] = useState("");
   const [patientEmail, setPatientEmail] = useState("");
@@ -326,6 +344,7 @@ export default function Home() {
   const [selectedVoice, setSelectedVoice] = useState<SpeechSynthesisVoice | null>(null);
   const [interimTranscript, setInterimTranscript] = useState<string>("");
   const [isPaused, setIsPaused] = useState(false);
+  const [pauseCountdownSeconds, setPauseCountdownSeconds] = useState<number | null>(null);
   const [isMuted, setIsMuted] = useState(false);
   const [cleaningTranscript, setCleaningTranscript] = useState(false);
   const [isSubmittingResponse, setIsSubmittingResponse] = useState(false);
@@ -353,6 +372,8 @@ export default function Home() {
   const messagesRef = useRef<ChatMessage[]>([]); // Ref to track latest messages including edits
   const selectionRef = useRef<{ start: number; end: number } | null>(null);
   const pausedStatusRef = useRef<Status | null>(null); // Store the status before pausing
+  const pauseTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pauseCountdownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const isCancellingRef = useRef<boolean>(false); // Track if we're intentionally cancelling
   const speechRecognitionRef = useRef<SpeechRecognition | null>(null); // Ref for speech recognition to access in callbacks
   const isListeningRef = useRef<boolean>(false); // Ref for isListening state to access in callbacks
@@ -366,6 +387,7 @@ export default function Home() {
   const statusLogRef = useRef<string | null>(null);
   const pendingStopOnResultRef = useRef<boolean>(false);
   const hadResultRef = useRef<boolean>(false);
+  const lastTranslatedSummaryKeyRef = useRef<string | null>(null);
   
   const [hasPhysicianId, setHasPhysicianId] = useState<boolean>(false);
   const [editingMessageIndex, setEditingMessageIndex] = useState<number | null>(null);
@@ -380,9 +402,95 @@ export default function Home() {
   const interviewStartTimeRef = useRef<number | null>(null);
   const [elapsedTime, setElapsedTime] = useState<number>(0);
   const cleaningSchema = z.object({ cleaned: z.string().min(1) });
+  const isEnglishLanguage = (code: string) =>
+    code.trim().toLowerCase().startsWith("en");
+  const getClosingMessageForLanguage = (code: string) =>
+    closingMessageTranslations[code.trim().toLowerCase()] ?? closingMessageEnglish;
+  const isClosingMessage = (content: string) =>
+    content.trim() === closingMessageEnglish;
+  const isSummaryMessage = (message: ChatMessage) =>
+    message.role === "assistant" &&
+    !!result?.summary &&
+    message.content.trim() === result.summary.trim();
+  const getDisplayMessageContent = (message: ChatMessage) => {
+    if (message.role !== "assistant") {
+      return message.content;
+    }
+    if (isSummaryMessage(message)) {
+      if (!isEnglishLanguage(language) && translatedSummary) {
+        return translatedSummary;
+      }
+      return message.content;
+    }
+    if (isClosingMessage(message.content) && !isEnglishLanguage(language)) {
+      return getClosingMessageForLanguage(language);
+    }
+    return message.content;
+  };
+  const getSpokenMessageContent = (message: ChatMessage) => {
+    if (message.role !== "assistant") {
+      return message.content;
+    }
+    if (isSummaryMessage(message) && !isEnglishLanguage(language)) {
+      return translatedSummary ?? message.content;
+    }
+    if (isClosingMessage(message.content) && !isEnglishLanguage(language)) {
+      return getClosingMessageForLanguage(language);
+    }
+    return message.content;
+  };
   useEffect(() => {
     draftTranscriptRef.current = draftTranscript;
   }, [draftTranscript]);
+
+  useEffect(() => {
+    const summary = result?.summary?.trim();
+    if (!summary) {
+      setTranslatedSummary(null);
+      lastTranslatedSummaryKeyRef.current = null;
+      return;
+    }
+    if (isEnglishLanguage(language)) {
+      setTranslatedSummary(null);
+      lastTranslatedSummaryKeyRef.current = null;
+      return;
+    }
+    const translationKey = `${language.trim().toLowerCase()}::${summary}`;
+    if (lastTranslatedSummaryKeyRef.current === translationKey && translatedSummary) {
+      return;
+    }
+    let isActive = true;
+    fetch("/api/translate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        text: summary,
+        language,
+      }),
+    })
+      .then(async (res) => {
+        if (!res.ok) {
+          const errJson = await res.json().catch(() => ({}));
+          throw new Error(errJson.error || "Translation failed.");
+        }
+        const data = (await res.json()) as { translation?: string };
+        if (!isActive) return;
+        if (data.translation && data.translation.trim().length > 0) {
+          setTranslatedSummary(data.translation.trim());
+          lastTranslatedSummaryKeyRef.current = translationKey;
+        }
+      })
+      .catch((err) => {
+        console.error("[page.tsx] Summary translation failed:", err);
+        if (isActive) {
+          setTranslatedSummary(null);
+          lastTranslatedSummaryKeyRef.current = null;
+        }
+      });
+    return () => {
+      isActive = false;
+    };
+  }, [result?.summary, language, translatedSummary]);
 
   useEffect(() => {
     if (typeof window !== "undefined" && "speechSynthesis" in window) {
@@ -594,17 +702,18 @@ export default function Home() {
       // Speak if it's an assistant message, we're not already speaking, and either:
       // - status is awaitingPatient (normal question), OR
       // - status is complete and it's the final "comments or questions" message
+      const spokenContent = lastMessage ? getSpokenMessageContent(lastMessage) : "";
       const shouldSpeak = lastMessage &&
         lastMessage.role === "assistant" &&
         !isSpeaking &&
-        lastMessage.content !== lastSpokenMessageRef.current &&
-        (status === "awaitingPatient" || 
-         (status === "complete" && lastMessage.content.includes("We have reached the end")));
+        spokenContent !== lastSpokenMessageRef.current &&
+        (status === "awaitingPatient" ||
+         (status === "complete" && isClosingMessage(lastMessage.content)));
       
       if (shouldSpeak) {
         // This is a new assistant message that hasn't been spoken yet
-        lastSpokenMessageRef.current = lastMessage.content;
-        speakText(lastMessage.content);
+        lastSpokenMessageRef.current = spokenContent;
+        speakText(spokenContent);
         
         // Note: Listening will start automatically when speech ends via utterance.onend callback
         // This ensures immediate activation without delay
@@ -1410,8 +1519,8 @@ export default function Home() {
 
     // Check if this is a response to the final question
     const lastMessage = messagesRef.current[messagesRef.current.length - 1];
-    const isFinalQuestion = lastMessage?.role === "assistant" && 
-      lastMessage.content.includes("We have reached the end of this interview");
+    const isFinalQuestion = lastMessage?.role === "assistant" &&
+      isClosingMessage(lastMessage.content);
     
     // If responding to final question with "no" or similar, end the interview
     if (isFinalQuestion) {
@@ -1509,17 +1618,50 @@ export default function Home() {
     }
   }
 
+  function clearPauseTimers() {
+    if (pauseTimeoutRef.current) {
+      clearTimeout(pauseTimeoutRef.current);
+      pauseTimeoutRef.current = null;
+    }
+    if (pauseCountdownIntervalRef.current) {
+      clearInterval(pauseCountdownIntervalRef.current);
+      pauseCountdownIntervalRef.current = null;
+    }
+    setPauseCountdownSeconds(null);
+  }
+
   function pauseInterview() {
     stopListening();
     stopSpeaking();
+    clearPauseTimers();
     pausedStatusRef.current = status;
     setIsPaused(true);
     setStatus("paused");
     statusRef.current = "paused";
+    pauseTimeoutRef.current = setTimeout(() => {
+      if (statusRef.current !== "paused") {
+        return;
+      }
+      let remainingSeconds = 60;
+      setPauseCountdownSeconds(remainingSeconds);
+      pauseCountdownIntervalRef.current = setInterval(() => {
+        if (statusRef.current !== "paused") {
+          clearPauseTimers();
+          return;
+        }
+        remainingSeconds -= 1;
+        setPauseCountdownSeconds(remainingSeconds);
+        if (remainingSeconds <= 0) {
+          clearPauseTimers();
+          endInterview();
+        }
+      }, 1000);
+    }, 10 * 60 * 1000);
   }
 
   async function resumeInterview() {
     setIsPaused(false);
+    clearPauseTimers();
     const previousStatus = pausedStatusRef.current || "awaitingPatient";
     pausedStatusRef.current = null;
     
@@ -1765,6 +1907,7 @@ export default function Home() {
   }
 
   async function endInterview() {
+    clearPauseTimers();
     stopListening();
     stopSpeaking();
     
@@ -1903,6 +2046,7 @@ export default function Home() {
   }
 
   function resetConversation() {
+    clearPauseTimers();
     stopListening();
     stopSpeaking();
     lastSpokenMessageRef.current = "";
@@ -2139,7 +2283,7 @@ export default function Home() {
     // CRITICAL: Update messages and ref BEFORE calling saveSession
     // This ensures the transcript includes all messages including the summary
     const summaryMessage: ChatMessage = { role: "assistant", content: turn.summary };
-    const endMessage: ChatMessage = { role: "assistant", content: "We have reached the end of this interview. Thank you for taking the time to answer my questions. You will soon be contacted by your physician to discuss the diagnosis and management." };
+    const endMessage: ChatMessage = { role: "assistant", content: closingMessageEnglish };
     const updatedMessages: ChatMessage[] = [...messages, summaryMessage, endMessage];
     
     // Update ref immediately so saveSession can use it
@@ -2909,7 +3053,7 @@ export default function Home() {
                               <div className="bg-white rounded-2xl rounded-tl-sm px-5 py-3 shadow-sm border border-slate-200">
                                 <div className="flex items-start justify-between gap-2">
                                   <p className="text-slate-900 leading-relaxed whitespace-pre-wrap flex-1">
-                                    {message.content}
+                                    {getDisplayMessageContent(message)}
                                   </p>
                                   {index === messages.length - 1 && isSpeaking && (
                                     <div className="flex-shrink-0 w-5 h-5 flex items-center justify-center mt-1">
@@ -3129,7 +3273,7 @@ export default function Home() {
                             : "bg-slate-900 text-white"
                         }`}
                       >
-                        <p className="flex-1">{message.content}</p>
+                        <p className="flex-1">{getDisplayMessageContent(message)}</p>
                         {message.role === "assistant" && index === messages.length - 1 && isSpeaking && (
                           <div className="flex-shrink-0 w-4 h-4 flex items-center justify-center mt-0.5">
                             <div className="w-2.5 h-2.5 bg-emerald-500 rounded-full animate-pulse" title="Reading question aloud"></div>
@@ -3161,7 +3305,7 @@ export default function Home() {
                           <p className="mt-1 whitespace-pre-wrap">{draftTranscript}</p>
                         ) : (
                           <textarea
-                            rows={2}
+                            rows={4}
                             maxLength={1000}
                             placeholder="Hold the mic to speak or type your response."
                             value={draftTranscript}
@@ -3349,7 +3493,13 @@ export default function Home() {
                           <span className="text-sm text-slate-500">Thinking…</span>
                         )}
                         {status === "paused" && (
-                          <span className="text-sm text-slate-500">Paused</span>
+                          <span className="text-sm text-slate-500">
+                            {pauseCountdownSeconds !== null
+                              ? `Paused — ending in ${Math.floor(pauseCountdownSeconds / 60)}:${String(
+                                  pauseCountdownSeconds % 60
+                                ).padStart(2, "0")} unless resumed`
+                              : "Paused"}
+                          </span>
                         )}
                       </div>
                     </div>
