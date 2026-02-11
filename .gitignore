@@ -43,3 +43,8 @@ next-env.d.ts
 # Large binaries / SDKs
 *.tar.gz
 google-cloud-cli*
+.cursor/
+.cursor/
+
+*.mp4
+*.mov

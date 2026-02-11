@@ -6,10 +6,8 @@
 
 import { Pool } from "pg";
 import type { QueryResult, QueryResultRow } from "pg";
-import { ensureProdEnv } from "@/lib/required-env";
-
-// Ensure required env in production
-ensureProdEnv(["DATABASE_URL"]);
+// Note: env validation is deferred to request time to avoid build-phase crashes.
+// The query() function already throws if pool is null (DATABASE_URL unset).
 
 // Create connection pool (only if DATABASE_URL is set)
 if (!process.env.DATABASE_URL) {

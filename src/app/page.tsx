@@ -7,6 +7,11 @@ import type {
   PatientProfile,
 } from "@/lib/interview-schema";
 import { detectBodyParts, getPrimaryBodyPart } from "@/lib/body-parts";
+import {
+  getSpeechLocale,
+  languageOptions,
+  normalizeLanguageCode,
+} from "@/lib/speech-language";
 import BodyPartDiagram from "@/components/BodyPartDiagram";
 import { useEffect, useRef, useState } from "react";
 import { z } from "zod";
@@ -23,6 +28,10 @@ interface SpeechRecognition extends EventTarget {
   onresult: ((this: SpeechRecognition, ev: any) => any) | null;
   onerror: ((this: SpeechRecognition, ev: any) => any) | null;
   onend: ((this: SpeechRecognition, ev: Event) => any) | null;
+  onaudiostart: ((this: SpeechRecognition, ev: Event) => any) | null;
+  onaudioend: ((this: SpeechRecognition, ev: Event) => any) | null;
+  onspeechstart: ((this: SpeechRecognition, ev: Event) => any) | null;
+  onspeechend: ((this: SpeechRecognition, ev: Event) => any) | null;
 }
 
 interface SpeechRecognitionConstructor {
@@ -46,52 +55,29 @@ const statusCopy: Record<Status, string> = {
   paused: "Interview paused. Click Resume to continue.",
 };
 
+const closingMessageEnglish =
+  "We have reached the end of this interview. Thank you for taking the time to answer my questions. You will soon be contacted by your physician to discuss the diagnosis and management.";
+
+const closingMessageTranslations: Record<string, string> = {
+  es: "Hemos llegado al final de esta entrevista. Gracias por tomarse el tiempo para responder mis preguntas. Su médico se comunicará con usted pronto para hablar sobre el diagnóstico y el plan de manejo.",
+  fr: "Nous sommes arrivés à la fin de cet entretien. Merci d'avoir pris le temps de répondre à mes questions. Votre médecin vous contactera bientôt pour discuter du diagnostic et de la prise en charge.",
+  de: "Wir sind am Ende dieses Gesprächs angekommen. Vielen Dank, dass Sie sich die Zeit genommen haben, meine Fragen zu beantworten. Ihr Arzt wird sich in Kürze mit Ihnen in Verbindung setzen, um Diagnose und Behandlung zu besprechen.",
+  it: "Siamo arrivati alla fine di questa intervista. Grazie per aver dedicato del tempo a rispondere alle mie domande. Il suo medico la contatterà presto per discutere diagnosi e gestione.",
+  pt: "Chegamos ao fim desta entrevista. Obrigado(a) por dedicar seu tempo para responder às minhas perguntas. Em breve, seu médico entrará em contato para discutir o diagnóstico e o plano de manejo.",
+  zh: "我们已到达本次访谈的结束。感谢您抽出时间回答我的问题。您的医生将很快与您联系，讨论诊断和处理方案。",
+  ja: "この面接は終了です。ご質問にお答えいただきありがとうございました。担当医が近日中にご連絡し、診断と治療方針についてご説明します。",
+  ko: "이 면담은 여기서 마치겠습니다. 질문에 답해 주셔서 감사합니다. 담당 의사가 곧 연락하여 진단과 치료 계획에 대해 논의할 것입니다.",
+  ar: "لقد وصلنا إلى نهاية هذه المقابلة. شكرًا لك على تخصيص الوقت للإجابة عن أسئلتي. سيتواصل معك طبيبك قريبًا لمناقشة التشخيص وخطة العلاج.",
+  hi: "यह साक्षात्कार अब समाप्त हो गया है। मेरे प्रश्नों के उत्तर देने के लिए आपका धन्यवाद। आपका चिकित्सक शीघ्र ही आपसे संपर्क करेगा ताकि निदान और उपचार योजना पर चर्चा की जा सके।",
+  fa: "این مصاحبه به پایان رسید. از اینکه برای پاسخ به پرسش‌های من وقت گذاشتید سپاسگزارم. پزشک شما به‌زودی برای گفت‌وگو درباره تشخیص و برنامه درمان با شما تماس خواهد گرفت.",
+};
+
 type ChatMessage = InterviewMessage;
 
 export default function Home() {
-  const languageOptions = [
-    { value: "en", label: "English (default)" },
-    { value: "es", label: "Spanish" },
-    { value: "fr", label: "French" },
-    { value: "de", label: "German" },
-    { value: "it", label: "Italian" },
-    { value: "pt", label: "Portuguese" },
-    { value: "zh", label: "Chinese (Simplified)" },
-    { value: "ja", label: "Japanese" },
-    { value: "ko", label: "Korean" },
-    { value: "ar", label: "Arabic" },
-    { value: "hi", label: "Hindi" },
-    { value: "fa", label: "Farsi (Persian)" },
-  ];
-  const getLangTag = (code: string) => {
-    const c = (code || "en").toLowerCase();
-    switch (c) {
-      case "fa":
-        return "fa-IR";
-      case "zh":
-        return "zh-CN";
-      case "pt":
-        return "pt-PT";
-      case "es":
-        return "es-ES";
-      case "fr":
-        return "fr-FR";
-      case "de":
-        return "de-DE";
-      case "it":
-        return "it-IT";
-      case "ja":
-        return "ja-JP";
-      case "ko":
-        return "ko-KR";
-      case "ar":
-        return "ar-SA";
-      case "hi":
-        return "hi-IN";
-      default:
-        return `${c}-${c.toUpperCase()}`;
-    }
-  };
+  const useAzureStt =
+    process.env.NEXT_PUBLIC_USE_AZURE_STT === "true" ||
+    process.env.USE_AZURE_STT === "true";
 
   async function cleanTranscript(raw: string, lang: string): Promise<string> {
     try {
@@ -109,6 +95,103 @@ export default function Home() {
       return raw;
     } catch {
       return raw;
+    }
+  }
+  /**
+   * Convert any browser audio blob to 16-kHz mono PCM WAV —
+   * the format Azure Speech REST API reliably accepts.
+   */
+  async function convertToWav(blob: Blob): Promise<Blob> {
+    const audioCtx = new AudioContext({ sampleRate: 16000 });
+    try {
+      const arrayBuf = await blob.arrayBuffer();
+      const decoded = await audioCtx.decodeAudioData(arrayBuf);
+
+      // Mix down to mono
+      const mono = decoded.numberOfChannels === 1
+        ? decoded.getChannelData(0)
+        : (() => {
+            const ch0 = decoded.getChannelData(0);
+            const ch1 = decoded.getChannelData(1);
+            const mixed = new Float32Array(ch0.length);
+            for (let i = 0; i < ch0.length; i++) {
+              mixed[i] = (ch0[i] + ch1[i]) / 2;
+            }
+            return mixed;
+          })();
+
+      // Resample if decodeAudioData didn't honour sampleRate hint
+      let samples = mono;
+      if (decoded.sampleRate !== 16000) {
+        const ratio = 16000 / decoded.sampleRate;
+        const newLen = Math.round(mono.length * ratio);
+        const resampled = new Float32Array(newLen);
+        for (let i = 0; i < newLen; i++) {
+          resampled[i] = mono[Math.round(i / ratio)] ?? 0;
+        }
+        samples = resampled;
+      }
+
+      // Encode as 16-bit PCM WAV
+      const numSamples = samples.length;
+      const buffer = new ArrayBuffer(44 + numSamples * 2);
+      const view = new DataView(buffer);
+
+      const writeStr = (off: number, s: string) => {
+        for (let i = 0; i < s.length; i++) view.setUint8(off + i, s.charCodeAt(i));
+      };
+
+      writeStr(0, "RIFF");
+      view.setUint32(4, 36 + numSamples * 2, true);
+      writeStr(8, "WAVE");
+      writeStr(12, "fmt ");
+      view.setUint32(16, 16, true);          // PCM sub-chunk size
+      view.setUint16(20, 1, true);           // PCM format
+      view.setUint16(22, 1, true);           // mono
+      view.setUint32(24, 16000, true);       // sample rate
+      view.setUint32(28, 16000 * 2, true);   // byte rate
+      view.setUint16(32, 2, true);           // block align
+      view.setUint16(34, 16, true);          // bits per sample
+      writeStr(36, "data");
+      view.setUint32(40, numSamples * 2, true);
+
+      for (let i = 0; i < numSamples; i++) {
+        const s = Math.max(-1, Math.min(1, samples[i]));
+        view.setInt16(44 + i * 2, s < 0 ? s * 0x8000 : s * 0x7fff, true);
+      }
+
+      return new Blob([buffer], { type: "audio/wav" });
+    } finally {
+      await audioCtx.close();
+    }
+  }
+
+  async function transcribeAudio(audioBlob: Blob, lang: string): Promise<string> {
+    try {
+      // Convert to WAV for Azure Speech REST API compatibility
+      const wavBlob = await convertToWav(audioBlob);
+      const formData = new FormData();
+      const normalizedLanguage = normalizeLanguageCode(lang);
+      formData.append("audio", new File([wavBlob], "recording.wav", { type: "audio/wav" }));
+      formData.append("language", normalizedLanguage);
+      const res = await fetch("/api/speech/stt", {
+        method: "POST",
+        body: formData,
+      });
+      if (!res.ok) {
+        console.error("[transcribeAudio] STT request failed:", res.status);
+        return "";
+      }
+      const data = await res.json();
+      const parsed = sttSchema.safeParse(data);
+      if (!parsed.success) {
+        console.error("[transcribeAudio] Invalid STT response:", data);
+        return "";
+      }
+      return parsed.data.text.trim();
+    } catch (err) {
+      console.error("[transcribeAudio] Error:", err);
+      return "";
     }
   }
   const [chiefComplaint, setChiefComplaint] = useState("");
@@ -144,63 +227,18 @@ export default function Home() {
   };
   const updateSelectionRef = (target: HTMLTextAreaElement | null) => {
     if (!target) {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/9652e7f9-5ee8-4f7b-a684-b5806b3e6d60',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'pre-fix',hypothesisId:'D',location:'page.tsx:updateSelectionRef',message:'Selection update skipped (no target)',data:{},timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
       return;
     }
     selectionRef.current = {
       start: target.selectionStart,
       end: target.selectionEnd,
     };
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/9652e7f9-5ee8-4f7b-a684-b5806b3e6d60',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'pre-fix',hypothesisId:'D',location:'page.tsx:updateSelectionRef',message:'Selection updated',data:{start:target.selectionStart,end:target.selectionEnd},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
-  };
-
-  const getCurrentSelection = (baseLength: number) => {
-    // Prefer last saved selection; fallback to live selection; else append
-    if (selectionRef.current) {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/9652e7f9-5ee8-4f7b-a684-b5806b3e6d60',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'pre-fix',hypothesisId:'A',location:'page.tsx:getCurrentSelection',message:'Using cached selection',data:{start:selectionRef.current.start,end:selectionRef.current.end,baseLength},timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
-      return selectionRef.current;
-    }
-    const input = patientResponseInputRef.current;
-    if (input) {
-      const selStart = input.selectionStart ?? baseLength;
-      const selEnd = input.selectionEnd ?? baseLength;
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/9652e7f9-5ee8-4f7b-a684-b5806b3e6d60',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'pre-fix',hypothesisId:'A',location:'page.tsx:getCurrentSelection',message:'Using live selection',data:{start:selStart,end:selEnd,baseLength},timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
-      return {
-        start: selStart,
-        end: selEnd,
-      };
-    }
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/9652e7f9-5ee8-4f7b-a684-b5806b3e6d60',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'pre-fix',hypothesisId:'A',location:'page.tsx:getCurrentSelection',message:'Fallback to end',data:{baseLength},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
-    return { start: baseLength, end: baseLength };
-  };
-
-  const insertAtSelection = (base: string, insert: string) => {
-    const sel = getCurrentSelection(base.length);
-    const start = sel.start;
-    const end = sel.end;
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/9652e7f9-5ee8-4f7b-a684-b5806b3e6d60',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'pre-fix',hypothesisId:'B',location:'page.tsx:insertAtSelection',message:'Before insert',data:{baseLength:base.length,start,end,insertLength:insert.length},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
-    const text = base.slice(0, start) + insert + base.slice(end);
-    const caret = start + insert.length;
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/9652e7f9-5ee8-4f7b-a684-b5806b3e6d60',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'pre-fix',hypothesisId:'B',location:'page.tsx:insertAtSelection',message:'After insert',data:{resultLength:text.length,caret},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
-    return { text, caret };
   };
 
   const normalizePunctuation = (text: string) => {
     let t = text.trim();
+    // Ensure space after sentence-ending punctuation (e.g. "cough.No" → "cough. No")
+    t = t.replace(/([.!?])([A-Z])/g, "$1 $2");
     // Add sentence breaks before capitalized pronouns if missing punctuation
     t = t.replace(/([a-z]) (I|He|She|They|We|You) /g, "$1. $2 ");
     // Ensure ending punctuation
@@ -209,7 +247,112 @@ export default function Home() {
     }
     return t;
   };
+  const lightCleanupTranscript = (text: string) => {
+    let t = text.trim();
+    t = t.replace(/\s+/g, " ");
+    // Remove obvious filler tokens when isolated
+    t = t.replace(/\b(um+|uh+|erm+|ah+)\b/gi, "");
+    // Clean up punctuation artifacts left after filler removal
+    t = t.replace(/,\s*,/g, ",");          // ", ," → ","
+    t = t.replace(/\.\s*,\s*/g, ". ");     // ". , " → ". "
+    t = t.replace(/,\s*\./g, ".");          // ", ." → "."
+    t = t.replace(/\s+/g, " ").trim();
+    // Normalize common number words (1-10)
+    const numberMap: Record<string, string> = {
+      zero: "0",
+      one: "1",
+      two: "2",
+      three: "3",
+      four: "4",
+      five: "5",
+      six: "6",
+      seven: "7",
+      eight: "8",
+      nine: "9",
+      ten: "10",
+    };
+    t = t.replace(/\b(zero|one|two|three|four|five|six|seven|eight|nine|ten)\b/gi, (match) => {
+      const key = match.toLowerCase();
+      return numberMap[key] ?? match;
+    });
+    // Normalize common units
+    t = t.replace(/\bmilligrams?\b/gi, "mg");
+    t = t.replace(/\bmilliliters?\b/gi, "ml");
+    t = t.replace(/\bmicrograms?\b/gi, "mcg");
+    return t;
+  };
+  const resetDraftTranscript = (reason: string) => {
+    setDraftTranscript("");
+    setDraftTranscriptRaw("");
+    draftTranscriptRawRef.current = "";
+    setShowReview(false);
+    setMicWarning(null);
+    setInterimTranscript("");
+    interimTranscriptRef.current = "";
+  };
+  const appendDraftRaw = (text: string) => {
+    const combined = `${draftTranscriptRawRef.current} ${text}`.replace(/\s+/g, " ").trim();
+    draftTranscriptRawRef.current = combined;
+    setDraftTranscriptRaw(combined);
+  };
+  const finalizeDraftTranscript = async () => {
+    const interim = interimTranscriptRef.current.trim();
+    const raw = draftTranscriptRawRef.current.trim();
+    const combined = `${raw} ${interim}`.replace(/\s+/g, " ").trim();
+    setInterimTranscript("");
+    interimTranscriptRef.current = "";
+    if (!combined) {
+      setMicWarning("No speech detected. Please try again.");
+      setDraftTranscript("");
+      setShowReview(false);
+      return;
+    }
+    setMicWarning(null);
+    setCleaningTranscript(true);
+    const lightlyCleaned = lightCleanupTranscript(combined);
+    try {
+      const startTime = Date.now();
+      const cleaned = await cleanTranscript(lightlyCleaned, language);
+      const endTime = Date.now();
+      const normalized = normalizePunctuation(cleaned);
+      const existingDraft = draftTranscriptRef.current.trim();
+      const nextDraft = existingDraft ? `${existingDraft} ${normalized}` : normalized;
+      if (hasPendingSubmission) {
+        setHasPendingSubmission(false);
+      }
+      setDraftTranscript(nextDraft);
+      setShowReview(true);
+      setDraftTranscriptRaw("");
+      draftTranscriptRawRef.current = "";
+    } catch (error) {
+      const normalized = normalizePunctuation(lightlyCleaned);
+      const existingDraft = draftTranscriptRef.current.trim();
+      const nextDraft = existingDraft ? `${existingDraft} ${normalized}` : normalized;
+      if (hasPendingSubmission) {
+        setHasPendingSubmission(false);
+      }
+      setDraftTranscript(nextDraft);
+      setShowReview(true);
+      setDraftTranscriptRaw("");
+      draftTranscriptRawRef.current = "";
+    } finally {
+      setCleaningTranscript(false);
+    }
+  };
+  const handleNoButtonClick = () => {
+    if (hasPendingSubmission) {
+      setHasPendingSubmission(false);
+    }
+    setDraftTranscript("No");
+    setShowReview(true);
+    setMicWarning(null);
+    setInterimTranscript("");
+    interimTranscriptRef.current = "";
+    setDraftTranscriptRaw("");
+    draftTranscriptRawRef.current = "";
+  };
   const [result, setResult] = useState<HistoryResponse | null>(null);
+  const [translatedSummary, setTranslatedSummary] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [patientName, setPatientName] = useState("");
   const [patientEmail, setPatientEmail] = useState("");
@@ -267,21 +410,54 @@ export default function Home() {
   const [selectedVoice, setSelectedVoice] = useState<SpeechSynthesisVoice | null>(null);
   const [interimTranscript, setInterimTranscript] = useState<string>("");
   const [isPaused, setIsPaused] = useState(false);
+  const [pauseCountdownSeconds, setPauseCountdownSeconds] = useState<number | null>(null);
+  const [isMuted, setIsMuted] = useState(false);
   const [cleaningTranscript, setCleaningTranscript] = useState(false);
+  const [isSubmittingResponse, setIsSubmittingResponse] = useState(false);
+  const [lastSubmittedDraft, setLastSubmittedDraft] = useState<string | null>(null);
+  const [hasPendingSubmission, setHasPendingSubmission] = useState(false);
+  const [showSubmitToast, setShowSubmitToast] = useState(false);
+  const [draftTranscript, setDraftTranscript] = useState<string>("");
+  const [draftTranscriptRaw, setDraftTranscriptRaw] = useState<string>("");
+  const [showReview, setShowReview] = useState(false);
+  const [isHolding, setIsHolding] = useState(false);
+  const [micWarning, setMicWarning] = useState<string | null>(null);
+  const [isCoarsePointer, setIsCoarsePointer] = useState(false);
+  const [isEditingDraft, setIsEditingDraft] = useState(false);
   // Note: short "no" auto-submit removed (per request)
   const speechSynthesisRef = useRef<SpeechSynthesisUtterance | null>(null);
   const lastSpokenMessageRef = useRef<string>("");
   const chatRef = useRef<HTMLDivElement | null>(null);
   const patientResponseInputRef = useRef<HTMLTextAreaElement | null>(null);
   const patientResponseRef = useRef<string>("");
+  const draftTranscriptRef = useRef<string>("");
+  const mutedWhileSpeakingRef = useRef(false);
+  const holdStartTimeRef = useRef<number | null>(null);
+  const recognitionStartScheduledAtRef = useRef<number | null>(null);
+  const recognitionStartedAtRef = useRef<number | null>(null);
   const messagesRef = useRef<ChatMessage[]>([]); // Ref to track latest messages including edits
-  const lastAssistantClearedIndexRef = useRef<number | null>(null); // Track last assistant message we cleared input for
   const selectionRef = useRef<{ start: number; end: number } | null>(null);
   const pausedStatusRef = useRef<Status | null>(null); // Store the status before pausing
+  const pauseTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pauseCountdownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const isCancellingRef = useRef<boolean>(false); // Track if we're intentionally cancelling
   const speechRecognitionRef = useRef<SpeechRecognition | null>(null); // Ref for speech recognition to access in callbacks
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const mediaChunksRef = useRef<BlobPart[]>([]);
+  const finalizeMediaOnStopRef = useRef<boolean>(false);
   const isListeningRef = useRef<boolean>(false); // Ref for isListening state to access in callbacks
   const interimTranscriptRef = useRef<string>(""); // Ref to track interim transcript for pause detection
+  const draftTranscriptRawRef = useRef<string>("");
+  const finalizeDraftOnEndRef = useRef<boolean>(false);
+  const isHoldingRef = useRef<boolean>(false);
+  const messagesLogRef = useRef<number>(-1);
+  const typingStateLogRef = useRef<string>("");
+  const draftLengthLogRef = useRef<number | null>(null);
+  const statusLogRef = useRef<string | null>(null);
+  const pendingStopOnResultRef = useRef<boolean>(false);
+  const hadResultRef = useRef<boolean>(false);
+  const lastTranslatedSummaryKeyRef = useRef<string | null>(null);
   
   const [hasPhysicianId, setHasPhysicianId] = useState<boolean>(false);
   const [editingMessageIndex, setEditingMessageIndex] = useState<number | null>(null);
@@ -296,6 +472,200 @@ export default function Home() {
   const interviewStartTimeRef = useRef<number | null>(null);
   const [elapsedTime, setElapsedTime] = useState<number>(0);
   const cleaningSchema = z.object({ cleaned: z.string().min(1) });
+  const sttSchema = z.object({
+    text: z.string().optional().default(""),
+  });
+  const isEnglishLanguage = (code: string) =>
+    code.trim().toLowerCase().startsWith("en");
+  const getClosingMessageForLanguage = (code: string) =>
+    closingMessageTranslations[code.trim().toLowerCase()] ?? closingMessageEnglish;
+  const isClosingMessage = (content: string) =>
+    content.trim() === closingMessageEnglish;
+  const isSummaryMessage = (message: ChatMessage) =>
+    message.role === "assistant" &&
+    !!result?.summary &&
+    message.content.trim() === result.summary.trim();
+  const getDisplayMessageContent = (message: ChatMessage) => {
+    if (message.role !== "assistant") {
+      return message.content;
+    }
+    if (isSummaryMessage(message)) {
+      if (!isEnglishLanguage(language) && translatedSummary) {
+        return translatedSummary;
+      }
+      return message.content;
+    }
+    if (isClosingMessage(message.content) && !isEnglishLanguage(language)) {
+      return getClosingMessageForLanguage(language);
+    }
+    return message.content;
+  };
+  const getSpokenMessageContent = (message: ChatMessage) => {
+    if (message.role !== "assistant") {
+      return message.content;
+    }
+    if (isSummaryMessage(message) && !isEnglishLanguage(language)) {
+      return translatedSummary ?? message.content;
+    }
+    if (isClosingMessage(message.content) && !isEnglishLanguage(language)) {
+      return getClosingMessageForLanguage(language);
+    }
+    return message.content;
+  };
+  useEffect(() => {
+    draftTranscriptRef.current = draftTranscript;
+  }, [draftTranscript]);
+
+  useEffect(() => {
+    const summary = result?.summary?.trim();
+    if (!summary) {
+      setTranslatedSummary(null);
+      lastTranslatedSummaryKeyRef.current = null;
+      return;
+    }
+    if (isEnglishLanguage(language)) {
+      setTranslatedSummary(null);
+      lastTranslatedSummaryKeyRef.current = null;
+      return;
+    }
+    const translationKey = `${language.trim().toLowerCase()}::${summary}`;
+    if (lastTranslatedSummaryKeyRef.current === translationKey && translatedSummary) {
+      return;
+    }
+    let isActive = true;
+    fetch("/api/translate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        text: summary,
+        language,
+      }),
+    })
+      .then(async (res) => {
+        if (!res.ok) {
+          const errJson = await res.json().catch(() => ({}));
+          throw new Error(errJson.error || "Translation failed.");
+        }
+        const data = (await res.json()) as { translation?: string };
+        if (!isActive) return;
+        if (data.translation && data.translation.trim().length > 0) {
+          setTranslatedSummary(data.translation.trim());
+          lastTranslatedSummaryKeyRef.current = translationKey;
+        }
+      })
+      .catch((err) => {
+        console.error("[page.tsx] Summary translation failed:", err);
+        if (isActive) {
+          setTranslatedSummary(null);
+          lastTranslatedSummaryKeyRef.current = null;
+        }
+      });
+    return () => {
+      isActive = false;
+    };
+  }, [result?.summary, language, translatedSummary]);
+
+  useEffect(() => {
+    if (typeof window !== "undefined" && "speechSynthesis" in window) {
+      if (isMuted) {
+        if (window.speechSynthesis.speaking) {
+          mutedWhileSpeakingRef.current = true;
+        }
+        window.speechSynthesis.cancel();
+      } else if (mutedWhileSpeakingRef.current) {
+        const lastMessage = messagesRef.current[messagesRef.current.length - 1];
+        if (lastMessage?.role === "assistant") {
+          speakText(lastMessage.content);
+        }
+        mutedWhileSpeakingRef.current = false;
+      }
+    }
+  }, [isMuted]);
+
+  const showSubmitBanner = hasPendingSubmission || isSubmittingResponse;
+  const showResponseBox =
+    showReview || status === "awaitingPatient" || isSubmittingResponse || hasPendingSubmission;
+  const showReviewActions =
+    (showReview || hasPendingSubmission) &&
+    (draftTranscript.trim().length > 0 || hasPendingSubmission);
+  useEffect(() => {
+  }, [showSubmitBanner, showResponseBox, hasPendingSubmission, isSubmittingResponse, showReview, status]);
+  useEffect(() => {
+  }, [hasPendingSubmission, showReview, isSubmittingResponse, status]);
+  useEffect(() => {
+  }, [showReviewActions, showReview, hasPendingSubmission, isSubmittingResponse, status, draftTranscript]);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const media = window.matchMedia("(pointer: coarse)");
+      const handleChange = () => setIsCoarsePointer(media.matches);
+      handleChange();
+      if (media.addEventListener) {
+        media.addEventListener("change", handleChange);
+        return () => media.removeEventListener("change", handleChange);
+      }
+      media.addListener(handleChange);
+      return () => media.removeListener(handleChange);
+    }
+    return undefined;
+  }, []);
+
+  useEffect(() => {
+    isHoldingRef.current = isHolding;
+  }, [isHolding]);
+  useEffect(() => {
+    const trimmed = draftTranscript.trim();
+    if (!trimmed) {
+      typingStateLogRef.current = "";
+      return;
+    }
+    const key = `${trimmed.length}|${showReview}|${status}|${isEditingDraft}`;
+    if (key === typingStateLogRef.current) {
+      return;
+    }
+    typingStateLogRef.current = key;
+  }, [draftTranscript, showReview, status, isEditingDraft]);
+  useEffect(() => {
+    const nextLength = draftTranscript.trim().length;
+    if (draftLengthLogRef.current === nextLength) {
+      return;
+    }
+    draftLengthLogRef.current = nextLength;
+  }, [draftTranscript, showReview, status, isEditingDraft]);
+  useEffect(() => {
+  }, [showReview, draftTranscript, status, isEditingDraft]);
+  useEffect(() => {
+    if (statusLogRef.current === status) {
+      return;
+    }
+    statusLogRef.current = status;
+  }, [status]);
+  useEffect(() => {
+    if (status === "awaitingPatient" && !isSubmittingResponse && lastSubmittedDraft) {
+      setLastSubmittedDraft(null);
+    }
+  }, [status, isSubmittingResponse, lastSubmittedDraft]);
+  useEffect(() => {
+    if (status === "awaitingPatient" && !isSubmittingResponse && hasPendingSubmission) {
+    }
+  }, [status, isSubmittingResponse, hasPendingSubmission]);
+  useEffect(() => {
+    if (!hasPendingSubmission || messages.length === 0) {
+      return;
+    }
+    const lastMessage = messages[messages.length - 1];
+    if (lastMessage?.role === "assistant") {
+    }
+  }, [hasPendingSubmission, messages]);
+  useEffect(() => {
+    if (status === "awaitingPatient" && !isSubmittingResponse && showSubmitToast) {
+      setShowSubmitToast(false);
+    }
+  }, [status, isSubmittingResponse, showSubmitToast]);
+  useEffect(() => {
+  }, [isSubmittingResponse]);
+  useEffect(() => {
+  }, [micWarning]);
 
   const getMedPmhSummary = () => {
     const parts = [medListExtracted, pmhExtracted]
@@ -389,7 +759,13 @@ export default function Home() {
       behavior: "smooth",
     });
   }, [messages]);
-
+  useEffect(() => {
+    if (messages.length === messagesLogRef.current) {
+      return;
+    }
+    messagesLogRef.current = messages.length;
+    const lastMessage = messages[messages.length - 1];
+  }, [messages, status, showReview]);
   // Speak assistant messages automatically and auto-start listening
   useEffect(() => {
     if (typeof window !== "undefined" && "speechSynthesis" in window) {
@@ -399,17 +775,18 @@ export default function Home() {
       // Speak if it's an assistant message, we're not already speaking, and either:
       // - status is awaitingPatient (normal question), OR
       // - status is complete and it's the final "comments or questions" message
+      const spokenContent = lastMessage ? getSpokenMessageContent(lastMessage) : "";
       const shouldSpeak = lastMessage &&
         lastMessage.role === "assistant" &&
         !isSpeaking &&
-        lastMessage.content !== lastSpokenMessageRef.current &&
-        (status === "awaitingPatient" || 
-         (status === "complete" && lastMessage.content.includes("We have reached the end")));
+        spokenContent !== lastSpokenMessageRef.current &&
+        (status === "awaitingPatient" ||
+         (status === "complete" && isClosingMessage(lastMessage.content)));
       
       if (shouldSpeak) {
         // This is a new assistant message that hasn't been spoken yet
-        lastSpokenMessageRef.current = lastMessage.content;
-        speakText(lastMessage.content);
+        lastSpokenMessageRef.current = spokenContent;
+        speakText(spokenContent);
         
         // Note: Listening will start automatically when speech ends via utterance.onend callback
         // This ensures immediate activation without delay
@@ -440,48 +817,7 @@ export default function Home() {
     }
   }, [interviewStartTime, status]);
 
-  // Also start listening when status changes to awaitingPatient (if we have a question and speech finished)
-  useEffect(() => {
-    if (status === "awaitingPatient" && speechRecognition && !isListening && !isSpeaking && messages.length > 0) {
-      const lastMessage = messages[messages.length - 1];
-      if (lastMessage && lastMessage.role === "assistant") {
-        // Wait a moment for any speech to finish, then start listening
-        const timeout = setTimeout(() => {
-          if (status === "awaitingPatient" && !isListening && !isSpeaking && !isListeningRef.current) {
-            try {
-              setInterimTranscript("");
-              interimTranscriptRef.current = "";
-              // Clear response only once per new assistant message to avoid wiping during auto-pause/resume
-              const lastAssistantIndex = messages.length - 1;
-              if (
-                lastAssistantIndex !== lastAssistantClearedIndexRef.current &&
-                lastMessage &&
-                lastMessage.role === "assistant"
-              ) {
-                // #region agent log
-                fetch('http://127.0.0.1:7242/ingest/9652e7f9-5ee8-4f7b-a684-b5806b3e6d60',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'pre-fix',hypothesisId:'CLR',location:'page.tsx:autoListen',message:'Clearing response for new assistant message',data:{lastAssistantIndex},timestamp:Date.now()})}).catch(()=>{});
-                // #endregion
-                setPatientResponse("");
-                patientResponseRef.current = "";
-                lastAssistantClearedIndexRef.current = lastAssistantIndex;
-              }
-              speechRecognition.start();
-            } catch (error) {
-              // Check if error is because recognition is already started
-              if (error instanceof Error && error.name === "InvalidStateError") {
-                console.log("[Speech Recognition] Recognition already started, skipping auto-start");
-                setIsListening(true);
-                isListeningRef.current = true;
-              } else {
-                console.log("Speech recognition auto-start:", error);
-              }
-            }
-          }
-        }, 1500);
-        return () => clearTimeout(timeout);
-      }
-    }
-  }, [status, speechRecognition, isListening, isSpeaking, messages]);
+  // Auto-start listening removed: use press-and-hold to talk.
 
   // Cleanup speech on unmount or status change
   useEffect(() => {
@@ -489,6 +825,17 @@ export default function Home() {
       if (typeof window !== "undefined" && "speechSynthesis" in window) {
         window.speechSynthesis.cancel();
         setIsSpeaking(false);
+      }
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+        try {
+          mediaRecorderRef.current.stop();
+        } catch {
+          // Ignore recorder stop errors on unmount
+        }
+      }
+      if (mediaStreamRef.current) {
+        mediaStreamRef.current.getTracks().forEach((track) => track.stop());
+        mediaStreamRef.current = null;
       }
     };
   }, []);
@@ -498,7 +845,7 @@ export default function Home() {
       return;
     }
 
-    const langTag = getLangTag(language);
+    const langTag = getSpeechLocale(language);
     const pickVoice = () => {
       const voices = window.speechSynthesis.getVoices();
       if (!voices.length) {
@@ -559,9 +906,9 @@ export default function Home() {
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.rate = 1.0; // Normal speed
     utterance.pitch = 1.0; // Normal pitch
-    utterance.volume = 1.0; // Full volume
+    utterance.volume = isMuted ? 0.0 : 1.0; // Respect mute setting
     
-    const langTag = getLangTag(language);
+    const langTag = getSpeechLocale(language);
     // Use selected voice if available; set lang to match selection
     if (selectedVoice) {
       utterance.voice = selectedVoice;
@@ -604,66 +951,6 @@ export default function Home() {
     utterance.onend = () => {
       setIsSpeaking(false);
       speechSynthesisRef.current = null;
-      
-      // Start listening immediately when speech ends - use requestAnimationFrame for immediate execution
-      // This ensures the microphone activates as soon as speech ends, preventing loss of patient's initial words
-      requestAnimationFrame(() => {
-        const recognition = speechRecognitionRef.current;
-        const currentStatus = statusRef.current;
-        const currentlyListening = isListeningRef.current;
-        
-        if (recognition && currentStatus === "awaitingPatient" && !currentlyListening) {
-          try {
-            setInterimTranscript("");
-            interimTranscriptRef.current = "";
-            // Clear response only once per new assistant message to avoid wiping during auto-pause/resume
-            const lastAssistantIndex = messagesRef.current.length - 1;
-            const lastMsg = messagesRef.current[lastAssistantIndex];
-            if (
-              lastAssistantIndex !== lastAssistantClearedIndexRef.current &&
-              lastMsg &&
-              lastMsg.role === "assistant"
-            ) {
-              // #region agent log
-              fetch('http://127.0.0.1:7242/ingest/9652e7f9-5ee8-4f7b-a684-b5806b3e6d60',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'pre-fix',hypothesisId:'CLR',location:'page.tsx:speak.onend',message:'Clearing response for new assistant message (speak end)',data:{lastAssistantIndex},timestamp:Date.now()})}).catch(()=>{});
-              // #endregion
-              setPatientResponse("");
-              patientResponseRef.current = "";
-              lastAssistantClearedIndexRef.current = lastAssistantIndex;
-            }
-            recognition.start();
-          } catch (error) {
-            // Check if error is because recognition is already started
-            if (error instanceof Error && error.name === "InvalidStateError") {
-              console.log("[Speech Recognition] Recognition already started, skipping start");
-              setIsListening(true);
-              isListeningRef.current = true;
-            } else {
-              // Other error - try again immediately
-              requestAnimationFrame(() => {
-                const retryRecognition = speechRecognitionRef.current;
-                const retryStatus = statusRef.current;
-                const retryListening = isListeningRef.current;
-                
-                if (retryRecognition && retryStatus === "awaitingPatient" && !retryListening) {
-                  try {
-                    retryRecognition.start();
-                  } catch (retryError) {
-                    // Check if error is because recognition is already started
-                    if (retryError instanceof Error && retryError.name === "InvalidStateError") {
-                      console.log("[Speech Recognition] Recognition already started after retry");
-                      setIsListening(true);
-                      isListeningRef.current = true;
-                    } else {
-                      console.error("Error starting speech recognition after retry:", retryError);
-                    }
-                  }
-                }
-              });
-            }
-          }
-        }
-      });
     };
 
     utterance.onerror = (event: SpeechSynthesisErrorEvent) => {
@@ -705,77 +992,50 @@ export default function Home() {
 
   // Initialize speech recognition
   useEffect(() => {
+    if (useAzureStt) {
+      return;
+    }
     if (typeof window !== "undefined") {
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
       if (SpeechRecognition) {
         const recognition = new SpeechRecognition();
-        // Use continuous mode to keep listening through pauses
+        // Set recognition properties in correct order
+        recognition.lang = getSpeechLocale(language);
         recognition.continuous = true;
         recognition.interimResults = true;
-        recognition.lang = getLangTag(language);
         
-        // Track the last time we received a result to handle long pauses
+        // Track the last time we received a result for no-speech detection
         let lastResultTime = Date.now();
-        let recognitionStartTime = Date.now(); // Track when recognition started
-        let autoPauseTimeout: NodeJS.Timeout | null = null; // Timeout for auto-pausing after 20 seconds
-        const AUTO_PAUSE_TIMEOUT_MS = 20000; // 20 seconds of silence before auto-pausing
-        const RECOGNITION_MAX_DURATION_MS = 58000; // Web Speech API stops after ~60 seconds
-
-        // Helper function to reset the auto-pause timeout
-        const resetAutoPauseTimeout = () => {
-          // Clear any existing auto-pause timeout
-          if (autoPauseTimeout) {
-            clearTimeout(autoPauseTimeout);
-            autoPauseTimeout = null;
-          }
-          
-          // Only set auto-pause timeout if we're in awaitingPatient status and not already paused
-          if (statusRef.current === "awaitingPatient" && !isPaused) {
-            // Set a new timeout that will fire after 20 seconds of silence
-            autoPauseTimeout = setTimeout(() => {
-              // Check if we've actually had 20 seconds of silence (no new results)
-              const timeSinceLastResult = Date.now() - lastResultTime;
-              if (timeSinceLastResult >= AUTO_PAUSE_TIMEOUT_MS) {
-                // Check if there's an active interim transcript - if so, patient is still speaking
-                const hasActiveInterim = interimTranscriptRef.current.trim().length > 0;
-                
-                if (!hasActiveInterim && statusRef.current === "awaitingPatient" && !isPaused) {
-                  console.log("[Auto-pause] Pausing interview after 20 seconds of silence");
-                  // Auto-pause the interview
-                  pauseInterview();
-                } else {
-                  // Patient is still speaking or status changed, reset the timeout
-                  resetAutoPauseTimeout();
-                }
-              }
-            }, AUTO_PAUSE_TIMEOUT_MS);
-          }
-        };
 
         // Helper function to reset the pause timeout
         recognition.onstart = () => {
+          recognitionStartedAtRef.current = Date.now();
           setIsListening(true);
           isListeningRef.current = true;
           lastResultTime = Date.now();
-          recognitionStartTime = Date.now(); // Track when this recognition session started
           setError(null); // Clear any previous errors
-          // Start the auto-pause timeout when listening starts
-          resetAutoPauseTimeout();
-          // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/9652e7f9-5ee8-4f7b-a684-b5806b3e6d60',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'pre-fix',hypothesisId:'G',location:'page.tsx:recognition.onstart',message:'Recognition start',data:{selectionStart:patientResponseInputRef.current?.selectionStart ?? null,selectionEnd:patientResponseInputRef.current?.selectionEnd ?? null,hasSelectionRef:!!selectionRef.current},timestamp:Date.now()})}).catch(()=>{});
-          // #endregion
+          hadResultRef.current = false;
+        };
+        recognition.onaudiostart = () => {
+        };
+        recognition.onaudioend = () => {
+        };
+        recognition.onspeechstart = () => {
+        };
+        recognition.onspeechend = () => {
         };
 
         recognition.onresult = (event: any) => {
           // Update last result time whenever we get any result (including interim)
           // This tracks when the patient last spoke
           lastResultTime = Date.now();
+          hadResultRef.current = true;
           
           // If paused or not awaiting patient, ignore incoming speech
           if (statusRef.current !== "awaitingPatient" || isPaused) {
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/9652e7f9-5ee8-4f7b-a684-b5806b3e6d60',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'pre-fix',hypothesisId:'P',location:'page.tsx:onresult',message:'Ignoring onresult (not awaiting patient)',data:{status:statusRef.current,isPaused},timestamp:Date.now()})}).catch(()=>{});
-            // #endregion
+            return;
+          }
+          if (!isHoldingRef.current && !finalizeDraftOnEndRef.current) {
             return;
           }
           
@@ -791,100 +1051,39 @@ export default function Home() {
             }
           }
 
-          // Show interim results in real-time for live transcription
+          // Track interim results for finalization (no live transcript UI)
           if (currentInterim) {
-            setInterimTranscript(currentInterim);
-            interimTranscriptRef.current = currentInterim; // Update ref immediately
-
-            // If we only have a very short interim like "no", surface it immediately so it doesn't get lost
-            const interimTrimmed = currentInterim.trim().toLowerCase();
-            const isShortNo =
-              interimTrimmed.length <= 5 &&
-              /^no[\s\.,!?]*$/.test(interimTrimmed);
-            if (
-              isShortNo &&
-              patientResponseRef.current.trim().length === 0 &&
-              statusRef.current === "awaitingPatient"
-            ) {
-              setPatientResponse(currentInterim.trim());
-              patientResponseRef.current = currentInterim.trim();
-
-            }
+            // Track interim for finalization but do not display live transcript
+            interimTranscriptRef.current = currentInterim;
+          } else if (!finalTranscript && finalizeDraftOnEndRef.current && interimTranscriptRef.current.trim().length > 0) {
+            // Keep last interim when we're finalizing to avoid dropping short replies.
+          } else if (!finalTranscript && isHoldingRef.current && interimTranscriptRef.current.trim().length > 0) {
+            // Keep interim results while still holding, even if no new interim
           } else {
-            setInterimTranscript("");
             interimTranscriptRef.current = ""; // Update ref immediately
           }
 
-          // Add final transcript to the response
+          // Add final transcript to the draft buffer
           if (finalTranscript) {
-            // Capture selection right before insertion to honor user cursor position
-            updateSelectionRef(patientResponseInputRef.current);
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/9652e7f9-5ee8-4f7b-a684-b5806b3e6d60',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'pre-fix',hypothesisId:'C',location:'page.tsx:onresult',message:'Before insert, selection snapshot',data:{hasInput:!!patientResponseInputRef.current,sel:selectionRef.current || null,baseLength:patientResponseRef.current.length},timestamp:Date.now()})}).catch(()=>{});
-            // #endregion
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/9652e7f9-5ee8-4f7b-a684-b5806b3e6d60',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'pre-fix',hypothesisId:'C',location:'page.tsx:onresult',message:'Final transcript received',data:{finalTranscriptLength:finalTranscript.length,baseLength:patientResponseRef.current.length},timestamp:Date.now()})}).catch(()=>{});
-            // #endregion
-            const base = patientResponseRef.current;
-            const { text: rawCombined, caret: newCaret } = insertAtSelection(base, finalTranscript);
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/9652e7f9-5ee8-4f7b-a684-b5806b3e6d60',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'pre-fix',hypothesisId:'H',location:'page.tsx:onresult',message:'Raw combined before clean',data:{rawCombined,caret:newCaret},timestamp:Date.now()})}).catch(()=>{});
-            // #endregion
-            setCleaningTranscript(true);
-            cleanTranscript(rawCombined, language)
-              .then((cleaned) => {
-                // #region agent log
-                fetch('http://127.0.0.1:7242/ingest/9652e7f9-5ee8-4f7b-a684-b5806b3e6d60',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'pre-fix',hypothesisId:'H',location:'page.tsx:onresult',message:'Cleaned transcript (success)',data:{cleanedLength:cleaned.length,cleaned},timestamp:Date.now()})}).catch(()=>{});
-                // #endregion
-                const normalized = normalizePunctuation(cleaned);
-                // #region agent log
-                fetch('http://127.0.0.1:7242/ingest/9652e7f9-5ee8-4f7b-a684-b5806b3e6d60',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'pre-fix',hypothesisId:'H2',location:'page.tsx:onresult',message:'Normalized transcript (success)',data:{normalized},timestamp:Date.now()})}).catch(()=>{});
-                // #endregion
-                setPatientResponse(normalized);
-                patientResponseRef.current = normalized;
-                if (patientResponseInputRef.current && typeof newCaret === "number") {
-                  const pos = Math.min(newCaret, normalized.length);
-                  requestAnimationFrame(() => {
-                    patientResponseInputRef.current?.setSelectionRange(pos, pos);
-                  });
-                }
-              })
-              .catch(() => {
-                // #region agent log
-                fetch('http://127.0.0.1:7242/ingest/9652e7f9-5ee8-4f7b-a684-b5806b3e6d60',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'pre-fix',hypothesisId:'H',location:'page.tsx:onresult',message:'Clean transcript failed, using raw',data:{rawCombinedLength:rawCombined.length,rawCombined},timestamp:Date.now()})}).catch(()=>{});
-                // #endregion
-                const normalized = normalizePunctuation(rawCombined);
-                // #region agent log
-                fetch('http://127.0.0.1:7242/ingest/9652e7f9-5ee8-4f7b-a684-b5806b3e6d60',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'pre-fix',hypothesisId:'H2',location:'page.tsx:onresult',message:'Normalized transcript (fallback raw)',data:{normalized},timestamp:Date.now()})}).catch(()=>{});
-                // #endregion
-                setPatientResponse(normalized);
-                patientResponseRef.current = normalized;
-                if (patientResponseInputRef.current && typeof newCaret === "number") {
-                  const pos = Math.min(newCaret, normalized.length);
-                  requestAnimationFrame(() => {
-                    patientResponseInputRef.current?.setSelectionRange(pos, pos);
-                  });
-                }
-              })
-              .finally(() => {
-                setCleaningTranscript(false);
-              });
-            setInterimTranscript(""); // Clear interim when we get final
-            interimTranscriptRef.current = ""; // Update ref immediately
+            appendDraftRaw(finalTranscript);
+            interimTranscriptRef.current = "";
           }
-          
-          // Reset the auto-pause timeout every time we get a result
-          // This ensures we wait for a full 20 seconds of silence before auto-pausing
-          resetAutoPauseTimeout();
+          if (finalizeDraftOnEndRef.current && !isHoldingRef.current) {
+            finalizeDraftOnEndRef.current = false;
+            void finalizeDraftTranscript();
+            return;
+          }
+          if (pendingStopOnResultRef.current && !isHoldingRef.current) {
+            pendingStopOnResultRef.current = false;
+            try {
+              speechRecognitionRef.current?.stop();
+            } catch {
+              // Ignore stop errors
+            }
+          }
         };
 
         recognition.onerror = (event: any) => {
-          // Clear auto-pause timeout on error
-          if (autoPauseTimeout) {
-            clearTimeout(autoPauseTimeout);
-            autoPauseTimeout = null;
-          }
-          
           // Handle different error types
           if (event.error === "not-allowed") {
             // Microphone permission denied
@@ -895,15 +1094,14 @@ export default function Home() {
           } else if (event.error === "no-speech") {
             // "no-speech" is normal - don't log as error, just handle it
             // This can happen when the user pauses or hasn't started speaking yet
-            // Don't auto-submit immediately - let the pause timeout handle it
-            // Only show an error if we've been listening for a very long time with no speech at all
             const timeSinceStart = Date.now() - lastResultTime;
-            if (timeSinceStart > 10000 && patientResponseRef.current.trim().length === 0) {
+            const hasAnyDraft =
+              draftTranscriptRawRef.current.trim().length > 0 ||
+              interimTranscriptRef.current.trim().length > 0;
+            if (timeSinceStart > 10000 && !hasAnyDraft) {
               // Been listening for more than 10 seconds with no speech at all and no response
               console.log("Speech recognition: No speech detected after 10 seconds");
-              setIsListening(false);
-              isListeningRef.current = false;
-              setError("No speech detected. Please try again.");
+              setMicWarning("No speech detected. Please try again.");
             }
             // Otherwise, continue listening
           } else if (event.error === "aborted") {
@@ -936,118 +1134,228 @@ export default function Home() {
 
         recognition.onend = () => {
           console.log("[Speech Recognition] onend - stopped listening, status:", statusRef.current);
-          // Clear auto-pause timeout
-          if (autoPauseTimeout) {
-            clearTimeout(autoPauseTimeout);
-            autoPauseTimeout = null;
-          }
-          
-          const timeSinceStart = Date.now() - recognitionStartTime;
-          const currentStatus = statusRef.current;
-          
-          // If recognition ended before emitting a final result (e.g., very short answers like "no"),
-          // promote the last interim transcript to the patient response so it isn't lost.
-          if (
-            currentStatus === "awaitingPatient" &&
-            !isPaused &&
-            interimTranscriptRef.current.trim().length > 0 &&
-            patientResponseRef.current.trim().length === 0
-          ) {
-            const interimFinal = interimTranscriptRef.current.trim();
-            const rawCombined = interimFinal;
-            setCleaningTranscript(true);
-            cleanTranscript(rawCombined, language)
-              .then((cleaned) => {
-                setPatientResponse(cleaned);
-                patientResponseRef.current = cleaned;
-              })
-              .catch(() => {
-                setPatientResponse(rawCombined);
-                patientResponseRef.current = rawCombined;
-              })
-              .finally(() => {
-                setCleaningTranscript(false);
-              });
-            setInterimTranscript("");
-            interimTranscriptRef.current = "";
-          }
-          
-          // If recognition stopped due to the ~60 second limit and we're still awaiting patient response,
-          // automatically restart recognition instead of stopping
-          if (timeSinceStart >= RECOGNITION_MAX_DURATION_MS - 2000 && // Within 2 seconds of the limit
-              currentStatus === "awaitingPatient" &&
-              !isCancellingRef.current &&
-              speechRecognitionRef.current) {
-            console.log("[Speech Recognition] Restarting after ~60 second limit, time since start:", timeSinceStart);
-            // Restart recognition after a brief delay to avoid immediate restart issues
-            setTimeout(() => {
-              // Check status again before restarting and ensure we have a valid recognition instance
-              if (statusRef.current === "awaitingPatient" && 
-                  !isCancellingRef.current && 
-                  speechRecognitionRef.current &&
-                  !isListeningRef.current) {
-                try {
-                  speechRecognitionRef.current.start();
-                  // Reset the start time for the new session
-                  recognitionStartTime = Date.now();
-                  lastResultTime = Date.now();
-                  // Restart the auto-pause timeout
-                  resetAutoPauseTimeout();
-                } catch (error) {
-                  // Check if error is because recognition is already started
-                  if (error instanceof Error && error.name === "InvalidStateError") {
-                    console.log("[Speech Recognition] Recognition already started, skipping restart");
-                    // Recognition is already active, just update the refs
-                    setIsListening(true);
-                    isListeningRef.current = true;
-                    recognitionStartTime = Date.now();
-                    lastResultTime = Date.now();
-                    resetAutoPauseTimeout();
-                  } else {
-                    console.error("[Speech Recognition] Error restarting after time limit:", error);
-                    // If restart fails, don't auto-submit - let the user manually submit
-                    setIsListening(false);
-                    isListeningRef.current = false;
-                  }
-                }
-              } else {
-                setIsListening(false);
-                isListeningRef.current = false;
-              }
-            }, 100);
-            return; // Don't set isListening to false yet - we're restarting
-          }
-          
           setIsListening(false);
           isListeningRef.current = false;
-          
-          // Don't clear the response here
-          // Only clear if we're not in awaitingPatient status (user manually stopped)
-          if (currentStatus !== "awaitingPatient") {
-            setInterimTranscript("");
+          const shouldRestart =
+            statusRef.current === "awaitingPatient" &&
+            isHoldingRef.current &&
+            !hadResultRef.current &&
+            !isCancellingRef.current;
+          if (shouldRestart) {
+            try {
+              speechRecognitionRef.current?.start();
+              isListeningRef.current = true;
+              setIsListening(true);
+            } catch {
+              // Ignore restart errors
+            }
+            return;
+          }
+          const interimAtEnd = interimTranscriptRef.current.trim();
+          // Always preserve any interim results when holding, even if short
+          // This ensures speech that was detected but not finalized gets captured
+          if (isHoldingRef.current && interimAtEnd.length > 0) {
+            appendDraftRaw(interimAtEnd);
             interimTranscriptRef.current = "";
           }
+          if (finalizeDraftOnEndRef.current) {
+            const hasAnyDraft =
+              draftTranscriptRawRef.current.trim().length > 0 ||
+              interimTranscriptRef.current.trim().length > 0;
+            if (!hasAnyDraft) {
+              setMicWarning("No speech detected. Please try again.");
+              setShowReview(false);
+              finalizeDraftOnEndRef.current = false;
+              return;
+            }
+            finalizeDraftOnEndRef.current = false;
+            void finalizeDraftTranscript();
+            return;
+          }
+          interimTranscriptRef.current = "";
         };
 
         setSpeechRecognition(recognition);
         speechRecognitionRef.current = recognition;
-        recognition.lang = language ? `${language}-${language.toUpperCase()}` : "en-US";
+        recognition.lang = getSpeechLocale(language);
       } else {
         console.warn("Speech recognition not supported in this browser");
       }
     }
-  }, [status, language]);
+  }, [status, language, useAzureStt]);
 
-  const startListening = () => {
+  const startListening = async (options?: { allowDuringReview?: boolean }) => {
     // Capture current selection before we start listening (in case focus shifts)
     updateSelectionRef(patientResponseInputRef.current);
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/9652e7f9-5ee8-4f7b-a684-b5806b3e6d60',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'pre-fix',hypothesisId:'E',location:'page.tsx:startListening',message:'Starting listening',data:{isSpeaking,status,isListening:isListeningRef.current},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
+    const allowDuringReview = options?.allowDuringReview ?? false;
     if (isSpeaking) return; // Don't allow listening while AI is speaking
-    if (speechRecognition && status === "awaitingPatient" && !isListeningRef.current) {
+    if (cleaningTranscript) return;
+    if (showReview && !allowDuringReview) return;
+    if (useAzureStt && status === "awaitingPatient") {
       try {
-        speechRecognition.start();
+        if (hasPendingSubmission) {
+          setHasPendingSubmission(false);
+        }
+        setDraftTranscriptRaw("");
+        draftTranscriptRawRef.current = "";
+        setInterimTranscript("");
+        interimTranscriptRef.current = "";
+        const hasDraft = draftTranscriptRef.current.trim().length > 0;
+        if (!showReview && !hasDraft) {
+          resetDraftTranscript("startListening-azure");
+        } else {
+          setMicWarning(null);
+        }
+
+        if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+          try {
+            mediaRecorderRef.current.stop();
+          } catch {
+            // Ignore stop errors from previous recorder
+          }
+        }
+        if (mediaStreamRef.current) {
+          mediaStreamRef.current.getTracks().forEach((track) => track.stop());
+          mediaStreamRef.current = null;
+        }
+
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            noiseSuppression: true,
+            echoCancellation: true,
+            autoGainControl: true,
+          },
+        });
+
+        // Recording format doesn't matter for Azure STT — we convert to WAV
+        // before uploading. Prefer webm/opus for best Chrome recording quality.
+        const mimeCandidates = [
+          "audio/webm;codecs=opus",
+          "audio/ogg;codecs=opus",
+          "audio/webm",
+        ];
+        const selectedMimeType = mimeCandidates.find((mime) =>
+          typeof MediaRecorder !== "undefined" &&
+          MediaRecorder.isTypeSupported?.(mime),
+        );
+        const recorder = selectedMimeType
+          ? new MediaRecorder(stream, { mimeType: selectedMimeType })
+          : new MediaRecorder(stream);
+
+        mediaChunksRef.current = [];
+        mediaStreamRef.current = stream;
+        mediaRecorderRef.current = recorder;
+        finalizeMediaOnStopRef.current = false;
+
+        recorder.ondataavailable = (event) => {
+          if (event.data && event.data.size > 0) {
+            mediaChunksRef.current.push(event.data);
+          }
+        };
+
+        recorder.onerror = () => {
+          setIsListening(false);
+          isListeningRef.current = false;
+          setError("Audio capture failed. Please check your microphone.");
+        };
+
+        recorder.onstop = async () => {
+          setIsListening(false);
+          isListeningRef.current = false;
+          const shouldFinalize = finalizeMediaOnStopRef.current;
+          finalizeMediaOnStopRef.current = false;
+          const chunks = [...mediaChunksRef.current];
+          mediaChunksRef.current = [];
+
+          if (mediaStreamRef.current) {
+            mediaStreamRef.current.getTracks().forEach((track) => track.stop());
+            mediaStreamRef.current = null;
+          }
+
+          if (!shouldFinalize) {
+            return;
+          }
+
+          const audioBlob = new Blob(chunks, {
+            type: recorder.mimeType || "audio/webm",
+          });
+
+          if (!audioBlob.size) {
+            setMicWarning("No speech detected. Please try again.");
+            return;
+          }
+
+          const rawTranscript = await transcribeAudio(audioBlob, language);
+          if (!rawTranscript) {
+            setMicWarning("We could not transcribe your speech. Please try again.");
+            return;
+          }
+
+          appendDraftRaw(rawTranscript);
+          await finalizeDraftTranscript();
+        };
+
+        recorder.start(250);
+        setIsHolding(true);
+        isHoldingRef.current = true;
+        setIsListening(true);
+        isListeningRef.current = true;
+        return;
+      } catch (error) {
+        setIsListening(false);
+        isListeningRef.current = false;
+        if (error instanceof DOMException && error.name === "NotAllowedError") {
+          setError("Microphone access denied. Please enable microphone permissions.");
+        } else {
+          console.error("Error starting Azure STT recording:", error);
+          setError("Unable to start voice input. Please try again.");
+        }
+        return;
+      }
+    }
+    if (speechRecognition && status === "awaitingPatient") {
+      try {
+        if (hasPendingSubmission) {
+          setHasPendingSubmission(false);
+        }
+        setDraftTranscriptRaw("");
+        draftTranscriptRawRef.current = "";
+        setInterimTranscript("");
+        interimTranscriptRef.current = "";
+        if (isListeningRef.current) {
+          try {
+            speechRecognition.stop();
+          } catch {
+            // ignore stop errors
+          }
+          setIsListening(false);
+          isListeningRef.current = false;
+        }
+        // Create a fresh recognition instance for each attempt to avoid state corruption
+        const freshRecognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+        freshRecognition.lang = getSpeechLocale(language);
+        freshRecognition.continuous = true;
+        freshRecognition.interimResults = true;
+        // Re-apply all event handlers to the fresh instance
+        freshRecognition.onstart = speechRecognition.onstart;
+        freshRecognition.onresult = speechRecognition.onresult;
+        freshRecognition.onend = speechRecognition.onend;
+        freshRecognition.onerror = speechRecognition.onerror;
+        setSpeechRecognition(freshRecognition);
+        speechRecognitionRef.current = freshRecognition;
+        pendingStopOnResultRef.current = false;
+        const hasDraft = draftTranscriptRef.current.trim().length > 0;
+        if (!showReview && !hasDraft) {
+          resetDraftTranscript("startListening");
+        } else {
+          setMicWarning(null);
+        }
+        setIsHolding(true);
+        isHoldingRef.current = true;
+        finalizeDraftOnEndRef.current = false;
+        // Removed mic priming as it may interfere with speech recognition
+        recognitionStartScheduledAtRef.current = Date.now();
+        speechRecognitionRef.current?.start();
         isListeningRef.current = true;
       } catch (error) {
         // Check if error is because recognition is already started
@@ -1063,12 +1371,87 @@ export default function Home() {
     }
   };
 
-  const stopListening = () => {
+  const stopListening = (finalizeDraft = false) => {
+    setIsHolding(false);
+    isHoldingRef.current = false;
+    if (useAzureStt) {
+      finalizeMediaOnStopRef.current = finalizeDraft;
+      const recorder = mediaRecorderRef.current;
+      if (recorder && recorder.state !== "inactive") {
+        try {
+          recorder.stop();
+        } catch {
+          // Ignore recorder stop errors
+        }
+      } else if (finalizeDraft) {
+        setMicWarning("No speech detected. Please try again.");
+      }
+      setIsListening(false);
+      isListeningRef.current = false;
+      return;
+    }
+    const rawLength = draftTranscriptRawRef.current.length;
+    const interimLength = interimTranscriptRef.current.length;
+
+    if (finalizeDraft && (rawLength > 0 || interimLength > 0)) {
+      // If we have transcripts and want to finalize, do it immediately
+      void finalizeDraftTranscript();
+      finalizeDraftOnEndRef.current = false;
+    } else if (finalizeDraft) {
+      // Wait for late results before showing no-speech
+      finalizeDraftOnEndRef.current = true;
+    }
+
     if (speechRecognition) {
       speechRecognition.stop();
       setIsListening(false);
       isListeningRef.current = false;
     }
+  };
+  const commitDraftToResponse = (mode: "use" | "edit", autoSubmit = false) => {
+    const draft = draftTranscript.trim();
+    if (!draft) {
+      return;
+    }
+    if (mode === "edit") {
+      setIsEditingDraft(true);
+      setShowReview(true);
+      return;
+    }
+    if (autoSubmit) {
+      setIsSubmittingResponse(true);
+      setLastSubmittedDraft(draft);
+      setHasPendingSubmission(true);
+      setShowSubmitToast(true);
+      setShowReview(false);
+      setDraftTranscript("");
+      setDraftTranscriptRaw("");
+      draftTranscriptRawRef.current = "";
+      setInterimTranscript("");
+      interimTranscriptRef.current = "";
+      setIsEditingDraft(false);
+    }
+    setIsEditingDraft(false);
+    setPatientResponseWithRef(draft);
+    if (patientResponseInputRef.current) {
+      requestAnimationFrame(() => {
+        patientResponseInputRef.current?.focus();
+        const pos = draft.length;
+        patientResponseInputRef.current?.setSelectionRange(pos, pos);
+      });
+    }
+    if (mode === "use") {
+      setInterimTranscript("");
+      interimTranscriptRef.current = "";
+    }
+    const shouldAutoSubmit = autoSubmit && statusRef.current === "awaitingPatient";
+    if (shouldAutoSubmit) {
+      void handlePatientSubmit();
+    } else if (autoSubmit) {
+    }
+  };
+  const redoDraftTranscript = () => {
+    resetDraftTranscript("redo");
   };
 
   async function handleStart(
@@ -1301,9 +1684,12 @@ export default function Home() {
     if (event) {
       event.preventDefault();
     }
+    setIsSubmittingResponse(true);
     
     // Don't allow submission when paused
     if (isPaused || status === "paused") {
+      setIsSubmittingResponse(false);
+      setShowSubmitToast(false);
       return;
     }
     
@@ -1311,6 +1697,8 @@ export default function Home() {
     const currentStatus = statusRef.current;
     if (currentStatus !== "awaitingPatient") {
       console.log("[handlePatientSubmit] Not awaiting patient, status:", currentStatus);
+      setIsSubmittingResponse(false);
+      setShowSubmitToast(false);
       return;
     }
     
@@ -1320,6 +1708,8 @@ export default function Home() {
     const profile = lockedProfile;
     if (!profile) {
       setError("Please start the interview before responding.");
+      setIsSubmittingResponse(false);
+      setShowSubmitToast(false);
       return;
     }
     
@@ -1327,9 +1717,11 @@ export default function Home() {
     const currentResponse = patientResponseRef.current.trim();
     if (!currentResponse) {
       console.log("[handlePatientSubmit] No response text");
+      setIsSubmittingResponse(false);
+      setShowSubmitToast(false);
       return;
     }
-    
+    setLastSubmittedDraft(currentResponse);
     let trimmed = currentResponse;
 
     // If a diagram area is selected, append it to the response
@@ -1352,8 +1744,8 @@ export default function Home() {
 
     // Check if this is a response to the final question
     const lastMessage = messagesRef.current[messagesRef.current.length - 1];
-    const isFinalQuestion = lastMessage?.role === "assistant" && 
-      lastMessage.content.includes("We have reached the end of this interview");
+    const isFinalQuestion = lastMessage?.role === "assistant" &&
+      isClosingMessage(lastMessage.content);
     
     // If responding to final question with "no" or similar, end the interview
     if (isFinalQuestion) {
@@ -1401,8 +1793,11 @@ export default function Home() {
     setInterimTranscript("");
     interimTranscriptRef.current = "";
     setStatus("awaitingAi");
+    statusRef.current = "awaitingAi";
     setError(null);
 
+    setIsSubmittingResponse(true);
+    let submittedSuccessfully = false;
     try {
       const physicianIdToUse =
         physicianIdValue || (typeof window !== "undefined" ? sessionStorage.getItem("physicianId") : null);
@@ -1410,6 +1805,8 @@ export default function Home() {
         setStatus("awaitingPatient");
         statusRef.current = "awaitingPatient";
         setError("You weren’t invited to complete this form.");
+        setIsSubmittingResponse(false);
+        setShowSubmitToast(false);
         return;
       }
 
@@ -1429,33 +1826,67 @@ export default function Home() {
         language,
       );
       processTurn(turn);
+      submittedSuccessfully = true;
     } catch (err) {
       console.error(err);
       setMessages((current) => current.slice(0, -1));
       setPatientResponse(trimmed);
       setStatus("awaitingPatient");
+      statusRef.current = "awaitingPatient";
       setError(
         err instanceof Error
           ? err.message
           : "We couldn't deliver that message. Please retry.",
       );
+    } finally {
+      setIsSubmittingResponse(false);
     }
   }
 
+  function clearPauseTimers() {
+    if (pauseTimeoutRef.current) {
+      clearTimeout(pauseTimeoutRef.current);
+      pauseTimeoutRef.current = null;
+    }
+    if (pauseCountdownIntervalRef.current) {
+      clearInterval(pauseCountdownIntervalRef.current);
+      pauseCountdownIntervalRef.current = null;
+    }
+    setPauseCountdownSeconds(null);
+  }
+
   function pauseInterview() {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/9652e7f9-5ee8-4f7b-a684-b5806b3e6d60',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'pre-fix',hypothesisId:'Q',location:'page.tsx:pauseInterview',message:'Pause invoked',data:{status:statusRef.current,isListening:isListeningRef.current,isPaused},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
     stopListening();
     stopSpeaking();
+    clearPauseTimers();
     pausedStatusRef.current = status;
     setIsPaused(true);
     setStatus("paused");
     statusRef.current = "paused";
+    pauseTimeoutRef.current = setTimeout(() => {
+      if (statusRef.current !== "paused") {
+        return;
+      }
+      let remainingSeconds = 60;
+      setPauseCountdownSeconds(remainingSeconds);
+      pauseCountdownIntervalRef.current = setInterval(() => {
+        if (statusRef.current !== "paused") {
+          clearPauseTimers();
+          return;
+        }
+        remainingSeconds -= 1;
+        setPauseCountdownSeconds(remainingSeconds);
+        if (remainingSeconds <= 0) {
+          clearPauseTimers();
+          endInterview();
+        }
+      }, 1000);
+    }, 10 * 60 * 1000);
   }
 
   async function resumeInterview() {
     setIsPaused(false);
+    clearPauseTimers();
     const previousStatus = pausedStatusRef.current || "awaitingPatient";
     pausedStatusRef.current = null;
     
@@ -1701,6 +2132,7 @@ export default function Home() {
   }
 
   async function endInterview() {
+    clearPauseTimers();
     stopListening();
     stopSpeaking();
     
@@ -1839,6 +2271,7 @@ export default function Home() {
   }
 
   function resetConversation() {
+    clearPauseTimers();
     stopListening();
     stopSpeaking();
     lastSpokenMessageRef.current = "";
@@ -2075,7 +2508,7 @@ export default function Home() {
     // CRITICAL: Update messages and ref BEFORE calling saveSession
     // This ensures the transcript includes all messages including the summary
     const summaryMessage: ChatMessage = { role: "assistant", content: turn.summary };
-    const endMessage: ChatMessage = { role: "assistant", content: "We have reached the end of this interview. Thank you for taking the time to answer my questions. You will soon be contacted by your physician to discuss the diagnosis and management." };
+    const endMessage: ChatMessage = { role: "assistant", content: closingMessageEnglish };
     const updatedMessages: ChatMessage[] = [...messages, summaryMessage, endMessage];
     
     // Update ref immediately so saveSession can use it
@@ -2745,11 +3178,41 @@ export default function Home() {
                       </div>
                     )}
                   </div>
-                  <h2 className="text-2xl font-semibold text-slate-900 mt-1">
-                    Guided interview
-                  </h2>
+                  <div className="flex items-center justify-between mt-1">
+                    <h2 className="text-2xl font-semibold text-slate-900">
+                      Guided interview
+                    </h2>
+                    <button
+                      onClick={() => {
+                        setIsMuted(!isMuted);
+                      }}
+                      className={`inline-flex items-center justify-center rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ml-3 ${
+                        isMuted
+                          ? "bg-red-100 text-red-700 hover:bg-red-200"
+                          : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                      }`}
+                      title={isMuted ? "Unmute AI voice" : "Mute AI voice"}
+                    >
+                      {isMuted ? (
+                        <>
+                          <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" clipPath="url(#clip0)" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" />
+                          </svg>
+                          Muted
+                        </>
+                      ) : (
+                        <>
+                          <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072M18.364 5.636a9 9 0 010 12.728M12 9l-6 6H4a1 1 0 01-1-1v-4a1 1 0 011-1h2l6-6v14z" />
+                          </svg>
+                          Sound On
+                        </>
+                      )}
+                    </button>
+                  </div>
                 </div>
-                {isSpeaking && !isPaused && (
+                {isSpeaking && !isPaused && language.toLowerCase().startsWith("en") && (
                   <video
                     className="hidden sm:block w-40 h-24 rounded-xl object-cover border border-slate-200 shadow-sm"
                     autoPlay
@@ -2762,7 +3225,6 @@ export default function Home() {
                   </video>
                 )}
               </div>
-
               <div
                 ref={chatRef}
                 className={`mt-5 space-y-4 overflow-y-auto rounded-2xl border border-slate-100 bg-slate-50/60 px-4 py-4 text-sm text-slate-800 max-h-[360px] ${
@@ -2816,7 +3278,7 @@ export default function Home() {
                               <div className="bg-white rounded-2xl rounded-tl-sm px-5 py-3 shadow-sm border border-slate-200">
                                 <div className="flex items-start justify-between gap-2">
                                   <p className="text-slate-900 leading-relaxed whitespace-pre-wrap flex-1">
-                                    {message.content}
+                                    {getDisplayMessageContent(message)}
                                   </p>
                                   {index === messages.length - 1 && isSpeaking && (
                                     <div className="flex-shrink-0 w-5 h-5 flex items-center justify-center mt-1">
@@ -3036,7 +3498,7 @@ export default function Home() {
                             : "bg-slate-900 text-white"
                         }`}
                       >
-                        <p className="flex-1">{message.content}</p>
+                        <p className="flex-1">{getDisplayMessageContent(message)}</p>
                         {message.role === "assistant" && index === messages.length - 1 && isSpeaking && (
                           <div className="flex-shrink-0 w-4 h-4 flex items-center justify-center mt-0.5">
                             <div className="w-2.5 h-2.5 bg-emerald-500 rounded-full animate-pulse" title="Reading question aloud"></div>
@@ -3056,73 +3518,138 @@ export default function Home() {
               >
                 {interviewMode === "conversation" ? (
                   <>
-                    {/* Editable text area for corrections */}
-                    <div className="relative">
-                      <textarea
-                        ref={patientResponseInputRef}
-                        id="patient-response"
-                        name="patientResponse"
-                        rows={3}
-                        maxLength={1000}
-                        placeholder={
-                          status === "awaitingPatient"
-                            ? isListening
-                              ? "Listening... Speak your response (or type to correct)"
-                              : "Speak your response (or type to enter manually)"
-                            : status === "complete"
-                              ? "Interview complete."
-                              : "Start the interview to respond."
-                        }
-                         value={patientResponse}
-                        onChange={(event) => {
-                          const val = event.target.value;
-                          setPatientResponse(val);
-                          patientResponseRef.current = val;
-                          updateSelectionRef(event.target);
-                        }}
-                        onSelect={(event) => updateSelectionRef(event.target as HTMLTextAreaElement)}
-                        onKeyUp={(event) => updateSelectionRef(event.target as HTMLTextAreaElement)}
-                        onClick={(event) => updateSelectionRef(event.target as HTMLTextAreaElement)}
-                        onMouseUp={(event) => updateSelectionRef(event.target as HTMLTextAreaElement)}
-                        onFocus={(event) => updateSelectionRef(event.target as HTMLTextAreaElement)}
-                        disabled={status !== "awaitingPatient" || isPaused}
-                        className={`w-full rounded-2xl border-2 bg-white px-5 py-4 pr-24 text-base text-slate-900 outline-none transition-all focus:ring-2 focus:ring-emerald-200 disabled:cursor-not-allowed disabled:opacity-70 resize-none ${
-                          isListening
-                            ? "border-emerald-500 ring-2 ring-emerald-200"
-                            : "border-slate-300 focus:border-emerald-500"
-                        }`}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-                            e.preventDefault();
-                            if (status === "awaitingPatient" && patientResponse.trim() !== "") {
-                              stopListening();
-                              handlePatientSubmit();
-                            }
-                          }
-                        }}
-                      />
-                      {/* Submit button - show when listening or when there's text */}
-                      {status === "awaitingPatient" && (isListening || patientResponse.trim().length > 0) && (
+                    {cleaningTranscript && (
+                      <span className="text-xs text-slate-500">Processing transcript...</span>
+                    )}
+                    {micWarning && (
+                      <p className="text-xs text-amber-600">{micWarning}</p>
+                    )}
+                    {showResponseBox && (
+                      <div className="relative rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 group">
+                        {draftTranscript.trim().length > 0 && !isEditingDraft ? (
+                          <p className="mt-1 whitespace-pre-wrap">{draftTranscript}</p>
+                        ) : (
+                          <textarea
+                            rows={4}
+                            maxLength={1000}
+                            placeholder="Hold the mic to speak or type your response."
+                            value={draftTranscript}
+                            disabled={isSubmittingResponse}
+                            onChange={(event) => {
+                              const nextValue = event.target.value;
+                              const nextTrimmedLength = nextValue.trim().length;
+                              if (hasPendingSubmission && nextTrimmedLength > 0) {
+                                setHasPendingSubmission(false);
+                              }
+                              if (status === "awaitingPatient") {
+                                if (nextTrimmedLength > 0) {
+                                  setShowReview(true);
+                                  setMicWarning(null);
+                                } else if (showReview && !draftTranscriptRef.current.trim()) {
+                                  setShowReview(false);
+                                }
+                              }
+                              setDraftTranscript(nextValue);
+                            }}
+                            onFocus={() => {
+                              setIsEditingDraft(true);
+                            }}
+                            onBlur={() => {
+                              setIsEditingDraft(false);
+                            }}
+                            className="mt-1 w-full resize-none rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
+                          />
+                        )}
                         <button
                           type="button"
-                          onClick={() => {
-                            stopListening();
-                            if (patientResponse.trim().length > 0) {
-                              handlePatientSubmit();
+                          onPointerDown={(event) => {
+                            event.preventDefault();
+                            if (event.currentTarget.setPointerCapture) {
+                              event.currentTarget.setPointerCapture(event.pointerId);
+                            }
+                            holdStartTimeRef.current = Date.now();
+                            startListening({ allowDuringReview: true });
+                          }}
+                          onPointerUp={(event) => {
+                            event.preventDefault();
+                            if (event.currentTarget.releasePointerCapture) {
+                              event.currentTarget.releasePointerCapture(event.pointerId);
+                            }
+                            stopListening(true);
+                          }}
+                          onPointerLeave={() => {
+                            if (isHoldingRef.current) {
+                              stopListening(true);
                             }
                           }}
-                          className="absolute bottom-3 right-3 inline-flex items-center justify-center rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600 disabled:cursor-not-allowed disabled:bg-emerald-300 disabled:opacity-50"
-                          disabled={patientResponse.trim().length === 0}
-                          title="Submit your response"
+                          onPointerCancel={() => {
+                            if (isHoldingRef.current) {
+                              stopListening(true);
+                            }
+                          }}
+                          disabled={status !== "awaitingPatient" || isPaused || isSpeaking || cleaningTranscript}
+                          className={`absolute bottom-3 right-3 inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold shadow-sm transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 ${
+                            isHolding
+                              ? "bg-red-500 text-white border border-red-500 focus-visible:outline-red-500"
+                              : "border border-slate-200 bg-white text-slate-700 focus-visible:outline-emerald-600"
+                          } ${isCoarsePointer ? "opacity-100" : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"}`}
+                          title={isHolding ? "Release to stop recording" : "Hold to record"}
                         >
-                          Submit
+                          {isHolding && (
+                            <span className="absolute inset-0 -m-1 rounded-full border border-red-400/70 animate-ping" aria-hidden="true" />
+                          )}
+                          <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 1a3 3 0 00-3 3v6a3 3 0 006 0V4a3 3 0 00-3-3z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 10v2a7 7 0 01-14 0v-2" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19v4m-4 0h8" />
+                          </svg>
+                          Hold
                         </button>
-                      )}
-                    </div>
-                    {patientResponse.length > 800 && (
-                      <p className="text-xs text-slate-500 -mt-2">
-                        {1000 - patientResponse.length} characters remaining
-                      </p>
+                      </div>
+                    )}
+                    {showReviewActions && (
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          disabled={isSubmittingResponse || hasPendingSubmission}
+                          onPointerDown={(event) => {
+                            event.preventDefault();
+                            if (!isSubmittingResponse && !hasPendingSubmission) {
+                              commitDraftToResponse("use", true);
+                            }
+                          }}
+                          onPointerUp={() => {
+                          }}
+                          onClick={() => {
+                            if (!isSubmittingResponse && !hasPendingSubmission) {
+                              commitDraftToResponse("use", true);
+                            }
+                          }}
+                          className="inline-flex items-center justify-center rounded-xl bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-emerald-300"
+                        >
+                          Use this
+                        </button>
+                        <button
+                          type="button"
+                          disabled={isSubmittingResponse || hasPendingSubmission}
+                          onClick={() => {
+                            commitDraftToResponse("edit");
+                          }}
+                          className="inline-flex items-center justify-center rounded-xl border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          disabled={isSubmittingResponse || hasPendingSubmission}
+                          onClick={() => {
+                            redoDraftTranscript();
+                          }}
+                          className="inline-flex items-center justify-center rounded-xl border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          Redo
+                        </button>
+                      </div>
                     )}
                     {/* Pause/Resume, End buttons and Thinking indicator - moved below Listening box */}
                     <div className="flex items-center justify-between gap-3 mt-4 relative z-0">
@@ -3191,7 +3718,13 @@ export default function Home() {
                           <span className="text-sm text-slate-500">Thinking…</span>
                         )}
                         {status === "paused" && (
-                          <span className="text-sm text-slate-500">Paused</span>
+                          <span className="text-sm text-slate-500">
+                            {pauseCountdownSeconds !== null
+                              ? `Paused — ending in ${Math.floor(pauseCountdownSeconds / 60)}:${String(
+                                  pauseCountdownSeconds % 60
+                                ).padStart(2, "0")} unless resumed`
+                              : "Paused"}
+                          </span>
                         )}
                       </div>
                     </div>
@@ -3245,9 +3778,7 @@ export default function Home() {
                           status === "awaitingPatient"
                             ? isSpeaking
                               ? "AI is speaking... please wait"
-                              : isListening
-                                ? "Listening... Speak now..."
-                                : "Type your answer or click the microphone to speak..."
+                              : "Press & hold to talk (or type your response)"
                             : status === "complete"
                               ? "Interview complete."
                               : "Start the interview to respond."
@@ -3258,65 +3789,118 @@ export default function Home() {
                           setPatientResponse(val);
                           patientResponseRef.current = val;
                           updateSelectionRef(event.target);
-                          // #region agent log
-                          fetch('http://127.0.0.1:7242/ingest/9652e7f9-5ee8-4f7b-a684-b5806b3e6d60',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'pre-fix',hypothesisId:'F',location:'page.tsx:textarea:onChange',message:'onChange selection',data:{start:event.target.selectionStart,end:event.target.selectionEnd,valueLength:val.length},timestamp:Date.now()})}).catch(()=>{});
-                          // #endregion
                         }}
                         onSelect={(event) => {
                           const target = event.target as HTMLTextAreaElement;
                           updateSelectionRef(target);
-                          // #region agent log
-                          fetch('http://127.0.0.1:7242/ingest/9652e7f9-5ee8-4f7b-a684-b5806b3e6d60',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:'debug-session',runId:'pre-fix',hypothesisId:'F',location:'page.tsx:textarea:onSelect',message:'onSelect selection',data:{start:target.selectionStart,end:target.selectionEnd},timestamp:Date.now()})}).catch(()=>{});
-                          // #endregion
                         }}
                         onKeyUp={(event) => updateSelectionRef(event.target as HTMLTextAreaElement)}
                         onClick={(event) => updateSelectionRef(event.target as HTMLTextAreaElement)}
                         onMouseUp={(event) => updateSelectionRef(event.target as HTMLTextAreaElement)}
                         onFocus={(event) => updateSelectionRef(event.target as HTMLTextAreaElement)}
                         disabled={status !== "awaitingPatient" || isSpeaking}
-                        className={`w-full rounded-2xl border bg-slate-50/60 px-4 py-3 pr-14 text-base text-slate-900 outline-none transition focus:bg-white disabled:cursor-not-allowed disabled:opacity-70 ${
+                        className={`w-full rounded-2xl border bg-slate-50/60 px-4 py-3 text-base text-slate-900 outline-none transition focus:bg-white disabled:cursor-not-allowed disabled:opacity-70 ${
                           isListening
                             ? "border-emerald-500 ring-2 ring-emerald-200"
                             : "border-slate-200 focus:border-slate-400"
                         }`}
                       />
-                      {status === "awaitingPatient" && (
-                        <button
-                          type="button"
-                          onClick={isListening ? stopListening : startListening}
-                          className={`absolute bottom-2 right-2 flex items-center justify-center w-9 h-9 rounded-full transition-all ${
-                            isListening
-                              ? "bg-red-500 hover:bg-red-600 text-white animate-pulse"
-                              : "bg-emerald-600 hover:bg-emerald-700 text-white"
-                          }`}
-                          disabled={isSpeaking}
-                          title={isListening ? "Stop listening" : "Start voice input"}
-                        >
-                          {isListening ? (
-                            <svg
-                              className="w-4 h-4"
-                              fill="currentColor"
-                              viewBox="0 0 24 24"
-                            >
-                              <path d="M6 6h12v12H6z" />
-                            </svg>
-                          ) : (
-                            <svg
-                              className="w-4 h-4"
-                              fill="currentColor"
-                              viewBox="0 0 24 24"
-                            >
-                              <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z" />
-                              <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z" />
-                            </svg>
-                          )}
-                        </button>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-3">
+                      <button
+                        type="button"
+                        onPointerDown={(event) => {
+                          event.preventDefault();
+                          if (event.currentTarget.setPointerCapture) {
+                            event.currentTarget.setPointerCapture(event.pointerId);
+                          }
+                          startListening();
+                        }}
+                        onPointerUp={(event) => {
+                          event.preventDefault();
+                          if (event.currentTarget.releasePointerCapture) {
+                            event.currentTarget.releasePointerCapture(event.pointerId);
+                          }
+                          stopListening(true);
+                        }}
+                        onPointerLeave={() => {
+                          if (isHoldingRef.current) {
+                            stopListening(true);
+                          }
+                        }}
+                        onPointerCancel={() => {
+                          if (isHoldingRef.current) {
+                            stopListening(true);
+                          }
+                        }}
+                        disabled={
+                          status !== "awaitingPatient" ||
+                          isPaused ||
+                          isSpeaking ||
+                          cleaningTranscript ||
+                          showReview
+                        }
+                        className={`inline-flex items-center justify-center rounded-2xl px-4 py-2 text-sm font-semibold transition ${
+                          isHolding
+                            ? "bg-red-500 text-white hover:bg-red-600"
+                            : "bg-emerald-600 text-white hover:bg-emerald-500"
+                        } disabled:cursor-not-allowed disabled:bg-emerald-200 disabled:text-emerald-600`}
+                        title={isHolding ? "Release to stop recording" : "Press and hold to talk"}
+                      >
+                        {isHolding ? "Release to stop" : "Press & hold to talk"}
+                      </button>
+                      {cleaningTranscript && (
+                        <span className="text-xs text-slate-500">Processing transcript...</span>
                       )}
                     </div>
-                    {isListening && (
-                      <div className="flex items-center gap-2 text-emerald-600 text-sm">
-                        <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></div>
-                        <span>Listening... Speak your response</span>
+                    {micWarning && (
+                      <p className="text-xs text-amber-600">{micWarning}</p>
+                    )}
+                    {isSubmittingResponse && (
+                      <p className="text-xs text-slate-500">Submitting response...</p>
+                    )}
+                    {showReview && draftTranscript.trim().length > 0 && (
+                      <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800">
+                        <p className="text-xs uppercase tracking-wide text-slate-500">Looks right?</p>
+                        <p className="mt-2 whitespace-pre-wrap">{draftTranscript}</p>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            disabled={isSubmittingResponse}
+                            onPointerDown={(event) => {
+                              event.preventDefault();
+                              if (!isSubmittingResponse && !hasPendingSubmission) {
+                                commitDraftToResponse("use");
+                              }
+                            }}
+                            onPointerUp={() => {
+                            }}
+                            onClick={() => {
+                              if (!isSubmittingResponse && !hasPendingSubmission) {
+                                commitDraftToResponse("use");
+                              }
+                            }}
+                            className="inline-flex items-center justify-center rounded-xl bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-emerald-300"
+                          >
+                            {isSubmittingResponse ? "Sending..." : "Use this"}
+                          </button>
+                          <button
+                            type="button"
+                            disabled={isSubmittingResponse}
+                            onClick={() => commitDraftToResponse("edit")}
+                            className="inline-flex items-center justify-center rounded-xl border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            disabled={isSubmittingResponse}
+                            onClick={redoDraftTranscript}
+                            className="inline-flex items-center justify-center rounded-xl border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            Redo
+                          </button>
+                        </div>
                       </div>
                     )}
                     {patientResponse.length > 800 && (
@@ -3595,3 +4179,14 @@ async function requestTurn(
 
   return responseData;
 }
+
+
+
+
+
+
+
+
+
+
+

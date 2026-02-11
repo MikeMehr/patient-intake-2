@@ -115,7 +115,7 @@ export default function MarketingPage() {
       {/* Features Section */}
       <section
         id="features"
-        ref={(el) => (sectionRefs.current["features"] = el)}
+        ref={(el: HTMLDivElement | null) => { sectionRefs.current["features"] = el; }}
         className="py-20 bg-white opacity-0 transition-opacity duration-1000"
       >
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -174,7 +174,7 @@ export default function MarketingPage() {
       {/* Benefits Section */}
       <section
         id="benefits"
-        ref={(el) => (sectionRefs.current["benefits"] = el)}
+        ref={(el: HTMLDivElement | null) => { sectionRefs.current["benefits"] = el; }}
         className="py-20 bg-gradient-to-br from-cyan-50 to-teal-50 opacity-0 transition-opacity duration-1000"
       >
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -349,7 +349,7 @@ export default function MarketingPage() {
       {/* HIPAA Compliance Section */}
       <section
         id="hipaa"
-        ref={(el) => (sectionRefs.current["hipaa"] = el)}
+        ref={(el: HTMLDivElement | null) => { sectionRefs.current["hipaa"] = el; }}
         className="py-20 bg-white opacity-0 transition-opacity duration-1000"
       >
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -449,7 +449,7 @@ export default function MarketingPage() {
       {/* Flexibility & Customization Section */}
       <section
         id="customization"
-        ref={(el) => (sectionRefs.current["customization"] = el)}
+        ref={(el: HTMLDivElement | null) => { sectionRefs.current["customization"] = el; }}
         className="py-20 bg-gray-50 opacity-0 transition-opacity duration-1000"
       >
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -543,7 +543,7 @@ export default function MarketingPage() {
       {/* FAQ Section */}
       <section
         id="faq"
-        ref={(el) => (sectionRefs.current["faq"] = el)}
+        ref={(el: HTMLDivElement | null) => { sectionRefs.current["faq"] = el; }}
         className="py-20 bg-white opacity-0 transition-opacity duration-1000"
       >
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -563,7 +563,7 @@ export default function MarketingPage() {
       {/* CTA Section */}
       <section
         id="cta"
-        ref={(el) => (sectionRefs.current["cta"] = el)}
+        ref={(el: HTMLDivElement | null) => { sectionRefs.current["cta"] = el; }}
         className="py-20 bg-gradient-to-br from-cyan-500 to-teal-600 opacity-0 transition-opacity duration-1000"
       >
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">

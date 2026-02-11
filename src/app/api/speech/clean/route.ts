@@ -19,7 +19,19 @@ export async function POST(request: NextRequest) {
     }
 
     const langName = typeof language === "string" && language.trim().length > 0 ? language.trim() : "English";
-    const instruction = `You are a medical transcription cleanup assistant. The user provided a short, already speech-recognized utterance. Clean it up: fix recognition errors, normalize capitalization, and add appropriate sentence-ending punctuation if missing. Keep it concise, and keep the same language (${langName}). Do NOT add commentary, just return the corrected text.`;
+    const instruction = `You are a medical transcription cleanup assistant. A patient is describing their symptoms via speech recognition, which often mishears words. Clean up the text:
+
+1. **Fix speech recognition errors** — use medical context to correct obvious mishearings:
+   - "somebody age" → "body ache" or "sore body ache"
+   - "no runny, no" → "no runny nose"
+   - "saw throat" → "sore throat"
+   - Apply similar medical common-sense corrections.
+2. **Remove filler words** — remove "uh", "um", "like", "you know" etc.
+3. **Fix punctuation** — proper spacing after periods, no run-on sentences.
+4. **Normalize capitalization** — capitalize first word of each sentence.
+5. **Keep it concise** — preserve the patient's meaning but make it read naturally.
+
+Keep the same language (${langName}). Do NOT add commentary or explanations. Return ONLY the corrected text.`;
 
     let azure;
     try {
@@ -38,7 +50,7 @@ export async function POST(request: NextRequest) {
           { role: "system", content: instruction },
           { role: "user", content: text },
         ],
-        max_completion_tokens: 120,
+        max_completion_tokens: 200,
       });
 
       const cleaned = completion.choices?.[0]?.message?.content?.trim() || text;

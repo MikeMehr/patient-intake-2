@@ -9,9 +9,15 @@ import { cookies } from "next/headers";
 import { logDebug } from "@/lib/secure-logger";
 
 const SALT_ROUNDS = 12;
-const SESSION_SECRET = process.env.SESSION_SECRET;
-if (!SESSION_SECRET) {
-  throw new Error("SESSION_SECRET environment variable is required");
+
+// Lazy getter — defers the check to request time so the module can be imported
+// during the Next.js build phase without crashing.
+function getSessionSecret(): string {
+  const secret = process.env.SESSION_SECRET;
+  if (!secret) {
+    throw new Error("SESSION_SECRET environment variable is required");
+  }
+  return secret;
 }
 const SESSION_COOKIE_NAME = "physician_session";
 const SESSION_MAX_AGE = 30 * 60 * 1000; // 30 minutes

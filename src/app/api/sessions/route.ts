@@ -11,6 +11,7 @@ import type { HistoryResponse } from "@/lib/history-schema";
 import type { PatientProfile } from "@/lib/interview-schema";
 import { logDebug } from "@/lib/secure-logger";
 import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
+import { query } from "@/lib/db";
 
 /**
  * GET /api/sessions?code=xxx
