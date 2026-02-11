@@ -111,9 +111,16 @@ export async function POST(request: NextRequest) {
     }
 
     const payload = (await response.json()) as AzureSpeechResponse;
+
+    if (process.env.NODE_ENV === "development") {
+      console.log("[speech/stt] Azure response:", JSON.stringify(payload, null, 2));
+      console.log("[speech/stt] Audio type:", audio.type, "size:", audio.size);
+    }
+
+    // Prefer NBest[0].Display — it has better punctuation/spacing than DisplayText
     const text =
-      payload.DisplayText?.trim() ||
       payload.NBest?.[0]?.Display?.trim() ||
+      payload.DisplayText?.trim() ||
       payload.NBest?.[0]?.Lexical?.trim() ||
       "";
 

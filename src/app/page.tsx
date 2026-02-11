@@ -97,33 +97,100 @@ export default function Home() {
       return raw;
     }
   }
+  /**
+   * Convert any browser audio blob to 16-kHz mono PCM WAV —
+   * the format Azure Speech REST API reliably accepts.
+   */
+  async function convertToWav(blob: Blob): Promise<Blob> {
+    const audioCtx = new AudioContext({ sampleRate: 16000 });
+    try {
+      const arrayBuf = await blob.arrayBuffer();
+      const decoded = await audioCtx.decodeAudioData(arrayBuf);
+
+      // Mix down to mono
+      const mono = decoded.numberOfChannels === 1
+        ? decoded.getChannelData(0)
+        : (() => {
+            const ch0 = decoded.getChannelData(0);
+            const ch1 = decoded.getChannelData(1);
+            const mixed = new Float32Array(ch0.length);
+            for (let i = 0; i < ch0.length; i++) {
+              mixed[i] = (ch0[i] + ch1[i]) / 2;
+            }
+            return mixed;
+          })();
+
+      // Resample if decodeAudioData didn't honour sampleRate hint
+      let samples = mono;
+      if (decoded.sampleRate !== 16000) {
+        const ratio = 16000 / decoded.sampleRate;
+        const newLen = Math.round(mono.length * ratio);
+        const resampled = new Float32Array(newLen);
+        for (let i = 0; i < newLen; i++) {
+          resampled[i] = mono[Math.round(i / ratio)] ?? 0;
+        }
+        samples = resampled;
+      }
+
+      // Encode as 16-bit PCM WAV
+      const numSamples = samples.length;
+      const buffer = new ArrayBuffer(44 + numSamples * 2);
+      const view = new DataView(buffer);
+
+      const writeStr = (off: number, s: string) => {
+        for (let i = 0; i < s.length; i++) view.setUint8(off + i, s.charCodeAt(i));
+      };
+
+      writeStr(0, "RIFF");
+      view.setUint32(4, 36 + numSamples * 2, true);
+      writeStr(8, "WAVE");
+      writeStr(12, "fmt ");
+      view.setUint32(16, 16, true);          // PCM sub-chunk size
+      view.setUint16(20, 1, true);           // PCM format
+      view.setUint16(22, 1, true);           // mono
+      view.setUint32(24, 16000, true);       // sample rate
+      view.setUint32(28, 16000 * 2, true);   // byte rate
+      view.setUint16(32, 2, true);           // block align
+      view.setUint16(34, 16, true);          // bits per sample
+      writeStr(36, "data");
+      view.setUint32(40, numSamples * 2, true);
+
+      for (let i = 0; i < numSamples; i++) {
+        const s = Math.max(-1, Math.min(1, samples[i]));
+        view.setInt16(44 + i * 2, s < 0 ? s * 0x8000 : s * 0x7fff, true);
+      }
+
+      return new Blob([buffer], { type: "audio/wav" });
+    } finally {
+      await audioCtx.close();
+    }
+  }
+
   async function transcribeAudio(audioBlob: Blob, lang: string): Promise<string> {
     try {
+      // Convert to WAV for Azure Speech REST API compatibility
+      const wavBlob = await convertToWav(audioBlob);
       const formData = new FormData();
-      const ext = audioBlob.type.includes("wav")
-        ? "wav"
-        : audioBlob.type.includes("ogg")
-          ? "ogg"
-          : audioBlob.type.includes("mp4")
-            ? "mp4"
-            : "webm";
       const normalizedLanguage = normalizeLanguageCode(lang);
-      formData.append("audio", new File([audioBlob], `recording.${ext}`, { type: audioBlob.type || "audio/webm" }));
+      formData.append("audio", new File([wavBlob], "recording.wav", { type: "audio/wav" }));
       formData.append("language", normalizedLanguage);
       const res = await fetch("/api/speech/stt", {
         method: "POST",
         body: formData,
       });
       if (!res.ok) {
+        console.error("[transcribeAudio] STT request failed:", res.status);
         return "";
       }
       const data = await res.json();
       const parsed = sttSchema.safeParse(data);
       if (!parsed.success) {
+        console.error("[transcribeAudio] Invalid STT response:", data);
         return "";
       }
       return parsed.data.text.trim();
-    } catch {
+    } catch (err) {
+      console.error("[transcribeAudio] Error:", err);
       return "";
     }
   }
@@ -170,6 +237,8 @@ export default function Home() {
 
   const normalizePunctuation = (text: string) => {
     let t = text.trim();
+    // Ensure space after sentence-ending punctuation (e.g. "cough.No" → "cough. No")
+    t = t.replace(/([.!?])([A-Z])/g, "$1 $2");
     // Add sentence breaks before capitalized pronouns if missing punctuation
     t = t.replace(/([a-z]) (I|He|She|They|We|You) /g, "$1. $2 ");
     // Ensure ending punctuation
@@ -183,6 +252,10 @@ export default function Home() {
     t = t.replace(/\s+/g, " ");
     // Remove obvious filler tokens when isolated
     t = t.replace(/\b(um+|uh+|erm+|ah+)\b/gi, "");
+    // Clean up punctuation artifacts left after filler removal
+    t = t.replace(/,\s*,/g, ",");          // ", ," → ","
+    t = t.replace(/\.\s*,\s*/g, ". ");     // ". , " → ". "
+    t = t.replace(/,\s*\./g, ".");          // ", ." → "."
     t = t.replace(/\s+/g, " ").trim();
     // Normalize common number words (1-10)
     const numberMap: Record<string, string> = {
@@ -1154,10 +1227,12 @@ export default function Home() {
           },
         });
 
+        // Recording format doesn't matter for Azure STT — we convert to WAV
+        // before uploading. Prefer webm/opus for best Chrome recording quality.
         const mimeCandidates = [
           "audio/webm;codecs=opus",
-          "audio/webm",
           "audio/ogg;codecs=opus",
+          "audio/webm",
         ];
         const selectedMimeType = mimeCandidates.find((mime) =>
           typeof MediaRecorder !== "undefined" &&
