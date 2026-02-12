@@ -3772,6 +3772,43 @@ export default function Home() {
                     )}
                     {showResponseBox && (
                       <div className="group flex flex-col items-center">
+                        <button
+                          type="button"
+                          onPointerDown={(event) => {
+                            event.preventDefault();
+                            holdStartTimeRef.current = Date.now();
+                            startListening({ allowDuringReview: true });
+                          }}
+                          onPointerUp={(event) => {
+                            event.preventDefault();
+                            stopListening(true);
+                          }}
+                          onPointerCancel={() => {
+                            if (isCoarsePointer && isHoldingRef.current) {
+                              stopListening(true);
+                            }
+                          }}
+                          disabled={status !== "awaitingPatient" || isPaused || isSpeaking || cleaningTranscript}
+                          style={{
+                            touchAction: "manipulation",
+                            WebkitUserSelect: "none",
+                            userSelect: "none",
+                            WebkitTapHighlightColor: "transparent",
+                          }}
+                          className={`mb-2 inline-flex items-center gap-2 rounded-full px-5 py-2 text-base font-semibold appearance-none outline-none focus:outline-none focus-visible:outline-none focus-visible:ring-0 select-none ${
+                            isHolding
+                              ? "bg-red-500 text-white border border-red-500"
+                              : "border border-slate-200 bg-white text-slate-700"
+                          }`}
+                          title={isHolding ? "Release to stop recording" : "Hold to record"}
+                        >
+                          <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 1a3 3 0 00-3 3v6a3 3 0 006 0V4a3 3 0 00-3-3z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 10v2a7 7 0 01-14 0v-2" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19v4m-4 0h8" />
+                          </svg>
+                          Hold
+                        </button>
                         <div className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800">
                         {draftTranscript.trim().length > 0 && !isEditingDraft ? (
                           <p className="mt-1 whitespace-pre-wrap">{draftTranscript}</p>
@@ -3808,43 +3845,6 @@ export default function Home() {
                           />
                         )}
                         </div>
-                        <button
-                          type="button"
-                          onPointerDown={(event) => {
-                            event.preventDefault();
-                            holdStartTimeRef.current = Date.now();
-                            startListening({ allowDuringReview: true });
-                          }}
-                          onPointerUp={(event) => {
-                            event.preventDefault();
-                            stopListening(true);
-                          }}
-                          onPointerCancel={() => {
-                            if (isCoarsePointer && isHoldingRef.current) {
-                              stopListening(true);
-                            }
-                          }}
-                          disabled={status !== "awaitingPatient" || isPaused || isSpeaking || cleaningTranscript}
-                          style={{
-                            touchAction: "manipulation",
-                            WebkitUserSelect: "none",
-                            userSelect: "none",
-                            WebkitTapHighlightColor: "transparent",
-                          }}
-                          className={`mt-2 inline-flex items-center gap-2 rounded-full px-5 py-2 text-base font-semibold transition-colors appearance-none outline-none focus:outline-none focus-visible:outline-none focus-visible:ring-0 select-none ${
-                            isHolding
-                              ? "bg-red-500 text-white border border-red-500"
-                              : "border border-slate-200 bg-white text-slate-700"
-                          }`}
-                          title={isHolding ? "Release to stop recording" : "Hold to record"}
-                        >
-                          <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 1a3 3 0 00-3 3v6a3 3 0 006 0V4a3 3 0 00-3-3z" />
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 10v2a7 7 0 01-14 0v-2" />
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19v4m-4 0h8" />
-                          </svg>
-                          Hold
-                        </button>
                       </div>
                     )}
                     {showReviewActions && (
