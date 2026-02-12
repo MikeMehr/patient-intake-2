@@ -566,9 +566,6 @@ export default function Home() {
 
     return voices[0];
   };
-  const latestMessage = messages[messages.length - 1] ?? null;
-  const latestAssistantMessage =
-    latestMessage && latestMessage.role === "assistant" ? latestMessage : null;
   useEffect(() => {
     draftTranscriptRef.current = draftTranscript;
   }, [draftTranscript]);
@@ -3320,23 +3317,6 @@ export default function Home() {
                       Guided interview
                     </h2>
                     <div className="ml-3 flex items-center gap-2">
-                      {status === "awaitingPatient" && latestAssistantMessage && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            unlockSpeechSynthesis();
-                            const textToSpeak = getSpokenMessageContent(latestAssistantMessage);
-                            if (textToSpeak.trim().length > 0) {
-                              lastSpokenMessageRef.current = textToSpeak;
-                              speakText(textToSpeak);
-                            }
-                          }}
-                          className="inline-flex items-center justify-center rounded-lg px-3 py-1.5 text-sm font-medium transition-colors bg-emerald-100 text-emerald-700 hover:bg-emerald-200"
-                          title="Read latest question"
-                        >
-                          Read question
-                        </button>
-                      )}
                       <button
                         onClick={() => {
                           setIsMuted(!isMuted);
