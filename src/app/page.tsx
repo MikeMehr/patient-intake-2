@@ -3728,7 +3728,7 @@ export default function Home() {
                           }}
                           disabled={status !== "awaitingPatient" || isPaused || isSpeaking || cleaningTranscript}
                           style={{ touchAction: "manipulation", WebkitUserSelect: "none", userSelect: "none" }}
-                          className={`mt-2 inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold shadow-sm transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 select-none ${
+                          className={`mt-2 inline-flex items-center gap-2 rounded-full px-5 py-2 text-base font-semibold shadow-sm transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 select-none ${
                             isHolding
                               ? "bg-red-500 text-white border border-red-500 focus-visible:outline-red-500"
                               : "border border-slate-200 bg-white text-slate-700 focus-visible:outline-emerald-600"
@@ -3738,7 +3738,7 @@ export default function Home() {
                           {isHolding && (
                             <span className="pointer-events-none absolute inset-0 -m-1 rounded-full border border-red-400/70 animate-ping" aria-hidden="true" />
                           )}
-                          <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 1a3 3 0 00-3 3v6a3 3 0 006 0V4a3 3 0 00-3-3z" />
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 10v2a7 7 0 01-14 0v-2" />
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19v4m-4 0h8" />
