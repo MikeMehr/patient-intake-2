@@ -3726,9 +3726,6 @@ export default function Home() {
                           } ${isCoarsePointer ? "opacity-100" : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"}`}
                           title={isHolding ? "Release to stop recording" : "Hold to record"}
                         >
-                          {isHolding && (
-                            <span className="pointer-events-none absolute inset-0 -m-1 rounded-full border border-red-400/70 animate-ping" aria-hidden="true" />
-                          )}
                           <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 1a3 3 0 00-3 3v6a3 3 0 006 0V4a3 3 0 00-3-3z" />
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 10v2a7 7 0 01-14 0v-2" />
