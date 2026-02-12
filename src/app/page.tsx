@@ -513,6 +513,54 @@ export default function Home() {
     }
     return message.content;
   };
+  const choosePreferredVoice = (
+    voices: SpeechSynthesisVoice[],
+    langTag: string,
+    languageCode: string,
+  ): SpeechSynthesisVoice | undefined => {
+    const isEnglish = languageCode.toLowerCase().startsWith("en");
+    const normalize = (value: string | undefined) => (value || "").toLowerCase();
+
+    const findBy = (predicate: (voice: SpeechSynthesisVoice) => boolean) =>
+      voices.find((voice) => predicate(voice));
+
+    if (isEnglish) {
+      const googleEnUs = findBy((voice) => {
+        const name = normalize(voice.name);
+        const lang = normalize(voice.lang);
+        return name.includes("google") && lang === "en-us";
+      });
+      if (googleEnUs) return googleEnUs;
+
+      const exactEnUs = findBy((voice) => normalize(voice.lang) === "en-us");
+      if (exactEnUs) return exactEnUs;
+
+      // iOS Safari commonly exposes Samantha/Alex instead of Google voices.
+      const iosPreferred = findBy((voice) => {
+        const name = normalize(voice.name);
+        return name.includes("samantha") || name.includes("alex");
+      });
+      if (iosPreferred) return iosPreferred;
+    }
+
+    const matchLang = findBy((voice) => {
+      const voiceLang = normalize(voice.lang);
+      const expected = normalize(langTag);
+      return (
+        voiceLang.startsWith(expected) ||
+        voiceLang === expected ||
+        normalize(voice.name).includes("farsi") ||
+        normalize(voice.name).includes("persian")
+      );
+    });
+    if (matchLang) return matchLang;
+
+    if (isEnglish) {
+      return findBy((voice) => normalize(voice.lang).startsWith("en"));
+    }
+
+    return voices[0];
+  };
   const latestMessage = messages[messages.length - 1] ?? null;
   const latestAssistantMessage =
     latestMessage && latestMessage.role === "assistant" ? latestMessage : null;
@@ -858,30 +906,11 @@ export default function Home() {
       }
 
       console.log("[Voice Selection] Available voices:", voices.map(v => ({ name: v.name, lang: v.lang })));
-
-      const voiceMatchesLang = (v: SpeechSynthesisVoice, code: string) =>
-        v.lang?.toLowerCase().startsWith(code.toLowerCase()) ||
-        v.lang?.toLowerCase() === code.toLowerCase() ||
-        v.name?.toLowerCase().includes("farsi") ||
-        v.name?.toLowerCase().includes("persian");
-
-      const isEnglish = language.toLowerCase().startsWith("en");
-      const preferredGoogleEn = isEnglish
-        ? voices.find(
-            (v) =>
-              v.name?.toLowerCase().includes("google") &&
-              v.lang?.toLowerCase().startsWith("en")
-          )
-        : null;
-
-      const preferred = preferredGoogleEn || voices.find((voice) => voiceMatchesLang(voice, langTag));
-      const fallbackEn = voices.find((voice) =>
-        voice.lang?.toLowerCase().startsWith("en")
-      );
-
-      const chosenVoice = preferred || fallbackEn || voices[0];
-      setSelectedVoice(chosenVoice);
-      console.log("[Voice Selection] Selected voice:", chosenVoice.name, chosenVoice.lang);
+      const chosenVoice = choosePreferredVoice(voices, langTag, language);
+      if (chosenVoice) {
+        setSelectedVoice(chosenVoice);
+        console.log("[Voice Selection] Selected voice:", chosenVoice.name, chosenVoice.lang);
+      }
       
       window.speechSynthesis.onvoiceschanged = null;
     };
@@ -919,25 +948,9 @@ export default function Home() {
       utterance.lang = selectedVoice.lang || langTag || "en-US";
       console.log("[speakText] Using pre-selected voice:", selectedVoice.name, selectedVoice.lang);
     } else {
-      // Fallback: try to find a voice matching the selected language, else English
+      // Fallback: re-pick voice at speak-time in case voices loaded late.
       const voices = window.speechSynthesis.getVoices();
-      const isEnglish = language.toLowerCase().startsWith("en");
-      const preferredGoogleEn = isEnglish
-        ? voices.find(
-            (v) =>
-              v.name?.toLowerCase().includes("google") &&
-              v.lang?.toLowerCase().startsWith("en")
-          )
-        : null;
-
-      const matchLang = voices.find((v) =>
-        v.lang?.toLowerCase().startsWith(langTag.toLowerCase()) ||
-        v.lang?.toLowerCase() === langTag.toLowerCase() ||
-        v.name?.toLowerCase().includes("farsi") ||
-        v.name?.toLowerCase().includes("persian")
-      );
-      const fallbackEn = voices.find((v) => v.lang?.toLowerCase().startsWith("en"));
-      const chosen = preferredGoogleEn || matchLang || fallbackEn;
+      const chosen = choosePreferredVoice(voices, langTag, language);
       if (chosen) {
         utterance.voice = chosen;
         utterance.lang = chosen.lang || langTag || "en-US";
@@ -3260,9 +3273,7 @@ export default function Home() {
                     </div>
                   </div>
                 </div>
-                {(isSpeaking || (status === "awaitingPatient" && latestAssistantMessage)) &&
-                  !isPaused &&
-                  language.toLowerCase().startsWith("en") && (
+                {isSpeaking && !isPaused && language.toLowerCase().startsWith("en") && (
                   <video
                     className="w-40 h-24 rounded-xl object-cover border border-slate-200 shadow-sm"
                     autoPlay
