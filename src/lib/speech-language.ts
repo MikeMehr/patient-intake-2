@@ -58,3 +58,35 @@ export function normalizeLanguageCode(code: string | null | undefined): string {
   }
   return "en";
 }
+
+export function getAzureTtsVoiceName(locale: string): string {
+  const normalized = (locale || "en-US").trim().toLowerCase();
+  switch (normalized) {
+    case "en-us":
+      return "en-US-JennyNeural";
+    case "es-es":
+      return "es-ES-ElviraNeural";
+    case "fr-fr":
+      return "fr-FR-DeniseNeural";
+    case "de-de":
+      return "de-DE-KatjaNeural";
+    case "it-it":
+      return "it-IT-ElsaNeural";
+    case "pt-pt":
+      return "pt-PT-RaquelNeural";
+    case "zh-cn":
+      return "zh-CN-XiaoxiaoNeural";
+    case "ja-jp":
+      return "ja-JP-NanamiNeural";
+    case "ko-kr":
+      return "ko-KR-SunHiNeural";
+    case "ar-sa":
+      return "ar-SA-ZariyahNeural";
+    case "hi-in":
+      return "hi-IN-SwaraNeural";
+    case "fa-ir":
+      return "fa-IR-DilaraNeural";
+    default:
+      return "en-US-JennyNeural";
+  }
+}

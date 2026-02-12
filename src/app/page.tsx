@@ -78,6 +78,9 @@ export default function Home() {
   const useAzureStt =
     process.env.NEXT_PUBLIC_USE_AZURE_STT === "true" ||
     process.env.USE_AZURE_STT === "true";
+  const useAzureTts =
+    process.env.NEXT_PUBLIC_USE_AZURE_TTS === "true" ||
+    process.env.USE_AZURE_TTS === "true";
 
   async function cleanTranscript(raw: string, lang: string): Promise<string> {
     try {
@@ -427,6 +430,8 @@ export default function Home() {
   // Note: short "no" auto-submit removed (per request)
   const speechSynthesisRef = useRef<SpeechSynthesisUtterance | null>(null);
   const hasUnlockedSpeechRef = useRef(false);
+  const audioPlaybackRef = useRef<HTMLAudioElement | null>(null);
+  const audioPlaybackUrlRef = useRef<string | null>(null);
   const lastSpokenMessageRef = useRef<string>("");
   const chatRef = useRef<HTMLDivElement | null>(null);
   const patientResponseInputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -618,19 +623,27 @@ export default function Home() {
   }, [result?.summary, language, translatedSummary]);
 
   useEffect(() => {
-    if (typeof window !== "undefined" && "speechSynthesis" in window) {
-      if (isMuted) {
+    if (isMuted) {
+      if (typeof window !== "undefined" && "speechSynthesis" in window) {
         if (window.speechSynthesis.speaking) {
           mutedWhileSpeakingRef.current = true;
         }
         window.speechSynthesis.cancel();
-      } else if (mutedWhileSpeakingRef.current) {
-        const lastMessage = messagesRef.current[messagesRef.current.length - 1];
-        if (lastMessage?.role === "assistant") {
-          speakText(lastMessage.content);
-        }
-        mutedWhileSpeakingRef.current = false;
       }
+      if (audioPlaybackRef.current && !audioPlaybackRef.current.paused) {
+        mutedWhileSpeakingRef.current = true;
+      }
+      if (audioPlaybackRef.current) {
+        audioPlaybackRef.current.pause();
+        audioPlaybackRef.current.currentTime = 0;
+      }
+      setIsSpeaking(false);
+    } else if (mutedWhileSpeakingRef.current) {
+      const lastMessage = messagesRef.current[messagesRef.current.length - 1];
+      if (lastMessage?.role === "assistant") {
+        speakText(getSpokenMessageContent(lastMessage));
+      }
+      mutedWhileSpeakingRef.current = false;
     }
   }, [isMuted]);
 
@@ -878,6 +891,15 @@ export default function Home() {
         window.speechSynthesis.cancel();
         setIsSpeaking(false);
       }
+      if (audioPlaybackRef.current) {
+        audioPlaybackRef.current.pause();
+        audioPlaybackRef.current.src = "";
+        audioPlaybackRef.current = null;
+      }
+      if (audioPlaybackUrlRef.current) {
+        URL.revokeObjectURL(audioPlaybackUrlRef.current);
+        audioPlaybackUrlRef.current = null;
+      }
       if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
         try {
           mediaRecorderRef.current.stop();
@@ -928,27 +950,37 @@ export default function Home() {
     };
   }, [language]);
 
-  const speakText = (text: string) => {
+  const clearAzureAudioPlayback = () => {
+    if (audioPlaybackRef.current) {
+      audioPlaybackRef.current.pause();
+      audioPlaybackRef.current.src = "";
+      audioPlaybackRef.current = null;
+    }
+    if (audioPlaybackUrlRef.current) {
+      URL.revokeObjectURL(audioPlaybackUrlRef.current);
+      audioPlaybackUrlRef.current = null;
+    }
+  };
+
+  const speakWithBrowserTts = (text: string) => {
     if (typeof window === "undefined" || !("speechSynthesis" in window)) {
       return;
     }
 
-    // Cancel any ongoing speech
     window.speechSynthesis.cancel();
+    clearAzureAudioPlayback();
 
     const utterance = new SpeechSynthesisUtterance(text);
-    utterance.rate = 1.0; // Normal speed
-    utterance.pitch = 1.0; // Normal pitch
-    utterance.volume = isMuted ? 0.0 : 1.0; // Respect mute setting
-    
+    utterance.rate = 1.0;
+    utterance.pitch = 1.0;
+    utterance.volume = isMuted ? 0.0 : 1.0;
+
     const langTag = getSpeechLocale(language);
-    // Use selected voice if available; set lang to match selection
     if (selectedVoice) {
       utterance.voice = selectedVoice;
       utterance.lang = selectedVoice.lang || langTag || "en-US";
       console.log("[speakText] Using pre-selected voice:", selectedVoice.name, selectedVoice.lang);
     } else {
-      // Fallback: re-pick voice at speak-time in case voices loaded late.
       const voices = window.speechSynthesis.getVoices();
       const chosen = choosePreferredVoice(voices, langTag, language);
       if (chosen) {
@@ -971,20 +1003,81 @@ export default function Home() {
     };
 
     utterance.onerror = (event: SpeechSynthesisErrorEvent) => {
-      // Don't log errors if we're intentionally cancelling
-      // Also ignore "interrupted" errors which are normal when cancelling
       if (!isCancellingRef.current && event.error !== "interrupted") {
         console.error("Speech synthesis error:", event.error, event);
       }
       setIsSpeaking(false);
       speechSynthesisRef.current = null;
-      // Don't reset the flag here - let stopSpeaking handle it
     };
 
     speechSynthesisRef.current = utterance;
-    // iOS Safari can pause the synthesizer after async updates; resume before speaking.
     window.speechSynthesis.resume();
     window.speechSynthesis.speak(utterance);
+  };
+
+  const speakWithAzureTts = async (text: string): Promise<void> => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const response = await fetch("/api/speech/tts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text, language }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Azure TTS request failed (${response.status})`);
+    }
+
+    const audioBlob = await response.blob();
+    if (!audioBlob.size) {
+      throw new Error("Azure TTS returned empty audio.");
+    }
+
+    if (typeof window !== "undefined" && "speechSynthesis" in window) {
+      window.speechSynthesis.cancel();
+      speechSynthesisRef.current = null;
+    }
+    clearAzureAudioPlayback();
+
+    const audioUrl = URL.createObjectURL(audioBlob);
+    const audio = new Audio(audioUrl);
+    audio.preload = "auto";
+    audioPlaybackRef.current = audio;
+    audioPlaybackUrlRef.current = audioUrl;
+
+    audio.onplay = () => setIsSpeaking(true);
+    audio.onended = () => {
+      setIsSpeaking(false);
+      clearAzureAudioPlayback();
+    };
+    audio.onerror = () => {
+      setIsSpeaking(false);
+      clearAzureAudioPlayback();
+    };
+
+    await audio.play();
+  };
+
+  const speakText = (text: string) => {
+    if (!text.trim().length || isMuted) {
+      setIsSpeaking(false);
+      return;
+    }
+
+    if (!useAzureTts) {
+      speakWithBrowserTts(text);
+      return;
+    }
+
+    void (async () => {
+      try {
+        await speakWithAzureTts(text);
+      } catch (error) {
+        console.warn("[speech] Azure TTS failed, falling back to browser TTS:", error);
+        speakWithBrowserTts(text);
+      }
+    })();
   };
 
   const unlockSpeechSynthesis = () => {
@@ -1010,6 +1103,7 @@ export default function Home() {
   };
 
   const stopSpeaking = () => {
+    clearAzureAudioPlayback();
     if (typeof window !== "undefined" && "speechSynthesis" in window) {
       // Set flag BEFORE cancelling to prevent error logging
       isCancellingRef.current = true;
@@ -1029,6 +1123,7 @@ export default function Home() {
         isCancellingRef.current = false;
       }, 200);
     }
+    setIsSpeaking(false);
   };
 
   // Initialize speech recognition
