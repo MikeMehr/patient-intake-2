@@ -1267,8 +1267,6 @@ export default function Home() {
 
         recognition.onend = () => {
           console.log("[Speech Recognition] onend - stopped listening, status:", statusRef.current);
-          setIsListening(false);
-          isListeningRef.current = false;
           const shouldRestart =
             statusRef.current === "awaitingPatient" &&
             isHoldingRef.current &&
@@ -1280,10 +1278,13 @@ export default function Home() {
               isListeningRef.current = true;
               setIsListening(true);
             } catch {
-              // Ignore restart errors
+              setIsListening(false);
+              isListeningRef.current = false;
             }
             return;
           }
+          setIsListening(false);
+          isListeningRef.current = false;
           const interimAtEnd = interimTranscriptRef.current.trim();
           // Always preserve any interim results when holding, even if short
           // This ensures speech that was detected but not finalized gets captured
@@ -3942,16 +3943,10 @@ export default function Home() {
                         type="button"
                         onPointerDown={(event) => {
                           event.preventDefault();
-                          if (event.currentTarget.setPointerCapture) {
-                            event.currentTarget.setPointerCapture(event.pointerId);
-                          }
                           startListening();
                         }}
                         onPointerUp={(event) => {
                           event.preventDefault();
-                          if (event.currentTarget.releasePointerCapture) {
-                            event.currentTarget.releasePointerCapture(event.pointerId);
-                          }
                           stopListening(true);
                         }}
                         onPointerLeave={() => {
@@ -3971,12 +3966,17 @@ export default function Home() {
                           cleaningTranscript ||
                           showReview
                         }
-                        style={{ touchAction: "manipulation", WebkitUserSelect: "none", userSelect: "none" }}
+                        style={{
+                          touchAction: "manipulation",
+                          WebkitUserSelect: "none",
+                          userSelect: "none",
+                          WebkitTapHighlightColor: "transparent",
+                        }}
                         className={`inline-flex items-center justify-center rounded-2xl px-4 py-2 text-sm font-semibold transition select-none ${
                           isHolding
                             ? "bg-red-500 text-white hover:bg-red-600"
                             : "bg-emerald-600 text-white hover:bg-emerald-500"
-                        } disabled:cursor-not-allowed disabled:bg-emerald-200 disabled:text-emerald-600`}
+                        } appearance-none outline-none focus:outline-none focus-visible:outline-none focus-visible:ring-0 disabled:cursor-not-allowed disabled:bg-emerald-200 disabled:text-emerald-600`}
                         title={isHolding ? "Release to stop recording" : "Press and hold to talk"}
                       >
                         {isHolding ? "Release to stop" : "Press & hold to talk"}
