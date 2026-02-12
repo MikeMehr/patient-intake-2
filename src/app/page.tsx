@@ -477,7 +477,6 @@ export default function Home() {
   const [interviewStartTime, setInterviewStartTime] = useState<number | null>(null);
   const interviewStartTimeRef = useRef<number | null>(null);
   const [elapsedTime, setElapsedTime] = useState<number>(0);
-  const debugRunIdRef = useRef(`run_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`);
   const cleaningSchema = z.object({ cleaned: z.string().min(1) });
   const sttSchema = z.object({
     text: z.string().optional().default(""),
@@ -675,14 +674,8 @@ export default function Home() {
 
   useEffect(() => {
     isHoldingRef.current = isHolding;
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/9652e7f9-5ee8-4f7b-a684-b5806b3e6d60',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({runId:debugRunIdRef.current,hypothesisId:'H2',location:'src/app/page.tsx:isHoldingEffect',message:'isHolding changed',data:{isHolding,isListening,status,isPaused,isSpeaking},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
   }, [isHolding]);
   useEffect(() => {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/9652e7f9-5ee8-4f7b-a684-b5806b3e6d60',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({runId:debugRunIdRef.current,hypothesisId:'H3',location:'src/app/page.tsx:isListeningEffect',message:'isListening changed',data:{isListening,isHolding,status,isPaused,isSpeaking},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
   }, [isListening]);
   useEffect(() => {
     const trimmed = draftTranscript.trim();
@@ -1157,9 +1150,6 @@ export default function Home() {
           lastResultTime = Date.now();
           setError(null); // Clear any previous errors
           hadResultRef.current = false;
-          // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/9652e7f9-5ee8-4f7b-a684-b5806b3e6d60',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({runId:debugRunIdRef.current,hypothesisId:'H3',location:'src/app/page.tsx:recognition.onstart',message:'webspeech onstart',data:{status:statusRef.current,isHolding:isHoldingRef.current,isCancelling:isCancellingRef.current},timestamp:Date.now()})}).catch(()=>{});
-          // #endregion
         };
         recognition.onaudiostart = () => {
         };
@@ -1229,9 +1219,6 @@ export default function Home() {
         };
 
         recognition.onerror = (event: any) => {
-          // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/9652e7f9-5ee8-4f7b-a684-b5806b3e6d60',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({runId:debugRunIdRef.current,hypothesisId:'H3',location:'src/app/page.tsx:recognition.onerror',message:'webspeech onerror',data:{error:event?.error,status:statusRef.current,isHolding:isHoldingRef.current,isListening:isListeningRef.current,isCancelling:isCancellingRef.current},timestamp:Date.now()})}).catch(()=>{});
-          // #endregion
           const shouldKeepListening =
             statusRef.current === "awaitingPatient" &&
             isHoldingRef.current &&
@@ -1287,9 +1274,6 @@ export default function Home() {
 
         recognition.onend = () => {
           console.log("[Speech Recognition] onend - stopped listening, status:", statusRef.current);
-          // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/9652e7f9-5ee8-4f7b-a684-b5806b3e6d60',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({runId:debugRunIdRef.current,hypothesisId:'H3',location:'src/app/page.tsx:recognition.onend',message:'webspeech onend',data:{status:statusRef.current,isHolding:isHoldingRef.current,hadResult:hadResultRef.current,isCancelling:isCancellingRef.current},timestamp:Date.now()})}).catch(()=>{});
-          // #endregion
           const shouldRestart =
             statusRef.current === "awaitingPatient" &&
             isHoldingRef.current &&
@@ -1345,9 +1329,6 @@ export default function Home() {
     // Capture current selection before we start listening (in case focus shifts)
     updateSelectionRef(patientResponseInputRef.current);
     const allowDuringReview = options?.allowDuringReview ?? false;
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/9652e7f9-5ee8-4f7b-a684-b5806b3e6d60',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({runId:debugRunIdRef.current,hypothesisId:'H2',location:'src/app/page.tsx:startListening',message:'startListening called',data:{allowDuringReview,status,isHolding:isHoldingRef.current,isListening:isListeningRef.current,useAzureStt,showReview,isPaused,isSpeaking},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
     if (isSpeaking) return; // Don't allow listening while AI is speaking
     if (cleaningTranscript) return;
     if (showReview && !allowDuringReview) return;
@@ -1532,9 +1513,6 @@ export default function Home() {
   };
 
   const stopListening = (finalizeDraft = false) => {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/9652e7f9-5ee8-4f7b-a684-b5806b3e6d60',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({runId:debugRunIdRef.current,hypothesisId:'H2',location:'src/app/page.tsx:stopListening',message:'stopListening called',data:{finalizeDraft,status:statusRef.current,isHolding:isHoldingRef.current,isListening:isListeningRef.current,useAzureStt},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
     setIsHolding(false);
     isHoldingRef.current = false;
     if (useAzureStt) {
@@ -3724,23 +3702,14 @@ export default function Home() {
                           type="button"
                           onPointerDown={(event) => {
                             event.preventDefault();
-                          // #region agent log
-                          fetch('http://127.0.0.1:7242/ingest/9652e7f9-5ee8-4f7b-a684-b5806b3e6d60',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({runId:debugRunIdRef.current,hypothesisId:'H1',location:'src/app/page.tsx:conversationMic.onPointerDown',message:'conversation mic pointer down',data:{pointerType:event.pointerType,isCoarsePointer,status,isHolding,isListening},timestamp:Date.now()})}).catch(()=>{});
-                          // #endregion
                             holdStartTimeRef.current = Date.now();
                             startListening({ allowDuringReview: true });
                           }}
                           onPointerUp={(event) => {
                             event.preventDefault();
-                          // #region agent log
-                          fetch('http://127.0.0.1:7242/ingest/9652e7f9-5ee8-4f7b-a684-b5806b3e6d60',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({runId:debugRunIdRef.current,hypothesisId:'H1',location:'src/app/page.tsx:conversationMic.onPointerUp',message:'conversation mic pointer up',data:{pointerType:event.pointerType,isCoarsePointer,status,isHolding:isHoldingRef.current,isListening:isListeningRef.current},timestamp:Date.now()})}).catch(()=>{});
-                          // #endregion
                             stopListening(true);
                           }}
                           onPointerCancel={() => {
-                          // #region agent log
-                          fetch('http://127.0.0.1:7242/ingest/9652e7f9-5ee8-4f7b-a684-b5806b3e6d60',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({runId:debugRunIdRef.current,hypothesisId:'H1',location:'src/app/page.tsx:conversationMic.onPointerCancel',message:'conversation mic pointer cancel',data:{isCoarsePointer,status,isHolding:isHoldingRef.current,isListening:isListeningRef.current},timestamp:Date.now()})}).catch(()=>{});
-                          // #endregion
                             if (isCoarsePointer && isHoldingRef.current) {
                               stopListening(true);
                             }
