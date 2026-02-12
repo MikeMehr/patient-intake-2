@@ -477,6 +477,9 @@ export default function Home() {
   const [interviewStartTime, setInterviewStartTime] = useState<number | null>(null);
   const interviewStartTimeRef = useRef<number | null>(null);
   const [elapsedTime, setElapsedTime] = useState<number>(0);
+  const [azureTtsAwaitingTap, setAzureTtsAwaitingTap] = useState(false);
+  const debugRunIdRef = useRef(`voice_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`);
+  const blockedAzureTextRef = useRef<string | null>(null);
   const cleaningSchema = z.object({ cleaned: z.string().min(1) });
   const sttSchema = z.object({
     text: z.string().optional().default(""),
@@ -931,6 +934,9 @@ export default function Home() {
       if (chosenVoice) {
         setSelectedVoice(chosenVoice);
         console.log("[Voice Selection] Selected voice:", chosenVoice.name, chosenVoice.lang);
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/9652e7f9-5ee8-4f7b-a684-b5806b3e6d60',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({runId:debugRunIdRef.current,hypothesisId:'V5',location:'src/app/page.tsx:pickVoice',message:'browser voice selected',data:{name:chosenVoice.name,lang:chosenVoice.lang,language,useAzureTts},timestamp:Date.now()})}).catch(()=>{});
+        // #endregion
       }
       
       window.speechSynthesis.onvoiceschanged = null;
@@ -979,6 +985,9 @@ export default function Home() {
       utterance.voice = selectedVoice;
       utterance.lang = selectedVoice.lang || langTag || "en-US";
       console.log("[speakText] Using pre-selected voice:", selectedVoice.name, selectedVoice.lang);
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/9652e7f9-5ee8-4f7b-a684-b5806b3e6d60',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({runId:debugRunIdRef.current,hypothesisId:'V4',location:'src/app/page.tsx:speakWithBrowserTts',message:'browser tts pre-selected voice',data:{name:selectedVoice.name,lang:selectedVoice.lang,language,textLen:text.length,useAzureTts},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
     } else {
       const voices = window.speechSynthesis.getVoices();
       const chosen = choosePreferredVoice(voices, langTag, language);
@@ -986,6 +995,9 @@ export default function Home() {
         utterance.voice = chosen;
         utterance.lang = chosen.lang || langTag || "en-US";
         console.log("[speakText] Using fallback voice:", chosen.name, chosen.lang);
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/9652e7f9-5ee8-4f7b-a684-b5806b3e6d60',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({runId:debugRunIdRef.current,hypothesisId:'V4',location:'src/app/page.tsx:speakWithBrowserTts',message:'browser tts fallback voice',data:{name:chosen.name,lang:chosen.lang,language,textLen:text.length,useAzureTts},timestamp:Date.now()})}).catch(()=>{});
+        // #endregion
       } else {
         utterance.lang = langTag || "en-US";
         console.log("[speakText] Using default lang:", utterance.lang);
@@ -1018,11 +1030,16 @@ export default function Home() {
     if (typeof window === "undefined") {
       return;
     }
+    setAzureTtsAwaitingTap(false);
+    blockedAzureTextRef.current = null;
     const response = await fetch("/api/speech/tts", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text, language }),
     });
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/9652e7f9-5ee8-4f7b-a684-b5806b3e6d60',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({runId:debugRunIdRef.current,hypothesisId:'V2',location:'src/app/page.tsx:speakWithAzureTts',message:'azure tts response received',data:{ok:response.ok,status:response.status,contentType:response.headers.get('content-type'),language,textLen:text.length},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
 
     if (!response.ok) {
       throw new Error(`Azure TTS request failed (${response.status})`);
@@ -1045,7 +1062,11 @@ export default function Home() {
     audioPlaybackRef.current = audio;
     audioPlaybackUrlRef.current = audioUrl;
 
-    audio.onplay = () => setIsSpeaking(true);
+    audio.onplay = () => {
+      setIsSpeaking(true);
+      setAzureTtsAwaitingTap(false);
+      blockedAzureTextRef.current = null;
+    };
     audio.onended = () => {
       setIsSpeaking(false);
       clearAzureAudioPlayback();
@@ -1055,10 +1076,54 @@ export default function Home() {
       clearAzureAudioPlayback();
     };
 
-    await audio.play();
+    try {
+      await audio.play();
+    } catch (error) {
+      const isNotAllowed =
+        error instanceof DOMException &&
+        error.name === "NotAllowedError";
+      if (isNotAllowed) {
+        setIsSpeaking(false);
+        setAzureTtsAwaitingTap(true);
+        blockedAzureTextRef.current = text;
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/9652e7f9-5ee8-4f7b-a684-b5806b3e6d60',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({runId:debugRunIdRef.current,hypothesisId:'V6',location:'src/app/page.tsx:speakWithAzureTts',message:'azure autoplay blocked; awaiting tap',data:{language,textLen:text.length,errorName:error.name},timestamp:Date.now()})}).catch(()=>{});
+        // #endregion
+        throw new Error("AZURE_TTS_AUTOPLAY_BLOCKED");
+      }
+      throw error;
+    }
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/9652e7f9-5ee8-4f7b-a684-b5806b3e6d60',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({runId:debugRunIdRef.current,hypothesisId:'V3',location:'src/app/page.tsx:speakWithAzureTts',message:'azure audio play started',data:{language,textLen:text.length},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
+  };
+
+  const replayAzureTtsAfterTap = async () => {
+    if (isMuted) {
+      return;
+    }
+    try {
+      if (audioPlaybackRef.current) {
+        await audioPlaybackRef.current.play();
+      } else if (blockedAzureTextRef.current) {
+        await speakWithAzureTts(blockedAzureTextRef.current);
+      }
+      setAzureTtsAwaitingTap(false);
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/9652e7f9-5ee8-4f7b-a684-b5806b3e6d60',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({runId:debugRunIdRef.current,hypothesisId:'V6',location:'src/app/page.tsx:replayAzureTtsAfterTap',message:'manual tap replay succeeded',data:{language,hasAudio:!!audioPlaybackRef.current},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
+    } catch (error) {
+      setAzureTtsAwaitingTap(true);
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/9652e7f9-5ee8-4f7b-a684-b5806b3e6d60',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({runId:debugRunIdRef.current,hypothesisId:'V6',location:'src/app/page.tsx:replayAzureTtsAfterTap',message:'manual tap replay failed',data:{language,error:error instanceof Error ? error.message : String(error)},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
+    }
   };
 
   const speakText = (text: string) => {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/9652e7f9-5ee8-4f7b-a684-b5806b3e6d60',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({runId:debugRunIdRef.current,hypothesisId:'V1',location:'src/app/page.tsx:speakText',message:'speakText called',data:{useAzureTts,isMuted,language,textLen:text.trim().length},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
     if (!text.trim().length || isMuted) {
       setIsSpeaking(false);
       return;
@@ -1073,7 +1138,13 @@ export default function Home() {
       try {
         await speakWithAzureTts(text);
       } catch (error) {
+        if (error instanceof Error && error.message === "AZURE_TTS_AUTOPLAY_BLOCKED") {
+          return;
+        }
         console.warn("[speech] Azure TTS failed, falling back to browser TTS:", error);
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/9652e7f9-5ee8-4f7b-a684-b5806b3e6d60',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({runId:debugRunIdRef.current,hypothesisId:'V2',location:'src/app/page.tsx:speakText',message:'azure tts failed, fallback to browser',data:{error:error instanceof Error ? error.message : String(error),language,textLen:text.length,useAzureTts},timestamp:Date.now()})}).catch(()=>{});
+        // #endregion
         speakWithBrowserTts(text);
       }
     })();
@@ -1103,6 +1174,8 @@ export default function Home() {
 
   const stopSpeaking = () => {
     clearAzureAudioPlayback();
+    setAzureTtsAwaitingTap(false);
+    blockedAzureTextRef.current = null;
     if (typeof window !== "undefined" && "speechSynthesis" in window) {
       // Set flag BEFORE cancelling to prevent error logging
       isCancellingRef.current = true;
@@ -1127,7 +1200,12 @@ export default function Home() {
 
   // Initialize speech recognition
   useEffect(() => {
-    if (useAzureStt) {
+    const canUseAzureRecorder =
+      typeof window !== "undefined" &&
+      typeof MediaRecorder !== "undefined" &&
+      typeof navigator !== "undefined" &&
+      !!navigator.mediaDevices?.getUserMedia;
+    if (useAzureStt && canUseAzureRecorder) {
       return;
     }
     if (typeof window !== "undefined") {
@@ -1332,7 +1410,12 @@ export default function Home() {
     if (isSpeaking) return; // Don't allow listening while AI is speaking
     if (cleaningTranscript) return;
     if (showReview && !allowDuringReview) return;
-    if (useAzureStt && status === "awaitingPatient") {
+    const canUseAzureRecorder =
+      typeof window !== "undefined" &&
+      typeof MediaRecorder !== "undefined" &&
+      typeof navigator !== "undefined" &&
+      !!navigator.mediaDevices?.getUserMedia;
+    if (useAzureStt && status === "awaitingPatient" && canUseAzureRecorder) {
       try {
         if (hasPendingSubmission) {
           setHasPendingSubmission(false);
@@ -1451,6 +1534,21 @@ export default function Home() {
           console.error("Error starting Azure STT recording:", error);
           setError("Unable to start voice input. Please try again.");
         }
+        return;
+      }
+    }
+    if (useAzureStt && status === "awaitingPatient" && !canUseAzureRecorder) {
+      const SpeechRecognition =
+        typeof window !== "undefined"
+          ? (window.SpeechRecognition || window.webkitSpeechRecognition)
+          : undefined;
+      if (!SpeechRecognition) {
+        const secureContextBlocked = typeof window !== "undefined" && !window.isSecureContext;
+        setError(
+          secureContextBlocked
+            ? "Voice input is not available over HTTP on this device. Open the app over HTTPS or use a computer browser."
+            : "Voice input is not supported on this browser. Please type your response.",
+        );
         return;
       }
     }
@@ -3329,6 +3427,18 @@ export default function Home() {
                       Guided interview
                     </h2>
                     <div className="ml-3 flex items-center gap-2">
+                      {azureTtsAwaitingTap && !isMuted && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            void replayAzureTtsAfterTap();
+                          }}
+                          className="inline-flex items-center justify-center rounded-lg px-3 py-1.5 text-sm font-medium transition-colors bg-amber-100 text-amber-800 hover:bg-amber-200"
+                          title="Tap to play Azure voice"
+                        >
+                          Tap to play voice
+                        </button>
+                      )}
                       <button
                         onClick={() => {
                           setIsMuted(!isMuted);
@@ -4275,7 +4385,7 @@ async function requestTurn(
         isQuotaError,
       });
     }
-    
+
     throw new Error(errorMessage);
   }
 
