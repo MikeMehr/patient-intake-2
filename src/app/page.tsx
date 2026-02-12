@@ -3719,11 +3719,11 @@ export default function Home() {
                             userSelect: "none",
                             WebkitTapHighlightColor: "transparent",
                           }}
-                          className={`mt-2 inline-flex items-center gap-2 rounded-full px-5 py-2 text-base font-semibold shadow-sm transition-colors appearance-none outline-none focus:outline-none focus-visible:outline-none focus-visible:ring-0 select-none ${
+                          className={`mt-2 inline-flex items-center gap-2 rounded-full px-5 py-2 text-base font-semibold transition-colors appearance-none outline-none focus:outline-none focus-visible:outline-none focus-visible:ring-0 select-none ${
                             isHolding
                               ? "bg-red-500 text-white border border-red-500"
                               : "border border-slate-200 bg-white text-slate-700"
-                          } ${isCoarsePointer ? "opacity-100" : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"}`}
+                          }`}
                           title={isHolding ? "Release to stop recording" : "Hold to record"}
                         >
                           <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
