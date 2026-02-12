@@ -4007,6 +4007,48 @@ export default function Home() {
                     >
                       Your response
                     </label>
+                    <div className="flex flex-wrap items-center gap-3">
+                      <button
+                        type="button"
+                        onPointerDown={(event) => {
+                          event.preventDefault();
+                          startListening();
+                        }}
+                        onPointerUp={(event) => {
+                          event.preventDefault();
+                          stopListening(true);
+                        }}
+                        onPointerCancel={() => {
+                          if (isCoarsePointer && isHoldingRef.current) {
+                            stopListening(true);
+                          }
+                        }}
+                        disabled={
+                          status !== "awaitingPatient" ||
+                          isPaused ||
+                          isSpeaking ||
+                          cleaningTranscript ||
+                          showReview
+                        }
+                        style={{
+                          touchAction: "manipulation",
+                          WebkitUserSelect: "none",
+                          userSelect: "none",
+                          WebkitTapHighlightColor: "transparent",
+                        }}
+                        className={`inline-flex items-center justify-center rounded-2xl px-4 py-2 text-sm font-semibold select-none ${
+                          isHolding
+                            ? "bg-red-500 text-white border border-red-500"
+                            : "bg-emerald-600 text-white border border-emerald-600"
+                        } appearance-none outline-none focus:outline-none focus-visible:outline-none focus-visible:ring-0 disabled:cursor-not-allowed disabled:bg-emerald-200 disabled:border-emerald-200 disabled:text-emerald-600`}
+                        title={isHolding ? "Release to stop recording" : "Press and hold to talk"}
+                      >
+                        {isHolding ? "Release to stop" : "Press & hold to talk"}
+                      </button>
+                      {cleaningTranscript && (
+                        <span className="text-xs text-slate-500">Processing transcript...</span>
+                      )}
+                    </div>
                     <div className="relative">
                       <textarea
                         ref={patientResponseInputRef}
@@ -4045,48 +4087,6 @@ export default function Home() {
                             : "border-slate-200 focus:border-slate-400"
                         }`}
                       />
-                    </div>
-                    <div className="flex flex-wrap items-center gap-3">
-                      <button
-                        type="button"
-                        onPointerDown={(event) => {
-                          event.preventDefault();
-                          startListening();
-                        }}
-                        onPointerUp={(event) => {
-                          event.preventDefault();
-                          stopListening(true);
-                        }}
-                        onPointerCancel={() => {
-                          if (isCoarsePointer && isHoldingRef.current) {
-                            stopListening(true);
-                          }
-                        }}
-                        disabled={
-                          status !== "awaitingPatient" ||
-                          isPaused ||
-                          isSpeaking ||
-                          cleaningTranscript ||
-                          showReview
-                        }
-                        style={{
-                          touchAction: "manipulation",
-                          WebkitUserSelect: "none",
-                          userSelect: "none",
-                          WebkitTapHighlightColor: "transparent",
-                        }}
-                        className={`inline-flex items-center justify-center rounded-2xl px-4 py-2 text-sm font-semibold transition-colors select-none ${
-                          isHolding
-                            ? "bg-red-500 text-white hover:bg-red-600"
-                            : "bg-emerald-600 text-white hover:bg-emerald-500"
-                        } appearance-none outline-none focus:outline-none focus-visible:outline-none focus-visible:ring-0 disabled:cursor-not-allowed disabled:bg-emerald-200 disabled:text-emerald-600`}
-                        title={isHolding ? "Release to stop recording" : "Press and hold to talk"}
-                      >
-                        {isHolding ? "Release to stop" : "Press & hold to talk"}
-                      </button>
-                      {cleaningTranscript && (
-                        <span className="text-xs text-slate-500">Processing transcript...</span>
-                      )}
                     </div>
                     {micWarning && (
                       <p className="text-xs text-amber-600">{micWarning}</p>
