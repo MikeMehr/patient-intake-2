@@ -3430,7 +3430,7 @@ export default function Home() {
                               </div>
                             </>
                           ) : (
-                            <div className="bg-emerald-600 rounded-2xl rounded-tr-sm px-5 py-3 text-white inline-block ml-auto relative group min-w-[400px] max-w-[600px]">
+                            <div className="bg-emerald-600 rounded-2xl rounded-tr-sm px-5 py-3 text-white inline-block ml-auto relative group max-w-full">
                               {addingToMessageIndex === index ? (
                                 <div className="space-y-2 w-full">
                                   <p className="text-sm text-emerald-50 mb-2">Original: {message.content}</p>
@@ -3796,7 +3796,7 @@ export default function Home() {
                       </div>
                     )}
                     {/* Pause/Resume, End buttons and Thinking indicator - moved below Listening box */}
-                    <div className="flex items-center justify-between gap-3 mt-4 relative z-0">
+                    <div className="flex items-center justify-between gap-3 mt-8 relative z-0">
                       <div className="flex items-center gap-3">
                         {/* Pause/Resume and End buttons */}
                         {(status === "awaitingPatient" || status === "awaitingAi" || status === "paused") && (
