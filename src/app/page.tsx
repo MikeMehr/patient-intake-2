@@ -3662,7 +3662,8 @@ export default function Home() {
                       <p className="text-xs text-amber-600">{micWarning}</p>
                     )}
                     {showResponseBox && (
-                      <div className="relative rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 group">
+                      <div className="group flex flex-col items-center">
+                        <div className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800">
                         {draftTranscript.trim().length > 0 && !isEditingDraft ? (
                           <p className="mt-1 whitespace-pre-wrap">{draftTranscript}</p>
                         ) : (
@@ -3697,6 +3698,7 @@ export default function Home() {
                             className="mt-1 w-full resize-none rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
                           />
                         )}
+                        </div>
                         <button
                           type="button"
                           onPointerDown={(event) => {
@@ -3726,7 +3728,7 @@ export default function Home() {
                           }}
                           disabled={status !== "awaitingPatient" || isPaused || isSpeaking || cleaningTranscript}
                           style={{ touchAction: "manipulation", WebkitUserSelect: "none", userSelect: "none" }}
-                          className={`absolute bottom-3 right-3 inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold shadow-sm transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 select-none ${
+                          className={`mt-2 inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold shadow-sm transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 select-none ${
                             isHolding
                               ? "bg-red-500 text-white border border-red-500 focus-visible:outline-red-500"
                               : "border border-slate-200 bg-white text-slate-700 focus-visible:outline-emerald-600"
@@ -3910,7 +3912,7 @@ export default function Home() {
                         ref={patientResponseInputRef}
                         id="patient-response-chatbot"
                         name="patientResponse"
-                        rows={3}
+                        rows={4}
                         maxLength={1000}
                         placeholder={
                           status === "awaitingPatient"
