@@ -3569,33 +3569,20 @@ export default function Home() {
                                 </div>
                               ) : (
                                 <>
-                                  <p className="leading-relaxed whitespace-pre-wrap pr-32">
+                                  <p className="leading-relaxed whitespace-pre-wrap">
                                     {message.content}
                                   </p>
-                                  <div className="absolute top-2 right-2 flex gap-1">
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        setAddingToMessageIndex(index);
-                                        setAddingContent("");
-                                      }}
-                                      className="px-2 py-1 text-xs font-medium rounded-lg bg-blue-600/80 hover:bg-blue-700 text-white shadow-sm"
-                                      title="Add additional comments to this message"
-                                    >
-                                      Add
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        setEditingMessageIndex(index);
-                                        setEditingContent(message.content);
-                                      }}
-                                      className="px-2 py-1 text-xs font-medium rounded-lg bg-emerald-700/80 hover:bg-emerald-800 text-white shadow-sm"
-                                      title="Edit this message"
-                                    >
-                                      Edit
-                                    </button>
-                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setEditingMessageIndex(index);
+                                      setEditingContent(message.content);
+                                    }}
+                                    className="absolute -bottom-2.5 right-3 px-2.5 py-0.5 text-xs font-medium rounded-full bg-emerald-700 hover:bg-emerald-800 text-white shadow-sm border-2 border-white"
+                                    title="Edit this message"
+                                  >
+                                    Edit
+                                  </button>
                                 </>
                               )}
                             </div>
