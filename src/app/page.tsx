@@ -426,6 +426,7 @@ export default function Home() {
   const [isEditingDraft, setIsEditingDraft] = useState(false);
   // Note: short "no" auto-submit removed (per request)
   const speechSynthesisRef = useRef<SpeechSynthesisUtterance | null>(null);
+  const hasUnlockedSpeechRef = useRef(false);
   const lastSpokenMessageRef = useRef<string>("");
   const chatRef = useRef<HTMLDivElement | null>(null);
   const patientResponseInputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -512,6 +513,9 @@ export default function Home() {
     }
     return message.content;
   };
+  const latestMessage = messages[messages.length - 1] ?? null;
+  const latestAssistantMessage =
+    latestMessage && latestMessage.role === "assistant" ? latestMessage : null;
   useEffect(() => {
     draftTranscriptRef.current = draftTranscript;
   }, [draftTranscript]);
@@ -965,7 +969,31 @@ export default function Home() {
     };
 
     speechSynthesisRef.current = utterance;
+    // iOS Safari can pause the synthesizer after async updates; resume before speaking.
+    window.speechSynthesis.resume();
     window.speechSynthesis.speak(utterance);
+  };
+
+  const unlockSpeechSynthesis = () => {
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) {
+      return;
+    }
+    if (hasUnlockedSpeechRef.current) {
+      return;
+    }
+    try {
+      // Prime speech on a direct user gesture so iOS allows later async TTS.
+      const unlockUtterance = new SpeechSynthesisUtterance(" ");
+      unlockUtterance.volume = 0;
+      unlockUtterance.rate = 1;
+      unlockUtterance.pitch = 1;
+      window.speechSynthesis.cancel();
+      window.speechSynthesis.speak(unlockUtterance);
+      window.speechSynthesis.resume();
+      hasUnlockedSpeechRef.current = true;
+    } catch (error) {
+      console.warn("[speech] Unable to unlock speech synthesis:", error);
+    }
   };
 
   const stopSpeaking = () => {
@@ -1458,6 +1486,7 @@ export default function Home() {
     event: React.FormEvent<HTMLFormElement>,
   ): Promise<void> {
     event.preventDefault();
+    unlockSpeechSynthesis();
     if (status === "awaitingAi") {
       return;
     }
@@ -3182,43 +3211,65 @@ export default function Home() {
                     <h2 className="text-2xl font-semibold text-slate-900">
                       Guided interview
                     </h2>
-                    <button
-                      onClick={() => {
-                        setIsMuted(!isMuted);
-                      }}
-                      className={`inline-flex items-center justify-center rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ml-3 ${
-                        isMuted
-                          ? "bg-red-100 text-red-700 hover:bg-red-200"
-                          : "bg-slate-100 text-slate-700 hover:bg-slate-200"
-                      }`}
-                      title={isMuted ? "Unmute AI voice" : "Mute AI voice"}
-                    >
-                      {isMuted ? (
-                        <>
-                          <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" clipPath="url(#clip0)" />
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" />
-                          </svg>
-                          Muted
-                        </>
-                      ) : (
-                        <>
-                          <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072M18.364 5.636a9 9 0 010 12.728M12 9l-6 6H4a1 1 0 01-1-1v-4a1 1 0 011-1h2l6-6v14z" />
-                          </svg>
-                          Sound On
-                        </>
+                    <div className="ml-3 flex items-center gap-2">
+                      {status === "awaitingPatient" && latestAssistantMessage && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            unlockSpeechSynthesis();
+                            const textToSpeak = getSpokenMessageContent(latestAssistantMessage);
+                            if (textToSpeak.trim().length > 0) {
+                              lastSpokenMessageRef.current = textToSpeak;
+                              speakText(textToSpeak);
+                            }
+                          }}
+                          className="inline-flex items-center justify-center rounded-lg px-3 py-1.5 text-sm font-medium transition-colors bg-emerald-100 text-emerald-700 hover:bg-emerald-200"
+                          title="Read latest question"
+                        >
+                          Read question
+                        </button>
                       )}
-                    </button>
+                      <button
+                        onClick={() => {
+                          setIsMuted(!isMuted);
+                        }}
+                        className={`inline-flex items-center justify-center rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+                          isMuted
+                            ? "bg-red-100 text-red-700 hover:bg-red-200"
+                            : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                        }`}
+                        title={isMuted ? "Unmute AI voice" : "Mute AI voice"}
+                      >
+                        {isMuted ? (
+                          <>
+                            <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" clipPath="url(#clip0)" />
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" />
+                            </svg>
+                            Muted
+                          </>
+                        ) : (
+                          <>
+                            <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072M18.364 5.636a9 9 0 010 12.728M12 9l-6 6H4a1 1 0 01-1-1v-4a1 1 0 011-1h2l6-6v14z" />
+                            </svg>
+                            Sound On
+                          </>
+                        )}
+                      </button>
+                    </div>
                   </div>
                 </div>
-                {isSpeaking && !isPaused && language.toLowerCase().startsWith("en") && (
+                {(isSpeaking || (status === "awaitingPatient" && latestAssistantMessage)) &&
+                  !isPaused &&
+                  language.toLowerCase().startsWith("en") && (
                   <video
-                    className="hidden sm:block w-40 h-24 rounded-xl object-cover border border-slate-200 shadow-sm"
+                    className="w-40 h-24 rounded-xl object-cover border border-slate-200 shadow-sm"
                     autoPlay
                     loop
                     muted
                     playsInline
+                    preload="auto"
                   >
                     <source src="/Confident_Busines_woman.mp4" type="video/mp4" />
                     Your browser does not support the video tag.
