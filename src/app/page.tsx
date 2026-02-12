@@ -3795,12 +3795,8 @@ export default function Home() {
                             userSelect: "none",
                             WebkitTapHighlightColor: "transparent",
                           }}
-                          className={`mb-2 inline-flex items-center gap-2 rounded-full px-5 py-2 text-base font-semibold appearance-none outline-none focus:outline-none focus-visible:outline-none focus-visible:ring-0 select-none ${
-                            isHolding
-                              ? "bg-red-500 text-white border border-red-500"
-                              : "border border-slate-200 bg-white text-slate-700"
-                          }`}
-                          title={isHolding ? "Release to stop recording" : "Hold to record"}
+                          className="mb-2 inline-flex items-center gap-2 rounded-full px-5 py-2 text-base font-semibold bg-emerald-600 text-white border border-emerald-600 appearance-none outline-none focus:outline-none focus-visible:outline-none focus-visible:ring-0 select-none disabled:cursor-not-allowed disabled:bg-emerald-200 disabled:border-emerald-200 disabled:text-emerald-600"
+                          title="Hold to record"
                         >
                           <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 1a3 3 0 00-3 3v6a3 3 0 006 0V4a3 3 0 00-3-3z" />
@@ -4036,14 +4032,10 @@ export default function Home() {
                           userSelect: "none",
                           WebkitTapHighlightColor: "transparent",
                         }}
-                        className={`inline-flex items-center justify-center rounded-2xl px-4 py-2 text-sm font-semibold select-none ${
-                          isHolding
-                            ? "bg-red-500 text-white border border-red-500"
-                            : "bg-emerald-600 text-white border border-emerald-600"
-                        } appearance-none outline-none focus:outline-none focus-visible:outline-none focus-visible:ring-0 disabled:cursor-not-allowed disabled:bg-emerald-200 disabled:border-emerald-200 disabled:text-emerald-600`}
-                        title={isHolding ? "Release to stop recording" : "Press and hold to talk"}
+                        className="inline-flex items-center justify-center rounded-2xl px-4 py-2 text-sm font-semibold select-none bg-emerald-600 text-white border border-emerald-600 appearance-none outline-none focus:outline-none focus-visible:outline-none focus-visible:ring-0 disabled:cursor-not-allowed disabled:bg-emerald-200 disabled:border-emerald-200 disabled:text-emerald-600"
+                        title="Press and hold to talk"
                       >
-                        {isHolding ? "Release to stop" : "Press & hold to talk"}
+                        Press & hold to talk
                       </button>
                       {cleaningTranscript && (
                         <span className="text-xs text-slate-500">Processing transcript...</span>
