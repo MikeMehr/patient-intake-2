@@ -3700,35 +3700,29 @@ export default function Home() {
                           type="button"
                           onPointerDown={(event) => {
                             event.preventDefault();
-                            if (event.currentTarget.setPointerCapture) {
-                              event.currentTarget.setPointerCapture(event.pointerId);
-                            }
                             holdStartTimeRef.current = Date.now();
                             startListening({ allowDuringReview: true });
                           }}
                           onPointerUp={(event) => {
                             event.preventDefault();
-                            if (event.currentTarget.releasePointerCapture) {
-                              event.currentTarget.releasePointerCapture(event.pointerId);
-                            }
                             stopListening(true);
                           }}
-                          onPointerLeave={() => {
-                            if (isHoldingRef.current) {
-                              stopListening(true);
-                            }
-                          }}
                           onPointerCancel={() => {
-                            if (isHoldingRef.current) {
+                            if (isCoarsePointer && isHoldingRef.current) {
                               stopListening(true);
                             }
                           }}
                           disabled={status !== "awaitingPatient" || isPaused || isSpeaking || cleaningTranscript}
-                          style={{ touchAction: "manipulation", WebkitUserSelect: "none", userSelect: "none" }}
-                          className={`mt-2 inline-flex items-center gap-2 rounded-full px-5 py-2 text-base font-semibold shadow-sm transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 select-none ${
+                          style={{
+                            touchAction: "manipulation",
+                            WebkitUserSelect: "none",
+                            userSelect: "none",
+                            WebkitTapHighlightColor: "transparent",
+                          }}
+                          className={`mt-2 inline-flex items-center gap-2 rounded-full px-5 py-2 text-base font-semibold shadow-sm transition-colors appearance-none outline-none focus:outline-none focus-visible:outline-none focus-visible:ring-0 select-none ${
                             isHolding
-                              ? "bg-red-500 text-white border border-red-500 focus-visible:outline-red-500"
-                              : "border border-slate-200 bg-white text-slate-700 focus-visible:outline-emerald-600"
+                              ? "bg-red-500 text-white border border-red-500"
+                              : "border border-slate-200 bg-white text-slate-700"
                           } ${isCoarsePointer ? "opacity-100" : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"}`}
                           title={isHolding ? "Release to stop recording" : "Hold to record"}
                         >
@@ -3937,7 +3931,7 @@ export default function Home() {
                         onFocus={(event) => updateSelectionRef(event.target as HTMLTextAreaElement)}
                         disabled={status !== "awaitingPatient" || isSpeaking}
                         className={`w-full rounded-2xl border bg-slate-50/60 px-4 py-3 text-base text-slate-900 outline-none transition focus:bg-white disabled:cursor-not-allowed disabled:opacity-70 ${
-                          isListening
+                          isHolding || isListening
                             ? "border-emerald-500 ring-2 ring-emerald-200"
                             : "border-slate-200 focus:border-slate-400"
                         }`}
@@ -3955,7 +3949,7 @@ export default function Home() {
                           stopListening(true);
                         }}
                         onPointerCancel={() => {
-                          if (isHoldingRef.current) {
+                          if (isCoarsePointer && isHoldingRef.current) {
                             stopListening(true);
                           }
                         }}
