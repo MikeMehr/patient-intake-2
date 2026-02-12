@@ -1217,6 +1217,10 @@ export default function Home() {
         };
 
         recognition.onerror = (event: any) => {
+          const shouldKeepListening =
+            statusRef.current === "awaitingPatient" &&
+            isHoldingRef.current &&
+            !isCancellingRef.current;
           // Handle different error types
           if (event.error === "not-allowed") {
             // Microphone permission denied
@@ -1239,9 +1243,10 @@ export default function Home() {
             // Otherwise, continue listening
           } else if (event.error === "aborted") {
             // User stopped manually or we stopped it programmatically - this is normal
-            setIsListening(false);
-            isListeningRef.current = false;
-            isListeningRef.current = false;
+            if (!shouldKeepListening) {
+              setIsListening(false);
+              isListeningRef.current = false;
+            }
           } else if (event.error === "network") {
             // Network error
             console.error("Speech recognition error: Network issue");
@@ -3949,11 +3954,6 @@ export default function Home() {
                           event.preventDefault();
                           stopListening(true);
                         }}
-                        onPointerLeave={() => {
-                          if (isHoldingRef.current) {
-                            stopListening(true);
-                          }
-                        }}
                         onPointerCancel={() => {
                           if (isHoldingRef.current) {
                             stopListening(true);
@@ -3972,7 +3972,7 @@ export default function Home() {
                           userSelect: "none",
                           WebkitTapHighlightColor: "transparent",
                         }}
-                        className={`inline-flex items-center justify-center rounded-2xl px-4 py-2 text-sm font-semibold transition select-none ${
+                        className={`inline-flex items-center justify-center rounded-2xl px-4 py-2 text-sm font-semibold transition-colors select-none ${
                           isHolding
                             ? "bg-red-500 text-white hover:bg-red-600"
                             : "bg-emerald-600 text-white hover:bg-emerald-500"
