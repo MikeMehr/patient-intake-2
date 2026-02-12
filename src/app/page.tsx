@@ -3269,7 +3269,11 @@ export default function Home() {
                 {status !== "idle" && (
                   <button
                     type="button"
-                    onClick={resetConversation}
+                    onClick={() => {
+                      if (window.confirm("Are you sure you want to reset the conversation? All progress will be lost.")) {
+                        resetConversation();
+                      }
+                    }}
                     className="inline-flex items-center justify-center rounded-2xl border border-slate-200 px-5 py-3 text-base font-semibold text-slate-600 transition hover:text-slate-900"
                   >
                     Reset conversation
@@ -3748,7 +3752,7 @@ export default function Home() {
                       </div>
                     )}
                     {showReviewActions && (
-                      <div className="mt-3 flex flex-wrap gap-2">
+                      <div className="mt-6 flex flex-wrap gap-2">
                         <button
                           type="button"
                           disabled={isSubmittingResponse || hasPendingSubmission}
