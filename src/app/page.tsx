@@ -3808,7 +3808,11 @@ export default function Home() {
                             userSelect: "none",
                             WebkitTapHighlightColor: "transparent",
                           }}
-                          className="mb-2 inline-flex items-center gap-2 rounded-full px-5 py-2 text-base font-semibold bg-emerald-600 text-white border border-emerald-600 appearance-none outline-none focus:outline-none focus-visible:outline-none focus-visible:ring-0 select-none disabled:cursor-not-allowed disabled:bg-emerald-200 disabled:border-emerald-200 disabled:text-emerald-600"
+                          className={`mb-2 inline-flex items-center gap-2 rounded-full px-5 py-2 text-base font-semibold appearance-none outline-none focus:outline-none focus-visible:outline-none focus-visible:ring-0 select-none ${
+                            isHolding
+                              ? "bg-red-500 text-white border border-red-500"
+                              : "bg-emerald-600 text-white border border-emerald-600"
+                          } disabled:cursor-not-allowed disabled:bg-emerald-200 disabled:border-emerald-200 disabled:text-emerald-600`}
                           title="Hold to record"
                         >
                           <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -4045,7 +4049,11 @@ export default function Home() {
                           userSelect: "none",
                           WebkitTapHighlightColor: "transparent",
                         }}
-                        className="inline-flex items-center justify-center rounded-2xl px-4 py-2 text-sm font-semibold select-none bg-emerald-600 text-white border border-emerald-600 appearance-none outline-none focus:outline-none focus-visible:outline-none focus-visible:ring-0 disabled:cursor-not-allowed disabled:bg-emerald-200 disabled:border-emerald-200 disabled:text-emerald-600"
+                        className={`inline-flex items-center justify-center rounded-2xl px-4 py-2 text-sm font-semibold select-none appearance-none outline-none focus:outline-none focus-visible:outline-none focus-visible:ring-0 ${
+                          isHolding
+                            ? "bg-red-500 text-white border border-red-500"
+                            : "bg-emerald-600 text-white border border-emerald-600"
+                        } disabled:cursor-not-allowed disabled:bg-emerald-200 disabled:border-emerald-200 disabled:text-emerald-600`}
                         title="Press and hold to talk"
                       >
                         Press & hold to talk
