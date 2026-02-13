@@ -1474,6 +1474,7 @@ export default function Home() {
         recorder.ondataavailable = (event) => {
           if (event.data && event.data.size > 0) {
             mediaChunksRef.current.push(event.data);
+            setMicWarning(null);
           }
         };
 
@@ -1488,8 +1489,6 @@ export default function Home() {
           isListeningRef.current = false;
           const shouldFinalize = finalizeMediaOnStopRef.current;
           finalizeMediaOnStopRef.current = false;
-          const chunks = [...mediaChunksRef.current];
-          mediaChunksRef.current = [];
 
           if (mediaStreamRef.current) {
             mediaStreamRef.current.getTracks().forEach((track) => track.stop());
@@ -1497,8 +1496,16 @@ export default function Home() {
           }
 
           if (!shouldFinalize) {
+            mediaChunksRef.current = [];
             return;
           }
+
+          // Some browsers deliver the final dataavailable chunk right after stop.
+          await Promise.resolve();
+          await Promise.resolve();
+
+          const chunks = [...mediaChunksRef.current];
+          mediaChunksRef.current = [];
 
           const audioBlob = new Blob(chunks, {
             type: recorder.mimeType || "audio/webm",
