@@ -1519,7 +1519,9 @@ export default function Home() {
           await finalizeDraftTranscript();
         };
 
-        recorder.start(250);
+        // For short utterances (e.g., "no"), stop-based chunking is more reliable
+        // than interval chunking, which can miss data on quick release.
+        recorder.start();
         setIsHolding(true);
         isHoldingRef.current = true;
         setIsListening(true);
@@ -1618,6 +1620,10 @@ export default function Home() {
       const recorder = mediaRecorderRef.current;
       if (recorder && recorder.state !== "inactive") {
         try {
+          // Flush any buffered chunk before stopping, especially for short speech.
+          if (typeof recorder.requestData === "function") {
+            recorder.requestData();
+          }
           recorder.stop();
         } catch {
           // Ignore recorder stop errors
