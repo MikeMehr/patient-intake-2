@@ -10,6 +10,14 @@ import { getAzureOpenAIClient } from "@/lib/azure-openai";
 import { logDebug } from "@/lib/secure-logger";
 import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
 import { query } from "@/lib/db";
+import { sanitizeAssistiveClinicalText } from "@/lib/clinical-safety";
+import {
+  consumeRateLimit,
+  getRequestIp,
+  logInvitationAudit,
+  markInvitationUsed,
+  resolveInvitationFromCookie,
+} from "@/lib/invitation-security";
 
 const systemInstruction = `
 You are a Physician Assistant conducting a clinical interview. Your role is to gather a comprehensive history of present illness, perform a virtual physical examination when appropriate, systematically rule out red flags, and formulate a clinical assessment and treatment plan based on the information gathered.
@@ -264,8 +272,8 @@ CLINICAL DECISION-MAKING RULES:
 - Incorporate the patient's sex, age, past medical history, family history, current medication list (including OTC and supplements), primary care/family doctor, and allergies provided to you. Only ask clarifying questions if these factors are directly relevant to the current complaint and need elaboration.
 - Return ONLY valid JSON. For question turns respond with {"type":"question","question":"...","rationale":"..."}. For summary turns respond with {"type":"summary","positives":[],"negatives":[],"physicalFindings":[],"summary":"...","investigations":[],"assessment":"...","plan":[]}.
 - When summarizing, CRITICAL: The summary field must be ONE comprehensive paragraph that combines ALL chief complaints into a natural clinical narrative. Start with patient demographics and all complaints together (e.g., "30 year old female with 3 days of vaginal discharge and 5 days of sore throat."), then describe each complaint's details in sequence, flowing naturally (e.g., "The vaginal discharge is associated with itchiness and white, thickened discharge. She has history of vaginal yeast infection. She is experiencing sore throat with fever. There is no cough, bodyache or rhinorrhea..."). If lifestyle recommendations were made during the interview (diet modifications, exercise, smoking cessation, etc.), include them in the summary paragraph. Example: "Lifestyle recommendations were discussed, including dietary modifications to reduce cholesterol and increasing physical activity to 30 minutes most days." Do NOT create separate paragraphs for each complaint. 
-- ASSESSMENT: Must include your clinical assessment with differential diagnoses. List the most likely diagnosis first, followed by other considerations. Be specific and clinically appropriate (e.g., "Most likely diagnosis: Acute pharyngitis, likely viral. Differential considerations: Streptococcal pharyngitis, mononucleosis.").
-- PLAN: Must be a clinically appropriate treatment plan with specific, actionable steps. Include: diagnostic tests if indicated, medications with dosing if appropriate, patient education, follow-up instructions, and when to seek urgent care. Be specific and evidence-based (e.g., "1. In-person physical examination recommended to assess [specific finding]. 2. Symptomatic treatment with acetaminophen 500-1000mg every 6-8 hours as needed. 3. Salt water gargles. 4. Adequate hydration. 5. Return if symptoms worsen or persist >7 days. 6. Seek urgent care if difficulty swallowing or breathing.").
+- ASSESSMENT: Must include a non-definitive clinical assessment with differential diagnoses. Rank considerations by likelihood without declaring final diagnosis. Prefer phrasing like "Clinical features suggest..." and "Differential considerations include...".
+- PLAN: Must be a suggestive, physician-review treatment draft with specific actionable options. Include: diagnostic tests if indicated, medications with dosing if appropriate, patient education, follow-up instructions, and when to seek urgent care. Use non-directive language such as "consider", "may benefit from", "could include".
 - When to recommend in-person physical exam in PLAN:
   * When virtual/physical exam findings are insufficient for diagnosis
   * When concerning findings require hands-on assessment (e.g., palpable masses, abnormal heart sounds, abdominal tenderness with guarding)
@@ -291,7 +299,7 @@ CLINICAL DECISION-MAKING RULES:
 - If you asked about physical exam findings (tenderness, range of motion, redness, exudate, swelling, etc.) and the patient provided answers, you MUST include those findings in the physicalFindings array using the "Patient reports..." format.
 - If no physical exam was performed or no findings were gathered, use an empty array.
 - CRITICAL: Keep all text fields within character limits: questions max 1000 chars, summary max 1500 chars, assessment max 1500 chars, rationale max 280 chars.
-- Never mention that you are an AI. Never add disclaimers.
+- Do not present conclusions as definitive medical advice or autonomous decisions.
 
 PATIENT QUESTIONS (BRIEF, NO ADVICE):
 - If the patient asks a question, give a one-sentence acknowledgment only.
@@ -366,8 +374,8 @@ export async function POST(request: Request) {
   const {
     transcript,
     patientProfile,
-    patientEmail,
-    physicianId,
+    patientEmail: clientPatientEmail,
+    physicianId: clientPhysicianId,
     chiefComplaint,
     imageSummary,
     labReportSummary,
@@ -420,16 +428,85 @@ export async function POST(request: Request) {
     return res;
   }
 
-  // Verify active invitation exists (not older than 4 hours)
+  const ipAddress = getRequestIp(request.headers);
+  const userAgent = request.headers.get("user-agent");
+  const invitationContext = await resolveInvitationFromCookie();
+  if (!invitationContext) {
+    status = 401;
+    const res = NextResponse.json(
+      { error: "Invitation verification is required." },
+      { status },
+    );
+    logRequestMeta("/api/interview", requestId, status, Date.now() - started);
+    return res;
+  }
+
+  const turnLimiter = await consumeRateLimit(
+    `invite-interview:${invitationContext.invitationId}:${ipAddress}`,
+    120,
+    900,
+  );
+  if (!turnLimiter.allowed) {
+    status = 429;
+    const res = NextResponse.json(
+      {
+        error: "Too many interview requests. Please wait and try again.",
+        retryAfterSeconds: turnLimiter.retryAfterSeconds,
+      },
+      { status },
+    );
+    logRequestMeta("/api/interview", requestId, status, Date.now() - started);
+    return res;
+  }
+
+  // Only for telemetry: record mismatches when a client attempts identity override.
+  if (
+    clientPatientEmail?.trim() &&
+    clientPatientEmail.trim().toLowerCase() !== invitationContext.patientEmail.toLowerCase()
+  ) {
+    await logInvitationAudit({
+      invitationId: invitationContext.invitationId,
+      eventType: "identity_override_attempt",
+      ipAddress,
+      userAgent,
+      metadata: {
+        route: "/api/interview",
+      },
+    });
+  }
+  if (clientPhysicianId?.trim() && clientPhysicianId.trim() !== invitationContext.physicianId) {
+    await logInvitationAudit({
+      invitationId: invitationContext.invitationId,
+      eventType: "identity_override_attempt",
+      ipAddress,
+      userAgent,
+      metadata: {
+        route: "/api/interview",
+      },
+    });
+  }
+
+  // Strict single-use semantics: mark used at first interview turn.
+  if (transcript.length === 0) {
+    await markInvitationUsed(invitationContext.invitationId);
+    await logInvitationAudit({
+      invitationId: invitationContext.invitationId,
+      eventType: "interview_started",
+      ipAddress,
+      userAgent,
+    });
+  }
+
+  // Verify invitation state after session resolution.
   try {
     const invitationCheck = await query(
       `SELECT 1
        FROM patient_invitations
-       WHERE physician_id = $1
-         AND LOWER(patient_email) = LOWER($2)
-         AND COALESCE(sent_at, created_at, NOW()) >= NOW() - INTERVAL '4 hours'
+       WHERE id = $1
+         AND revoked_at IS NULL
+         AND (expires_at IS NULL OR expires_at > NOW())
        LIMIT 1`,
-      [physicianId, patientEmail],
+      [invitationContext.invitationId],
     );
     if (invitationCheck.rowCount === 0) {
       status = 403;
@@ -522,7 +599,7 @@ export async function POST(request: Request) {
 
     const textPayload = completion.choices?.[0]?.message?.content?.trim() || "";
 
-    const turn = parseInterviewTurn(textPayload);
+    const turn = enforceAssistiveLanguageOnInterviewTurn(parseInterviewTurn(textPayload));
 
     const res = NextResponse.json(turn);
     logRequestMeta("/api/interview", requestId, status, Date.now() - started);
@@ -1103,6 +1180,42 @@ function formatTranscript(transcript: InterviewMessage[]) {
       })
       .join("\n")
   );
+}
+
+function enforceAssistiveLanguageOnInterviewTurn(turn: unknown) {
+  if (!turn || typeof turn !== "object") return turn;
+  const candidate = turn as Record<string, unknown>;
+  if (candidate.type === "question") {
+    const next = { ...candidate };
+    if (typeof next.question === "string") {
+      next.question = sanitizeAssistiveClinicalText(next.question).text;
+    }
+    if (typeof next.rationale === "string") {
+      next.rationale = sanitizeAssistiveClinicalText(next.rationale).text;
+    }
+    return next;
+  }
+  if (candidate.type === "summary") {
+    const next = { ...candidate };
+    if (typeof next.summary === "string") {
+      next.summary = sanitizeAssistiveClinicalText(next.summary).text;
+    }
+    if (typeof next.assessment === "string") {
+      next.assessment = sanitizeAssistiveClinicalText(next.assessment).text;
+    }
+    if (Array.isArray(next.plan)) {
+      next.plan = next.plan.map((item) =>
+        typeof item === "string" ? sanitizeAssistiveClinicalText(item).text : item,
+      );
+    }
+    if (Array.isArray(next.investigations)) {
+      next.investigations = next.investigations.map((item) =>
+        typeof item === "string" ? sanitizeAssistiveClinicalText(item).text : item,
+      );
+    }
+    return next;
+  }
+  return turn;
 }
 
 function parseInterviewTurn(payload: string) {

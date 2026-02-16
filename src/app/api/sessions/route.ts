@@ -5,13 +5,21 @@ import {
   storeSession,
   sessionExists,
   deleteSession,
+  updateSessionHistoryFields,
+  updateSessionPatientProfilePharmacyFields,
 } from "@/lib/session-store";
 import type { PatientSession } from "@/lib/session-store";
 import type { HistoryResponse } from "@/lib/history-schema";
 import type { PatientProfile } from "@/lib/interview-schema";
 import { logDebug } from "@/lib/secure-logger";
 import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
-import { query } from "@/lib/db";
+import {
+  consumeRateLimit,
+  getRequestIp,
+  logInvitationAudit,
+  markInvitationUsed,
+  resolveInvitationFromCookie,
+} from "@/lib/invitation-security";
 
 /**
  * GET /api/sessions?code=xxx
@@ -74,9 +82,9 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
     const {
-      physicianId,
-      patientEmail,
-      patientName,
+      physicianId: clientPhysicianId,
+      patientEmail: clientPatientEmail,
+      patientName: clientPatientName,
       chiefComplaint,
       patientProfile,
       history,
@@ -99,18 +107,67 @@ export async function POST(request: Request) {
       transcript?: import("@/lib/interview-schema").InterviewMessage[];
     };
 
-    if (!physicianId || !patientEmail || !patientName || !chiefComplaint || !patientProfile || !history) {
+    const invitation = await resolveInvitationFromCookie();
+    if (!invitation) {
+      status = 401;
+      const res = NextResponse.json(
+        { error: "Invitation verification is required before saving." },
+        { status },
+      );
+      logRequestMeta("/api/sessions", requestId, status, Date.now() - started);
+      return res;
+    }
+
+    const ipAddress = getRequestIp(request.headers);
+    const userAgent = request.headers.get("user-agent");
+    const submitLimiter = await consumeRateLimit(
+      `invite-session-submit:${invitation.invitationId}:${ipAddress}`,
+      10,
+      600,
+    );
+    if (!submitLimiter.allowed) {
+      status = 429;
+      const res = NextResponse.json(
+        {
+          error: "Too many submission attempts. Please wait and try again.",
+          retryAfterSeconds: submitLimiter.retryAfterSeconds,
+        },
+        { status },
+      );
+      logRequestMeta("/api/sessions", requestId, status, Date.now() - started);
+      return res;
+    }
+
+    if (!chiefComplaint || !patientProfile || !history) {
       status = 400;
       const res = NextResponse.json(
-        { error: "Missing required fields", details: { physicianId: !!physicianId, patientEmail: !!patientEmail, patientName: !!patientName, chiefComplaint: !!chiefComplaint, patientProfile: !!patientProfile, history: !!history } },
+        {
+          error: "Missing required fields",
+          details: { chiefComplaint: !!chiefComplaint, patientProfile: !!patientProfile, history: !!history },
+        },
         { status }
       );
       logRequestMeta("/api/sessions", requestId, status, Date.now() - started);
       return res;
     }
 
-    // TypeScript guard: after validation, we know these are strings
-    const validatedPhysicianId: string = physicianId;
+    if (
+      clientPhysicianId?.trim() !== invitation.physicianId ||
+      clientPatientEmail?.trim().toLowerCase() !== invitation.patientEmail.toLowerCase() ||
+      clientPatientName?.trim() !== invitation.patientName
+    ) {
+      await logInvitationAudit({
+        invitationId: invitation.invitationId,
+        eventType: "identity_override_attempt",
+        ipAddress,
+        userAgent,
+        metadata: { route: "/api/sessions" },
+      });
+    }
+
+    const validatedPhysicianId: string = invitation.physicianId;
+    const patientEmail = invitation.patientEmail;
+    const patientName = invitation.patientName;
     const sessionCode = generateSessionCode();
     
     // Ensure transcript is an array if provided
@@ -148,23 +205,14 @@ export async function POST(request: Request) {
     
     await storeSession(session);
 
-    // Delete the most recent invitation for this patient/physician (non-blocking)
-    (async () => {
-      try {
-        await query(
-          `DELETE FROM patient_invitations
-           WHERE id IN (
-             SELECT id FROM patient_invitations
-             WHERE physician_id = $1 AND patient_email = $2
-             ORDER BY sent_at DESC NULLS LAST, created_at DESC NULLS LAST
-             LIMIT 1
-           )`,
-          [validatedPhysicianId, patientEmail],
-        );
-      } catch (cleanupError) {
-        console.error("[api/sessions] Failed to delete invitation after completion", cleanupError);
-      }
-    })();
+    await markInvitationUsed(invitation.invitationId);
+    await logInvitationAudit({
+      invitationId: invitation.invitationId,
+      eventType: "session_saved",
+      ipAddress,
+      userAgent,
+      metadata: { sessionCode },
+    });
 
     const res = NextResponse.json({
       sessionCode,
@@ -182,6 +230,215 @@ export async function POST(request: Request) {
       { error: "Failed to create session" },
       { status }
     );
+    logRequestMeta("/api/sessions", requestId, status, Date.now() - started);
+    return res;
+  }
+}
+
+/**
+ * PUT /api/sessions
+ * Update physician-editable fields on a session
+ */
+export async function PUT(request: Request) {
+  const requestId = getRequestId(request.headers);
+  const started = Date.now();
+  let status = 200;
+
+  try {
+    const body = await request.json();
+    const {
+      sessionCode,
+      historySummary,
+      historyAssessment,
+      historyPlan,
+      pharmacyName,
+      pharmacyNumber,
+      pharmacyAddress,
+      pharmacyCity,
+      pharmacyPhone,
+      pharmacyFax,
+    } = (body || {}) as {
+      sessionCode?: string;
+      historySummary?: string;
+      historyAssessment?: string;
+      historyPlan?: string[];
+      pharmacyName?: string;
+      pharmacyNumber?: string;
+      pharmacyAddress?: string;
+      pharmacyCity?: string;
+      pharmacyPhone?: string;
+      pharmacyFax?: string;
+    };
+
+    if (!sessionCode || typeof sessionCode !== "string") {
+      status = 400;
+      const res = NextResponse.json({ error: "sessionCode is required" }, { status });
+      logRequestMeta("/api/sessions", requestId, status, Date.now() - started);
+      return res;
+    }
+
+    const wantsHistoryUpdate =
+      historySummary !== undefined ||
+      historyAssessment !== undefined ||
+      historyPlan !== undefined;
+    const wantsPharmacyUpdate =
+      pharmacyName !== undefined ||
+      pharmacyNumber !== undefined ||
+      pharmacyAddress !== undefined ||
+      pharmacyCity !== undefined ||
+      pharmacyPhone !== undefined ||
+      pharmacyFax !== undefined;
+
+    if (!wantsHistoryUpdate && !wantsPharmacyUpdate) {
+      status = 400;
+      const res = NextResponse.json(
+        {
+          error:
+            "Provide historySummary/historyAssessment/historyPlan and/or pharmacy fields to update.",
+        },
+        { status }
+      );
+      logRequestMeta("/api/sessions", requestId, status, Date.now() - started);
+      return res;
+    }
+
+    let trimmedSummary = "";
+    let trimmedAssessment = "";
+    let trimmedPlan: string[] = [];
+
+    if (wantsHistoryUpdate) {
+      if (typeof historySummary !== "string") {
+        status = 400;
+        const res = NextResponse.json({ error: "historySummary must be a string" }, { status });
+        logRequestMeta("/api/sessions", requestId, status, Date.now() - started);
+        return res;
+      }
+      if (typeof historyAssessment !== "string") {
+        status = 400;
+        const res = NextResponse.json({ error: "historyAssessment must be a string" }, { status });
+        logRequestMeta("/api/sessions", requestId, status, Date.now() - started);
+        return res;
+      }
+      if (!Array.isArray(historyPlan)) {
+        status = 400;
+        const res = NextResponse.json({ error: "historyPlan must be an array of strings" }, { status });
+        logRequestMeta("/api/sessions", requestId, status, Date.now() - started);
+        return res;
+      }
+
+      trimmedSummary = historySummary.trim();
+      trimmedAssessment = historyAssessment.trim();
+      trimmedPlan = historyPlan
+        .map((item) => (typeof item === "string" ? item.trim() : ""))
+        .filter((item) => item.length > 0);
+      if (trimmedSummary.length < 10 || trimmedSummary.length > 1500) {
+        status = 400;
+        const res = NextResponse.json(
+          { error: "historySummary must be between 10 and 1500 characters" },
+          { status }
+        );
+        logRequestMeta("/api/sessions", requestId, status, Date.now() - started);
+        return res;
+      }
+      if (trimmedAssessment.length < 10 || trimmedAssessment.length > 1500) {
+        status = 400;
+        const res = NextResponse.json(
+          { error: "historyAssessment must be between 10 and 1500 characters" },
+          { status }
+        );
+        logRequestMeta("/api/sessions", requestId, status, Date.now() - started);
+        return res;
+      }
+      if (trimmedPlan.length < 1 || trimmedPlan.length > 60) {
+        status = 400;
+        const res = NextResponse.json(
+          { error: "historyPlan must contain between 1 and 60 items" },
+          { status }
+        );
+        logRequestMeta("/api/sessions", requestId, status, Date.now() - started);
+        return res;
+      }
+    }
+
+    const { getCurrentSession } = await import("@/lib/auth");
+    const session = await getCurrentSession();
+    if (!session) {
+      status = 401;
+      const res = NextResponse.json({ error: "Authentication required" }, { status });
+      logRequestMeta("/api/sessions", requestId, status, Date.now() - started);
+      return res;
+    }
+
+    if (session.userType !== "provider") {
+      status = 403;
+      const res = NextResponse.json({ error: "Only providers can update sessions" }, { status });
+      logRequestMeta("/api/sessions", requestId, status, Date.now() - started);
+      return res;
+    }
+
+    const patientSession = await getSession(sessionCode);
+    if (!patientSession) {
+      status = 404;
+      const res = NextResponse.json({ error: "Session not found or expired" }, { status });
+      logRequestMeta("/api/sessions", requestId, status, Date.now() - started);
+      return res;
+    }
+
+    if (patientSession.physicianId !== session.userId) {
+      status = 403;
+      const res = NextResponse.json({ error: "Access denied" }, { status });
+      logRequestMeta("/api/sessions", requestId, status, Date.now() - started);
+      return res;
+    }
+
+    if (wantsHistoryUpdate) {
+      const updated = await updateSessionHistoryFields(sessionCode, {
+        summary: trimmedSummary,
+        assessment: trimmedAssessment,
+        plan: trimmedPlan,
+      });
+      if (!updated) {
+        status = 404;
+        const res = NextResponse.json({ error: "Session not found" }, { status });
+        logRequestMeta("/api/sessions", requestId, status, Date.now() - started);
+        return res;
+      }
+    }
+
+    const normalizedPharmacy = {
+      pharmacyName: typeof pharmacyName === "string" ? pharmacyName.trim() : "",
+      pharmacyNumber: typeof pharmacyNumber === "string" ? pharmacyNumber.trim() : "",
+      pharmacyAddress: typeof pharmacyAddress === "string" ? pharmacyAddress.trim() : "",
+      pharmacyCity: typeof pharmacyCity === "string" ? pharmacyCity.trim() : "",
+      pharmacyPhone: typeof pharmacyPhone === "string" ? pharmacyPhone.trim() : "",
+      pharmacyFax: typeof pharmacyFax === "string" ? pharmacyFax.trim() : "",
+    };
+    if (wantsPharmacyUpdate) {
+      const updated = await updateSessionPatientProfilePharmacyFields(sessionCode, normalizedPharmacy);
+      if (!updated) {
+        status = 404;
+        const res = NextResponse.json({ error: "Session not found" }, { status });
+        logRequestMeta("/api/sessions", requestId, status, Date.now() - started);
+        return res;
+      }
+    }
+
+    const res = NextResponse.json({
+      success: true,
+      historySummary: wantsHistoryUpdate ? trimmedSummary : undefined,
+      historyAssessment: wantsHistoryUpdate ? trimmedAssessment : undefined,
+      historyPlan: wantsHistoryUpdate ? trimmedPlan : undefined,
+      pharmacy: wantsPharmacyUpdate ? normalizedPharmacy : undefined,
+    });
+    logRequestMeta("/api/sessions", requestId, status, Date.now() - started);
+    return res;
+  } catch (error) {
+    status = 500;
+    console.error("[api/sessions] Failed to update session", { requestId });
+    logDebug("[api/sessions] Update error details", {
+      errorMessage: error instanceof Error ? error.message : String(error),
+    });
+    const res = NextResponse.json({ error: "Failed to update session" }, { status });
     logRequestMeta("/api/sessions", requestId, status, Date.now() - started);
     return res;
   }

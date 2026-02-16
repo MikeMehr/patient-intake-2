@@ -359,6 +359,7 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [patientName, setPatientName] = useState("");
   const [patientEmail, setPatientEmail] = useState("");
+  const [isInvitedFlow, setIsInvitedFlow] = useState(false);
   const [physicianIdValue, setPhysicianIdValue] = useState<string | null>(null);
   const [sessionCode, setSessionCode] = useState<string | null>(null);
   const [showShareLink, setShowShareLink] = useState(false);
@@ -371,6 +372,7 @@ export default function Home() {
   const [allergies, setAllergies] = useState("");
   const [familyDoctor, setFamilyDoctor] = useState("");
   const [pharmacyNameInput, setPharmacyNameInput] = useState("");
+  const [pharmacyNumberInput, setPharmacyNumberInput] = useState("");
   const [pharmacyAddressInput, setPharmacyAddressInput] = useState("");
   const [pharmacyCityInput, setPharmacyCityInput] = useState("");
   const [pharmacyInfo, setPharmacyInfo] = useState<{
@@ -432,13 +434,15 @@ export default function Home() {
   const hasUnlockedSpeechRef = useRef(false);
   const audioPlaybackRef = useRef<HTMLAudioElement | null>(null);
   const audioPlaybackUrlRef = useRef<string | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const audioSourceNodeRef = useRef<AudioBufferSourceNode | null>(null);
   const lastSpokenMessageRef = useRef<string>("");
   const chatRef = useRef<HTMLDivElement | null>(null);
   const patientResponseInputRef = useRef<HTMLTextAreaElement | null>(null);
   const patientResponseRef = useRef<string>("");
   const draftTranscriptRef = useRef<string>("");
   const mutedWhileSpeakingRef = useRef(false);
-  const holdStartTimeRef = useRef<number | null>(null);
+  const hasRequestedMicPermissionRef = useRef(false);
   const recognitionStartScheduledAtRef = useRef<number | null>(null);
   const recognitionStartedAtRef = useRef<number | null>(null);
   const messagesRef = useRef<ChatMessage[]>([]); // Ref to track latest messages including edits
@@ -473,6 +477,7 @@ export default function Home() {
   const [showBodyDiagram, setShowBodyDiagram] = useState(false);
   const [selectedBodyParts, setSelectedBodyParts] = useState<Array<{ part: string; side?: "left" | "right" | "both" }>>([]);
   const [selectedDiagramArea, setSelectedDiagramArea] = useState<number | null>(null);
+  const [hasAutoShownBodyDiagram, setHasAutoShownBodyDiagram] = useState(false);
   const [endedEarly, setEndedEarly] = useState(false);
   const [interviewStartTime, setInterviewStartTime] = useState<number | null>(null);
   const interviewStartTimeRef = useRef<number | null>(null);
@@ -729,6 +734,36 @@ export default function Home() {
   useEffect(() => {
   }, [micWarning]);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (hasRequestedMicPermissionRef.current) return;
+    if (!navigator.mediaDevices?.getUserMedia) return;
+
+    hasRequestedMicPermissionRef.current = true;
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          stream.getTracks().forEach((track) => track.stop());
+        } catch (error) {
+          // Ignore expected denials/unsupported cases here; on-demand mic start
+          // still shows proper UI messaging when user presses and holds.
+          if (
+            error instanceof DOMException &&
+            (error.name === "NotAllowedError" ||
+              error.name === "NotFoundError" ||
+              error.name === "NotReadableError")
+          ) {
+            return;
+          }
+          console.warn("[speech] Initial microphone permission preflight failed:", error);
+        }
+      })();
+    }, 250);
+
+    return () => window.clearTimeout(timer);
+  }, []);
+
   const getMedPmhSummary = () => {
     const parts = [medListExtracted, pmhExtracted]
       .map((s) => s?.trim())
@@ -765,6 +800,18 @@ export default function Home() {
   useEffect(() => {
     if (typeof window !== "undefined") {
       const physicianId = sessionStorage.getItem("physicianId");
+      const invitedFlow = sessionStorage.getItem("invitedFlow") === "true";
+      const invitePatientName = sessionStorage.getItem("invitePatientName");
+      const invitePatientEmail = sessionStorage.getItem("invitePatientEmail");
+      setIsInvitedFlow(invitedFlow);
+      if (invitedFlow) {
+        if (invitePatientName) {
+          setPatientName(invitePatientName);
+        }
+        if (invitePatientEmail) {
+          setPatientEmail(invitePatientEmail);
+        }
+      }
       if (physicianId) {
         console.log("[page.tsx] Found physicianId in sessionStorage:", physicianId);
         setHasPhysicianId(true);
@@ -780,9 +827,7 @@ export default function Home() {
   // Fetch lab report summary when patient email is entered
   useEffect(() => {
     if (patientEmail && patientEmail.includes("@") && typeof window !== "undefined") {
-      const physicianId = sessionStorage.getItem("physicianId");
-      if (physicianId) {
-        fetch(`/api/invitations/lab-report?physicianId=${encodeURIComponent(physicianId)}&patientEmail=${encodeURIComponent(patientEmail)}`)
+      fetch(`/api/invitations/lab-report`)
           .then((res) => res.json())
           .then((data) => {
             if (data.labReportSummary) {
@@ -810,7 +855,6 @@ export default function Home() {
             console.error("[page.tsx] Failed to fetch lab report summary:", err);
             // Don't show error to user - lab report is optional
           });
-      }
     }
   }, [patientEmail]);
   const statusRef = useRef<"idle" | "awaitingPatient" | "awaitingAi" | "complete" | "paused">("idle");
@@ -862,6 +906,7 @@ export default function Home() {
       setShowBodyDiagram(false);
       setSelectedBodyParts([]);
       setSelectedDiagramArea(null);
+      setHasAutoShownBodyDiagram(false);
     }
   }, [status]);
 
@@ -948,6 +993,16 @@ export default function Home() {
   }, [language]);
 
   const clearAzureAudioPlayback = () => {
+    // Stop Web Audio API source node if playing (used for iOS-safe playback)
+    if (audioSourceNodeRef.current) {
+      try {
+        audioSourceNodeRef.current.stop();
+      } catch {
+        // Already stopped — ignore
+      }
+      audioSourceNodeRef.current = null;
+    }
+    // Stop HTML Audio element if used (desktop fallback)
     if (audioPlaybackRef.current) {
       audioPlaybackRef.current.pause();
       audioPlaybackRef.current.src = "";
@@ -1037,6 +1092,32 @@ export default function Home() {
     }
     clearAzureAudioPlayback();
 
+    // Prefer Web Audio API (AudioContext) — it stays unlocked on iOS once
+    // resume() is called during a user gesture (see unlockAudioPlayback).
+    // HTMLAudioElement.play() would require a fresh user-gesture on iOS each
+    // time, which fails when TTS is triggered from a useEffect.
+    const ctx = audioContextRef.current;
+    if (ctx) {
+      if (ctx.state === "suspended") {
+        await ctx.resume();
+      }
+      const arrayBuffer = await audioBlob.arrayBuffer();
+      const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
+      const source = ctx.createBufferSource();
+      source.buffer = audioBuffer;
+      source.connect(ctx.destination);
+      audioSourceNodeRef.current = source;
+
+      setIsSpeaking(true);
+      source.onended = () => {
+        setIsSpeaking(false);
+        audioSourceNodeRef.current = null;
+      };
+      source.start(0);
+      return;
+    }
+
+    // Fallback: HTMLAudioElement (desktop browsers where AudioContext wasn't created)
     const audioUrl = URL.createObjectURL(audioBlob);
     const audio = new Audio(audioUrl);
     audio.preload = "auto";
@@ -1077,7 +1158,26 @@ export default function Home() {
     })();
   };
 
+  /** Create / resume an AudioContext on a user gesture so iOS allows later
+   *  Web Audio API playback from async code (useEffect, fetch callbacks, etc.). */
+  const unlockAudioPlayback = () => {
+    if (typeof window === "undefined") return;
+    try {
+      if (!audioContextRef.current) {
+        audioContextRef.current = new AudioContext();
+      }
+      if (audioContextRef.current.state === "suspended") {
+        void audioContextRef.current.resume();
+      }
+    } catch (error) {
+      console.warn("[speech] Unable to unlock AudioContext:", error);
+    }
+  };
+
   const unlockSpeechSynthesis = () => {
+    // Also unlock AudioContext for Azure TTS on iOS
+    unlockAudioPlayback();
+
     if (typeof window === "undefined" || !("speechSynthesis" in window)) {
       return;
     }
@@ -1542,6 +1642,15 @@ export default function Home() {
       isListeningRef.current = false;
     }
   };
+
+  const toggleListening = (options?: { allowDuringReview?: boolean }) => {
+    if (isHoldingRef.current || isListeningRef.current) {
+      stopListening(true);
+      return;
+    }
+    void startListening(options);
+  };
+
   const commitDraftToResponse = (mode: "use" | "edit", autoSubmit = false) => {
     const draft = draftTranscript.trim();
     if (!draft) {
@@ -1625,15 +1734,7 @@ export default function Home() {
 
     // Prevent duplicate submissions if a session already exists for this patient
     try {
-      const physicianId = typeof window !== "undefined" ? sessionStorage.getItem("physicianId") : null;
-      const checkUrl = new URL("/api/sessions/check", window.location.origin);
-      checkUrl.searchParams.set("patientEmail", patientEmail.trim());
-      checkUrl.searchParams.set("patientName", patientName.trim());
-      if (physicianId) {
-        checkUrl.searchParams.set("physicianId", physicianId);
-      }
-
-      const dupRes = await fetch(checkUrl.toString());
+      const dupRes = await fetch("/api/sessions/check");
       if (dupRes.ok) {
         const data = (await dupRes.json()) as { exists?: boolean };
         if (data.exists) {
@@ -1661,6 +1762,17 @@ export default function Home() {
     const medsFinal = currentMedications.trim().length > 0 ? currentMedications.trim() : "None";
     const allergiesFinal = allergies.trim().length > 0 ? allergies.trim() : "None";
     const familyDoctorFinal = familyDoctor.trim().length > 0 ? familyDoctor.trim() : "Unknown";
+    const pharmacyNameFinal = (pharmacyInfo?.name ?? pharmacyNameInput).trim();
+    const pharmacyAddressRaw = (pharmacyInfo?.address ?? pharmacyAddressInput).trim();
+    const pharmacyCityFinal = pharmacyCityInput.trim();
+    const pharmacyAddressFinal =
+      pharmacyAddressRaw ||
+      [pharmacyAddressInput.trim(), pharmacyCityFinal]
+        .filter((item) => item.length > 0)
+        .join(", ");
+    const pharmacyPhoneFinal = (pharmacyInfo?.phone ?? "").trim();
+    const pharmacyFaxFinal = (pharmacyInfo?.fax ?? "").trim();
+    const pharmacyNumberFinal = pharmacyNumberInput.trim();
 
     const profile: PatientProfile = {
       sex,
@@ -1670,6 +1782,12 @@ export default function Home() {
       familyDoctor: familyDoctorFinal,
       currentMedications: medsFinal,
       allergies: allergiesFinal,
+      pharmacyName: pharmacyNameFinal || undefined,
+      pharmacyNumber: pharmacyNumberFinal || undefined,
+      pharmacyAddress: pharmacyAddressFinal || undefined,
+      pharmacyCity: pharmacyCityFinal || undefined,
+      pharmacyPhone: pharmacyPhoneFinal || undefined,
+      pharmacyFax: pharmacyFaxFinal || undefined,
     };
 
     setPmh(pmhFinal);
@@ -1700,9 +1818,7 @@ export default function Home() {
       
       if (physicianId && patientEmail && patientEmail.includes("@")) {
         try {
-          const response = await fetch(
-            `/api/invitations/lab-report?physicianId=${encodeURIComponent(physicianId)}&patientEmail=${encodeURIComponent(patientEmail)}`
-          );
+          const response = await fetch(`/api/invitations/lab-report`);
           console.log("[page.tsx] handleStart - Lab report fetch response status:", response.status);
           
           if (response.ok) {
@@ -2434,6 +2550,10 @@ export default function Home() {
     }
     setSelectedImage(null);
     setSelectedImagePreview(null);
+    setShowBodyDiagram(false);
+    setSelectedBodyParts([]);
+    setSelectedDiagramArea(null);
+    setHasAutoShownBodyDiagram(false);
   }
 
   async function searchPharmacy(details?: {
@@ -2592,33 +2712,58 @@ export default function Home() {
         "which area",
         "diagram",
         "which number",
+        "where exactly",
+        "where is the pain",
+        "point to",
+        "site of pain",
+        "pain location",
       ];
       const isAskingLocation = locationKeywords.some((keyword) =>
         questionLower.includes(keyword),
       );
-      
-      // Show body part diagram if AI is asking about location and we have a body part
-      if (isAskingLocation) {
-        // First try to detect body parts from the question text (more specific)
-        let bodyParts = detectBodyParts(turn.question);
-        
-        // If no body parts found in question, fall back to chief complaint
-        if (bodyParts.length === 0) {
-          bodyParts = detectBodyParts(chiefComplaint);
-        }
-        
-        if (bodyParts.length > 0) {
-          // Convert to the format expected by the component
-          const partsToShow = bodyParts.map(bp => ({
-            part: bp.part,
-            side: bp.side
-          }));
-          setSelectedBodyParts(partsToShow);
-          setShowBodyDiagram(true);
-          setSelectedDiagramArea(null);
+
+      // First try to detect body parts from question text, then chief complaint.
+      let bodyParts = detectBodyParts(turn.question);
+      if (bodyParts.length === 0) {
+        bodyParts = detectBodyParts(chiefComplaint);
+      }
+      const isMskBodyPart = bodyParts.some((bp) =>
+        [
+          "wrist",
+          "hand",
+          "elbow",
+          "shoulder",
+          "neck",
+          "back",
+          "lower_back",
+          "upper_back",
+          "knee",
+          "ankle",
+          "foot",
+          "hip",
+        ].includes(bp.part),
+      );
+      const assistantTurnsSoFar = messagesRef.current.filter((m) => m.role === "assistant").length;
+      const shouldAutoShowForMsk =
+        !isAskingLocation &&
+        !hasAutoShownBodyDiagram &&
+        isMskBodyPart &&
+        assistantTurnsSoFar <= 3;
+
+      // Show body diagram if location prompt is detected OR early MSK fallback applies.
+      if (bodyParts.length > 0 && (isAskingLocation || shouldAutoShowForMsk)) {
+        const partsToShow = bodyParts.map((bp) => ({
+          part: bp.part,
+          side: bp.side,
+        }));
+        setSelectedBodyParts(partsToShow);
+        setShowBodyDiagram(true);
+        setSelectedDiagramArea(null);
+        if (shouldAutoShowForMsk) {
+          setHasAutoShownBodyDiagram(true);
         }
       } else {
-        // Hide diagram if not asking about location anymore
+        // Hide diagram if no explicit location prompt and no MSK auto-fallback condition.
         setShowBodyDiagram(false);
         setSelectedBodyParts([]);
       }
@@ -2667,6 +2812,17 @@ export default function Home() {
       }
     }
   }
+
+  const microphoneBlocked =
+    typeof error === "string" && error.toLowerCase().includes("microphone access denied");
+  const micStatusText = isHolding
+    ? "Listening..."
+    : cleaningTranscript
+      ? "Processing transcript..."
+      : microphoneBlocked
+        ? "Microphone blocked. Please allow access in browser settings."
+        : "Microphone ready";
+  const micStatusClassName = microphoneBlocked ? "text-amber-600" : "text-slate-500";
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-slate-100 px-4 py-10 text-slate-900">
@@ -2725,7 +2881,8 @@ export default function Home() {
                     name="patientName"
                     type="text"
                     value={patientName}
-                    disabled={status !== "idle"}
+                    disabled={status !== "idle" || isInvitedFlow}
+                    readOnly={isInvitedFlow}
                     onChange={(event) => setPatientName(event.target.value)}
                     placeholder="e.g., John Doe"
                     className="w-full rounded-2xl border border-slate-200 bg-slate-50/60 px-4 py-3 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white disabled:cursor-not-allowed disabled:opacity-70"
@@ -2745,7 +2902,8 @@ export default function Home() {
                     name="patientEmail"
                     type="email"
                     value={patientEmail}
-                    disabled={status !== "idle"}
+                    disabled={status !== "idle" || isInvitedFlow}
+                    readOnly={isInvitedFlow}
                     onChange={(event) => setPatientEmail(event.target.value)}
                     placeholder="e.g., john@example.com"
                     className="w-full rounded-2xl border border-slate-200 bg-slate-50/60 px-4 py-3 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white disabled:cursor-not-allowed disabled:opacity-70"
@@ -2753,6 +2911,11 @@ export default function Home() {
                   />
                 </div>
               </div>
+              {isInvitedFlow && (
+                <p className="text-xs text-slate-600">
+                  Name and email are prefilled from your invitation and cannot be changed.
+                </p>
+              )}
 
               <div className="space-y-2">
                 <label
@@ -3146,6 +3309,25 @@ export default function Home() {
                     disabled={status !== "idle"}
                     onChange={(event) => setPharmacyNameInput(event.target.value)}
                     placeholder="e.g., Shoppers Drug Mart"
+                    className="w-full rounded-2xl border border-slate-200 bg-slate-50/60 px-4 py-3 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white disabled:cursor-not-allowed disabled:opacity-70"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label
+                    htmlFor="pharmacy-number"
+                    className="text-sm font-medium text-slate-800"
+                  >
+                    Pharmacy number
+                  </label>
+                  <input
+                    id="pharmacy-number"
+                    name="pharmacyNumber"
+                    type="text"
+                    value={pharmacyNumberInput}
+                    disabled={status !== "idle"}
+                    onChange={(event) => setPharmacyNumberInput(event.target.value)}
+                    placeholder="e.g., 12345"
                     className="w-full rounded-2xl border border-slate-200 bg-slate-50/60 px-4 py-3 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white disabled:cursor-not-allowed disabled:opacity-70"
                   />
                 </div>
@@ -3647,12 +3829,6 @@ export default function Home() {
               >
                 {interviewMode === "conversation" ? (
                   <>
-                    {cleaningTranscript && (
-                      <span className="text-xs text-slate-500">Processing transcript...</span>
-                    )}
-                    {micWarning && (
-                      <p className="text-xs text-amber-600">{micWarning}</p>
-                    )}
                     {showResponseBox && (
                       <div className="group flex flex-col items-center">
                         <div className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800">
@@ -3662,7 +3838,7 @@ export default function Home() {
                           <textarea
                             rows={4}
                             maxLength={1000}
-                            placeholder="Hold the mic to speak or type your response."
+                            placeholder="Tap mic to start/stop or type your response."
                             value={draftTranscript}
                             disabled={isSubmittingResponse}
                             onChange={(event) => {
@@ -3693,30 +3869,8 @@ export default function Home() {
                         </div>
                         <button
                           type="button"
-                          onPointerDown={(event) => {
-                            event.preventDefault();
-                            if (event.currentTarget.setPointerCapture) {
-                              event.currentTarget.setPointerCapture(event.pointerId);
-                            }
-                            holdStartTimeRef.current = Date.now();
-                            startListening({ allowDuringReview: true });
-                          }}
-                          onPointerUp={(event) => {
-                            event.preventDefault();
-                            if (event.currentTarget.releasePointerCapture) {
-                              event.currentTarget.releasePointerCapture(event.pointerId);
-                            }
-                            stopListening(true);
-                          }}
-                          onPointerLeave={() => {
-                            if (isHoldingRef.current) {
-                              stopListening(true);
-                            }
-                          }}
-                          onPointerCancel={() => {
-                            if (isHoldingRef.current) {
-                              stopListening(true);
-                            }
+                          onClick={() => {
+                            toggleListening({ allowDuringReview: true });
                           }}
                           disabled={status !== "awaitingPatient" || isPaused || isSpeaking || cleaningTranscript}
                           style={{ touchAction: "manipulation", WebkitUserSelect: "none", userSelect: "none" }}
@@ -3725,18 +3879,22 @@ export default function Home() {
                               ? "bg-red-500 text-white border border-red-500 focus-visible:outline-red-500"
                               : "border border-slate-200 bg-white text-slate-700 focus-visible:outline-emerald-600"
                           } ${isCoarsePointer ? "opacity-100" : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"}`}
-                          title={isHolding ? "Release to stop recording" : "Hold to record"}
+                          title={isHolding ? "Stop listening" : "Start listening"}
                         >
-                          {isHolding && (
-                            <span className="pointer-events-none absolute inset-0 -m-1 rounded-full border border-red-400/70 animate-ping" aria-hidden="true" />
-                          )}
                           <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 1a3 3 0 00-3 3v6a3 3 0 006 0V4a3 3 0 00-3-3z" />
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 10v2a7 7 0 01-14 0v-2" />
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19v4m-4 0h8" />
                           </svg>
-                          Hold
+                          {isHolding ? "Stop listening" : "Start listening"}
                         </button>
+                        <div className="mt-2 min-h-[20px] w-full text-xs">
+                          {micWarning ? (
+                            <p className="text-amber-600">{micWarning}</p>
+                          ) : (
+                            <p className={micStatusClassName}>{micStatusText}</p>
+                          )}
+                        </div>
                       </div>
                     )}
                     {showReviewActions && (
@@ -3910,7 +4068,7 @@ export default function Home() {
                           status === "awaitingPatient"
                             ? isSpeaking
                               ? "AI is speaking... please wait"
-                              : "Press & hold to talk (or type your response)"
+                              : "Tap mic to start/stop (or type your response)"
                             : status === "complete"
                               ? "Interview complete."
                               : "Start the interview to respond."
@@ -3941,23 +4099,8 @@ export default function Home() {
                     <div className="flex flex-wrap items-center gap-3">
                       <button
                         type="button"
-                        onPointerDown={(event) => {
-                          event.preventDefault();
-                          startListening();
-                        }}
-                        onPointerUp={(event) => {
-                          event.preventDefault();
-                          stopListening(true);
-                        }}
-                        onPointerLeave={() => {
-                          if (isHoldingRef.current) {
-                            stopListening(true);
-                          }
-                        }}
-                        onPointerCancel={() => {
-                          if (isHoldingRef.current) {
-                            stopListening(true);
-                          }
+                        onClick={() => {
+                          toggleListening();
                         }}
                         disabled={
                           status !== "awaitingPatient" ||
@@ -3977,17 +4120,18 @@ export default function Home() {
                             ? "bg-red-500 text-white hover:bg-red-600"
                             : "bg-emerald-600 text-white hover:bg-emerald-500"
                         } appearance-none outline-none focus:outline-none focus-visible:outline-none focus-visible:ring-0 disabled:cursor-not-allowed disabled:bg-emerald-200 disabled:text-emerald-600`}
-                        title={isHolding ? "Release to stop recording" : "Press and hold to talk"}
+                        title={isHolding ? "Stop listening" : "Start listening"}
                       >
-                        {isHolding ? "Release to stop" : "Press & hold to talk"}
+                        {isHolding ? "Stop listening" : "Start listening"}
                       </button>
-                      {cleaningTranscript && (
-                        <span className="text-xs text-slate-500">Processing transcript...</span>
+                    </div>
+                    <div className="min-h-[20px] text-xs">
+                      {micWarning ? (
+                        <p className="text-amber-600">{micWarning}</p>
+                      ) : (
+                        <p className={micStatusClassName}>{micStatusText}</p>
                       )}
                     </div>
-                    {micWarning && (
-                      <p className="text-xs text-amber-600">{micWarning}</p>
-                    )}
                     {isSubmittingResponse && (
                       <p className="text-xs text-slate-500">Submitting response...</p>
                     )}

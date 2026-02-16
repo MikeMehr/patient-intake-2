@@ -51,6 +51,9 @@ export default function PhysicianIntakePage() {
           sessionStorage.setItem("physicianId", data.physician.id);
           sessionStorage.setItem("physicianName", `${data.physician.firstName} ${data.physician.lastName}`);
           sessionStorage.setItem("clinicName", data.physician.clinicName);
+          sessionStorage.removeItem("invitedFlow");
+          sessionStorage.removeItem("invitePatientName");
+          sessionStorage.removeItem("invitePatientEmail");
           console.log("[intake/[slug]] Set physicianId in sessionStorage:", data.physician.id);
           setPhysicianIdSet(true);
         }

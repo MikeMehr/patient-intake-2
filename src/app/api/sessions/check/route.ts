@@ -1,21 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { patientSessionExists } from "@/lib/session-store";
 import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
+import { resolveInvitationFromCookie } from "@/lib/invitation-security";
 
 export async function GET(request: NextRequest) {
   const requestId = getRequestId(request.headers);
   const started = Date.now();
   let status = 200;
 
-  const { searchParams } = new URL(request.url);
-  const patientEmail = searchParams.get("patientEmail") || "";
-  const patientName = searchParams.get("patientName") || "";
-  const physicianId = searchParams.get("physicianId") || undefined;
-
-  if (!patientEmail || !patientName) {
-    status = 400;
+  const invitation = await resolveInvitationFromCookie();
+  if (!invitation) {
+    status = 401;
     const res = NextResponse.json(
-      { error: "patientEmail and patientName are required" },
+      { error: "Invitation session required" },
       { status },
     );
     logRequestMeta("/api/sessions/check", requestId, status, Date.now() - started);
@@ -24,9 +21,9 @@ export async function GET(request: NextRequest) {
 
   try {
     const exists = await patientSessionExists({
-      patientEmail,
-      patientName,
-      physicianId,
+      patientEmail: invitation.patientEmail,
+      patientName: invitation.patientName,
+      physicianId: invitation.physicianId,
     });
 
     const res = NextResponse.json({ exists });

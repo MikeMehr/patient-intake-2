@@ -10,6 +10,10 @@ import { Resend } from "resend";
 import { logDebug } from "@/lib/secure-logger";
 import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
 import { startInvitationCleanup } from "@/lib/invitations-cleanup";
+import {
+  createInvitationToken,
+  logInvitationAudit,
+} from "@/lib/invitation-security";
 
 const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
@@ -73,12 +77,11 @@ export async function POST(request: NextRequest) {
     const physicianId = (session as any).physicianId || session.userId;
     
     const physicianResult = await query<{
-      unique_slug: string;
       first_name: string;
       last_name: string;
       clinic_name: string;
     }>(
-      `SELECT unique_slug, first_name, last_name, clinic_name
+      `SELECT first_name, last_name, clinic_name
        FROM physicians
        WHERE id = $1`,
       [physicianId]
@@ -95,18 +98,48 @@ export async function POST(request: NextRequest) {
     }
 
     const physician = physicianResult.rows[0];
-    const invitationLink = `${APP_URL}/intake/${physician.unique_slug}`;
+    const { rawToken, tokenHash, expiresAt } = createInvitationToken();
+    const invitationLink = `${APP_URL}/intake/invite/${rawToken}`;
 
     // Helper to persist the invitation regardless of delivery method
     const persistInvitation = async () => {
       try {
-        await query(
-          `INSERT INTO patient_invitations (physician_id, patient_name, patient_email, invitation_link, sent_at, patient_background)
-           VALUES ($1, $2, $3, $4, NOW(), $5)
-           ON CONFLICT (physician_id, patient_email, invitation_link)
-           DO UPDATE SET patient_background = EXCLUDED.patient_background, sent_at = EXCLUDED.sent_at`,
-          [physicianId, patientName, patientEmail, invitationLink, patientBackground || null]
+        const invitationResult = await query<{ id: string }>(
+          `INSERT INTO patient_invitations (
+             physician_id,
+             patient_name,
+             patient_email,
+             invitation_link,
+             token_hash,
+             token_expires_at,
+             expires_at,
+             sent_at,
+             patient_background
+           )
+           VALUES ($1, $2, $3, $4, $5, $6, $6, NOW(), $7)
+           RETURNING id`,
+          [
+            physicianId,
+            patientName,
+            patientEmail.toLowerCase(),
+            invitationLink,
+            tokenHash,
+            expiresAt,
+            patientBackground || null,
+          ],
         );
+        const invitationId = invitationResult.rows[0]?.id || null;
+        if (invitationId) {
+          await logInvitationAudit({
+            invitationId,
+            eventType: "invitation_sent",
+            metadata: {
+              physicianId,
+              patientEmail: patientEmail.toLowerCase(),
+              tokenized: true,
+            },
+          });
+        }
       } catch (dbError) {
         console.error("[invitations/send] Failed to persist invitation", dbError);
         logDebug("[invitations/send] DB error details", {

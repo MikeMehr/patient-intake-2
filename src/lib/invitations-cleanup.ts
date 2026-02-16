@@ -1,8 +1,6 @@
 import { query } from "@/lib/db";
 
 const DEFAULT_INTERVAL_MINUTES = 15;
-const FOUR_HOURS_MS = 4 * 60 * 60 * 1000;
-
 // Avoid multiple intervals in hot-reload / multi-import scenarios
 declare const global: typeof globalThis & {
   __invitationCleanupStarted?: boolean;
@@ -12,7 +10,18 @@ async function runCleanup() {
   try {
     await query(
       `DELETE FROM patient_invitations
-       WHERE COALESCE(sent_at, created_at, NOW()) < NOW() - INTERVAL '4 hours'`,
+       WHERE (
+         expires_at IS NOT NULL
+         AND expires_at < NOW() - INTERVAL '24 hours'
+       )
+       OR (
+         revoked_at IS NOT NULL
+         AND revoked_at < NOW() - INTERVAL '24 hours'
+       )
+       OR (
+         used_at IS NOT NULL
+         AND used_at < NOW() - INTERVAL '24 hours'
+       )`,
     );
   } catch (error) {
     console.error("[invitations-cleanup] Failed to delete old invitations", error);
