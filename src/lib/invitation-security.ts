@@ -131,7 +131,7 @@ export async function consumeRateLimit(
 ): Promise<RateLimitResult> {
   const result = await query<{ attempt_count: number; expires_at: Date }>(
     `INSERT INTO invitation_rate_limits (bucket_key, attempt_count, window_start, expires_at)
-     VALUES ($1, 1, NOW(), NOW() + ($3 * INTERVAL '1 second'))
+     VALUES ($1, 1, NOW(), NOW() + ($2 * INTERVAL '1 second'))
      ON CONFLICT (bucket_key)
      DO UPDATE SET
        attempt_count = CASE
@@ -144,11 +144,11 @@ export async function consumeRateLimit(
        END,
        expires_at = CASE
          WHEN invitation_rate_limits.expires_at <= NOW()
-           THEN NOW() + ($3 * INTERVAL '1 second')
+           THEN NOW() + ($2 * INTERVAL '1 second')
          ELSE invitation_rate_limits.expires_at
        END
      RETURNING attempt_count, expires_at`,
-    [bucketKey, maxAttempts, windowSeconds],
+    [bucketKey, windowSeconds],
   );
 
   const row = result.rows[0];
