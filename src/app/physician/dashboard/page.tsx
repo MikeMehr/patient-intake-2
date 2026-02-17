@@ -27,8 +27,18 @@ export default function PhysicianDashboard() {
     slug: string | null;
   } | null>(null);
   const [invitePatientName, setInvitePatientName] = useState("");
+  const [invitePatientDob, setInvitePatientDob] = useState("");
   const [invitePatientEmail, setInvitePatientEmail] = useState("");
   const [invitePatientBackground, setInvitePatientBackground] = useState("");
+  const [invitePrimaryPhone, setInvitePrimaryPhone] = useState("");
+  const [inviteSecondaryPhone, setInviteSecondaryPhone] = useState("");
+  const [inviteInsuranceNumber, setInviteInsuranceNumber] = useState("");
+  const [invitePatientAddress, setInvitePatientAddress] = useState("");
+  const [inviteOscarDemographicNo, setInviteOscarDemographicNo] = useState<string>("");
+  const [emrLookupLoading, setEmrLookupLoading] = useState(false);
+  const [emrMatches, setEmrMatches] = useState<
+    Array<{ demographicNo: string; displayName: string; dateOfBirth?: string }>
+  >([]);
   const [labReportFile, setLabReportFile] = useState<File | null>(null);
   const [previousLabReportFile, setPreviousLabReportFile] = useState<File | null>(null);
   const [formFile, setFormFile] = useState<File | null>(null);
@@ -144,6 +154,24 @@ export default function PhysicianDashboard() {
       if (invitePatientBackground.trim()) {
         formData.append("patientBackground", invitePatientBackground.trim());
       }
+      if (invitePatientDob.trim()) {
+        formData.append("patientDob", invitePatientDob.trim());
+      }
+      if (invitePrimaryPhone.trim()) {
+        formData.append("primaryPhone", invitePrimaryPhone.trim());
+      }
+      if (inviteSecondaryPhone.trim()) {
+        formData.append("secondaryPhone", inviteSecondaryPhone.trim());
+      }
+      if (inviteInsuranceNumber.trim()) {
+        formData.append("insuranceNumber", inviteInsuranceNumber.trim());
+      }
+      if (invitePatientAddress.trim()) {
+        formData.append("patientAddress", invitePatientAddress.trim());
+      }
+      if (inviteOscarDemographicNo.trim()) {
+        formData.append("oscarDemographicNo", inviteOscarDemographicNo.trim());
+      }
       if (labReportFile) {
         formData.append("labReport", labReportFile);
       }
@@ -176,8 +204,15 @@ export default function PhysicianDashboard() {
         setLabReportSummary(data.labReportSummary);
       }
       setInvitePatientName("");
+      setInvitePatientDob("");
       setInvitePatientEmail("");
       setInvitePatientBackground("");
+      setInvitePrimaryPhone("");
+      setInviteSecondaryPhone("");
+      setInviteInsuranceNumber("");
+      setInvitePatientAddress("");
+      setInviteOscarDemographicNo("");
+      setEmrMatches([]);
       setLabReportFile(null);
       setPreviousLabReportFile(null);
       setFormFile(null);
@@ -209,6 +244,83 @@ export default function PhysicianDashboard() {
     } catch (err) {
       setInviteError("An error occurred. Please try again.");
       setInviteLoading(false);
+    }
+  };
+
+  const handleFetchFromEmr = async () => {
+    setInviteError(null);
+    setInviteSuccess(null);
+    setEmrMatches([]);
+
+    if (!invitePatientName.trim()) {
+      setInviteError("Enter patient name before fetching from EMR.");
+      return;
+    }
+    if (!invitePatientDob.trim()) {
+      setInviteError("Enter patient date of birth (YYYY-MM-DD) before fetching from EMR.");
+      return;
+    }
+
+    setEmrLookupLoading(true);
+    try {
+      const res = await fetch("/api/emr/oscar/patient-lookup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          patientName: invitePatientName.trim(),
+          patientDob: invitePatientDob.trim(),
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setInviteError(data?.error || "Failed to fetch patient from EMR");
+        return;
+      }
+      const matches = Array.isArray(data?.matches) ? data.matches : [];
+      if (matches.length === 0) {
+        setInviteError("No matching patients found in OSCAR for that name + DOB.");
+        return;
+      }
+      setEmrMatches(matches);
+    } catch (err) {
+      console.error("EMR lookup error:", err);
+      setInviteError("Failed to fetch patient from EMR");
+    } finally {
+      setEmrLookupLoading(false);
+    }
+  };
+
+  const handleSelectEmrMatch = async (demographicNo: string) => {
+    setInviteError(null);
+    setInviteSuccess(null);
+    setEmrLookupLoading(true);
+    try {
+      const res = await fetch("/api/emr/oscar/patient-details", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ demographicNo }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setInviteError(data?.error || "Failed to fetch patient details from EMR");
+        return;
+      }
+      setInviteOscarDemographicNo(String(data?.demographicNo || demographicNo));
+      if (typeof data?.dateOfBirth === "string" && data.dateOfBirth.trim()) {
+        // Normalize to YYYY-MM-DD if it already is, otherwise keep as-is.
+        setInvitePatientDob(data.dateOfBirth.trim());
+      }
+      if (typeof data?.primaryPhone === "string") setInvitePrimaryPhone(data.primaryPhone);
+      if (typeof data?.secondaryPhone === "string") setInviteSecondaryPhone(data.secondaryPhone);
+      if (typeof data?.insuranceNumber === "string") setInviteInsuranceNumber(data.insuranceNumber);
+      if (typeof data?.patientAddress === "string") setInvitePatientAddress(data.patientAddress);
+      setEmrMatches([]);
+      setInviteSuccess("Patient details loaded from OSCAR. Review and send the invitation.");
+    } catch (err) {
+      console.error("EMR details error:", err);
+      setInviteError("Failed to fetch patient details from EMR");
+    } finally {
+      setEmrLookupLoading(false);
     }
   };
 
@@ -349,9 +461,15 @@ export default function PhysicianDashboard() {
           <h2 className="text-lg font-semibold text-slate-900 mb-4">
             Invite Patient
           </h2>
-          <form onSubmit={handleSendInvitation} className="space-y-4">
+          <form
+            onSubmit={handleSendInvitation}
+            action="/api/invitations/send"
+            method="post"
+            encType="multipart/form-data"
+            className="space-y-4"
+          >
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
+              <div className="space-y-3">
                 <label
                   htmlFor="patientName"
                   className="block text-sm font-medium text-slate-700 mb-1"
@@ -368,6 +486,36 @@ export default function PhysicianDashboard() {
                   className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200 disabled:cursor-not-allowed disabled:opacity-70"
                   placeholder="Enter patient name"
                 />
+
+                <div>
+                  <label
+                    htmlFor="patientDob"
+                    className="block text-sm font-medium text-slate-700 mb-1"
+                  >
+                    Date of birth
+                  </label>
+                  <div className="flex gap-2">
+                    <input
+                      id="patientDob"
+                      type="date"
+                      value={invitePatientDob}
+                      onChange={(e) => setInvitePatientDob(e.target.value)}
+                      disabled={inviteLoading || emrLookupLoading}
+                      className="flex-1 rounded-lg border border-slate-300 bg-white px-4 py-2 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200 disabled:cursor-not-allowed disabled:opacity-70"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleFetchFromEmr}
+                      disabled={inviteLoading || emrLookupLoading}
+                      className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {emrLookupLoading ? "Fetching..." : "Fetch from EMR"}
+                    </button>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-1">
+                    Use name + DOB to find the correct patient in OSCAR.
+                  </p>
+                </div>
               </div>
               <div>
                 <label
@@ -385,6 +533,95 @@ export default function PhysicianDashboard() {
                   disabled={inviteLoading}
                   className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200 disabled:cursor-not-allowed disabled:opacity-70"
                   placeholder="patient@example.com"
+                />
+              </div>
+            </div>
+
+            {emrMatches.length > 0 && (
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                <p className="text-sm font-medium text-slate-800">Select a patient from OSCAR</p>
+                <div className="mt-3 space-y-2">
+                  {emrMatches.map((m) => (
+                    <div
+                      key={m.demographicNo}
+                      className="flex items-center justify-between gap-3 rounded-lg bg-white border border-slate-200 px-3 py-2"
+                    >
+                      <div className="min-w-0">
+                        <div className="text-sm font-medium text-slate-900 truncate">
+                          {m.displayName}
+                        </div>
+                        <div className="text-xs text-slate-500">
+                          DOB: {m.dateOfBirth || invitePatientDob || "—"} • ID: {m.demographicNo}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleSelectEmrMatch(m.demographicNo)}
+                        disabled={emrLookupLoading}
+                        className="shrink-0 px-3 py-1.5 rounded-lg bg-slate-900 text-white text-sm font-medium hover:bg-slate-800 disabled:opacity-60 disabled:cursor-not-allowed"
+                      >
+                        Use this
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Primary phone (Optional)
+                </label>
+                <input
+                  type="tel"
+                  value={invitePrimaryPhone}
+                  onChange={(e) => setInvitePrimaryPhone(e.target.value)}
+                  disabled={inviteLoading}
+                  className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200 disabled:cursor-not-allowed disabled:opacity-70"
+                  placeholder="e.g., 555-555-5555"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Secondary phone (Optional)
+                </label>
+                <input
+                  type="tel"
+                  value={inviteSecondaryPhone}
+                  onChange={(e) => setInviteSecondaryPhone(e.target.value)}
+                  disabled={inviteLoading}
+                  className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200 disabled:cursor-not-allowed disabled:opacity-70"
+                  placeholder="Optional"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Health insurance number (Optional)
+                </label>
+                <input
+                  type="text"
+                  value={inviteInsuranceNumber}
+                  onChange={(e) => setInviteInsuranceNumber(e.target.value)}
+                  disabled={inviteLoading}
+                  className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200 disabled:cursor-not-allowed disabled:opacity-70"
+                  placeholder="HIN"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Patient address (Optional)
+                </label>
+                <input
+                  type="text"
+                  value={invitePatientAddress}
+                  onChange={(e) => setInvitePatientAddress(e.target.value)}
+                  disabled={inviteLoading}
+                  className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200 disabled:cursor-not-allowed disabled:opacity-70"
+                  placeholder="Street, City, Province, Postal"
                 />
               </div>
             </div>
