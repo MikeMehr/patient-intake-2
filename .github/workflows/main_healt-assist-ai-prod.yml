@@ -1,6 +1,38 @@
 # Docs for the Azure Web Apps Deploy action: https://github.com/Azure/webapps-deploy
 # More GitHub Actions for Azure: https://github.com/Azure/actions
 
+name: Deploy to Azure Web App
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Login to Azure
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_6020A719440E4144A530B2C41F8D256A }}
+          tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_15A4C1D32CB74B68B88418B1E44EEC12 }}
+          subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_BBD0350A7C5B42A088F68806AAD1097B }}
+
+      - name: Deploy to Azure Web App
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: 'healt-assist-ai-prod'   # must match Azure Web App name exactly
+          slot-name: 'Production'
+          package: .# Docs for the Azure Web Apps Deploy action: https://github.com/Azure/webapps-deploy
+# More GitHub Actions for Azure: https://github.com/Azure/actions
+
 name: Build and deploy Node.js app to Azure Web App - healt-assist-ai-prod
 
 on:
@@ -64,3 +96,4 @@ jobs:
           package: .
 
           
+
