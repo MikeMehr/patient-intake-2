@@ -7,6 +7,61 @@ import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
 
 export const runtime = "nodejs";
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function pickFirstNonEmptyString(obj: any, keys: string[]): string | null {
+  for (const key of keys) {
+    const val = obj?.[key];
+    if (typeof val === "string") {
+      const trimmed = val.trim();
+      if (trimmed) return trimmed;
+    }
+  }
+  return null;
+}
+
+function normalizeAddressFromOscar(json: any): string | null {
+  const top = json ?? {};
+  const addrObj = isRecord(top.address) ? (top.address as any) : null;
+
+  const street =
+    pickFirstNonEmptyString(top, ["streetAddress", "address1", "address", "street", "line1", "line_1"]) ??
+    (addrObj
+      ? pickFirstNonEmptyString(addrObj, ["streetAddress", "address1", "address", "street", "line1", "line_1"])
+      : null) ??
+    // Some deployments split street number/name
+    (() => {
+      const num =
+        pickFirstNonEmptyString(top, ["streetNumber", "street_no", "streetNum"]) ??
+        (addrObj ? pickFirstNonEmptyString(addrObj, ["streetNumber", "street_no", "streetNum"]) : null);
+      const name =
+        pickFirstNonEmptyString(top, ["streetName", "street_name"]) ??
+        (addrObj ? pickFirstNonEmptyString(addrObj, ["streetName", "street_name"]) : null);
+      const combined = [num, name].filter(Boolean).join(" ").trim();
+      return combined || null;
+    })();
+
+  const unit =
+    pickFirstNonEmptyString(top, ["unit", "suite", "apt", "apartment"]) ??
+    (addrObj ? pickFirstNonEmptyString(addrObj, ["unit", "suite", "apt", "apartment"]) : null);
+
+  const city =
+    pickFirstNonEmptyString(top, ["city", "municipality", "town"]) ??
+    (addrObj ? pickFirstNonEmptyString(addrObj, ["city", "municipality", "town"]) : null);
+  const province =
+    pickFirstNonEmptyString(top, ["province", "state", "prov"]) ??
+    (addrObj ? pickFirstNonEmptyString(addrObj, ["province", "state", "prov"]) : null);
+  const postal =
+    pickFirstNonEmptyString(top, ["postal", "postalCode", "zip"]) ??
+    (addrObj ? pickFirstNonEmptyString(addrObj, ["postal", "postalCode", "zip"]) : null);
+
+  const streetLine = [street, unit ? `Unit ${unit}` : null].filter(Boolean).join(", ").trim();
+  const parts = [streetLine, city, province, postal].filter((p) => typeof p === "string" && p.trim().length > 0);
+  return parts.length ? parts.join(", ") : null;
+}
+
 export async function POST(request: NextRequest) {
   const requestId = getRequestId(request.headers);
   const started = Date.now();
@@ -113,15 +168,7 @@ export async function POST(request: NextRequest) {
     const insuranceNumber =
       String(json.hin ?? json.healthInsuranceNumber ?? json.insuranceNumber ?? json.hcNumber ?? "").trim() || null;
 
-    const addressParts = [
-      json.address ?? json.streetAddress ?? json.address1,
-      json.city,
-      json.province ?? json.state,
-      json.postal ?? json.postalCode ?? json.zip,
-    ]
-      .map((v: any) => String(v || "").trim())
-      .filter((v: string) => v.length > 0);
-    const patientAddress = addressParts.length ? addressParts.join(", ") : null;
+    const patientAddress = normalizeAddressFromOscar(json);
 
     const dateOfBirth = String(json.dob ?? json.dateOfBirth ?? json.birthDate ?? "").trim() || null;
     const firstName = String(json.firstName ?? json.first_name ?? json.givenName ?? "").trim() || null;
