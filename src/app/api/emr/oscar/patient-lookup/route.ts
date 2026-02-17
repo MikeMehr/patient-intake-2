@@ -265,6 +265,7 @@ export async function POST(request: NextRequest) {
     });
 
     let quickOk: { ok: true; url: string; json: unknown } | null = null;
+    let firstOk: { ok: true; url: string; json: unknown } | null = null;
     let lastErr:
       | { ok: false; url: string; status: number; text: string; contentType: string | null }
       | null = null;
@@ -280,13 +281,27 @@ export async function POST(request: NextRequest) {
         tokenSecret,
       });
       if (res.ok) {
-        quickOk = res;
-        usedQuery = q;
-        break;
+        // Keep going if this query returns no matches; some OSCAR deployments
+        // are picky about query formatting (full name vs last name only).
+        if (!firstOk) firstOk = res;
+        const arr = tryPickArrayDeep(res.json);
+        if (arr.length > 0) {
+          quickOk = res;
+          usedQuery = q;
+          break;
+        }
+        continue;
       }
       lastErr = res;
       // Retry on 500 with a different query; bail early on auth issues.
       if (res.status === 401 || res.status === 403) break;
+    }
+
+    // If every query returned 200 with an empty list, use the first OK response
+    // so we can return matches: [] (not a 502).
+    if (!quickOk && firstOk) {
+      quickOk = firstOk;
+      usedQuery = quickQueries[0] || "";
     }
 
     if (!quickOk) {
