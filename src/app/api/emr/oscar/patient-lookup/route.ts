@@ -7,7 +7,7 @@ import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
 import { signOAuth1Request } from "@/lib/oscar/oauth1";
 
 export const runtime = "nodejs";
-const HANDLER_VERSION = "2026-02-17-quicksearch-v2";
+const HANDLER_VERSION = "2026-02-17-quicksearch-v3";
 
 function splitName(input: string): { firstName: string; lastName: string } | null {
   const trimmed = input.trim().replace(/\s+/g, " ");
@@ -46,6 +46,21 @@ function pickArray(value: unknown): any[] {
 function tryPickArrayDeep(value: unknown): any[] {
   if (!value || typeof value !== "object") return [];
   const obj = value as any;
+
+  // Some OSCAR deployments wrap results in a "content" field:
+  // { offset, limit, total, timestamp, content: [...], query }
+  if (Array.isArray(obj.content)) return obj.content;
+  if (obj.content && typeof obj.content === "object") {
+    const inner = obj.content as any;
+    if (Array.isArray(inner)) return inner;
+    if (Array.isArray(inner.Item)) return inner.Item;
+    if (inner.Item && typeof inner.Item === "object") return [inner.Item];
+    if (Array.isArray(inner.item)) return inner.item;
+    if (inner.item && typeof inner.item === "object") return [inner.item];
+    // Fall back to common result keys inside content
+    const arr = pickArray(inner);
+    if (arr.length > 0) return arr;
+  }
 
   // Some OSCAR responses look like: { List: { Item: [...] } }
   if (obj.List && typeof obj.List === "object") {
@@ -381,6 +396,10 @@ export async function POST(request: NextRequest) {
                 quickOk.json && typeof quickOk.json === "object" ? Object.keys(quickOk.json as any).slice(0, 40) : [],
               hasList: Boolean((quickOk.json as any)?.List),
               hasItem: Boolean((quickOk.json as any)?.Item || (quickOk.json as any)?.item),
+              hasContent: Boolean((quickOk.json as any)?.content),
+              offset: Number.isFinite(Number((quickOk.json as any)?.offset)) ? Number((quickOk.json as any)?.offset) : undefined,
+              limit: Number.isFinite(Number((quickOk.json as any)?.limit)) ? Number((quickOk.json as any)?.limit) : undefined,
+              total: Number.isFinite(Number((quickOk.json as any)?.total)) ? Number((quickOk.json as any)?.total) : undefined,
             }
           : undefined,
       warning:
