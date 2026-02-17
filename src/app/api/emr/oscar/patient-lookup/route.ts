@@ -7,6 +7,7 @@ import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
 import { signOAuth1Request } from "@/lib/oscar/oauth1";
 
 export const runtime = "nodejs";
+const HANDLER_VERSION = "2026-02-17-quicksearch-v1";
 
 function splitName(input: string): { firstName: string; lastName: string } | null {
   const trimmed = input.trim().replace(/\s+/g, " ");
@@ -293,6 +294,7 @@ export async function POST(request: NextRequest) {
       const res = NextResponse.json(
         {
           error: `OSCAR lookup failed (${lastErr?.status ?? 502})`,
+          handlerVersion: HANDLER_VERSION,
           upstream: {
             endpoint: "demographics/quickSearch",
             url: lastErr?.url,
@@ -348,6 +350,7 @@ export async function POST(request: NextRequest) {
       dobFilterApplied: true,
       dobMatchCount: dobMatched.length,
       oscarQuickSearchQueryUsed: usedQuery,
+      handlerVersion: HANDLER_VERSION,
       warning:
         dobMatched.length === 0 && capped.length > 0
           ? "No exact DOB match found; showing name matches from OSCAR quickSearch."
