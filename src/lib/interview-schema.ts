@@ -48,6 +48,76 @@ export const patientProfileSchema = z.object({
     .string()
     .transform((value) => value.trim())
     .pipe(z.string().min(3).max(600)),
+  dateOfBirth: z.preprocess(
+    (val) => {
+      if (val == null || typeof val !== "string") return undefined;
+      const trimmed = val.trim();
+      return trimmed.length > 0 ? trimmed : undefined;
+    },
+    z.string().min(4).max(20).optional(),
+  ),
+  primaryPhone: z.preprocess(
+    (val) => {
+      if (val == null || typeof val !== "string") return undefined;
+      const trimmed = val.trim();
+      return trimmed.length > 0 ? trimmed : undefined;
+    },
+    z.string().min(3).max(50).optional(),
+  ),
+  secondaryPhone: z.preprocess(
+    (val) => {
+      if (val == null || typeof val !== "string") return undefined;
+      const trimmed = val.trim();
+      return trimmed.length > 0 ? trimmed : undefined;
+    },
+    z.string().min(3).max(50).optional(),
+  ),
+  insuranceNumber: z.preprocess(
+    (val) => {
+      if (val == null || typeof val !== "string") return undefined;
+      const trimmed = val.trim();
+      return trimmed.length > 0 ? trimmed : undefined;
+    },
+    z.string().min(3).max(80).optional(),
+  ),
+  address: z.preprocess(
+    (val) => {
+      if (val == null || typeof val !== "string") return undefined;
+      const trimmed = val.trim();
+      return trimmed.length > 0 ? trimmed : undefined;
+    },
+    z.string().min(4).max(400).optional(),
+  ),
+  pharmacyName: z
+    .string()
+    .transform((value) => value.trim())
+    .pipe(z.string().max(200))
+    .optional(),
+  pharmacyNumber: z
+    .string()
+    .transform((value) => value.trim())
+    .pipe(z.string().max(40))
+    .optional(),
+  pharmacyAddress: z
+    .string()
+    .transform((value) => value.trim())
+    .pipe(z.string().max(300))
+    .optional(),
+  pharmacyCity: z
+    .string()
+    .transform((value) => value.trim())
+    .pipe(z.string().max(120))
+    .optional(),
+  pharmacyPhone: z
+    .string()
+    .transform((value) => value.trim())
+    .pipe(z.string().max(50))
+    .optional(),
+  pharmacyFax: z
+    .string()
+    .transform((value) => value.trim())
+    .pipe(z.string().max(50))
+    .optional(),
 });
 
 export type PatientProfile = z.infer<typeof patientProfileSchema>;
