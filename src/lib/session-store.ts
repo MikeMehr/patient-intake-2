@@ -1,6 +1,6 @@
 /**
  * Database-backed storage for patient intake sessions.
- * Patient data is temporary - automatically deleted after 24 hours (HIPAA compliance).
+ * Patient sessions are retained until explicitly deleted.
  */
 
 import type { HistoryResponse } from "./history-schema";
@@ -25,31 +25,12 @@ export interface PatientSession {
   transcript?: InterviewMessage[]; // Complete interview transcript (questions and answers)
 }
 
-// Clean up expired sessions (older than 24 hours)
-const SESSION_EXPIRY_HOURS = Number(process.env.SESSION_EXPIRY_HOURS || 24);
-
 /**
  * Clean up expired sessions from database
  */
 export async function cleanupExpiredSessions(): Promise<void> {
-  try {
-    const result = await query(
-      `DELETE FROM patient_sessions
-       WHERE created_at < NOW() - INTERVAL '${SESSION_EXPIRY_HOURS} hours'`
-    );
-    if (process.env.NODE_ENV === "development") {
-      console.log(`[session-store] Cleaned up ${result.rowCount} expired sessions`);
-    }
-  } catch (error) {
-    console.error("[session-store] Error cleaning up expired sessions:", error);
-  }
-}
-
-// Run cleanup every hour
-if (typeof setInterval !== "undefined") {
-  setInterval(() => {
-    cleanupExpiredSessions().catch(console.error);
-  }, 60 * 60 * 1000);
+  // Session expiry cleanup is intentionally disabled.
+  return;
 }
 
 /**
@@ -64,8 +45,6 @@ export function generateSessionCode(): string {
  * Store a completed patient session in database
  */
 export async function storeSession(session: PatientSession): Promise<void> {
-  await cleanupExpiredSessions();
-
   try {
     // Store duration in history JSON if provided
     const historyWithDuration = session.duration 
@@ -121,11 +100,9 @@ export async function storeSession(session: PatientSession): Promise<void> {
 }
 
 /**
- * Get a session by code (excludes expired sessions)
+ * Get a session by code.
  */
 export async function getSession(sessionCode: string): Promise<PatientSession | null> {
-  await cleanupExpiredSessions();
-
   try {
     const result = await query<{
       physician_id: string;
@@ -148,8 +125,7 @@ export async function getSession(sessionCode: string): Promise<PatientSession | 
         image_summary, image_url, image_name,
         completed_at, viewed_by_physician, viewed_at
        FROM patient_sessions
-       WHERE session_code = $1
-       AND created_at >= NOW() - INTERVAL '${SESSION_EXPIRY_HOURS} hours'`,
+       WHERE session_code = $1`,
       [sessionCode]
     );
 
@@ -216,13 +192,10 @@ export async function getSession(sessionCode: string): Promise<PatientSession | 
  * Check if a session code exists
  */
 export async function sessionExists(sessionCode: string): Promise<boolean> {
-  await cleanupExpiredSessions();
-
   try {
     const result = await query(
       `SELECT 1 FROM patient_sessions
-       WHERE session_code = $1
-       AND created_at >= NOW() - INTERVAL '${SESSION_EXPIRY_HOURS} hours'`,
+       WHERE session_code = $1`,
       [sessionCode]
     );
     return result.rows.length > 0;
@@ -240,7 +213,6 @@ export async function patientSessionExists(params: {
   patientName: string;
   physicianId?: string;
 }): Promise<boolean> {
-  await cleanupExpiredSessions();
   const { patientEmail, patientName, physicianId } = params;
 
   if (!patientEmail || !patientName) {
@@ -256,12 +228,10 @@ export async function patientSessionExists(params: {
          WHERE LOWER(patient_email) = $1
            AND LOWER(patient_name) = $2
            AND physician_id = $3
-           AND created_at >= NOW() - INTERVAL '${SESSION_EXPIRY_HOURS} hours'
          LIMIT 1`
       : `SELECT 1 FROM patient_sessions
          WHERE LOWER(patient_email) = $1
            AND LOWER(patient_name) = $2
-           AND created_at >= NOW() - INTERVAL '${SESSION_EXPIRY_HOURS} hours'
          LIMIT 1`;
 
     const queryParams = physicianId
@@ -292,11 +262,117 @@ export async function deleteSession(sessionCode: string): Promise<void> {
 }
 
 /**
+ * Update physician-editable HPI fields in a session's history JSON.
+ */
+export async function updateSessionHistoryFields(
+  sessionCode: string,
+  updates: {
+    summary: string;
+    assessment: string;
+    plan: string[];
+  }
+): Promise<boolean> {
+  try {
+    const { summary, assessment, plan } = updates;
+    const planJson = JSON.stringify(plan);
+    const result = await query(
+      `UPDATE patient_sessions
+       SET history = jsonb_set(
+         jsonb_set(
+           jsonb_set(
+             COALESCE(history, '{}'::jsonb),
+             '{summary}',
+             to_jsonb($2::text),
+             true
+           ),
+           '{assessment}',
+           to_jsonb($3::text),
+           true
+         ),
+         '{plan}',
+         $4::jsonb,
+         true
+       )
+       WHERE session_code = $1`,
+      [sessionCode, summary, assessment, planJson]
+    );
+    return (result.rowCount ?? 0) > 0;
+  } catch (error) {
+    console.error("[session-store] Error updating session HPI fields:", error);
+    throw error;
+  }
+}
+
+/**
+ * Update pharmacy fields within a session's patient_profile JSONB.
+ */
+export async function updateSessionPatientProfilePharmacyFields(
+  sessionCode: string,
+  updates: {
+    pharmacyName?: string;
+    pharmacyNumber?: string;
+    pharmacyAddress?: string;
+    pharmacyCity?: string;
+    pharmacyPhone?: string;
+    pharmacyFax?: string;
+  }
+): Promise<boolean> {
+  try {
+    const result = await query(
+      `UPDATE patient_sessions
+       SET patient_profile = jsonb_set(
+         jsonb_set(
+           jsonb_set(
+             jsonb_set(
+               jsonb_set(
+                 jsonb_set(
+                   COALESCE(patient_profile, '{}'::jsonb),
+                   '{pharmacyName}',
+                   to_jsonb($2::text),
+                   true
+                 ),
+                 '{pharmacyNumber}',
+                 to_jsonb($3::text),
+                 true
+               ),
+               '{pharmacyAddress}',
+               to_jsonb($4::text),
+               true
+             ),
+             '{pharmacyCity}',
+             to_jsonb($5::text),
+             true
+           ),
+           '{pharmacyPhone}',
+           to_jsonb($6::text),
+           true
+         ),
+         '{pharmacyFax}',
+         to_jsonb($7::text),
+         true
+       )
+       WHERE session_code = $1`,
+      [
+        sessionCode,
+        updates.pharmacyName ?? "",
+        updates.pharmacyNumber ?? "",
+        updates.pharmacyAddress ?? "",
+        updates.pharmacyCity ?? "",
+        updates.pharmacyPhone ?? "",
+        updates.pharmacyFax ?? "",
+      ]
+    );
+    return (result.rowCount ?? 0) > 0;
+  } catch (error) {
+    console.error("[session-store] Error updating patient profile pharmacy fields:", error);
+    throw error;
+  }
+}
+
+/**
  * Get all sessions for a specific physician
  */
 export async function getSessionsByPhysician(physicianId: string): Promise<PatientSession[]> {
-  await cleanupExpiredSessions();
-
   try {
     const result = await query<{
       physician_id: string;
@@ -320,7 +396,6 @@ export async function getSessionsByPhysician(physicianId: string): Promise<Patie
         completed_at, viewed_by_physician, viewed_at
        FROM patient_sessions
        WHERE physician_id = $1
-       AND created_at >= NOW() - INTERVAL '${SESSION_EXPIRY_HOURS} hours'
        ORDER BY completed_at DESC`,
       [physicianId]
     );
@@ -363,8 +438,6 @@ export async function getSessionsByPhysician(physicianId: string): Promise<Patie
  * Get all sessions (for admin/debugging purposes - deprecated, use getSessionsByPhysician instead)
  */
 export async function getAllSessions(): Promise<PatientSession[]> {
-  await cleanupExpiredSessions();
-
   try {
     const result = await query<{
       physician_id: string;
@@ -387,7 +460,6 @@ export async function getAllSessions(): Promise<PatientSession[]> {
         image_summary, image_url, image_name,
         completed_at, viewed_by_physician, viewed_at
        FROM patient_sessions
-       WHERE created_at >= NOW() - INTERVAL '${SESSION_EXPIRY_HOURS} hours'
        ORDER BY completed_at DESC`
     );
 
