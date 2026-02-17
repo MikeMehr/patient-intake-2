@@ -7,7 +7,7 @@ import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
 import { signOAuth1Request } from "@/lib/oscar/oauth1";
 
 export const runtime = "nodejs";
-const HANDLER_VERSION = "2026-02-17-quicksearch-v1";
+const HANDLER_VERSION = "2026-02-17-quicksearch-v2";
 
 function splitName(input: string): { firstName: string; lastName: string } | null {
   const trimmed = input.trim().replace(/\s+/g, " ");
@@ -51,12 +51,16 @@ function tryPickArrayDeep(value: unknown): any[] {
   if (obj.List && typeof obj.List === "object") {
     const list = obj.List as any;
     if (Array.isArray(list.Item)) return list.Item;
+    if (list.Item && typeof list.Item === "object") return [list.Item];
     if (Array.isArray(list.item)) return list.item;
+    if (list.item && typeof list.item === "object") return [list.item];
   }
 
   // Some might return { Item: [...] } directly.
   if (Array.isArray(obj.Item)) return obj.Item;
+  if (obj.Item && typeof obj.Item === "object") return [obj.Item];
   if (Array.isArray(obj.item)) return obj.item;
+  if (obj.item && typeof obj.item === "object") return [obj.item];
 
   return pickArray(value);
 }
@@ -96,7 +100,7 @@ async function oscarGetJson(args: {
   accessToken: string;
   tokenSecret: string;
 }): Promise<
-  | { ok: true; url: string; json: unknown }
+  | { ok: true; url: string; json: unknown; contentType: string | null }
   | { ok: false; url: string; status: number; text: string; contentType: string | null }
 > {
   const signedReq = signOAuth1Request({
@@ -121,7 +125,7 @@ async function oscarGetJson(args: {
 
   const parsed = safeJsonParse(rawText);
   if (!parsed.ok) return { ok: false, url: args.url, status: 502, text: rawText, contentType };
-  return { ok: true, url: args.url, json: parsed.value };
+  return { ok: true, url: args.url, json: parsed.value, contentType };
 }
 
 async function fetchDobForDemographicNo(args: {
@@ -264,8 +268,8 @@ export async function POST(request: NextRequest) {
       lastName: parsedName.lastName,
     });
 
-    let quickOk: { ok: true; url: string; json: unknown } | null = null;
-    let firstOk: { ok: true; url: string; json: unknown } | null = null;
+    let quickOk: { ok: true; url: string; json: unknown; contentType: string | null } | null = null;
+    let firstOk: { ok: true; url: string; json: unknown; contentType: string | null } | null = null;
     let lastErr:
       | { ok: false; url: string; status: number; text: string; contentType: string | null }
       | null = null;
@@ -366,6 +370,19 @@ export async function POST(request: NextRequest) {
       dobMatchCount: dobMatched.length,
       oscarQuickSearchQueryUsed: usedQuery,
       handlerVersion: HANDLER_VERSION,
+      // When matches is empty, this helps us confirm whether OSCAR returned an empty list
+      // or we failed to parse a non-empty payload. Avoid returning raw payload (PHI risk).
+      debug:
+        matches.length === 0
+          ? {
+              candidateCount: candidates.length,
+              quickSearchContentType: quickOk.contentType,
+              quickSearchTopLevelKeys:
+                quickOk.json && typeof quickOk.json === "object" ? Object.keys(quickOk.json as any).slice(0, 40) : [],
+              hasList: Boolean((quickOk.json as any)?.List),
+              hasItem: Boolean((quickOk.json as any)?.Item || (quickOk.json as any)?.item),
+            }
+          : undefined,
       warning:
         dobMatched.length === 0 && capped.length > 0
           ? "No exact DOB match found; showing name matches from OSCAR quickSearch."
