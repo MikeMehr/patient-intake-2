@@ -36,11 +36,151 @@ export default function OrganizationDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const [oscarLoading, setOscarLoading] = useState(false);
+  const [oscarError, setOscarError] = useState<string | null>(null);
+  const [oscarStatus, setOscarStatus] = useState<string>("not_connected");
+  const [oscarBaseUrl, setOscarBaseUrl] = useState<string>("");
+  const [oscarClientKey, setOscarClientKey] = useState<string>("");
+  const [oscarClientSecret, setOscarClientSecret] = useState<string>("");
+  const [oscarClientSecretMasked, setOscarClientSecretMasked] = useState<string | null>(null);
+  const [oscarLastTestedAt, setOscarLastTestedAt] = useState<string | null>(null);
+  const [appOrigin, setAppOrigin] = useState<string>("");
+
   useEffect(() => {
     if (organizationId) {
       fetchOrganizationDetails();
+      fetchOscarConfig();
     }
   }, [organizationId]);
+
+  useEffect(() => {
+    // For display only; env vars are inlined at build time, so `window.location.origin`
+    // is the most accurate value in production (custom domain vs azurewebsites.net).
+    if (typeof window !== "undefined") setAppOrigin(window.location.origin);
+  }, []);
+
+  const fetchOscarConfig = async () => {
+    setOscarError(null);
+    setOscarLoading(true);
+    try {
+      const response = await fetch(`/api/admin/organizations/${organizationId}/emr/oscar`);
+      if (response.status === 401) {
+        router.push("/admin/login");
+        return;
+      }
+      const data = await response.json();
+      if (!response.ok || data?.error) {
+        setOscarError(data?.error || "Failed to load OSCAR configuration");
+        return;
+      }
+      setOscarStatus(data?.status || "not_connected");
+      setOscarBaseUrl(data?.baseUrl || "");
+      setOscarClientKey(data?.clientKey || "");
+      setOscarClientSecretMasked(data?.clientSecretMasked || null);
+      setOscarLastTestedAt(data?.lastTestedAt || null);
+    } catch (err) {
+      console.error("Error fetching OSCAR config:", err);
+      setOscarError("Failed to load OSCAR configuration");
+    } finally {
+      setOscarLoading(false);
+    }
+  };
+
+  const saveOscarConfig = async () => {
+    setOscarError(null);
+    setOscarLoading(true);
+    try {
+      const response = await fetch(`/api/admin/organizations/${organizationId}/emr/oscar`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          baseUrl: oscarBaseUrl,
+          clientKey: oscarClientKey,
+          clientSecret: oscarClientSecret,
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setOscarError(data?.error || "Failed to save OSCAR configuration");
+        return;
+      }
+      setOscarClientSecret("");
+      await fetchOscarConfig();
+    } catch (err) {
+      console.error("Error saving OSCAR config:", err);
+      setOscarError("Failed to save OSCAR configuration");
+    } finally {
+      setOscarLoading(false);
+    }
+  };
+
+  const connectOscar = async () => {
+    setOscarError(null);
+    setOscarLoading(true);
+    try {
+      const response = await fetch(`/api/admin/organizations/${organizationId}/emr/oscar/connect`, {
+        method: "POST",
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setOscarError(data?.error || "Failed to start OSCAR connect");
+        return;
+      }
+      if (data?.authorizeUrl) {
+        window.location.href = data.authorizeUrl;
+      } else {
+        setOscarError("OSCAR connect did not return an authorize URL");
+      }
+    } catch (err) {
+      console.error("Error connecting OSCAR:", err);
+      setOscarError("Failed to start OSCAR connect");
+    } finally {
+      setOscarLoading(false);
+    }
+  };
+
+  const testOscar = async () => {
+    setOscarError(null);
+    setOscarLoading(true);
+    try {
+      const response = await fetch(`/api/admin/organizations/${organizationId}/emr/oscar/test`, {
+        method: "POST",
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setOscarError(data?.error || "OSCAR test failed");
+        return;
+      }
+      await fetchOscarConfig();
+    } catch (err) {
+      console.error("Error testing OSCAR:", err);
+      setOscarError("OSCAR test failed");
+    } finally {
+      setOscarLoading(false);
+    }
+  };
+
+  const disconnectOscar = async () => {
+    if (!confirm("Disconnect OSCAR for this organization?")) return;
+    setOscarError(null);
+    setOscarLoading(true);
+    try {
+      const response = await fetch(`/api/admin/organizations/${organizationId}/emr/oscar/disconnect`, {
+        method: "POST",
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setOscarError(data?.error || "Failed to disconnect OSCAR");
+        return;
+      }
+      await fetchOscarConfig();
+    } catch (err) {
+      console.error("Error disconnecting OSCAR:", err);
+      setOscarError("Failed to disconnect OSCAR");
+    } finally {
+      setOscarLoading(false);
+    }
+  };
 
   const fetchOrganizationDetails = async () => {
     try {
@@ -178,6 +318,122 @@ export default function OrganizationDetailPage() {
                 </div>
               </dl>
             </div>
+
+            <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-6 mt-6">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h2 className="text-lg font-semibold text-slate-900">EMR (OSCAR)</h2>
+                  <p className="text-xs text-slate-500 mt-1">
+                    Store credentials per organization. Tokens are stored encrypted.
+                  </p>
+                </div>
+                <span
+                  className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                    oscarStatus === "connected"
+                      ? "bg-green-100 text-green-800"
+                      : oscarStatus === "error"
+                        ? "bg-red-100 text-red-800"
+                        : "bg-slate-100 text-slate-800"
+                  }`}
+                >
+                  {oscarStatus === "connected"
+                    ? "Connected"
+                    : oscarStatus === "error"
+                      ? "Error"
+                      : "Not connected"}
+                </span>
+              </div>
+
+              {oscarError && (
+                <div className="mt-4 rounded-lg bg-red-50 border border-red-200 px-4 py-3">
+                  <p className="text-sm text-red-800">{oscarError}</p>
+                </div>
+              )}
+
+              <div className="mt-4 space-y-3">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                    OSCAR Base URL
+                  </label>
+                  <input
+                    type="url"
+                    value={oscarBaseUrl}
+                    onChange={(e) => setOscarBaseUrl(e.target.value)}
+                    placeholder="https://oscar.example.ca/oscar_context"
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
+                    disabled={oscarLoading}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                    Client Key
+                  </label>
+                  <input
+                    type="text"
+                    value={oscarClientKey}
+                    onChange={(e) => setOscarClientKey(e.target.value)}
+                    placeholder="OSCAR REST Client Key"
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
+                    disabled={oscarLoading}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                    Client Secret
+                  </label>
+                  <input
+                    type="password"
+                    value={oscarClientSecret}
+                    onChange={(e) => setOscarClientSecret(e.target.value)}
+                    placeholder={oscarClientSecretMasked ? `Saved (${oscarClientSecretMasked})` : "OSCAR REST Client Secret"}
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
+                    disabled={oscarLoading}
+                  />
+                  <p className="text-xs text-slate-500 mt-1">
+                    Callback URL: {(appOrigin || "https://mymd.health-assist.org")}/api/admin/emr/oscar/callback
+                  </p>
+                </div>
+
+                {oscarLastTestedAt && (
+                  <p className="text-xs text-slate-500">
+                    Last tested: {new Date(oscarLastTestedAt).toLocaleString()}
+                  </p>
+                )}
+
+                <div className="flex flex-wrap gap-2 pt-1">
+                  <button
+                    onClick={saveOscarConfig}
+                    disabled={oscarLoading}
+                    className="px-3 py-2 rounded-lg bg-slate-900 text-white text-sm font-medium hover:bg-slate-800 disabled:opacity-60 disabled:cursor-not-allowed"
+                  >
+                    {oscarLoading ? "Saving..." : "Save"}
+                  </button>
+                  <button
+                    onClick={connectOscar}
+                    disabled={oscarLoading || !oscarBaseUrl.trim() || !oscarClientKey.trim()}
+                    className="px-3 py-2 rounded-lg border border-slate-300 text-slate-700 text-sm font-medium hover:bg-slate-50 disabled:opacity-60 disabled:cursor-not-allowed"
+                  >
+                    Connect
+                  </button>
+                  <button
+                    onClick={testOscar}
+                    disabled={oscarLoading || oscarStatus !== "connected"}
+                    className="px-3 py-2 rounded-lg border border-slate-300 text-slate-700 text-sm font-medium hover:bg-slate-50 disabled:opacity-60 disabled:cursor-not-allowed"
+                  >
+                    Test Connection
+                  </button>
+                  <button
+                    onClick={disconnectOscar}
+                    disabled={oscarLoading || oscarStatus === "not_connected"}
+                    className="px-3 py-2 rounded-lg border border-red-300 text-red-700 text-sm font-medium hover:bg-red-50 disabled:opacity-60 disabled:cursor-not-allowed"
+                  >
+                    Disconnect
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
 
           <div className="lg:col-span-2">
@@ -206,8 +462,7 @@ export default function OrganizationDetailPage() {
                             {provider.phone && ` • ${provider.phone}`}
                           </div>
                           <div className="text-xs text-slate-400 mt-1">
-                            Intake Link: {process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}
-                            /intake/{provider.uniqueSlug}
+                            Intake Link: {(appOrigin || "https://mymd.health-assist.org")}/intake/{provider.uniqueSlug}
                           </div>
                         </div>
                         <div className="flex items-center gap-2">
