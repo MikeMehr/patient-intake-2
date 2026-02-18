@@ -306,9 +306,20 @@ export default function PhysicianDashboard() {
         return;
       }
       setInviteOscarDemographicNo(String(data?.demographicNo || demographicNo));
+      if ((typeof data?.firstName === "string" && data.firstName.trim()) || (typeof data?.lastName === "string" && data.lastName.trim())) {
+        const fullName = `${String(data?.firstName || "").trim()} ${String(data?.lastName || "").trim()}`.trim();
+        if (fullName) setInvitePatientName(fullName);
+      }
       if (typeof data?.dateOfBirth === "string" && data.dateOfBirth.trim()) {
         // Normalize to YYYY-MM-DD if it already is, otherwise keep as-is.
         setInvitePatientDob(data.dateOfBirth.trim());
+      }
+      if (
+        (!invitePatientEmail.trim() || !invitePatientEmail.includes("@")) &&
+        typeof data?.patientEmail === "string" &&
+        data.patientEmail.trim()
+      ) {
+        setInvitePatientEmail(data.patientEmail.trim());
       }
       if (typeof data?.primaryPhone === "string") setInvitePrimaryPhone(data.primaryPhone);
       if (typeof data?.secondaryPhone === "string") setInviteSecondaryPhone(data.secondaryPhone);

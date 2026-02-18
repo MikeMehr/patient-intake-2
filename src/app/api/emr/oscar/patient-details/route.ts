@@ -62,6 +62,28 @@ function normalizeAddressFromOscar(json: any): string | null {
   return parts.length ? parts.join(", ") : null;
 }
 
+function normalizeEmailFromOscar(json: any): string | null {
+  const top = json ?? {};
+  const contactObj = isRecord(top.contact) ? (top.contact as any) : null;
+  const emailsObj = isRecord(top.emails) ? (top.emails as any) : null;
+
+  // Try common OSCAR demographic field names (varies by deployment).
+  const candidate =
+    pickFirstNonEmptyString(top, ["email", "emailAddress", "email_address", "eMail", "patientEmail"]) ??
+    (contactObj
+      ? pickFirstNonEmptyString(contactObj, ["email", "emailAddress", "email_address", "eMail"])
+      : null) ??
+    (emailsObj
+      ? pickFirstNonEmptyString(emailsObj, ["primary", "email", "emailAddress", "email_address"])
+      : null);
+
+  if (!candidate) return null;
+  const normalized = candidate.trim();
+  // Very lightweight validation: avoid returning junk strings.
+  if (!normalized.includes("@") || normalized.length > 254) return null;
+  return normalized;
+}
+
 export async function POST(request: NextRequest) {
   const requestId = getRequestId(request.headers);
   const started = Date.now();
@@ -169,6 +191,7 @@ export async function POST(request: NextRequest) {
       String(json.hin ?? json.healthInsuranceNumber ?? json.insuranceNumber ?? json.hcNumber ?? "").trim() || null;
 
     const patientAddress = normalizeAddressFromOscar(json);
+    const patientEmail = normalizeEmailFromOscar(json);
 
     const dateOfBirth = String(json.dob ?? json.dateOfBirth ?? json.birthDate ?? "").trim() || null;
     const firstName = String(json.firstName ?? json.first_name ?? json.givenName ?? "").trim() || null;
@@ -179,6 +202,7 @@ export async function POST(request: NextRequest) {
       firstName,
       lastName,
       dateOfBirth,
+      patientEmail,
       primaryPhone,
       secondaryPhone,
       insuranceNumber,
