@@ -26,7 +26,19 @@ function resolveRequestOrigin(request: NextRequest): string {
 function buildLabEditorUrl(args: { requestOrigin: string; editorToken: string }): string {
   const configured = (process.env.LAB_REQUISITION_EFORM_URL || "").trim();
   const fallback = `${args.requestOrigin}/eforms/1.1LabRequisition/1.1LabRequisition.html`;
-  const base = configured || fallback;
+  let base = fallback;
+  // Only use configured URL when it matches the current request origin.
+  // This prevents stale/incorrect env values (old domains) from generating broken editor links.
+  if (configured) {
+    try {
+      const configuredOrigin = new URL(configured).origin;
+      if (configuredOrigin === args.requestOrigin) {
+        base = configured;
+      }
+    } catch {
+      // ignore invalid configured URL and fall back
+    }
+  }
   try {
     const url = new URL(base);
     url.searchParams.set("editorToken", args.editorToken);
