@@ -23,6 +23,18 @@ function resolveRequestOrigin(request: NextRequest): string {
   return new URL(request.url).origin;
 }
 
+function resolveCanonicalOrigin(request: NextRequest): string {
+  const configured = (process.env.NEXT_PUBLIC_APP_URL || "").trim();
+  if (configured) {
+    try {
+      return new URL(configured).origin;
+    } catch {
+      // ignore invalid env value
+    }
+  }
+  return resolveRequestOrigin(request);
+}
+
 function buildLabEditorUrl(args: { requestOrigin: string; editorToken: string }): string {
   const configured = (process.env.LAB_REQUISITION_EFORM_URL || "").trim();
   const fallback = `${args.requestOrigin}/eforms/1.1LabRequisition/1.1LabRequisition.html`;
@@ -216,8 +228,8 @@ export async function POST(request: NextRequest) {
     sourceRequisitionId: existing.id,
     payload,
   });
-  const requestOrigin = resolveRequestOrigin(request);
-  const editorUrl = buildLabEditorUrl({ requestOrigin, editorToken: token });
+  const canonicalOrigin = resolveCanonicalOrigin(request);
+  const editorUrl = buildLabEditorUrl({ requestOrigin: canonicalOrigin, editorToken: token });
 
   return respond("/api/lab-requisitions/editor-session", requestId, started, 200, {
     token,
