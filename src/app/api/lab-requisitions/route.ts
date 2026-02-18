@@ -260,3 +260,70 @@ export async function GET(request: NextRequest) {
   }
 }
 
+export async function DELETE(request: NextRequest) {
+  const requestId = getRequestId(request.headers);
+  const started = Date.now();
+  let status = 200;
+  const { searchParams } = new URL(request.url);
+  const sessionCode = searchParams.get("code");
+  const id = searchParams.get("id");
+
+  if (!sessionCode || !id) {
+    status = 400;
+    const res = badRequest("code (sessionCode) and id are required.");
+    logRequestMeta("/api/lab-requisitions", requestId, status, Date.now() - started);
+    return res;
+  }
+
+  try {
+    const session = await getCurrentSession();
+    if (!session) {
+      status = 401;
+      const res = badRequest("Authentication required.", status);
+      logRequestMeta("/api/lab-requisitions", requestId, status, Date.now() - started);
+      return res;
+    }
+    if (session.userType !== "provider") {
+      status = 403;
+      const res = badRequest("Only providers can delete lab requisitions.", status);
+      logRequestMeta("/api/lab-requisitions", requestId, status, Date.now() - started);
+      return res;
+    }
+
+    const patientSession = await getSession(sessionCode);
+    if (!patientSession) {
+      status = 404;
+      const res = badRequest("Session not found.", status);
+      logRequestMeta("/api/lab-requisitions", requestId, status, Date.now() - started);
+      return res;
+    }
+    if (patientSession.physicianId !== session.userId) {
+      status = 403;
+      const res = badRequest("You do not have access to this session.", status);
+      logRequestMeta("/api/lab-requisitions", requestId, status, Date.now() - started);
+      return res;
+    }
+
+    const result = await query(
+      `DELETE FROM lab_requisitions
+       WHERE session_code = $1 AND id = $2`,
+      [sessionCode, id],
+    );
+    if ((result.rowCount ?? 0) === 0) {
+      status = 404;
+      const res = badRequest("Lab requisition not found for this session.", status);
+      logRequestMeta("/api/lab-requisitions", requestId, status, Date.now() - started);
+      return res;
+    }
+
+    const res = NextResponse.json({ success: true });
+    logRequestMeta("/api/lab-requisitions", requestId, status, Date.now() - started);
+    return res;
+  } catch (error) {
+    status = 500;
+    console.error("[lab-requisitions] DELETE failed:", error);
+    const res = NextResponse.json({ error: "Failed to delete lab requisition." }, { status });
+    logRequestMeta("/api/lab-requisitions", requestId, status, Date.now() - started);
+    return res;
+  }
+}

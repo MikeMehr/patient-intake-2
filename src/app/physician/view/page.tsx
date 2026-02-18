@@ -1,9 +1,93 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, Suspense } from "react";
+import { useEffect, useMemo, useRef, useState, Suspense, type PointerEvent as ReactPointerEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { PatientSession } from "@/lib/session-store";
 import { jsPDF } from "jspdf";
+import { CLINICAL_ASSISTIVE_DISCLAIMER } from "@/lib/clinical-safety";
+
+type RxMedicationRow = {
+  id: string;
+  medication: string;
+  strength: string;
+  sig: string;
+  quantity: string;
+  refills: string;
+  notes: string;
+};
+
+type PharmacyFields = {
+  pharmacyName: string;
+  pharmacyNumber: string;
+  pharmacyAddress: string;
+  pharmacyCity: string;
+  pharmacyPhone: string;
+  pharmacyFax: string;
+};
+
+const emptyPharmacyFields = (): PharmacyFields => ({
+  pharmacyName: "",
+  pharmacyNumber: "",
+  pharmacyAddress: "",
+  pharmacyCity: "",
+  pharmacyPhone: "",
+  pharmacyFax: "",
+});
+
+const pharmacyFieldsFromProfile = (profile?: PatientSession["patientProfile"]): PharmacyFields => ({
+  pharmacyName: profile?.pharmacyName?.trim() || "",
+  pharmacyNumber: profile?.pharmacyNumber?.trim() || "",
+  pharmacyAddress: profile?.pharmacyAddress?.trim() || "",
+  pharmacyCity: profile?.pharmacyCity?.trim() || "",
+  pharmacyPhone: profile?.pharmacyPhone?.trim() || "",
+  pharmacyFax: profile?.pharmacyFax?.trim() || "",
+});
+
+const parseCityFromBcAddress = (address: string): string => {
+  const trimmed = address.trim();
+  if (!trimmed) return "";
+  const match = trimmed.match(/,\s*([^,]+?)\s+BC\b/i);
+  if (match?.[1]) return match[1].trim();
+  return "";
+};
+
+const computeAgeFromDob = (dob: string): number | null => {
+  // Expect YYYY-MM-DD (from HTML date input). If not, fall back to null.
+  const trimmed = dob.trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return null;
+  const [y, m, d] = trimmed.split("-").map((x) => Number(x));
+  if (!y || !m || !d) return null;
+  const birth = new Date(y, m - 1, d);
+  if (Number.isNaN(birth.getTime())) return null;
+  const today = new Date();
+  let age = today.getFullYear() - birth.getFullYear();
+  const hadBirthdayThisYear =
+    today.getMonth() > birth.getMonth() ||
+    (today.getMonth() === birth.getMonth() && today.getDate() >= birth.getDate());
+  if (!hadBirthdayThisYear) age -= 1;
+  if (age < 0 || age > 130) return null;
+  return age;
+};
+
+const makeRxMedicationRow = (
+  row: Partial<Omit<RxMedicationRow, "id">> = {},
+): RxMedicationRow => ({
+  id:
+    typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random()}`,
+  medication: row.medication ?? "",
+  strength: row.strength ?? "",
+  sig: row.sig ?? "",
+  quantity: row.quantity ?? "",
+  refills: row.refills ?? "",
+  notes: row.notes ?? "",
+});
+
+const RX_NOTE_MEDICATION_HINT_REGEX =
+  /\b(take|apply|inhale|inject|use|insert|instill|swish|chew|tablet|tablets|capsule|capsules|mg|mcg|ml|bid|tid|qid|qhs|prn|once daily|twice daily|three times daily)\b/i;
+const RX_NOTE_NON_MEDICATION_HINT_REGEX =
+  /\b(lab|labs|blood work|requisition|cbc|crp|esr|ana|rf|anti-ccp|ferritin|sodium|potassium|x-?ray|mri|ct|ultrasound|referral|refer)\b/i;
 
 function PhysicianViewContent() {
   const router = useRouter();
@@ -13,6 +97,13 @@ function PhysicianViewContent() {
   const [session, setSession] = useState<PatientSession | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isEditingHpi, setIsEditingHpi] = useState(false);
+  const [hpiSummaryDraft, setHpiSummaryDraft] = useState("");
+  const [hpiAssessmentDraft, setHpiAssessmentDraft] = useState("");
+  const [hpiPlanDraft, setHpiPlanDraft] = useState("");
+  const [hpiSaving, setHpiSaving] = useState(false);
+  const [hpiSaveError, setHpiSaveError] = useState<string | null>(null);
+  const [hpiSaveSuccess, setHpiSaveSuccess] = useState<string | null>(null);
   const [showTranscript, setShowTranscript] = useState(false);
   const [aiAction, setAiAction] = useState<"referral_letter" | "labs" | "custom" | "lab_requisition" | "prescription">("referral_letter");
   const [aiPrompt, setAiPrompt] = useState("");
@@ -28,14 +119,15 @@ function PhysicianViewContent() {
   const [labInstructions, setLabInstructions] = useState("");
   const [labStatus, setLabStatus] = useState<string | null>(null);
   const [labSaving, setLabSaving] = useState(false);
-  const [rxMedication, setRxMedication] = useState("");
-  const [rxStrength, setRxStrength] = useState("");
-  const [rxSig, setRxSig] = useState("");
-  const [rxQuantity, setRxQuantity] = useState("");
-  const [rxRefills, setRxRefills] = useState("");
-  const [rxNotes, setRxNotes] = useState("");
+  const [rxMedications, setRxMedications] = useState<RxMedicationRow[]>([makeRxMedicationRow()]);
   const [rxStatus, setRxStatus] = useState<string | null>(null);
   const [rxSaving, setRxSaving] = useState(false);
+  const [rxHasSignature, setRxHasSignature] = useState(false);
+  const [isEditingPharmacy, setIsEditingPharmacy] = useState(false);
+  const [pharmacySaving, setPharmacySaving] = useState(false);
+  const [pharmacySearching, setPharmacySearching] = useState(false);
+  const [pharmacyStatus, setPharmacyStatus] = useState<string | null>(null);
+  const [pharmacyDraft, setPharmacyDraft] = useState<PharmacyFields>(emptyPharmacyFields);
   const [labList, setLabList] = useState<
     Array<{
       id: string;
@@ -47,11 +139,36 @@ function PhysicianViewContent() {
   >([]);
   const [labListLoading, setLabListLoading] = useState(false);
   const [labListError, setLabListError] = useState<string | null>(null);
+  const [prescriptionList, setPrescriptionList] = useState<
+    Array<{
+      id: string;
+      createdAt: string;
+      physicianName: string | null;
+      clinicName: string | null;
+      faxStatus: string;
+      faxError: string | null;
+      faxSentAt: string | null;
+      prescriptionStatus: string;
+      attestedAt: string | null;
+      medications: Array<{
+        medication: string;
+        strength?: string | null;
+        sig: string;
+        quantity?: string | null;
+        refills?: string | null;
+        notes?: string | null;
+      }>;
+    }>
+  >([]);
+  const [prescriptionListLoading, setPrescriptionListLoading] = useState(false);
+  const [prescriptionListError, setPrescriptionListError] = useState<string | null>(null);
   const labPrefillRequestedRef = useRef(false);
   const [labPrefillStatus, setLabPrefillStatus] = useState<string | null>(null);
+  const rxSignatureCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const rxSignatureDrawingRef = useRef(false);
 
   const parsedRxFromHistory = useMemo(() => {
-    if (!session?.history) return { med: "", strength: "", sig: "", notes: "" };
+    if (!session?.history) return { medications: [] as Omit<RxMedicationRow, "id">[], notes: "" };
     const history: any = session.history;
     const planItems: string[] = [];
     if (Array.isArray(history.plan)) {
@@ -59,28 +176,176 @@ function PhysicianViewContent() {
     } else if (history.plan && typeof history.plan === "string") {
       planItems.push(history.plan);
     }
-    // Take first item containing a dosage hint
-    const dosageRegex = /\b(\d+ ?(mg|mcg|g|tabs?|tablets?|caps?|puffs?|units?))/i;
-    let med = "";
-    let strength = "";
-    let sig = "";
+    const medWord = "[A-Za-z(][A-Za-z0-9()/-]*";
+    const medNamePattern = `${medWord}(?:\\s+${medWord}){0,5}`;
+    const medDoseRegex = new RegExp(
+      `(${medNamePattern}(?:\\s+${medWord}){0,5}?)\\s+(\\d+\\s?(mg|mcg|g|ml|tabs?|tablets?|caps?|puffs?|units?))\\b`,
+      "gi",
+    );
+    const sigStartRegex = /\b(take|apply|inhale|inject|use|insert|instill|swish|chew)\b/i;
+    const medications: Omit<RxMedicationRow, "id">[] = [];
     let notes = "";
+
+    const normalizeMedicationName = (raw: string): string => {
+      const normalized = raw
+        .trim()
+        .replace(/^symptomatic treatment(?: with)?\s+/i, "")
+        .replace(/^(with|and|or)\s+/i, "")
+        .replace(/^(start|continue|consider|use|take)\s+/i, "")
+        .replace(/\s{2,}/g, " ")
+        .replace(/[,:;-]+$/, "")
+        .trim();
+      const segments = normalized.split(/\b(?:and|or)\b/i).map((segment) => segment.trim()).filter(Boolean);
+      return segments.length > 0 ? segments[segments.length - 1] : normalized;
+    };
+
     for (const item of planItems) {
       if (!item) continue;
-      const m = dosageRegex.exec(item);
-      if (m) {
-        strength = m[1];
-        const parts = item.split(",");
-        med = parts[0].trim();
-        sig = parts.slice(1).join(", ").trim();
-        break;
+      const normalized = item.replace(/\s+/g, " ").trim();
+      const matches = Array.from(normalized.matchAll(medDoseRegex));
+      if (matches.length === 0) continue;
+      matches.forEach((match, idx) => {
+        const matchStart = typeof match.index === "number" ? match.index : 0;
+        const fullMatch = match[0] || "";
+        const medRaw = match[1] || "";
+        const strength = match[2] || "";
+        const sigStart = matchStart + fullMatch.length;
+        const nextStart =
+          idx + 1 < matches.length && typeof matches[idx + 1].index === "number"
+            ? (matches[idx + 1].index as number)
+            : normalized.length;
+        let med = normalizeMedicationName(medRaw);
+        let sig = normalized
+          .slice(sigStart, nextStart)
+          .trim()
+          .replace(/^[-,:;\s]+/, "")
+          .replace(/\s{2,}/g, " ");
+
+        const medSigBoundary = sigStartRegex.exec(med);
+        if (medSigBoundary && medSigBoundary.index > 0) {
+          const medOnly = med.slice(0, medSigBoundary.index).trim().replace(/[,:;-]+$/, "");
+          const movedSig = med.slice(medSigBoundary.index).trim();
+          if (medOnly) med = medOnly;
+          if (!sig) sig = movedSig;
+        }
+
+        if (!med || !sig) return;
+        const exists = medications.some(
+          (row) =>
+            row.medication.toLowerCase() === med.toLowerCase() &&
+            row.strength.toLowerCase() === strength.toLowerCase() &&
+            row.sig.toLowerCase() === sig.toLowerCase(),
+        );
+        if (exists) return;
+        medications.push({
+          medication: med,
+          strength,
+          sig,
+          quantity: "",
+          refills: "",
+          notes: "",
+        });
+      });
+
+      // Fallback for common OTC combos that may be written in one sentence.
+      const lower = normalized.toLowerCase();
+      const commonMedicationNames = ["acetaminophen", "tylenol", "ibuprofen", "advil", "naproxen", "aleve"];
+      commonMedicationNames.forEach((name) => {
+        if (!lower.includes(name)) return;
+        const hasNameAlready = medications.some((row) => row.medication.toLowerCase().includes(name));
+        if (hasNameAlready) return;
+        const doseMatch = new RegExp(
+          `${name}\\s*(\\d+\\s?(mg|mcg|g|ml|tabs?|tablets?|caps?|puffs?|units?))`,
+          "i",
+        ).exec(normalized);
+        const sigStartAt = lower.indexOf(name);
+        const sigFromName =
+          sigStartAt >= 0
+            ? normalized
+                .slice(sigStartAt)
+                .replace(new RegExp(`^${name}\\s*(\\d+\\s?(mg|mcg|g|ml|tabs?|tablets?|caps?|puffs?|units?))?`, "i"), "")
+                .replace(/^[-,:;\s]+/, "")
+                .trim()
+            : "";
+        if (!sigFromName) return;
+        medications.push({
+          medication: name[0].toUpperCase() + name.slice(1),
+          strength: doseMatch?.[1] || "",
+          sig: sigFromName,
+          quantity: "",
+          refills: "",
+          notes: "",
+        });
+      });
+    }
+    if (medications.length === 0 && planItems.length) {
+      const medicationLikeNoteLines = planItems
+        .map((item) => item.trim())
+        .filter(Boolean)
+        .filter(
+          (item) =>
+            RX_NOTE_MEDICATION_HINT_REGEX.test(item) &&
+            !RX_NOTE_NON_MEDICATION_HINT_REGEX.test(item),
+        );
+      if (medicationLikeNoteLines.length > 0) {
+        notes = medicationLikeNoteLines.join("\n");
       }
     }
-    if (!med && planItems.length) {
-      notes = planItems.join("\n");
-    }
-    return { med, strength, sig, notes };
+    return { medications, notes };
   }, [session]);
+
+  const NO_ROUTINE_LABS_TEXT = "no routine labs recommended";
+  const LAB_REQUISITION_PREFILL_PROMPT =
+    'Return only routine laboratory tests (blood/urine/stool/swab) relevant to this HPI. Do not include imaging or non-lab diagnostics. If no routine labs are recommended, return exactly: "no routine labs recommended". Output must be one short line only: either that exact phrase or a comma-separated list of lab names with no explanations.';
+
+  const normalizeLabSuggestionPrefill = (raw: string): string => {
+    const text = raw.trim();
+    if (!text) return NO_ROUTINE_LABS_TEXT;
+
+    const lower = text.toLowerCase();
+    if (lower.includes(NO_ROUTINE_LABS_TEXT)) return NO_ROUTINE_LABS_TEXT;
+    if (/^(none|no labs?)\.?$/i.test(text)) return NO_ROUTINE_LABS_TEXT;
+
+    const diagnosticKeywords = [
+      "x-ray",
+      "xray",
+      "mri",
+      "ct",
+      "ultrasound",
+      "echo",
+      "ecg",
+      "ekg",
+      "doppler",
+      "pet",
+      "spirometry",
+      "imaging",
+    ];
+
+    const normalizedItems = text
+      .replace(/\r/g, "")
+      .split(/[\n,;]+/)
+      .map((item) => item.trim())
+      .map((item) => item.replace(/^[-*•\d\).\s]+/, "").trim())
+      .map((item) => item.replace(/\b(recommended|if indicated)\b/gi, "").trim())
+      .map((item) => item.replace(/[.]+$/, "").trim())
+      .filter(Boolean)
+      .filter((item) => {
+        const candidate = item.toLowerCase();
+        return !diagnosticKeywords.some((keyword) => candidate.includes(keyword));
+      });
+
+    const deduped: string[] = [];
+    const seen = new Set<string>();
+    normalizedItems.forEach((item) => {
+      const key = item.toLowerCase();
+      if (!seen.has(key)) {
+        seen.add(key);
+        deduped.push(item);
+      }
+    });
+
+    return deduped.length > 0 ? deduped.join(", ") : NO_ROUTINE_LABS_TEXT;
+  };
 
   useEffect(() => {
     if (!sessionCode) {
@@ -189,6 +454,238 @@ function PhysicianViewContent() {
     }
   };
 
+  const handleStartHpiEdit = () => {
+    setHpiSummaryDraft(session?.history?.summary || "");
+    setHpiAssessmentDraft(session?.history?.assessment || "");
+    const existingPlan = session?.history?.plan;
+    const planText = Array.isArray(existingPlan)
+      ? existingPlan.join("\n")
+      : typeof existingPlan === "string"
+        ? existingPlan
+        : "";
+    setHpiPlanDraft(planText);
+    setHpiSaveError(null);
+    setHpiSaveSuccess(null);
+    setIsEditingHpi(true);
+  };
+
+  const handleCancelHpiEdit = () => {
+    setHpiSummaryDraft(session?.history?.summary || "");
+    setHpiAssessmentDraft(session?.history?.assessment || "");
+    const existingPlan = session?.history?.plan;
+    const planText = Array.isArray(existingPlan)
+      ? existingPlan.join("\n")
+      : typeof existingPlan === "string"
+        ? existingPlan
+        : "";
+    setHpiPlanDraft(planText);
+    setHpiSaveError(null);
+    setHpiSaveSuccess(null);
+    setIsEditingHpi(false);
+  };
+
+  const handleSaveHpiEdit = async () => {
+    if (!sessionCode) {
+      setHpiSaveError("Session code is missing.");
+      return;
+    }
+
+    const trimmedSummary = hpiSummaryDraft.trim();
+    const trimmedAssessment = hpiAssessmentDraft.trim();
+    const normalizedPlan = hpiPlanDraft
+      .split("\n")
+      .map((item) => item.trim())
+      .filter(Boolean);
+    if (trimmedSummary.length < 10 || trimmedSummary.length > 1500) {
+      setHpiSaveError("Summary must be between 10 and 1500 characters.");
+      return;
+    }
+    if (trimmedAssessment.length < 10 || trimmedAssessment.length > 1500) {
+      setHpiSaveError("Assessment must be between 10 and 1500 characters.");
+      return;
+    }
+    if (normalizedPlan.length < 1 || normalizedPlan.length > 6) {
+      setHpiSaveError("Plan must include between 1 and 6 items (one per line).");
+      return;
+    }
+
+    setHpiSaving(true);
+    setHpiSaveError(null);
+    setHpiSaveSuccess(null);
+
+    try {
+      const res = await fetch("/api/sessions", {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          sessionCode,
+          historySummary: trimmedSummary,
+          historyAssessment: trimmedAssessment,
+          historyPlan: normalizedPlan,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data?.error || "Failed to save HPI summary.");
+      }
+
+      setSession((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          history: {
+            ...prev.history,
+            summary: trimmedSummary,
+            assessment: trimmedAssessment,
+            plan: normalizedPlan,
+          },
+        };
+      });
+      setIsEditingHpi(false);
+      setHpiSaveSuccess("HPI updated.");
+    } catch (err) {
+      setHpiSaveError(err instanceof Error ? err.message : "Failed to save HPI.");
+    } finally {
+      setHpiSaving(false);
+    }
+  };
+
+  const hasSavedPharmacyName =
+    !!session?.patientProfile?.pharmacyName && session.patientProfile.pharmacyName.trim().length > 0;
+  const hasAnySavedPharmacy =
+    !!session?.patientProfile &&
+    [
+      session.patientProfile.pharmacyName,
+      session.patientProfile.pharmacyNumber,
+      session.patientProfile.pharmacyAddress,
+      session.patientProfile.pharmacyCity,
+      session.patientProfile.pharmacyPhone,
+      session.patientProfile.pharmacyFax,
+    ].some((value) => (value || "").trim().length > 0);
+
+  const handleCancelPharmacyEdit = () => {
+    setPharmacyDraft(pharmacyFieldsFromProfile(session?.patientProfile));
+    setPharmacyStatus(null);
+    setIsEditingPharmacy(false);
+  };
+
+  const handleSearchPharmacy = async () => {
+    const pharmacyName = pharmacyDraft.pharmacyName.trim();
+    const streetAddress = pharmacyDraft.pharmacyAddress.trim();
+    const city = pharmacyDraft.pharmacyCity.trim();
+
+    if (!pharmacyName || !streetAddress || !city) {
+      setPharmacyStatus("Enter pharmacy name, street address, and city to search.");
+      return;
+    }
+
+    setPharmacySearching(true);
+    setPharmacyStatus(null);
+    try {
+      const response = await fetch("/api/pharmacy", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          pharmacyName,
+          address: streetAddress,
+          city,
+        }),
+      });
+
+      const payload = (await response.json().catch(() => ({}))) as {
+        pharmacies?: Array<{
+          name: string;
+          address: string;
+          phone?: string;
+          fax?: string;
+        }>;
+        error?: string;
+      };
+
+      if (!response.ok) {
+        throw new Error(payload.error || "No pharmacy found for that search.");
+      }
+
+      const firstMatch = payload.pharmacies?.[0];
+      if (!firstMatch) {
+        throw new Error("No pharmacy found for that search.");
+      }
+
+      setPharmacyDraft((prev) => ({
+        ...prev,
+        pharmacyName: firstMatch.name?.trim() || prev.pharmacyName,
+        pharmacyAddress: firstMatch.address?.trim() || prev.pharmacyAddress,
+        pharmacyCity: parseCityFromBcAddress(firstMatch.address || "") || prev.pharmacyCity,
+        pharmacyPhone: firstMatch.phone?.trim() || prev.pharmacyPhone,
+        pharmacyFax: firstMatch.fax?.trim() || prev.pharmacyFax,
+      }));
+      setPharmacyStatus("Pharmacy found. Review details and save.");
+    } catch (error) {
+      setPharmacyStatus(
+        error instanceof Error ? error.message : "Unable to search pharmacy right now.",
+      );
+    } finally {
+      setPharmacySearching(false);
+    }
+  };
+
+  const handleSavePharmacy = async () => {
+    if (!sessionCode) {
+      setPharmacyStatus("Session code is missing.");
+      return;
+    }
+
+    const normalized: PharmacyFields = {
+      pharmacyName: pharmacyDraft.pharmacyName.trim(),
+      pharmacyNumber: pharmacyDraft.pharmacyNumber.trim(),
+      pharmacyAddress: pharmacyDraft.pharmacyAddress.trim(),
+      pharmacyCity: pharmacyDraft.pharmacyCity.trim(),
+      pharmacyPhone: pharmacyDraft.pharmacyPhone.trim(),
+      pharmacyFax: pharmacyDraft.pharmacyFax.trim(),
+    };
+
+    setPharmacySaving(true);
+    setPharmacyStatus(null);
+    try {
+      const res = await fetch("/api/sessions", {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          sessionCode,
+          ...normalized,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data?.error || "Failed to update pharmacy.");
+      }
+
+      setSession((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          patientProfile: {
+            ...prev.patientProfile,
+            ...normalized,
+          },
+        };
+      });
+      setPharmacyDraft(normalized);
+      setIsEditingPharmacy(false);
+      setPharmacyStatus("Pharmacy updated.");
+    } catch (err) {
+      setPharmacyStatus(err instanceof Error ? err.message : "Failed to update pharmacy.");
+    } finally {
+      setPharmacySaving(false);
+    }
+  };
+
   const handleAiSubmit = async () => {
     if (aiAction === "lab_requisition" || aiAction === "prescription") {
       return;
@@ -241,6 +738,26 @@ function PhysicianViewContent() {
   }, [session]);
 
   useEffect(() => {
+    setHpiSummaryDraft(session?.history?.summary || "");
+    setHpiAssessmentDraft(session?.history?.assessment || "");
+    const existingPlan = session?.history?.plan;
+    const planText = Array.isArray(existingPlan)
+      ? existingPlan.join("\n")
+      : typeof existingPlan === "string"
+        ? existingPlan
+        : "";
+    setHpiPlanDraft(planText);
+  }, [session?.history]);
+
+  useEffect(() => {
+    if (!session?.patientProfile) {
+      setPharmacyDraft(emptyPharmacyFields());
+      return;
+    }
+    setPharmacyDraft(pharmacyFieldsFromProfile(session.patientProfile));
+  }, [session?.patientProfile]);
+
+  useEffect(() => {
     const fetchAiLabs = async () => {
       if (
         aiAction !== "lab_requisition" ||
@@ -256,25 +773,36 @@ function PhysicianViewContent() {
         const res = await fetch("/api/physician/hpi-actions", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ sessionCode, action: "labs" }),
+          body: JSON.stringify({
+            sessionCode,
+            action: "labs",
+            prompt: LAB_REQUISITION_PREFILL_PROMPT,
+          }),
         });
         if (!res.ok) {
-          // If HIPAA mode blocks (503) or other errors, leave empty
-          setLabPrefillStatus("AI lab suggestions unavailable.");
+          // If AI is unavailable, default to explicit no-routine-labs text.
+          setLabLabsInput(NO_ROUTINE_LABS_TEXT);
+          setLabPrefillStatus("No routine labs recommended.");
           labPrefillRequestedRef.current = false; // allow retry on re-select
           return;
         }
         const data = await res.json();
         if (typeof data.result === "string" && data.result.trim().length > 0) {
-          setLabLabsInput(data.result.trim());
-          setLabPrefillStatus("AI lab suggestions applied.");
+          const normalized = normalizeLabSuggestionPrefill(data.result);
+          setLabLabsInput(normalized);
+          setLabPrefillStatus(
+            normalized === NO_ROUTINE_LABS_TEXT
+              ? "No routine labs recommended."
+              : "AI lab suggestions applied.",
+          );
         } else {
           setLabPrefillStatus("No AI lab suggestions returned.");
           labPrefillRequestedRef.current = false; // allow retry on re-select
         }
       } catch {
-        // Swallow errors and leave the box empty
-        setLabPrefillStatus("AI lab suggestions unavailable.");
+        // If AI request fails, default to explicit no-routine-labs text.
+        setLabLabsInput(NO_ROUTINE_LABS_TEXT);
+        setLabPrefillStatus("No routine labs recommended.");
         labPrefillRequestedRef.current = false; // allow retry on re-select
       }
     };
@@ -283,12 +811,18 @@ function PhysicianViewContent() {
 
   useEffect(() => {
     if (aiAction === "prescription") {
-      if (!rxMedication && parsedRxFromHistory.med) setRxMedication(parsedRxFromHistory.med);
-      if (!rxStrength && parsedRxFromHistory.strength) setRxStrength(parsedRxFromHistory.strength);
-      if (!rxSig && parsedRxFromHistory.sig) setRxSig(parsedRxFromHistory.sig);
-      if (!rxNotes && parsedRxFromHistory.notes) setRxNotes(parsedRxFromHistory.notes);
+      const hasAnyInput = rxMedications.some((row) =>
+        [row.medication, row.strength, row.sig, row.quantity, row.refills, row.notes].some(
+          (value) => value.trim().length > 0,
+        ),
+      );
+      if (!hasAnyInput && parsedRxFromHistory.medications.length > 0) {
+        setRxMedications(parsedRxFromHistory.medications.map((row) => makeRxMedicationRow(row)));
+      } else if (!hasAnyInput && parsedRxFromHistory.notes) {
+        setRxMedications([makeRxMedicationRow({ notes: parsedRxFromHistory.notes })]);
+      }
     }
-  }, [aiAction, parsedRxFromHistory, rxMedication, rxNotes, rxSig, rxStrength]);
+  }, [aiAction, parsedRxFromHistory, rxMedications]);
 
   useEffect(() => {
     const maybeLoadPrescription = async () => {
@@ -297,13 +831,38 @@ function PhysicianViewContent() {
         const res = await fetch(`/api/prescriptions?code=${sessionCode}`);
         if (!res.ok) return;
         const data = await res.json();
-        if (data?.medication) {
-          setRxMedication(data.medication || "");
-          setRxStrength(data.strength || "");
-          setRxSig(data.sig || "");
-          setRxQuantity(data.quantity || "");
-          setRxRefills(data.refills || "");
-          setRxNotes(data.notes || "");
+        const parsedRows = parsedRxFromHistory.medications;
+        const incomingRows = Array.isArray(data?.medications)
+          ? data.medications
+              .map((row: any) =>
+                makeRxMedicationRow({
+                  medication: row?.medication || "",
+                  strength: row?.strength || "",
+                  sig: row?.sig || "",
+                  quantity: row?.quantity || "",
+                  refills: row?.refills || "",
+                  notes: row?.notes || "",
+                }),
+              )
+              .filter((row: RxMedicationRow) => row.medication || row.sig || row.notes)
+          : [];
+        if (incomingRows.length > 0) {
+          setRxMedications(mergeRxRows(incomingRows, parsedRows));
+        } else if (parsedRows.length > 0) {
+          setRxMedications(parsedRows.map((row) => makeRxMedicationRow(row)));
+        } else if (data?.medication) {
+          setRxMedications([
+            makeRxMedicationRow({
+              medication: data.medication || "",
+              strength: data.strength || "",
+              sig: data.sig || "",
+              quantity: data.quantity || "",
+              refills: data.refills || "",
+              notes: data.notes || "",
+            }),
+          ]);
+        }
+        if (data?.patientName || data?.patientEmail || data?.physicianName || data?.clinicName || data?.clinicAddress) {
           if (data.patientName) setLabPatientName(data.patientName);
           if (data.patientEmail) setLabPatientEmail(data.patientEmail);
           if (data.physicianName) setLabPhysicianName(data.physicianName);
@@ -315,35 +874,95 @@ function PhysicianViewContent() {
       }
     };
     maybeLoadPrescription();
-  }, [aiAction, sessionCode]);
+  }, [aiAction, sessionCode, parsedRxFromHistory]);
+
+  const loadLabList = async () => {
+    if (!sessionCode) return;
+    setLabListLoading(true);
+    setLabListError(null);
+    try {
+      const res = await fetch(`/api/lab-requisitions?code=${sessionCode}`);
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        const apiMessage =
+          typeof data?.error === "string" && data.error.trim().length > 0
+            ? data.error
+            : null;
+        if (res.status === 404) {
+          setLabList([]);
+          setLabListError(null);
+          return;
+        }
+        throw new Error(apiMessage || "Failed to load lab requisitions");
+      }
+      const data = await res.json();
+      setLabList(
+        (data?.requisitions || []).map((r: any) => ({
+          id: r.id,
+          createdAt: r.createdAt,
+          physicianName: r.physicianName,
+          clinicName: r.clinicName,
+          labs: Array.isArray(r.labs) ? r.labs : null,
+        })),
+      );
+    } catch (err) {
+      setLabListError(err instanceof Error ? err.message : "Failed to load lab requisitions");
+    } finally {
+      setLabListLoading(false);
+    }
+  };
+
+  const loadPrescriptionList = async () => {
+    if (!sessionCode) return;
+    setPrescriptionListLoading(true);
+    setPrescriptionListError(null);
+    try {
+      const res = await fetch(`/api/prescriptions?code=${sessionCode}`);
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        if (res.status === 404) {
+          setPrescriptionList([]);
+          setPrescriptionListError(null);
+          return;
+        }
+        throw new Error(
+          typeof data?.error === "string" && data.error.trim().length > 0
+            ? data.error
+            : "Failed to load prescriptions",
+        );
+      }
+      const data = await res.json();
+      const rows = Array.isArray(data?.prescriptions) ? data.prescriptions : [];
+      setPrescriptionList(
+        rows.map((row: any) => ({
+          id: row.id,
+          createdAt: row.createdAt,
+          physicianName: row.physicianName ?? null,
+          clinicName: row.clinicName ?? null,
+          faxStatus: typeof row.faxStatus === "string" ? row.faxStatus : "not_sent",
+          faxError: typeof row.faxError === "string" ? row.faxError : null,
+          faxSentAt: typeof row.faxSentAt === "string" ? row.faxSentAt : null,
+          prescriptionStatus:
+            typeof row.prescriptionStatus === "string" ? row.prescriptionStatus : "draft",
+          attestedAt: typeof row.attestedAt === "string" ? row.attestedAt : null,
+          medications: Array.isArray(row.medications) ? row.medications : [],
+        })),
+      );
+    } catch (err) {
+      setPrescriptionListError(err instanceof Error ? err.message : "Failed to load prescriptions");
+    } finally {
+      setPrescriptionListLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const loadLabList = async () => {
-      if (!sessionCode) return;
-      setLabListLoading(true);
-      setLabListError(null);
-      try {
-        const res = await fetch(`/api/lab-requisitions?code=${sessionCode}`);
-        if (!res.ok) {
-          throw new Error("Failed to load lab requisitions");
-        }
-        const data = await res.json();
-        setLabList(
-          (data?.requisitions || []).map((r: any) => ({
-            id: r.id,
-            createdAt: r.createdAt,
-            physicianName: r.physicianName,
-            clinicName: r.clinicName,
-            labs: Array.isArray(r.labs) ? r.labs : null,
-          })),
-        );
-      } catch (err) {
-        setLabListError(err instanceof Error ? err.message : "Failed to load lab requisitions");
-      } finally {
-        setLabListLoading(false);
-      }
-    };
     loadLabList();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionCode]);
+
+  useEffect(() => {
+    loadPrescriptionList();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionCode]);
 
   useEffect(() => {
@@ -361,6 +980,56 @@ function PhysicianViewContent() {
         // ignore
       });
   }, []);
+
+  useEffect(() => {
+    const onEditorSaved = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) return;
+      if (!event.data || event.data.type !== "HAA_LAB_REQUISITION_SAVED") return;
+      setLabStatus("Requisition saved as a new entry.");
+      loadLabList();
+    };
+    window.addEventListener("message", onEditorSaved);
+    return () => window.removeEventListener("message", onEditorSaved);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionCode]);
+
+  useEffect(() => {
+    const onPrescriptionEvent = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) return;
+      if (!event.data || typeof event.data.type !== "string") return;
+      if (event.data.type === "HAA_PRESCRIPTION_SAVED") {
+        setRxStatus("Prescription saved.");
+        loadPrescriptionList();
+      }
+      if (event.data.type === "HAA_PRESCRIPTION_FAX_UPDATED") {
+        setRxStatus("Prescription fax status updated.");
+        loadPrescriptionList();
+      }
+      if (event.data.type === "HAA_PLAN_UPDATED") {
+        setRxStatus("Medication details appended to plan.");
+        fetch(`/api/sessions?code=${sessionCode}`)
+          .then((res) => (res.ok ? res.json() : null))
+          .then((data) => {
+            if (data && !data.error) {
+              setSession((prev) =>
+                prev
+                  ? {
+                      ...prev,
+                      history: data.history,
+                    }
+                  : prev,
+              );
+            }
+          })
+          .catch(() => {
+            // ignore
+          });
+      }
+    };
+    window.addEventListener("message", onPrescriptionEvent);
+    return () => window.removeEventListener("message", onPrescriptionEvent);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionCode]);
 
   const computeLabs = () => {
     const raw = labLabsInput
@@ -393,9 +1062,112 @@ function PhysicianViewContent() {
     return deduped;
   };
 
+  const getCanvasPoint = (event: { clientX: number; clientY: number }, canvas: HTMLCanvasElement) => {
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    return {
+      x: (event.clientX - rect.left) * scaleX,
+      y: (event.clientY - rect.top) * scaleY,
+    };
+  };
+
+  const startRxSignatureDrawing = (event: ReactPointerEvent<HTMLCanvasElement>) => {
+    event.preventDefault();
+    const canvas = rxSignatureCanvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    const point = getCanvasPoint(event, canvas);
+    rxSignatureDrawingRef.current = true;
+    ctx.lineWidth = 1.8;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.strokeStyle = "#0f172a";
+    ctx.beginPath();
+    ctx.moveTo(point.x, point.y);
+  };
+
+  const drawRxSignature = (event: ReactPointerEvent<HTMLCanvasElement>) => {
+    if (!rxSignatureDrawingRef.current) return;
+    const canvas = rxSignatureCanvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    event.preventDefault();
+    const point = getCanvasPoint(event, canvas);
+    ctx.lineTo(point.x, point.y);
+    ctx.stroke();
+    setRxHasSignature(true);
+  };
+
+  const endRxSignatureDrawing = () => {
+    if (!rxSignatureDrawingRef.current) return;
+    rxSignatureDrawingRef.current = false;
+  };
+
+  const clearRxSignature = () => {
+    const canvas = rxSignatureCanvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    setRxHasSignature(false);
+  };
+
+  const updateRxMedicationField = (
+    rowId: string,
+    field: keyof Omit<RxMedicationRow, "id">,
+    value: string,
+  ) => {
+    setRxMedications((prev) =>
+      prev.map((row) => (row.id === rowId ? { ...row, [field]: value } : row)),
+    );
+  };
+
+  const addRxMedicationRow = () => {
+    setRxMedications((prev) => [...prev, makeRxMedicationRow()]);
+  };
+
+  const removeRxMedicationRow = (rowId: string) => {
+    setRxMedications((prev) => {
+      if (prev.length <= 1) return prev;
+      const next = prev.filter((row) => row.id !== rowId);
+      return next.length > 0 ? next : [makeRxMedicationRow()];
+    });
+  };
+
+  const rxMedicationKey = (row: Omit<RxMedicationRow, "id">) =>
+    `${row.medication.trim().toLowerCase()}|${row.strength.trim().toLowerCase()}|${row.sig
+      .trim()
+      .toLowerCase()}`;
+
+  const mergeRxRows = (
+    primary: RxMedicationRow[],
+    extras: Omit<RxMedicationRow, "id">[],
+  ): RxMedicationRow[] => {
+    const merged = [...primary];
+    const seen = new Set(merged.map((row) => rxMedicationKey(row)));
+    extras.forEach((row) => {
+      const key = rxMedicationKey(row);
+      if (seen.has(key)) return;
+      seen.add(key);
+      merged.push(makeRxMedicationRow(row));
+    });
+    return merged;
+  };
+
+  const openEditorWindow = (editorUrl: string) => {
+    const popup = window.open(editorUrl, "_blank", "width=1420,height=980");
+    if (!popup) {
+      setLabStatus("Popup blocked. Please allow popups for this site.");
+      return;
+    }
+  };
+
   const handleGenerateLabPdf = async () => {
     if (!sessionCode) {
-      setLabStatus("Session code missing; cannot save requisition.");
+      setLabStatus("Session code missing; cannot generate requisition.");
       return;
     }
 
@@ -409,47 +1181,7 @@ function PhysicianViewContent() {
     setLabSaving(true);
 
     try {
-      const doc = new jsPDF();
-      const leftX = 14;
-      const rightX = 120;
-      let y = 16;
-
-      doc.setFontSize(12);
-      doc.text(`Patient: ${labPatientName || "N/A"}`, leftX, y);
-      y += 6;
-      doc.text(`Email: ${labPatientEmail || "N/A"}`, leftX, y);
-
-      let yRight = 16;
-      doc.text(`Physician: ${labPhysicianName || "N/A"}`, rightX, yRight);
-      yRight += 6;
-      doc.text(`Clinic: ${labClinicName || "N/A"}`, rightX, yRight);
-      yRight += 6;
-      doc.text(`Address: ${labClinicAddress || "N/A"}`, rightX, yRight);
-
-      y = Math.max(y, yRight) + 10;
-      doc.setFontSize(13);
-      doc.text("Labs requested", leftX, y);
-      doc.setFontSize(12);
-      y += 6;
-      labs.forEach((lab) => {
-        doc.text(`• ${lab}`, leftX + 2, y);
-        y += 6;
-      });
-
-      y += 4;
-      doc.setFontSize(13);
-      doc.text("Additional Instructions", leftX, y);
-      doc.setFontSize(12);
-      y += 6;
-      const instructions = labInstructions || "None";
-      const wrapped = doc.splitTextToSize(instructions, 180);
-      doc.text(wrapped, leftX, y);
-
-      const pdfDataUri = doc.output("datauristring");
-      const pdfBase64 = pdfDataUri.split(",")[1];
-      doc.save("lab-requisition.pdf");
-
-      const res = await fetch("/api/lab-requisitions", {
+      const res = await fetch("/api/lab-requisitions/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -461,33 +1193,109 @@ function PhysicianViewContent() {
           clinicAddress: labClinicAddress,
           labs,
           instructions: labInstructions,
-          pdfBase64,
         }),
       });
 
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data?.error || "Failed to save lab requisition.");
+        throw new Error(data?.error || "Failed to generate lab requisition.");
       }
 
-      setLabStatus("Lab requisition saved and downloaded.");
+      if (typeof data?.editorUrl === "string" && data.editorUrl.trim()) {
+        openEditorWindow(data.editorUrl);
+      }
+
+      const unmappedSuffix =
+        Array.isArray(data?.unmappedTests) && data.unmappedTests.length > 0
+          ? ` Unmapped tests will be added to Additional Test Instructions: ${data.unmappedTests.join(", ")}.`
+          : "";
+      setLabStatus(`Requisition editor opened.${unmappedSuffix}`);
     } catch (error) {
       setLabStatus(
-        error instanceof Error ? error.message : "Failed to generate or save requisition.",
+        error instanceof Error ? error.message : "Failed to generate requisition.",
       );
     } finally {
       setLabSaving(false);
     }
   };
 
+  const handleEditLabRequisition = async (requisitionId: string) => {
+    if (!sessionCode) return;
+    setLabStatus(null);
+    try {
+      const res = await fetch("/api/lab-requisitions/editor-session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sessionCode,
+          requisitionId,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data?.error || "Failed to open requisition editor.");
+      }
+      if (typeof data?.editorUrl === "string" && data.editorUrl.trim()) {
+        openEditorWindow(data.editorUrl);
+      }
+    } catch (error) {
+      setLabStatus(error instanceof Error ? error.message : "Failed to open requisition editor.");
+    }
+  };
+
+  const handleDeleteLabRequisition = async (requisitionId: string) => {
+    if (!sessionCode) return;
+    const confirmed = window.confirm("Are you sure you want to delete this requisition?");
+    if (!confirmed) return;
+    setLabStatus(null);
+    try {
+      const res = await fetch(
+        `/api/lab-requisitions?code=${encodeURIComponent(sessionCode)}&id=${encodeURIComponent(requisitionId)}`,
+        { method: "DELETE" },
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data?.error || "Failed to delete requisition.");
+      }
+      await loadLabList();
+      setLabStatus("Requisition deleted.");
+    } catch (error) {
+      setLabStatus(error instanceof Error ? error.message : "Failed to delete requisition.");
+    }
+  };
+
   const handleGenerateRxPdf = async () => {
     if (!sessionCode) {
-      setRxStatus("Session code missing; cannot save prescription.");
+      setRxStatus("Session code missing; cannot generate prescription.");
       return;
     }
 
-    if (!rxMedication || !rxSig) {
-      setRxStatus("Medication and Sig are required.");
+    const normalizedRows = rxMedications
+      .map((row) => ({
+        medication: row.medication.trim(),
+        strength: row.strength.trim(),
+        sig: row.sig.trim(),
+        quantity: row.quantity.trim(),
+        refills: row.refills.trim(),
+        notes: row.notes.trim(),
+      }))
+      .filter((row) =>
+        [row.medication, row.strength, row.sig, row.quantity, row.refills, row.notes].some(
+          (value) => value.length > 0,
+        ),
+      );
+
+    if (normalizedRows.length === 0) {
+      setRxStatus("At least one medication is required.");
+      return;
+    }
+
+    if (normalizedRows.some((row) => !row.medication || !row.sig)) {
+      setRxStatus("Each medication row requires Medication name and Sig.");
+      return;
+    }
+    if (!rxHasSignature || !rxSignatureCanvasRef.current) {
+      setRxStatus("Physician signature is required.");
       return;
     }
 
@@ -495,71 +1303,174 @@ function PhysicianViewContent() {
     setRxSaving(true);
 
     try {
-      const doc = new jsPDF();
-      const leftX = 14;
-      const rightX = 120;
-      let y = 16;
+      const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      const frameX = 12;
+      const frameY = 10;
+      const frameW = pageWidth - 24;
+      const frameH = pageHeight - 20;
+      const contentX = frameX + 7;
+      const contentW = frameW - 14;
+      const frameBottomY = frameY + frameH;
+      const lineHeight = 5;
+      const splitLines = (text: string, width: number): string[] =>
+        doc.splitTextToSize(String(text || ""), width) as string[];
 
-      doc.setFontSize(12);
-      doc.text(`Patient: ${labPatientName || "N/A"}`, leftX, y);
-      y += 6;
-      doc.text(`Email: ${labPatientEmail || "N/A"}`, leftX, y);
+      const drawPrescriptionFrame = (isContinuation = false) => {
+        doc.setLineWidth(0.5);
+        doc.rect(frameX, frameY, frameW, frameH);
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(16);
+        doc.text("PRESCRIPTION", contentX, frameY + 9);
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(8);
+        doc.text("Draft prescription - requires physician authorization", contentX, frameY + 13);
+        doc.setFontSize(9);
+        doc.text(isContinuation ? "Continuation" : "Rx", frameX + frameW - 24, frameY + 9);
+        doc.setLineWidth(0.2);
+        doc.line(contentX, frameY + 15, frameX + frameW - 7, frameY + 15);
+      };
 
-      let yRight = 16;
-      doc.text(`Prescriber: ${labPhysicianName || "N/A"}`, rightX, yRight);
-      yRight += 6;
-      doc.text(`Clinic: ${labClinicName || "N/A"}`, rightX, yRight);
-      yRight += 6;
-      doc.text(`Address: ${labClinicAddress || "N/A"}`, rightX, yRight);
+      let y = frameY + 21;
+      drawPrescriptionFrame(false);
 
-      y = Math.max(y, yRight) + 10;
-      doc.setFontSize(13);
-      doc.text("Prescription", leftX, y);
-      doc.setFontSize(12);
-      y += 8;
-      doc.text(`Medication: ${rxMedication}`, leftX, y); y += 6;
-      doc.text(`Strength: ${rxStrength || "N/A"}`, leftX, y); y += 6;
-      doc.text(`Sig: ${rxSig}`, leftX, y); y += 6;
-      doc.text(`Quantity: ${rxQuantity || "N/A"}`, leftX, y); y += 6;
-      doc.text(`Refills: ${rxRefills || "0"}`, leftX, y); y += 6;
-      if (rxNotes) {
-        const wrappedNotes = doc.splitTextToSize(`Notes: ${rxNotes}`, 180);
-        doc.text(wrappedNotes, leftX, y);
-        y += wrappedNotes.length * 6;
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(10);
+      const patientLine = splitLines(`Patient: ${labPatientName || "N/A"}`, contentW / 2 - 2);
+      doc.text(patientLine, contentX, y);
+      const emailLine = splitLines(`Email: ${labPatientEmail || "N/A"}`, contentW / 2 - 2);
+      doc.text(emailLine, contentX + contentW / 2 + 2, y);
+      y += Math.max(patientLine.length, emailLine.length) * lineHeight + 1;
+
+      const prescriberLine = splitLines(`Prescriber: ${labPhysicianName || "N/A"}`, contentW / 2 - 2);
+      doc.text(prescriberLine, contentX, y);
+      const clinicLine = splitLines(`Clinic: ${labClinicName || "N/A"}`, contentW / 2 - 2);
+      doc.text(clinicLine, contentX + contentW / 2 + 2, y);
+      y += Math.max(prescriberLine.length, clinicLine.length) * lineHeight + 1;
+
+      const addressLines = splitLines(`Clinic address: ${labClinicAddress || "N/A"}`, contentW);
+      doc.text(addressLines, contentX, y);
+      y += addressLines.length * lineHeight + 2;
+
+      doc.setLineWidth(0.2);
+      doc.line(contentX, y, contentX + contentW, y);
+      y += 5;
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(11);
+      doc.text("Medication Orders", contentX, y);
+      y += 4;
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(10);
+
+      normalizedRows.forEach((row, idx) => {
+        const medLabelLines = splitLines(`${idx + 1}. ${row.medication}${row.strength ? ` (${row.strength})` : ""}`, contentW - 6);
+        const sigLines = splitLines(`Sig: ${row.sig}`, contentW - 6);
+        const quantityLines = splitLines(`Qty: ${row.quantity || "N/A"}   Refills: ${row.refills || "0"}`, contentW - 6);
+        const noteLines = row.notes ? splitLines(`Notes: ${row.notes}`, contentW - 6) : [];
+        const rowHeight =
+          2 +
+          medLabelLines.length * lineHeight +
+          sigLines.length * lineHeight +
+          quantityLines.length * lineHeight +
+          (noteLines.length > 0 ? noteLines.length * lineHeight : 0) +
+          3;
+
+        if (y + rowHeight + 30 > frameBottomY) {
+          doc.addPage();
+          drawPrescriptionFrame(true);
+          y = frameY + 18;
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(11);
+          doc.text("Medication Orders (cont.)", contentX, y);
+          y += 4;
+          doc.setFont("helvetica", "normal");
+          doc.setFontSize(10);
+        }
+
+        doc.rect(contentX, y - 1.5, contentW, rowHeight);
+        let rowY = y + 2;
+        doc.setFont("helvetica", "bold");
+        doc.text(medLabelLines, contentX + 2, rowY);
+        rowY += medLabelLines.length * lineHeight;
+        doc.setFont("helvetica", "normal");
+        doc.text(sigLines, contentX + 2, rowY);
+        rowY += sigLines.length * lineHeight;
+        doc.text(quantityLines, contentX + 2, rowY);
+        rowY += quantityLines.length * lineHeight;
+        if (noteLines.length > 0) {
+          doc.text(noteLines, contentX + 2, rowY);
+        }
+        y += rowHeight + 3;
+      });
+
+      const signatureCanvas = rxSignatureCanvasRef.current;
+      if (signatureCanvas) {
+        const signatureBlockHeight = 42;
+        if (y + signatureBlockHeight > frameBottomY) {
+          doc.addPage();
+          drawPrescriptionFrame(true);
+          y = frameY + 18;
+        }
+        y += 3;
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(10);
+        doc.text("Prescriber signature", contentX, y);
+        const signatureBoxY = y + 2;
+        const signatureBoxWidth = 88;
+        const signatureBoxHeight = 22;
+        doc.rect(contentX, signatureBoxY, signatureBoxWidth, signatureBoxHeight);
+        const signatureDataUrl = signatureCanvas.toDataURL("image/png");
+        doc.addImage(
+          signatureDataUrl,
+          "PNG",
+          contentX + 1,
+          signatureBoxY + 1,
+          signatureBoxWidth - 2,
+          signatureBoxHeight - 2,
+        );
+        const dateText = `Date: ${new Date().toLocaleDateString()}`;
+        doc.text(dateText, contentX + signatureBoxWidth + 8, signatureBoxY + 8);
+        doc.text(`Prescriber: ${labPhysicianName || "N/A"}`, contentX + signatureBoxWidth + 8, signatureBoxY + 15);
       }
 
       const pdfDataUri = doc.output("datauristring");
       const pdfBase64 = pdfDataUri.split(",")[1];
-      doc.save("prescription.pdf");
-
-      const res = await fetch("/api/prescriptions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          sessionCode,
-          patientName: labPatientName,
-          patientEmail: labPatientEmail,
-          physicianName: labPhysicianName,
-          clinicName: labClinicName,
-          clinicAddress: labClinicAddress,
-          medication: rxMedication,
-          strength: rxStrength,
-          sig: rxSig,
-          quantity: rxQuantity,
-          refills: rxRefills,
-          notes: rxNotes,
-          pdfBase64,
-        }),
-      });
-
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data?.error || "Failed to save prescription.");
+      const previewToken = `rx-preview-${sessionCode}-${Date.now()}-${Math.random()
+        .toString(36)
+        .slice(2, 8)}`;
+      const previewPayload = {
+        sessionCode,
+        patientName: labPatientName,
+        patientEmail: labPatientEmail,
+        patientSex: session?.patientProfile?.sex || "",
+        physicianName: labPhysicianName,
+        clinicName: labClinicName,
+        clinicAddress: labClinicAddress,
+        medications: normalizedRows,
+        pdfBase64,
+        pharmacy: {
+          pharmacyName: session?.patientProfile?.pharmacyName?.trim() || "",
+          pharmacyNumber: session?.patientProfile?.pharmacyNumber?.trim() || "",
+          pharmacyAddress: session?.patientProfile?.pharmacyAddress?.trim() || "",
+          pharmacyCity: session?.patientProfile?.pharmacyCity?.trim() || "",
+          pharmacyPhone: session?.patientProfile?.pharmacyPhone?.trim() || "",
+          pharmacyFax: session?.patientProfile?.pharmacyFax?.trim() || "",
+        },
+      };
+      window.localStorage.setItem(previewToken, JSON.stringify(previewPayload));
+      const previewUrl = `/physician/prescription-preview?code=${encodeURIComponent(
+        sessionCode,
+      )}&token=${encodeURIComponent(previewToken)}`;
+      const opened = window.open(previewUrl, "_blank");
+      if (!opened) {
+        throw new Error("Popup was blocked. Please allow popups and try again.");
       }
-
-      setRxStatus("Prescription saved and downloaded.");
+      setRxStatus("Prescription preview opened in a new tab.");
     } catch (error) {
-      setRxStatus(error instanceof Error ? error.message : "Failed to generate or save prescription.");
+      setRxStatus(
+        error instanceof Error ? error.message : "Failed to generate prescription preview.",
+      );
     } finally {
       setRxSaving(false);
     }
@@ -629,6 +1540,48 @@ function PhysicianViewContent() {
               <p className="text-sm text-slate-500">Email</p>
               <p className="text-base font-medium text-slate-900">{session.patientEmail}</p>
             </div>
+            {(typeof session.patientProfile?.age === "number" || session.patientProfile?.dateOfBirth) && (
+              <div>
+                <p className="text-sm text-slate-500">Age</p>
+                <p className="text-base font-medium text-slate-900">
+                  {(() => {
+                    const dob = session.patientProfile?.dateOfBirth;
+                    const ageFromDob = dob ? computeAgeFromDob(dob) : null;
+                    if (typeof ageFromDob === "number") return `${ageFromDob}`;
+                    if (typeof session.patientProfile?.age === "number") return `${session.patientProfile.age}`;
+                    return "—";
+                  })()}
+                </p>
+              </div>
+            )}
+            <div>
+              <p className="text-sm text-slate-500">Date of Birth</p>
+              <p className="text-base font-medium text-slate-900">
+                {session.patientProfile?.dateOfBirth?.trim() || "—"}
+              </p>
+            </div>
+            <div>
+              <p className="text-sm text-slate-500">Phone</p>
+              <p className="text-base font-medium text-slate-900">
+                {session.patientProfile?.primaryPhone?.trim() || "—"}
+              </p>
+            </div>
+            <div>
+              <p className="text-sm text-slate-500">Alternate Phone</p>
+              <p className="text-base font-medium text-slate-900">
+                {session.patientProfile?.secondaryPhone?.trim() || "—"}
+              </p>
+            </div>
+            <div>
+              <p className="text-sm text-slate-500">Health Care Number</p>
+              <p className="text-base font-medium text-slate-900">
+                {session.patientProfile?.insuranceNumber?.trim() || "—"}
+              </p>
+            </div>
+            <div className="col-span-2">
+              <p className="text-sm text-slate-500">Address</p>
+              <p className="text-base text-slate-900">{session.patientProfile?.address?.trim() || "—"}</p>
+            </div>
             <div className="col-span-2">
               <p className="text-sm text-slate-500">Chief Complaint</p>
               <p className="text-base text-slate-900">{session.chiefComplaint}</p>
@@ -646,9 +1599,19 @@ function PhysicianViewContent() {
               <div className="space-y-4">
                 <div>
                   <p className="text-sm font-medium text-slate-700 mb-2">Summary</p>
-                  <p className="text-base text-slate-900 whitespace-pre-wrap">
-                    {session.history.summary}
-                  </p>
+                  {isEditingHpi ? (
+                    <textarea
+                      value={hpiSummaryDraft}
+                      onChange={(e) => setHpiSummaryDraft(e.target.value)}
+                      rows={6}
+                      className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-base text-slate-900 shadow-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+                      disabled={hpiSaving}
+                    />
+                  ) : (
+                    <p className="text-base text-slate-900 whitespace-pre-wrap">
+                      {session.history.summary}
+                    </p>
+                  )}
                 </div>
                 {(session.history as any).medPmhSummary && (
                   <div>
@@ -675,30 +1638,84 @@ function PhysicianViewContent() {
                       </ul>
                     </div>
                   )}
-                {session.history.assessment && (
-                  <div>
-                    <p className="text-sm font-medium text-slate-700 mb-2">Assessment</p>
+                <div>
+                  <p className="text-sm font-medium text-slate-700 mb-2">Assessment</p>
+                  {isEditingHpi ? (
+                    <textarea
+                      value={hpiAssessmentDraft}
+                      onChange={(e) => setHpiAssessmentDraft(e.target.value)}
+                      rows={4}
+                      className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-base text-slate-900 shadow-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+                      disabled={hpiSaving}
+                    />
+                  ) : (
                     <p className="text-base text-slate-900 whitespace-pre-wrap">
                       {session.history.assessment}
                     </p>
-                  </div>
+                  )}
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-slate-700 mb-2">Plan</p>
+                  {isEditingHpi ? (
+                    <textarea
+                      value={hpiPlanDraft}
+                      onChange={(e) => setHpiPlanDraft(e.target.value)}
+                      rows={4}
+                      className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-base text-slate-900 shadow-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+                      disabled={hpiSaving}
+                      placeholder="One plan item per line"
+                    />
+                  ) : (
+                    <>
+                      {Array.isArray(session.history.plan) ? (
+                        <ul className="list-disc list-inside space-y-1 text-base text-slate-900">
+                          {(session.history.plan as string[]).map((item, idx) => (
+                            <li key={idx}>{item}</li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p className="text-base text-slate-900 whitespace-pre-wrap">
+                          {session.history.plan as string}
+                        </p>
+                      )}
+                    </>
+                  )}
+                </div>
+              </div>
+              <div className="mt-5">
+                {hpiSaveError && (
+                  <p className="text-sm text-red-600 mb-2">{hpiSaveError}</p>
                 )}
-                {session.history.plan && (
-                  <div>
-                    <p className="text-sm font-medium text-slate-700 mb-2">Plan</p>
-                    {Array.isArray(session.history.plan) ? (
-                      <ul className="list-disc list-inside space-y-1 text-base text-slate-900">
-                        {(session.history.plan as string[]).map((item, idx) => (
-                          <li key={idx}>{item}</li>
-                        ))}
-                      </ul>
-                    ) : (
-                      <p className="text-base text-slate-900 whitespace-pre-wrap">
-                        {session.history.plan as string}
-                      </p>
-                    )}
-                  </div>
+                {hpiSaveSuccess && (
+                  <p className="text-sm text-green-700 mb-2">{hpiSaveSuccess}</p>
                 )}
+                <div className="flex justify-end gap-2">
+                  {isEditingHpi ? (
+                    <>
+                      <button
+                        onClick={handleCancelHpiEdit}
+                        className="px-3 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50"
+                        disabled={hpiSaving}
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={handleSaveHpiEdit}
+                        className="px-3 py-2 text-sm font-medium text-white bg-slate-900 rounded-lg hover:bg-slate-800 disabled:opacity-60"
+                        disabled={hpiSaving}
+                      >
+                        {hpiSaving ? "Saving..." : "Save"}
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      onClick={handleStartHpiEdit}
+                      className="px-3 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50"
+                    >
+                      Edit
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -710,6 +1727,9 @@ function PhysicianViewContent() {
                   </h3>
                   <p className="text-sm text-slate-600 mt-1">
                     Ask the AI to draft a referral note, suggest labs, or handle a custom request using the collected HPI.
+                  </p>
+                  <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                    {CLINICAL_ASSISTIVE_DISCLAIMER}
                   </p>
                 </div>
               </div>
@@ -729,7 +1749,7 @@ function PhysicianViewContent() {
                     <option value="labs">Suggest labs or imaging</option>
                     <option value="custom">Custom prompt</option>
                     <option value="lab_requisition">Generate lab requisition (PDF)</option>
-                    <option value="prescription">Generate prescription (PDF)</option>
+                    <option value="prescription">Generate prescription</option>
                   </select>
                 </div>
 
@@ -834,7 +1854,7 @@ function PhysicianViewContent() {
                             : "bg-slate-900 hover:bg-slate-800"
                         }`}
                       >
-                        {labSaving ? "Saving..." : "Generate & download PDF"}
+                        {labSaving ? "Opening..." : "Open editable requisition"}
                       </button>
                       {labStatus && (
                         <span className="text-sm text-slate-700">{labStatus}</span>
@@ -843,6 +1863,9 @@ function PhysicianViewContent() {
                   </div>
                 ) : aiAction === "prescription" ? (
                   <div className="grid gap-4">
+                    <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                      {CLINICAL_ASSISTIVE_DISCLAIMER}
+                    </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
                         <label className="block text-sm font-medium text-slate-700 mb-1">
@@ -899,86 +1922,319 @@ function PhysicianViewContent() {
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">
-                          Medication name
-                        </label>
-                        <input
-                          value={rxMedication}
-                          onChange={(e) => setRxMedication(e.target.value)}
-                          className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">
-                          Strength
-                        </label>
-                        <input
-                          value={rxStrength}
-                          onChange={(e) => setRxStrength(e.target.value)}
-                          className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
-                        />
-                      </div>
+                    <div className="grid gap-4">
+                      {rxMedications.map((row, idx) => (
+                        <div key={row.id} className="rounded-md border border-slate-200 p-4">
+                          <div className="mb-3 flex items-center justify-between">
+                            <p className="text-sm font-semibold text-slate-800">{`Medication ${idx + 1}`}</p>
+                            {rxMedications.length > 1 && (
+                              <button
+                                type="button"
+                                onClick={() => removeRxMedicationRow(row.id)}
+                                className="text-xs font-medium text-red-700 underline underline-offset-2 hover:text-red-800"
+                              >
+                                Remove
+                              </button>
+                            )}
+                          </div>
+
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                              <label className="block text-sm font-medium text-slate-700 mb-1">
+                                Medication name
+                              </label>
+                              <input
+                                value={row.medication}
+                                onChange={(e) => updateRxMedicationField(row.id, "medication", e.target.value)}
+                                className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-sm font-medium text-slate-700 mb-1">
+                                Strength
+                              </label>
+                              <input
+                                value={row.strength}
+                                onChange={(e) => updateRxMedicationField(row.id, "strength", e.target.value)}
+                                className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div className="md:col-span-2">
+                              <label className="block text-sm font-medium text-slate-700 mb-1">
+                                Sig (directions)
+                              </label>
+                              <input
+                                value={row.sig}
+                                onChange={(e) => updateRxMedicationField(row.id, "sig", e.target.value)}
+                                className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-sm font-medium text-slate-700 mb-1">
+                                Quantity
+                              </label>
+                              <input
+                                value={row.quantity}
+                                onChange={(e) => updateRxMedicationField(row.id, "quantity", e.target.value)}
+                                className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                              <label className="block text-sm font-medium text-slate-700 mb-1">
+                                Refills
+                              </label>
+                              <input
+                                value={row.refills}
+                                onChange={(e) => updateRxMedicationField(row.id, "refills", e.target.value)}
+                                className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-sm font-medium text-slate-700 mb-1">
+                                Notes
+                              </label>
+                              <input
+                                value={row.notes}
+                                onChange={(e) => updateRxMedicationField(row.id, "notes", e.target.value)}
+                                className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      ))}
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      <div className="md:col-span-2">
-                        <label className="block text-sm font-medium text-slate-700 mb-1">
-                          Sig (directions)
-                        </label>
-                        <input
-                          value={rxSig}
-                          onChange={(e) => setRxSig(e.target.value)}
-                          className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">
-                          Quantity
-                        </label>
-                        <input
-                          value={rxQuantity}
-                          onChange={(e) => setRxQuantity(e.target.value)}
-                          className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">
-                          Refills
-                        </label>
-                        <input
-                          value={rxRefills}
-                          onChange={(e) => setRxRefills(e.target.value)}
-                          className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">
-                          Notes
-                        </label>
-                        <input
-                          value={rxNotes}
-                          onChange={(e) => setRxNotes(e.target.value)}
-                          className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-3">
+                    <div className="flex justify-start">
                       <button
-                        onClick={() => handleGenerateRxPdf()}
-                        disabled={rxSaving}
-                        className={`px-4 py-2 text-sm font-medium text-white rounded-lg ${
-                          rxSaving ? "bg-slate-400 cursor-not-allowed" : "bg-slate-900 hover:bg-slate-800"
-                        }`}
+                        type="button"
+                        onClick={addRxMedicationRow}
+                        aria-label="Add another medication"
+                        className="flex h-12 w-12 items-center justify-center rounded-full border-2 border-slate-400 bg-white text-3xl leading-none text-slate-800 shadow-sm hover:bg-slate-50"
                       >
-                        {rxSaving ? "Saving..." : "Generate & download PDF"}
+                        +
                       </button>
-                      {rxStatus && <span className="text-sm text-slate-700">{rxStatus}</span>}
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">
+                        Signature
+                      </label>
+                      <canvas
+                        ref={rxSignatureCanvasRef}
+                        width={720}
+                        height={180}
+                        onPointerDown={startRxSignatureDrawing}
+                        onPointerMove={drawRxSignature}
+                        onPointerUp={endRxSignatureDrawing}
+                        onPointerLeave={endRxSignatureDrawing}
+                        onPointerCancel={endRxSignatureDrawing}
+                        className="w-full rounded-md border border-slate-300 bg-white"
+                        style={{ touchAction: "none" }}
+                      />
+                      <div className="mt-1 flex items-center justify-between">
+                        <p className="text-xs text-slate-500">
+                          {`Prescriber name: ${labPhysicianName || "N/A"}`}
+                        </p>
+                        <button
+                          type="button"
+                          onClick={clearRxSignature}
+                          className="text-xs font-medium text-slate-700 underline underline-offset-2 hover:text-slate-900"
+                        >
+                          Clear signature
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                      <div className="flex items-center gap-3">
+                        <button
+                          onClick={() => handleGenerateRxPdf()}
+                          disabled={rxSaving}
+                          className={`px-4 py-2 text-sm font-medium text-white rounded-lg ${
+                            rxSaving ? "bg-slate-400 cursor-not-allowed" : "bg-slate-900 hover:bg-slate-800"
+                          }`}
+                        >
+                          {rxSaving ? "Opening..." : "Generate prescription"}
+                        </button>
+                        {rxStatus && <span className="text-sm text-slate-700">{rxStatus}</span>}
+                      </div>
+
+                      <div className="w-full lg:w-[28rem] rounded-lg border border-slate-200 bg-slate-50 p-3">
+                        <div className="mb-2 flex items-center justify-between gap-2">
+                          <p className="text-sm font-semibold text-slate-900">Patient pharmacy</p>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setPharmacyStatus(null);
+                              setPharmacyDraft(pharmacyFieldsFromProfile(session?.patientProfile));
+                              setIsEditingPharmacy((prev) => !prev);
+                            }}
+                            className="text-xs font-medium text-slate-700 underline underline-offset-2 hover:text-slate-900"
+                          >
+                            {isEditingPharmacy
+                              ? "Close"
+                              : hasSavedPharmacyName
+                                ? "Edit pharmacy"
+                                : "Add pharmacy"}
+                          </button>
+                        </div>
+
+                        {!isEditingPharmacy ? (
+                          <div className="space-y-1 text-xs text-slate-700">
+                            <p>
+                              <span className="font-medium">Name:</span>{" "}
+                              {session?.patientProfile?.pharmacyName?.trim() || "Not provided"}
+                            </p>
+                            <p>
+                              <span className="font-medium">Number:</span>{" "}
+                              {session?.patientProfile?.pharmacyNumber?.trim() || "Not provided"}
+                            </p>
+                            <p>
+                              <span className="font-medium">Address:</span>{" "}
+                              {[
+                                session?.patientProfile?.pharmacyAddress?.trim() || "",
+                                session?.patientProfile?.pharmacyCity?.trim() || "",
+                              ]
+                                .filter((value) => value.length > 0)
+                                .join(", ") || "Not provided"}
+                            </p>
+                            <p>
+                              <span className="font-medium">Phone:</span>{" "}
+                              {session?.patientProfile?.pharmacyPhone?.trim() || "Not provided"}
+                            </p>
+                            <p>
+                              <span className="font-medium">Fax:</span>{" "}
+                              {session?.patientProfile?.pharmacyFax?.trim() || "Not provided"}
+                            </p>
+                            {!hasAnySavedPharmacy && (
+                              <p className="pt-1 italic text-slate-500">
+                                No pharmacy is saved yet.
+                              </p>
+                            )}
+                          </div>
+                        ) : (
+                          <div className="space-y-2">
+                            <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                              <input
+                                value={pharmacyDraft.pharmacyName}
+                                onChange={(e) =>
+                                  setPharmacyDraft((prev) => ({
+                                    ...prev,
+                                    pharmacyName: e.target.value,
+                                  }))
+                                }
+                                placeholder="Pharmacy name"
+                                className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 shadow-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+                              />
+                              <input
+                                value={pharmacyDraft.pharmacyNumber}
+                                onChange={(e) =>
+                                  setPharmacyDraft((prev) => ({
+                                    ...prev,
+                                    pharmacyNumber: e.target.value,
+                                  }))
+                                }
+                                placeholder="Pharmacy number"
+                                className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 shadow-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+                              />
+                            </div>
+                            <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                              <input
+                                value={pharmacyDraft.pharmacyAddress}
+                                onChange={(e) =>
+                                  setPharmacyDraft((prev) => ({
+                                    ...prev,
+                                    pharmacyAddress: e.target.value,
+                                  }))
+                                }
+                                placeholder="Street address"
+                                className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 shadow-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+                              />
+                              <input
+                                value={pharmacyDraft.pharmacyCity}
+                                onChange={(e) =>
+                                  setPharmacyDraft((prev) => ({
+                                    ...prev,
+                                    pharmacyCity: e.target.value,
+                                  }))
+                                }
+                                placeholder="City"
+                                className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 shadow-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+                              />
+                            </div>
+                            <p className="text-[11px] text-slate-500">
+                              Search uses the BC community pharmacies directory.
+                            </p>
+                            <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                              <input
+                                value={pharmacyDraft.pharmacyPhone}
+                                onChange={(e) =>
+                                  setPharmacyDraft((prev) => ({
+                                    ...prev,
+                                    pharmacyPhone: e.target.value,
+                                  }))
+                                }
+                                placeholder="Phone"
+                                className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 shadow-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+                              />
+                              <input
+                                value={pharmacyDraft.pharmacyFax}
+                                onChange={(e) =>
+                                  setPharmacyDraft((prev) => ({
+                                    ...prev,
+                                    pharmacyFax: e.target.value,
+                                  }))
+                                }
+                                placeholder="Fax"
+                                className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 shadow-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+                              />
+                            </div>
+                            <div className="flex items-center gap-3 pt-1">
+                              <button
+                                type="button"
+                                onClick={handleSavePharmacy}
+                                disabled={pharmacySaving || pharmacySearching}
+                                className={`rounded-md px-3 py-2 text-xs font-medium text-white ${
+                                  pharmacySaving || pharmacySearching
+                                    ? "cursor-not-allowed bg-slate-400"
+                                    : "bg-slate-900 hover:bg-slate-800"
+                                }`}
+                              >
+                                {pharmacySaving ? "Saving..." : "Save pharmacy"}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={handleSearchPharmacy}
+                                disabled={pharmacySaving || pharmacySearching}
+                                className={`rounded-md border px-3 py-2 text-xs font-medium ${
+                                  pharmacySaving || pharmacySearching
+                                    ? "cursor-not-allowed border-slate-200 text-slate-400"
+                                    : "border-slate-300 text-slate-800 hover:bg-slate-100"
+                                }`}
+                              >
+                                {pharmacySearching ? "Searching..." : "Search pharmacy"}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={handleCancelPharmacyEdit}
+                                disabled={pharmacySaving || pharmacySearching}
+                                className="text-xs font-medium text-slate-700 underline underline-offset-2 hover:text-slate-900"
+                              >
+                                Cancel
+                              </button>
+                              {pharmacyStatus && (
+                                <span className="text-xs text-slate-700">{pharmacyStatus}</span>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
                 ) : (
@@ -1026,6 +2282,9 @@ function PhysicianViewContent() {
                         <p className="text-sm font-semibold text-slate-800 mb-2">
                           AI response
                         </p>
+                        <p className="mb-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                          {CLINICAL_ASSISTIVE_DISCLAIMER}
+                        </p>
                         <p className="text-sm text-slate-900 whitespace-pre-wrap">
                           {aiResponse}
                         </p>
@@ -1035,6 +2294,88 @@ function PhysicianViewContent() {
                 )}
               </div>
             </div>
+
+          {/* Previous Prescriptions */}
+          <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6 mb-6">
+            <div className="flex items-start justify-between gap-3 mb-3">
+              <div>
+                <h3 className="text-lg font-semibold text-slate-900">
+                  Previous prescriptions
+                </h3>
+                <p className="text-sm text-slate-600 mt-1">
+                  Saved prescriptions for this session.
+                </p>
+              </div>
+            </div>
+            {prescriptionListLoading && (
+              <p className="text-sm text-slate-500">Loading…</p>
+            )}
+            {prescriptionListError && (
+              <p className="text-sm text-red-600">{prescriptionListError}</p>
+            )}
+            {!prescriptionListLoading && !prescriptionListError && prescriptionList.length === 0 && (
+              <p className="text-sm text-slate-500">No prescriptions yet.</p>
+            )}
+            {!prescriptionListLoading && !prescriptionListError && prescriptionList.length > 0 && (
+              <div className="space-y-3">
+                {prescriptionList.map((item) => (
+                  <div
+                    key={item.id}
+                    className="rounded border border-slate-200 p-3 flex flex-col gap-1"
+                  >
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm font-medium text-slate-800">
+                        {new Date(item.createdAt).toLocaleString()}
+                      </span>
+                      <span
+                        className={`text-xs font-medium px-2 py-1 rounded-full ${
+                          item.faxStatus === "queued"
+                            ? "bg-green-100 text-green-800"
+                            : item.faxStatus === "failed"
+                              ? "bg-red-100 text-red-800"
+                              : item.faxStatus === "sending"
+                                ? "bg-amber-100 text-amber-800"
+                                : "bg-slate-100 text-slate-700"
+                        }`}
+                      >
+                        {item.faxStatus === "not_sent" ? "Fax: not sent" : `Fax: ${item.faxStatus}`}
+                      </span>
+                    </div>
+                    <div className="text-xs text-slate-600">
+                      {item.physicianName || "Physician"} — {item.clinicName || "Clinic"}
+                    </div>
+                    <div className="text-xs text-slate-600">
+                      Status: {item.prescriptionStatus}
+                    </div>
+                    {item.attestedAt && (
+                      <div className="text-xs text-slate-600">
+                        Attested: {new Date(item.attestedAt).toLocaleString()}
+                      </div>
+                    )}
+                    {item.faxSentAt && (
+                      <div className="text-xs text-slate-600">
+                        Faxed: {new Date(item.faxSentAt).toLocaleString()}
+                      </div>
+                    )}
+                    {item.faxStatus === "failed" && item.faxError && (
+                      <div className="text-xs text-red-700">
+                        Fax error: {item.faxError}
+                      </div>
+                    )}
+                    {item.medications.length > 0 && (
+                      <div className="text-xs text-slate-700 space-y-1">
+                        {item.medications.map((med, idx) => (
+                          <p key={`${item.id}-med-${idx}`}>
+                            {`${idx + 1}. ${med.medication}${med.strength ? ` (${med.strength})` : ""} — ${med.sig}`}
+                          </p>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
 
           {/* Previous Lab Requisitions */}
           <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6 mb-6">
@@ -1068,12 +2409,28 @@ function PhysicianViewContent() {
                       <span className="text-sm font-medium text-slate-800">
                         {new Date(item.createdAt).toLocaleString()}
                       </span>
-                      <a
-                        href={`/api/lab-requisitions?code=${sessionCode}&id=${item.id}`}
-                        className="text-sm text-slate-700 hover:text-slate-900 underline"
-                      >
-                        Download PDF
-                      </a>
+                      <div className="flex items-center gap-3">
+                        <button
+                          type="button"
+                          onClick={() => handleEditLabRequisition(item.id)}
+                          className="text-sm text-slate-700 hover:text-slate-900 underline"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteLabRequisition(item.id)}
+                          className="text-sm text-red-700 hover:text-red-800 underline"
+                        >
+                          Delete
+                        </button>
+                        <a
+                          href={`/api/lab-requisitions?code=${sessionCode}&id=${item.id}`}
+                          className="text-sm text-slate-700 hover:text-slate-900 underline"
+                        >
+                          Download PDF
+                        </a>
+                      </div>
                     </div>
                     <div className="text-xs text-slate-600">
                       {item.physicianName || "Physician"} — {item.clinicName || "Clinic"}
@@ -1250,6 +2607,36 @@ function PhysicianViewContent() {
               <div className="col-span-2">
                 <p className="text-sm text-slate-500">Family Doctor</p>
                 <p className="text-base text-slate-900">{session.patientProfile.familyDoctor}</p>
+              </div>
+              <div className="col-span-2">
+                <p className="text-sm text-slate-500">Pharmacy</p>
+                <div className="space-y-1">
+                  <p className="text-base text-slate-900">
+                    <span className="font-medium">Name:</span>{" "}
+                    {session.patientProfile.pharmacyName?.trim() || "Not provided"}
+                  </p>
+                  <p className="text-base text-slate-900">
+                    <span className="font-medium">Number:</span>{" "}
+                    {session.patientProfile.pharmacyNumber?.trim() || "Not provided"}
+                  </p>
+                  <p className="text-base text-slate-900">
+                    <span className="font-medium">Address:</span>{" "}
+                    {[
+                      session.patientProfile.pharmacyAddress?.trim() || "",
+                      session.patientProfile.pharmacyCity?.trim() || "",
+                    ]
+                      .filter((value) => value.length > 0)
+                      .join(", ") || "Not provided"}
+                  </p>
+                  <p className="text-base text-slate-900">
+                    <span className="font-medium">Phone:</span>{" "}
+                    {session.patientProfile.pharmacyPhone?.trim() || "Not provided"}
+                  </p>
+                  <p className="text-base text-slate-900">
+                    <span className="font-medium">Fax:</span>{" "}
+                    {session.patientProfile.pharmacyFax?.trim() || "Not provided"}
+                  </p>
+                </div>
               </div>
             </div>
           </div>

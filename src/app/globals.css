@@ -26,6 +26,16 @@ body {
   min-height: 100vh;
 }
 
+/* Suppress iOS Safari tap highlight bubble on interactive elements */
+button,
+a,
+input,
+textarea,
+[role="button"] {
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+}
+
 /* Smooth scroll behavior */
 html {
   scroll-behavior: smooth;

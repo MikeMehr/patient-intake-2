@@ -1,0 +1,95 @@
+			.LabP { font-weight:bold; font-size:60%; width:26px; height:16px; border-style:hidden; text-align:center; }
+			.LabPb { font-weight:bold; color: #003EFF; font-size:60%; width:12px; height:16px; border-style:hidden; text-align:center; }
+			.LabP1 { font-weight:bold; font-size:60%; width:15px; height:16px; border-style:hidden; text-align:center; }
+			.LabP2 { font-weight:bold; font-size:60%; width:26px; height:16px; border-style:hidden; text-align:center; cursor:pointer; } 
+			.LabP3 { display:none; font-weight:bold; color:transparent; font-size:70%; width:70px; height:20px; border-style:hidden; text-align:center; position:absolute; top:960px; }
+			.LabP4 { display:none; font-weight:bold; color:transparent; font-size:70%; width:70px; height:20px; border-style:hidden; text-align:center; position:absolute; top:980px; }	
+			.LabP5 { display:none; font-weight:bold; color:transparent; font-size:70%; width:70px; height:20px; border-style:hidden; text-align:center; position:absolute; top:1000px; } 
+			.LabP6 { display:none; font-weight:bold; color:transparent; font-size:70%; width:70px; height:20px; border-style:hidden; text-align:center; position:absolute; top:1020px; }
+			.LabP10 { font-weight:bold; font-size:100%; width:34px; height:20px; border-style:hidden; text-align:right;cursor: pointer; }
+			.LabP11 { font-weight:normal; font-size:100%; width:28px; height:20px; border-style:hidden; text-align:left; }
+			.LabP12 { font-weight:normal; font-size:100%; width:35px; height:20px; border-style:hidden; text-align:center; cursor:pointer; }
+			.LabP13 { font-weight:bold; font-size:100%; width:34px; height:20px; border-style:hidden; text-align:right;cursor: pointer; }
+			.LabP14 { font-weight:normal; font-size:100%; width:28px; height:20px; border-style:hidden; text-align:left; }
+			.LabP15 { font-weight:normal; font-size:100%; width:35px; height:20px; border-style:hidden; text-align:center; cursor:pointer; }
+			.LabP16 { font-weight:bold; font-size:70%; width:34px; height:20px; border-style:hidden; text-align:right;cursor: pointer; position: absolute; top: 915px; }
+			.LabP17 { font-weight:normal; font-size:70%; width:28px; height: 20px; border-style:hidden; text-align:left; position: absolute; top: 915px; }
+			.LabP18 { font-weight:bold; font-size:70%; width:35px; height:20px; border-style:hidden; text-align:center; cursor: pointer;position: absolute; top: 915px; }
+			.LabP19 { font-weight:bold; font-size:70%; width:34px; height:20px; border-style:hidden; text-align:right; position:absolute; top:935px; }
+			.LabP20 { font-weight:bold; font-size:70%; width:28px; height:20px; border-style:hidden; text-align:left; position:absolute; top:935px; }
+			.LabP21 { font-weight:bold; font-size:70%; width:35px; height:20px; border-style:hidden; text-align:center; cursor: pointer; position:absolute; top:935px; }
+			.yellow{ background-color:yellow !important; }
+			.white{ background-color:white !important; }
+
+			.labButton {
+				 background-color: lightyellow;
+				-moz-border-radius: 5px;
+				-webkit-border-radius: 5px;
+				border-radius:6px;
+				color: transparent;
+				font-family: 'Oswald';
+				font-size: 70%;
+				text-decoration: none;
+				cursor: pointer;
+				border:none;
+			 }
+
+			.labButton:hover {
+				border: none;
+				background:yellow;
+				color: black;
+				box-shadow: 0px 0px 1px #777;
+			}
+			.labButton2 {
+				background-color: lightyellow;
+				-moz-border-radius: 5px;
+				-webkit-border-radius: 5px;
+				border-radius:6px;
+				color: black;
+				font-family: 'Oswald';
+				font-size: 100%;
+				text-decoration: none;
+				border:none;
+			}
+
+			.labButton2:hover {
+				border: none;
+				background:yellow;
+				color: black;
+				box-shadow: 0px 0px 1px #777;
+			}
+			.labButton3 {
+				background-color: lightyellow;
+				-moz-border-radius: 5px;
+				-webkit-border-radius: 5px;
+				border-radius:6px;
+				color: black;
+				font-family: 'Oswald';
+				font-size: 100%;
+				text-decoration: none;
+				border:none;
+			}
+			.labButton3: hover {
+				border: none;
+				background: lightyellow;
+				color: black;
+				box-shadow: 0px 0px 1px #777;
+			}
+			.labButton4 {
+				background-color: white;
+				-moz-border-radius: 5px;
+				-webkit-border-radius: 5px;
+				border-radius:6px;
+				color: black;
+				font-family: 'Oswald';
+				font-size: 70%;
+				text-decoration: none;
+				border:none;
+				}
+
+			.labButton4: hover {
+				border: none;
+				background:yellow;
+				color: black;
+				box-shadow: 0px 0px 1px #777;
+			}
