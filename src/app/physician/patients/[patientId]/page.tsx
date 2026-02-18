@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 
 type Encounter = {
   id: string;
@@ -57,6 +57,7 @@ function isUuid(value: unknown): value is string {
 
 export default function PatientChartPage({ params }: { params: { patientId: string } }) {
   const router = useRouter();
+  const pathname = usePathname();
   const patientIdRaw = params.patientId;
   const patientIdFromParams = useMemo(() => {
     const raw = String(patientIdRaw || "");
@@ -69,15 +70,16 @@ export default function PatientChartPage({ params }: { params: { patientId: stri
   const patientId = useMemo(() => {
     // Fallback for rare cases where Next route params are empty due to caching/deploy mismatch.
     if (patientIdFromParams) return patientIdFromParams;
-    if (typeof window === "undefined") return "";
+    const path = typeof pathname === "string" ? pathname : "";
+    const prefix = "/physician/patients/";
+    if (!path.startsWith(prefix)) return "";
+    const last = path.slice(prefix.length).split("/").filter(Boolean)[0] || "";
     try {
-      const path = new URL(window.location.href).pathname;
-      const last = path.split("/").filter(Boolean).at(-1) || "";
       return decodeURIComponent(last).trim();
     } catch {
-      return "";
+      return last.trim();
     }
-  }, [patientIdFromParams]);
+  }, [patientIdFromParams, pathname]);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -93,6 +95,11 @@ export default function PatientChartPage({ params }: { params: { patientId: stri
       setError(null);
       try {
         if (!isUuid(patientId)) {
+          // During client-side navigation we can briefly render with empty params.
+          // Don't flash an error unless we have a non-empty, invalid value.
+          if (!patientId) {
+            return;
+          }
           throw new Error(`Invalid patient id: "${patientId}"`);
         }
         const res = await fetch(`/api/patients/${encodeURIComponent(patientId)}`);
