@@ -163,11 +163,12 @@ export default function PhysicianDashboard() {
   };
 
   const handleOpenPatientChart = (patientId: string) => {
-    if (!isUuid(patientId)) {
+    const normalized = String(patientId || "").trim();
+    if (!isUuid(normalized)) {
       setPatientLookupError("Patient chart is not linked yet (missing patientId).");
       return;
     }
-    router.push(`/physician/patients/${encodeURIComponent(patientId)}`);
+    router.push(`/physician/patients/${encodeURIComponent(normalized)}`);
   };
 
   const handlePatientLookup = async (e: React.FormEvent) => {

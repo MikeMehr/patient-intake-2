@@ -57,7 +57,15 @@ function isUuid(value: unknown): value is string {
 
 export default function PatientChartPage({ params }: { params: { patientId: string } }) {
   const router = useRouter();
-  const patientId = params.patientId;
+  const patientIdRaw = params.patientId;
+  const patientId = useMemo(() => {
+    const raw = String(patientIdRaw || "");
+    try {
+      return decodeURIComponent(raw).trim();
+    } catch {
+      return raw.trim();
+    }
+  }, [patientIdRaw]);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -73,7 +81,7 @@ export default function PatientChartPage({ params }: { params: { patientId: stri
       setError(null);
       try {
         if (!isUuid(patientId)) {
-          throw new Error("Invalid patient id.");
+          throw new Error(`Invalid patient id: "${patientId}"`);
         }
         const res = await fetch(`/api/patients/${encodeURIComponent(patientId)}`);
         if (res.status === 401) {
