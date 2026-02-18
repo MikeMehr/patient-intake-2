@@ -84,7 +84,13 @@ export async function GET(
       FROM patients
       WHERE id = $1
         AND (
-          ($2::uuid IS NOT NULL AND organization_id = $2::uuid)
+          (
+            $2::uuid IS NOT NULL
+            AND (
+              organization_id = $2::uuid
+              OR (organization_id IS NULL AND primary_physician_id = $3::uuid)
+            )
+          )
           OR
           ($2::uuid IS NULL AND organization_id IS NULL AND primary_physician_id = $3::uuid)
         )

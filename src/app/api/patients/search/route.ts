@@ -69,7 +69,10 @@ export async function POST(request: NextRequest) {
 
     if (orgId) {
       params.push(orgId);
-      where.push(`organization_id = $${params.length}`);
+      params.push(physicianId);
+      where.push(
+        `(organization_id = $${params.length - 1}::uuid OR (organization_id IS NULL AND primary_physician_id = $${params.length}::uuid))`,
+      );
     } else {
       params.push(physicianId);
       where.push(`organization_id IS NULL AND primary_physician_id = $${params.length}`);

@@ -65,11 +65,24 @@ export async function GET(request: NextRequest) {
     let patientIdByCode = new Map<string, string>();
     if (sessionCodes.length > 0) {
       try {
+        const orgId = session.organizationId || null;
         const enc = await query<{ source_session_code: string; patient_id: string }>(
-          `SELECT source_session_code, patient_id
-           FROM patient_encounters
-           WHERE source_session_code = ANY($1::text[])`,
-          [sessionCodes],
+          `SELECT pe.source_session_code, pe.patient_id
+           FROM patient_encounters pe
+           JOIN patients p ON p.id = pe.patient_id
+           WHERE pe.source_session_code = ANY($1::text[])
+             AND (
+               (
+                 $2::uuid IS NOT NULL
+                 AND (
+                   p.organization_id = $2::uuid
+                   OR (p.organization_id IS NULL AND p.primary_physician_id = $3::uuid)
+                 )
+               )
+               OR
+               ($2::uuid IS NULL AND p.organization_id IS NULL AND p.primary_physician_id = $3::uuid)
+             )`,
+          [sessionCodes, orgId, physicianId],
         );
         patientIdByCode = new Map(
           enc.rows
