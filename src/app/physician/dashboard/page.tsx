@@ -6,6 +6,12 @@ import type { PatientSession } from "@/lib/session-store";
 
 type PatientSessionWithChartLink = PatientSession & { patientId?: string | null };
 
+const isUuid = (value: unknown): value is string => {
+  if (typeof value !== "string") return false;
+  const v = value.trim();
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(v);
+};
+
 export default function PhysicianDashboard() {
   const router = useRouter();
   const [sessions, setSessions] = useState<PatientSessionWithChartLink[]>([]);
@@ -157,6 +163,10 @@ export default function PhysicianDashboard() {
   };
 
   const handleOpenPatientChart = (patientId: string) => {
+    if (!isUuid(patientId)) {
+      setPatientLookupError("Patient chart is not linked yet (missing patientId).");
+      return;
+    }
     router.push(`/physician/patients/${encodeURIComponent(patientId)}`);
   };
 
@@ -169,8 +179,12 @@ export default function PhysicianDashboard() {
     const dob = patientLookupDob.trim();
     const hin = patientLookupHin.trim();
 
-    if (!hin && (!name || !dob)) {
-      setPatientLookupError("Enter HIN, or enter both Name + DOB.");
+    if (!hin && !name) {
+      setPatientLookupError("Enter at least a Name (or HIN).");
+      return;
+    }
+    if (!hin && name.length < 3) {
+      setPatientLookupError("Enter at least 3 characters of the Name (or use HIN).");
       return;
     }
 
@@ -909,6 +923,9 @@ export default function PhysicianDashboard() {
                         )}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm">
+                        {(() => {
+                          const pid = session.patientId;
+                          return (
                         <div className="flex items-center gap-3">
                           <button
                             onClick={() => handleViewSession(session.sessionCode)}
@@ -916,10 +933,10 @@ export default function PhysicianDashboard() {
                           >
                             View
                           </button>
-                          {session.patientId ? (
+                          {isUuid(pid) ? (
                             <button
                               type="button"
-                              onClick={() => handleOpenPatientChart(session.patientId as string)}
+                              onClick={() => handleOpenPatientChart(pid)}
                               className="text-slate-900 hover:text-slate-700 font-medium"
                             >
                               Open chart
@@ -928,6 +945,8 @@ export default function PhysicianDashboard() {
                             <span className="text-xs text-slate-400">Chart pending</span>
                           )}
                         </div>
+                          );
+                        })()}
                       </td>
                     </tr>
                   ))}
@@ -1010,7 +1029,7 @@ export default function PhysicianDashboard() {
         <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6 mt-6">
           <h2 className="text-lg font-semibold text-slate-900 mb-2">Patient Lookup</h2>
           <p className="text-sm text-slate-600 mb-4">
-            Search for a patient by Name + DOB or by Healthcare Number (HIN).
+            Search for a patient by Name (recommended: Name + DOB) or by Healthcare Number (HIN).
           </p>
 
           <form onSubmit={handlePatientLookup} className="space-y-4">

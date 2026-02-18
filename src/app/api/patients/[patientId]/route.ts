@@ -14,6 +14,10 @@ function canDecryptHin(): boolean {
   return Boolean(process.env.PATIENT_PHI_ENCRYPTION_KEY);
 }
 
+function isUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
 export async function GET(
   request: NextRequest,
   ctx: { params: Promise<{ patientId: string }> },
@@ -42,6 +46,12 @@ export async function GET(
     if (!id) {
       status = 400;
       const res = badRequest("patientId is required.", status);
+      logRequestMeta("/api/patients/[patientId]", requestId, status, Date.now() - started);
+      return res;
+    }
+    if (!isUuid(id)) {
+      status = 400;
+      const res = badRequest("patientId must be a UUID.", status);
       logRequestMeta("/api/patients/[patientId]", requestId, status, Date.now() - started);
       return res;
     }

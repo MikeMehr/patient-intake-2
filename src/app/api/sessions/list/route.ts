@@ -5,6 +5,12 @@ import { query } from "@/lib/db";
 import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
 import { logDebug } from "@/lib/secure-logger";
 
+function isUuid(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  const v = value.trim();
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(v);
+}
+
 /**
  * GET /api/sessions/list
  * Get all patient sessions for the logged-in physician
@@ -67,8 +73,13 @@ export async function GET(request: NextRequest) {
         );
         patientIdByCode = new Map(
           enc.rows
-            .filter((r) => typeof r.source_session_code === "string" && typeof r.patient_id === "string")
-            .map((r) => [r.source_session_code, r.patient_id]),
+            .filter(
+              (r) =>
+                typeof r.source_session_code === "string" &&
+                r.source_session_code.trim().length > 0 &&
+                isUuid(r.patient_id),
+            )
+            .map((r) => [r.source_session_code, r.patient_id.trim()]),
         );
       } catch (err) {
         console.error("[sessions-list-route] Failed to load patient encounter mapping", err);

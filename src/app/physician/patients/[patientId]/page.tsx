@@ -49,6 +49,12 @@ function formatDateTime(value: string): string {
   return d.toLocaleString();
 }
 
+function isUuid(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  const v = value.trim();
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(v);
+}
+
 export default function PatientChartPage({ params }: { params: { patientId: string } }) {
   const router = useRouter();
   const patientId = params.patientId;
@@ -66,6 +72,9 @@ export default function PatientChartPage({ params }: { params: { patientId: stri
       setLoading(true);
       setError(null);
       try {
+        if (!isUuid(patientId)) {
+          throw new Error("Invalid patient id.");
+        }
         const res = await fetch(`/api/patients/${encodeURIComponent(patientId)}`);
         if (res.status === 401) {
           router.push("/auth/login");

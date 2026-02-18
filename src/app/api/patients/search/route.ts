@@ -53,9 +53,10 @@ export async function POST(request: NextRequest) {
 
     const hasStrongKey = Boolean(oscarDemographicNo) || Boolean(hin);
     const hasNameDob = Boolean(name) && Boolean(dob);
-    if (!hasStrongKey && !hasNameDob) {
+    const hasNameOnly = Boolean(name) && name.length >= 3;
+    if (!hasStrongKey && !hasNameDob && !hasNameOnly) {
       status = 400;
-      const res = badRequest("Provide oscarDemographicNo, HIN, or (name + dob).", status);
+      const res = badRequest("Provide oscarDemographicNo, HIN, (name + dob), or name (3+ chars).", status);
       logRequestMeta("/api/patients/search", requestId, status, Date.now() - started);
       return res;
     }
@@ -74,12 +75,11 @@ export async function POST(request: NextRequest) {
       where.push(`organization_id IS NULL AND primary_physician_id = $${params.length}`);
     }
 
+    // Pick the strongest identifier available (avoid AND'ing unrelated filters).
     if (oscarDemographicNo) {
       params.push(oscarDemographicNo);
       where.push(`oscar_demographic_no = $${params.length}`);
-    }
-
-    if (hin) {
+    } else if (hin) {
       let hinHash: string | null = null;
       try {
         hinHash = computeHinHash(hin);
@@ -94,13 +94,14 @@ export async function POST(request: NextRequest) {
       }
       params.push(hinHash);
       where.push(`hin_hash = $${params.length}`);
-    }
-
-    if (name && dob) {
+    } else if (name && dob) {
       params.push(`%${name.toLowerCase()}%`);
       where.push(`lower(full_name) LIKE $${params.length}`);
       params.push(dob);
       where.push(`date_of_birth = $${params.length}::date`);
+    } else if (hasNameOnly) {
+      params.push(`%${name.toLowerCase()}%`);
+      where.push(`lower(full_name) LIKE $${params.length}`);
     }
 
     const sql = `
