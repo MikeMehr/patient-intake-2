@@ -18,6 +18,16 @@ function isUuid(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 }
 
+function toIso(value: unknown): string | null {
+  if (!value) return null;
+  if (value instanceof Date) return value.toISOString();
+  if (typeof value === "string") {
+    const d = new Date(value);
+    return Number.isNaN(d.getTime()) ? value : d.toISOString();
+  }
+  return null;
+}
+
 export async function GET(
   request: NextRequest,
   ctx: { params: Promise<{ patientId: string }> },
@@ -149,17 +159,17 @@ export async function GET(
         secondaryPhone: patient.secondary_phone,
         address: patient.address,
         hinMasked,
-        createdAt: patient.created_at,
-        updatedAt: patient.updated_at,
+        createdAt: toIso(patient.created_at),
+        updatedAt: toIso(patient.updated_at),
       },
       encounters: encRes.rows.map((e) => ({
         id: e.id,
-        occurredAt: e.occurred_at,
+        occurredAt: toIso(e.occurred_at),
         physicianId: e.physician_id,
         sourceSessionCode: e.source_session_code,
         chiefComplaint: e.chief_complaint,
         hpi: e.hpi_json,
-        createdAt: e.created_at,
+        createdAt: toIso(e.created_at),
       })),
     });
     logRequestMeta("/api/patients/[patientId]", requestId, status, Date.now() - started);
