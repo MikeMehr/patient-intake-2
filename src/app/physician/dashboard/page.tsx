@@ -4,9 +4,11 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { PatientSession } from "@/lib/session-store";
 
+type PatientSessionWithChartLink = PatientSession & { patientId?: string | null };
+
 export default function PhysicianDashboard() {
   const router = useRouter();
-  const [sessions, setSessions] = useState<PatientSession[]>([]);
+  const [sessions, setSessions] = useState<PatientSessionWithChartLink[]>([]);
   type Invitation = {
     id: string;
     patientName: string;
@@ -49,6 +51,22 @@ export default function PhysicianDashboard() {
   const [inviteSuccess, setInviteSuccess] = useState<string | null>(null);
   const [invitationLink, setInvitationLink] = useState<string | null>(null);
   const [invitedPatientName, setInvitedPatientName] = useState<string>("");
+
+  type PatientSearchResult = {
+    id: string;
+    fullName: string;
+    dateOfBirth: string | null;
+    email: string | null;
+    primaryPhone: string | null;
+    secondaryPhone: string | null;
+    oscarDemographicNo: string | null;
+  };
+  const [patientLookupName, setPatientLookupName] = useState("");
+  const [patientLookupDob, setPatientLookupDob] = useState("");
+  const [patientLookupHin, setPatientLookupHin] = useState("");
+  const [patientLookupLoading, setPatientLookupLoading] = useState(false);
+  const [patientLookupError, setPatientLookupError] = useState<string | null>(null);
+  const [patientLookupResults, setPatientLookupResults] = useState<PatientSearchResult[]>([]);
 
   useEffect(() => {
     // Fetch sessions
@@ -136,6 +154,54 @@ export default function PhysicianDashboard() {
 
   const handleViewSession = (sessionCode: string) => {
     router.push(`/physician/view?code=${sessionCode}`);
+  };
+
+  const handleOpenPatientChart = (patientId: string) => {
+    router.push(`/physician/patients/${encodeURIComponent(patientId)}`);
+  };
+
+  const handlePatientLookup = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPatientLookupError(null);
+    setPatientLookupResults([]);
+
+    const name = patientLookupName.trim();
+    const dob = patientLookupDob.trim();
+    const hin = patientLookupHin.trim();
+
+    if (!hin && (!name || !dob)) {
+      setPatientLookupError("Enter HIN, or enter both Name + DOB.");
+      return;
+    }
+
+    setPatientLookupLoading(true);
+    try {
+      const res = await fetch("/api/patients/search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: name || undefined,
+          dob: dob || undefined,
+          hin: hin || undefined,
+          limit: 15,
+        }),
+      });
+      if (res.status === 401) {
+        router.push("/auth/login");
+        return;
+      }
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setPatientLookupError(data?.error || "Patient lookup failed");
+        return;
+      }
+      setPatientLookupResults(Array.isArray(data?.patients) ? data.patients : []);
+    } catch (err) {
+      console.error("Patient lookup error:", err);
+      setPatientLookupError("Patient lookup failed");
+    } finally {
+      setPatientLookupLoading(false);
+    }
   };
 
   const handleSendInvitation = async (e: React.FormEvent) => {
@@ -843,12 +909,25 @@ export default function PhysicianDashboard() {
                         )}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm">
-                        <button
-                          onClick={() => handleViewSession(session.sessionCode)}
-                          className="text-blue-600 hover:text-blue-900 font-medium"
-                        >
-                          View
-                        </button>
+                        <div className="flex items-center gap-3">
+                          <button
+                            onClick={() => handleViewSession(session.sessionCode)}
+                            className="text-blue-600 hover:text-blue-900 font-medium"
+                          >
+                            View
+                          </button>
+                          {session.patientId ? (
+                            <button
+                              type="button"
+                              onClick={() => handleOpenPatientChart(session.patientId as string)}
+                              className="text-slate-900 hover:text-slate-700 font-medium"
+                            >
+                              Open chart
+                            </button>
+                          ) : (
+                            <span className="text-xs text-slate-400">Chart pending</span>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -925,6 +1004,123 @@ export default function PhysicianDashboard() {
               </table>
             </div>
           )}
+        </div>
+
+        {/* Patient Lookup (Chart) */}
+        <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6 mt-6">
+          <h2 className="text-lg font-semibold text-slate-900 mb-2">Patient Lookup</h2>
+          <p className="text-sm text-slate-600 mb-4">
+            Search for a patient by Name + DOB or by Healthcare Number (HIN).
+          </p>
+
+          <form onSubmit={handlePatientLookup} className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Name</label>
+                <input
+                  type="text"
+                  value={patientLookupName}
+                  onChange={(e) => setPatientLookupName(e.target.value)}
+                  disabled={patientLookupLoading}
+                  className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200 disabled:cursor-not-allowed disabled:opacity-70"
+                  placeholder="First Last"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Date of birth</label>
+                <input
+                  type="date"
+                  value={patientLookupDob}
+                  onChange={(e) => setPatientLookupDob(e.target.value)}
+                  disabled={patientLookupLoading}
+                  className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200 disabled:cursor-not-allowed disabled:opacity-70"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Healthcare number (HIN)
+                </label>
+                <input
+                  type="text"
+                  value={patientLookupHin}
+                  onChange={(e) => setPatientLookupHin(e.target.value)}
+                  disabled={patientLookupLoading}
+                  className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200 disabled:cursor-not-allowed disabled:opacity-70"
+                  placeholder="Optional"
+                />
+              </div>
+            </div>
+
+            {patientLookupError && (
+              <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3">
+                <p className="text-sm text-red-800">{patientLookupError}</p>
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={patientLookupLoading}
+              className="px-4 py-2 text-sm font-medium text-white bg-slate-900 rounded-lg hover:bg-slate-800 transition-colors disabled:cursor-not-allowed disabled:bg-slate-400"
+            >
+              {patientLookupLoading ? "Searching..." : "Search"}
+            </button>
+          </form>
+
+          <div className="mt-5">
+            {patientLookupResults.length === 0 ? (
+              <p className="text-sm text-slate-600">No results yet.</p>
+            ) : (
+              <div className="overflow-x-auto rounded-lg border border-slate-200">
+                <table className="w-full">
+                  <thead className="bg-slate-50">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
+                        Patient
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
+                        DOB
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
+                        Phone
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
+                        Actions
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-slate-200">
+                    {patientLookupResults.map((p) => (
+                      <tr key={p.id} className="hover:bg-slate-50">
+                        <td className="px-4 py-3 text-sm font-medium text-slate-900">
+                          <div className="min-w-0">
+                            <div className="truncate">{p.fullName}</div>
+                            <div className="text-xs text-slate-500 truncate">
+                              {p.oscarDemographicNo ? `OSCAR: ${p.oscarDemographicNo}` : "OSCAR: —"}
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-sm text-slate-600 whitespace-nowrap">
+                          {p.dateOfBirth || "—"}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-slate-600 whitespace-nowrap">
+                          {p.primaryPhone || p.secondaryPhone || "—"}
+                        </td>
+                        <td className="px-4 py-3 text-sm whitespace-nowrap">
+                          <button
+                            type="button"
+                            onClick={() => handleOpenPatientChart(p.id)}
+                            className="text-blue-600 hover:text-blue-900 font-medium"
+                          >
+                            Open chart
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>

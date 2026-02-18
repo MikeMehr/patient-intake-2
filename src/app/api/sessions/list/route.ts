@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentSession } from "@/lib/auth";
 import { getSessionsByPhysician } from "@/lib/session-store";
+import { query } from "@/lib/db";
 import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
 import { logDebug } from "@/lib/secure-logger";
 
@@ -52,9 +53,32 @@ export async function GET(request: NextRequest) {
     
     logDebug("[sessions-list-route] Found sessions", { count: sessions.length });
 
+    // Attach patientId when the intake session has been charted into patient_encounters.
+    // (Best-effort: if the chart tables aren't present yet, we still return sessions.)
+    const sessionCodes = sessions.map((s) => s.sessionCode).filter(Boolean);
+    let patientIdByCode = new Map<string, string>();
+    if (sessionCodes.length > 0) {
+      try {
+        const enc = await query<{ source_session_code: string; patient_id: string }>(
+          `SELECT source_session_code, patient_id
+           FROM patient_encounters
+           WHERE source_session_code = ANY($1::text[])`,
+          [sessionCodes],
+        );
+        patientIdByCode = new Map(
+          enc.rows
+            .filter((r) => typeof r.source_session_code === "string" && typeof r.patient_id === "string")
+            .map((r) => [r.source_session_code, r.patient_id]),
+        );
+      } catch (err) {
+        console.error("[sessions-list-route] Failed to load patient encounter mapping", err);
+      }
+    }
+
     // Convert Date objects to ISO strings for JSON serialization
     const serializedSessions = sessions.map(s => ({
       ...s,
+      patientId: patientIdByCode.get(s.sessionCode) || null,
       completedAt: s.completedAt.toISOString(),
       viewedAt: s.viewedAt?.toISOString(),
     }));

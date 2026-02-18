@@ -22,6 +22,7 @@ export async function GET(request: Request) {
       clinicName: invitation.clinicName,
       patientName: invitation.patientName,
       patientEmail: invitation.patientEmail,
+      oscarDemographicNo: invitation.oscarDemographicNo,
       labReportSummary: invitation.labReportSummary || null,
       previousLabReportSummary: invitation.previousLabReportSummary || null,
       formSummary: invitation.formSummary || null,

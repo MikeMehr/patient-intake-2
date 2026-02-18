@@ -48,7 +48,8 @@ export async function POST(request: NextRequest) {
       return res;
     }
 
-    const { patientName, patientEmail, patientBackground } = await parseRequestBody(request);
+    const { patientName, patientEmail, patientBackground, oscarDemographicNo } =
+      await parseRequestBody(request);
 
     if (!patientName || !patientEmail) {
       status = 400;
@@ -114,9 +115,10 @@ export async function POST(request: NextRequest) {
              token_expires_at,
              expires_at,
              sent_at,
-             patient_background
+             patient_background,
+             oscar_demographic_no
            )
-           VALUES ($1, $2, $3, $4, $5, $6, $6, NOW(), $7)
+           VALUES ($1, $2, $3, $4, $5, $6, $6, NOW(), $7, $8)
            RETURNING id`,
           [
             physicianId,
@@ -126,6 +128,7 @@ export async function POST(request: NextRequest) {
             tokenHash,
             expiresAt,
             patientBackground || null,
+            oscarDemographicNo || null,
           ],
         );
         const invitationId = invitationResult.rows[0]?.id || null;
@@ -262,6 +265,7 @@ async function parseRequestBody(request: NextRequest): Promise<{
   patientName: string;
   patientEmail: string;
   patientBackground: string | null;
+  oscarDemographicNo: string | null;
 }> {
   const contentType = request.headers.get("content-type") || "";
 
@@ -271,6 +275,7 @@ async function parseRequestBody(request: NextRequest): Promise<{
       patientName: (formData.get("patientName") as string | null) || "",
       patientEmail: (formData.get("patientEmail") as string | null) || "",
       patientBackground: ((formData.get("patientBackground") as string | null) || "").trim() || null,
+      oscarDemographicNo: ((formData.get("oscarDemographicNo") as string | null) || "").trim() || null,
     };
   }
 
@@ -281,13 +286,14 @@ async function parseRequestBody(request: NextRequest): Promise<{
       patientName: (body?.patientName as string) || "",
       patientEmail: (body?.patientEmail as string) || "",
       patientBackground: (body?.patientBackground as string)?.trim() || null,
+      oscarDemographicNo: (body?.oscarDemographicNo as string)?.trim() || null,
     };
   } catch (err) {
     console.error("[invitations/send] Failed to parse JSON body");
     logDebug("[invitations/send] JSON parse error details", {
       errorMessage: err instanceof Error ? err.message : String(err),
     });
-    return { patientName: "", patientEmail: "", patientBackground: null };
+    return { patientName: "", patientEmail: "", patientBackground: null, oscarDemographicNo: null };
   }
 }
 

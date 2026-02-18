@@ -20,6 +20,7 @@ import {
   markInvitationUsed,
   resolveInvitationFromCookie,
 } from "@/lib/invitation-security";
+import { createEncounterFromSession, upsertPatientFromSession } from "@/lib/patient-store";
 
 /**
  * GET /api/sessions?code=xxx
@@ -205,6 +206,32 @@ export async function POST(request: Request) {
     
     await storeSession(session);
 
+    // Best-effort: persist structured chart data for Patient DB.
+    // (If this fails, the session is still stored and can be viewed from the session list.)
+    let patientId: string | null = null;
+    try {
+      const upserted = await upsertPatientFromSession({
+        physicianId: validatedPhysicianId,
+        patientName,
+        patientEmail,
+        patientProfile,
+        oscarDemographicNo: (invitation as any).oscarDemographicNo || null,
+      });
+      patientId = upserted.patientId;
+
+      await createEncounterFromSession({
+        patientId: upserted.patientId,
+        physicianId: validatedPhysicianId,
+        scope: upserted.scope,
+        occurredAt: session.completedAt,
+        sessionCode,
+        chiefComplaint,
+        history,
+      });
+    } catch (err) {
+      console.error("[api/sessions] Failed to upsert patient/encounter from session:", err);
+    }
+
     await markInvitationUsed(invitation.invitationId);
     await logInvitationAudit({
       invitationId: invitation.invitationId,
@@ -216,6 +243,7 @@ export async function POST(request: Request) {
 
     const res = NextResponse.json({
       sessionCode,
+      patientId,
       viewUrl: `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/physician/view?code=${sessionCode}`,
     });
     logRequestMeta("/api/sessions", requestId, status, Date.now() - started);

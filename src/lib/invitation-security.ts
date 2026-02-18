@@ -14,6 +14,7 @@ type InvitationRow = {
   physician_id: string;
   patient_email: string;
   patient_name: string;
+  oscar_demographic_no: string | null;
   token_expires_at: Date | null;
   used_at: Date | null;
   revoked_at: Date | null;
@@ -33,6 +34,7 @@ export type InvitationContext = {
   physicianId: string;
   patientEmail: string;
   patientName: string;
+  oscarDemographicNo: string | null;
   physicianName: string;
   clinicName: string;
   tokenExpiresAt: string | null;
@@ -98,6 +100,7 @@ function toInvitationContext(row: InvitationRow): InvitationContext {
     physicianId: row.physician_id,
     patientEmail: row.patient_email,
     patientName: row.patient_name,
+    oscarDemographicNo: row.oscar_demographic_no,
     physicianName: `Dr. ${row.first_name} ${row.last_name}`,
     clinicName: row.clinic_name,
     tokenExpiresAt: row.token_expires_at ? new Date(row.token_expires_at).toISOString() : null,
@@ -185,7 +188,7 @@ export async function logInvitationAudit(params: {
 export async function getInvitationByRawToken(rawToken: string): Promise<InvitationContext | null> {
   const tokenHash = hashValue(rawToken);
   const result = await query<InvitationRow>(
-    `SELECT pi.id, pi.physician_id, pi.patient_email, pi.patient_name, pi.token_expires_at, pi.used_at, pi.revoked_at,
+    `SELECT pi.id, pi.physician_id, pi.patient_email, pi.patient_name, pi.oscar_demographic_no, pi.token_expires_at, pi.used_at, pi.revoked_at,
             pi.expires_at, pi.lab_report_summary, pi.previous_lab_report_summary, pi.form_summary, pi.patient_background,
             pi.interview_guidance, p.first_name, p.last_name, p.clinic_name
      FROM patient_invitations pi
@@ -261,7 +264,7 @@ export async function resolveInvitationFromCookie(): Promise<InvitationContext |
 
   const sessionHash = hashValue(parsed.sessionToken);
   const result = await query<InvitationRow>(
-    `SELECT pi.id, pi.physician_id, pi.patient_email, pi.patient_name, pi.token_expires_at, pi.used_at, pi.revoked_at,
+    `SELECT pi.id, pi.physician_id, pi.patient_email, pi.patient_name, pi.oscar_demographic_no, pi.token_expires_at, pi.used_at, pi.revoked_at,
             pi.expires_at, pi.lab_report_summary, pi.previous_lab_report_summary, pi.form_summary, pi.patient_background,
             pi.interview_guidance, p.first_name, p.last_name, p.clinic_name
      FROM invitation_sessions isess

@@ -75,12 +75,34 @@ const closingMessageTranslations: Record<string, string> = {
 type ChatMessage = InterviewMessage;
 
 export default function Home() {
-  const useAzureStt =
-    process.env.NEXT_PUBLIC_USE_AZURE_STT === "true" ||
-    process.env.USE_AZURE_STT === "true";
-  const useAzureTts =
-    process.env.NEXT_PUBLIC_USE_AZURE_TTS === "true" ||
-    process.env.USE_AZURE_TTS === "true";
+  // Default from build-time env, then refresh from runtime config endpoint.
+  // This prevents stale client bundles when toggling flags in Azure App Service.
+  const [useAzureStt, setUseAzureStt] = useState(
+    process.env.NEXT_PUBLIC_USE_AZURE_STT === "true" || process.env.USE_AZURE_STT === "true",
+  );
+  const [useAzureTts, setUseAzureTts] = useState(
+    process.env.NEXT_PUBLIC_USE_AZURE_TTS === "true" || process.env.USE_AZURE_TTS === "true",
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    const run = async () => {
+      try {
+        const res = await fetch("/api/runtime-config", { method: "GET" });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) return;
+        if (cancelled) return;
+        if (typeof (data as any)?.useAzureStt === "boolean") setUseAzureStt((data as any).useAzureStt);
+        if (typeof (data as any)?.useAzureTts === "boolean") setUseAzureTts((data as any).useAzureTts);
+      } catch {
+        // Ignore — fall back to build-time defaults.
+      }
+    };
+    run();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   async function cleanTranscript(raw: string, lang: string): Promise<string> {
     try {

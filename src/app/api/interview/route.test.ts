@@ -8,6 +8,8 @@ const patientProfile = {
   age: 32,
   pmh: "Asthma, seasonal allergies.",
   familyHistory: "Mother with hypertension, father with type 2 diabetes.",
+  familyDoctor: "Dr. Example",
+  currentMedications: "Salbutamol inhaler as needed.",
   allergies: "Penicillin causes hives.",
 } as const;
 
@@ -32,6 +34,8 @@ describe("POST /api/interview", () => {
       body: JSON.stringify({
         chiefComplaint: "3 days of sore throat",
         patientProfile,
+        patientEmail: "patient@example.com",
+        physicianId: "physician-1234567890",
         transcript: [],
       }),
       headers: { "Content-Type": "application/json" },
@@ -53,12 +57,16 @@ describe("POST /api/interview", () => {
       body: JSON.stringify({
         chiefComplaint: "3 days of sore throat",
         patientProfile,
+        patientEmail: "patient@example.com",
+        physicianId: "physician-1234567890",
         transcript: [
           { role: "patient", content: "Yes, mild dry cough." },
-          { role: "assistant", content: "Have you noticed fevers?" },
           { role: "patient", content: "Fever up to 101." },
-          { role: "assistant", content: "Any trouble swallowing?" },
           { role: "patient", content: "Swallowing is painful but manageable." },
+          { role: "patient", content: "No trouble breathing." },
+          { role: "patient", content: "No vomiting." },
+          { role: "patient", content: "No rash." },
+          { role: "patient", content: "I tried ibuprofen; it helped a bit." },
         ],
       }),
       headers: { "Content-Type": "application/json" },
