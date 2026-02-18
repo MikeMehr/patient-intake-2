@@ -30,11 +30,42 @@ jobs:
       - name: Build
         run: npm run build --if-present
 
+      - name: Create deploy bundle (Next standalone)
+        run: |
+          rm -rf deploy
+          mkdir -p deploy
+
+          # Copy the standalone server + minimal node_modules produced by Next.
+          cp -R .next/standalone/* deploy/
+
+          # Next serves static assets from `.next/static` at runtime.
+          mkdir -p deploy/.next
+          cp -R .next/static deploy/.next/static
+
+          # Public assets (e.g. images) still need to be present.
+          if [ -d "public" ]; then
+            cp -R public deploy/public
+          fi
+
+          # Ensure App Service's default `npm start` works for this bundle.
+          cat > deploy/package.json <<'EOF'
+          {
+            "name": "patient-intake-2",
+            "private": true,
+            "scripts": {
+              "start": "node server.js"
+            }
+          }
+          EOF
+
+          echo "Deploy bundle contents:"
+          ls -la deploy
+
       - name: Upload artifact for deployment job
         uses: actions/upload-artifact@v4
         with:
           name: node-app
-          path: .
+          path: deploy
 
   deploy:
     runs-on: ubuntu-latest
@@ -48,6 +79,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: node-app
+          path: deploy
 
       - name: Login to Azure
         uses: azure/login@v2
@@ -61,4 +93,4 @@ jobs:
         with:
           app-name: healt-assist-ai-prod
           slot-name: Production
-          package: .
+          package: deploy
