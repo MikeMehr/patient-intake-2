@@ -16,7 +16,7 @@ function canDecryptHin(): boolean {
 
 export async function GET(
   request: NextRequest,
-  ctx: { params: { patientId: string } },
+  ctx: { params: Promise<{ patientId: string }> },
 ) {
   const requestId = getRequestId(request.headers);
   const started = Date.now();
@@ -37,7 +37,7 @@ export async function GET(
       return res;
     }
 
-    const { patientId } = ctx.params;
+    const { patientId } = await ctx.params;
     const id = String(patientId || "").trim();
     if (!id) {
       status = 400;
