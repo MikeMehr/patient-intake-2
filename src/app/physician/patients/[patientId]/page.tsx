@@ -58,7 +58,7 @@ function isUuid(value: unknown): value is string {
 export default function PatientChartPage({ params }: { params: { patientId: string } }) {
   const router = useRouter();
   const patientIdRaw = params.patientId;
-  const patientId = useMemo(() => {
+  const patientIdFromParams = useMemo(() => {
     const raw = String(patientIdRaw || "");
     try {
       return decodeURIComponent(raw).trim();
@@ -66,6 +66,18 @@ export default function PatientChartPage({ params }: { params: { patientId: stri
       return raw.trim();
     }
   }, [patientIdRaw]);
+  const patientId = useMemo(() => {
+    // Fallback for rare cases where Next route params are empty due to caching/deploy mismatch.
+    if (patientIdFromParams) return patientIdFromParams;
+    if (typeof window === "undefined") return "";
+    try {
+      const path = new URL(window.location.href).pathname;
+      const last = path.split("/").filter(Boolean).at(-1) || "";
+      return decodeURIComponent(last).trim();
+    } catch {
+      return "";
+    }
+  }, [patientIdFromParams]);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
