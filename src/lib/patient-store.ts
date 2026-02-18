@@ -2,6 +2,7 @@ import type { HistoryResponse } from "@/lib/history-schema";
 import type { PatientProfile } from "@/lib/interview-schema";
 import { getClient } from "@/lib/db";
 import { computeHinHash, encryptPatientPhiString } from "@/lib/patient-phi";
+import type { PoolClient } from "pg";
 
 function splitFullName(fullName: string): { firstName: string | null; lastName: string | null } {
   const trimmed = fullName.trim().replace(/\s+/g, " ");
@@ -23,12 +24,12 @@ function normalizeDobToDateString(raw?: string): string | null {
 
 type Scope = { organizationId: string; physicianId?: never } | { organizationId?: never; physicianId: string };
 
-async function resolveScopeForPhysician(client: any, physicianId: string): Promise<Scope> {
-  const res = await client.query<{ organization_id: string | null }>(
+async function resolveScopeForPhysician(client: PoolClient, physicianId: string): Promise<Scope> {
+  const res = await client.query(
     `SELECT organization_id FROM physicians WHERE id = $1 LIMIT 1`,
     [physicianId],
   );
-  const orgId = res.rows[0]?.organization_id ?? null;
+  const orgId = (res.rows?.[0] as any)?.organization_id ?? null;
   if (orgId) return { organizationId: orgId };
   return { physicianId };
 }
@@ -90,27 +91,29 @@ export async function upsertPatientFromSession(params: {
 
     const findPatientId = async (): Promise<string | null> => {
       if (oscarDemographicNo) {
-        const res = await client.query<{ id: string }>(
+        const res = await client.query(
           `SELECT id FROM patients
            WHERE ${scopeSql} AND oscar_demographic_no = $${scopeParams.length + 1}
            LIMIT 1`,
           [...scopeParams, oscarDemographicNo],
         );
-        if (res.rows[0]?.id) return res.rows[0].id;
+        const id = (res.rows?.[0] as any)?.id;
+        if (typeof id === "string" && id) return id;
       }
 
       if (hinHash) {
-        const res = await client.query<{ id: string }>(
+        const res = await client.query(
           `SELECT id FROM patients
            WHERE ${scopeSql} AND hin_hash = $${scopeParams.length + 1}
            LIMIT 1`,
           [...scopeParams, hinHash],
         );
-        if (res.rows[0]?.id) return res.rows[0].id;
+        const id = (res.rows?.[0] as any)?.id;
+        if (typeof id === "string" && id) return id;
       }
 
       if (fullName && dob) {
-        const res = await client.query<{ id: string }>(
+        const res = await client.query(
           `SELECT id FROM patients
            WHERE ${scopeSql}
              AND lower(full_name) = lower($${scopeParams.length + 1})
@@ -118,7 +121,8 @@ export async function upsertPatientFromSession(params: {
            LIMIT 1`,
           [...scopeParams, fullName, dob],
         );
-        if (res.rows[0]?.id) return res.rows[0].id;
+        const id = (res.rows?.[0] as any)?.id;
+        if (typeof id === "string" && id) return id;
       }
 
       return null;
@@ -162,7 +166,7 @@ export async function upsertPatientFromSession(params: {
       return { patientId: existingId, scope };
     }
 
-    const insertRes = await client.query<{ id: string }>(
+    const insertRes = await client.query(
       `INSERT INTO patients (
          organization_id,
          primary_physician_id,
@@ -198,8 +202,8 @@ export async function upsertPatientFromSession(params: {
       ],
     );
 
-    const patientId = insertRes.rows[0]?.id;
-    if (!patientId) throw new Error("Failed to insert patient");
+    const patientId = (insertRes.rows?.[0] as any)?.id;
+    if (typeof patientId !== "string" || !patientId) throw new Error("Failed to insert patient");
 
     await client.query("COMMIT");
     return { patientId, scope };
@@ -227,7 +231,7 @@ export async function createEncounterFromSession(params: {
     const organizationId = "organizationId" in params.scope ? params.scope.organizationId : null;
 
     try {
-      const inserted = await client.query<{ id: string }>(
+      const inserted = await client.query(
         `INSERT INTO patient_encounters (
            patient_id,
            organization_id,
@@ -249,23 +253,23 @@ export async function createEncounterFromSession(params: {
         ],
       );
 
-      const encounterId = inserted.rows[0]?.id;
-      if (!encounterId) throw new Error("Failed to insert encounter");
+      const encounterId = (inserted.rows?.[0] as any)?.id;
+      if (typeof encounterId !== "string" || !encounterId) throw new Error("Failed to insert encounter");
 
       await client.query("COMMIT");
       return { encounterId };
     } catch (err: any) {
       // Unique index on (patient_id, source_session_code) is partial; if it conflicts, treat as already created.
       if (err && err.code === "23505") {
-        const existing = await client.query<{ id: string }>(
+        const existing = await client.query(
           `SELECT id FROM patient_encounters
            WHERE patient_id = $1 AND source_session_code = $2
            LIMIT 1`,
           [params.patientId, params.sessionCode],
         );
         await client.query("COMMIT");
-        const encounterId = existing.rows[0]?.id;
-        return encounterId ? { encounterId } : null;
+        const encounterId = (existing.rows?.[0] as any)?.id;
+        return typeof encounterId === "string" && encounterId ? { encounterId } : null;
       }
       throw err;
     }
