@@ -6,28 +6,49 @@
 
 import { Pool } from "pg";
 import type { QueryResult, QueryResultRow } from "pg";
-// Note: env validation is deferred to request time to avoid build-phase crashes.
-// The query() function already throws if pool is null (DATABASE_URL unset).
+// Note: we intentionally avoid reading env at module import time.
+// In some deployment environments (and during Next build), the runtime env may not
+// be available when the module is evaluated. We create the pool lazily on first use.
 
-// Create connection pool (only if DATABASE_URL is set)
-if (!process.env.DATABASE_URL) {
-  console.error(
-    "DATABASE_URL is not set. Set it in .env.local (e.g., postgresql://user:pass@host:5432/dbname).",
-  );
+function resolveDatabaseUrl(): string | undefined {
+  // Primary expected name.
+  if (process.env.DATABASE_URL) return process.env.DATABASE_URL;
+
+  // Azure App Service sometimes exposes app settings with this prefix.
+  if (process.env.APPSETTING_DATABASE_URL) return process.env.APPSETTING_DATABASE_URL;
+
+  // If a value was configured as a Connection string, App Service can remap it.
+  // (We still recommend setting DATABASE_URL as an Application setting.)
+  if (process.env.CUSTOMCONNSTR_DATABASE_URL) return process.env.CUSTOMCONNSTR_DATABASE_URL;
+  if (process.env.POSTGRESQLCONNSTR_DATABASE_URL) return process.env.POSTGRESQLCONNSTR_DATABASE_URL;
+
+  return undefined;
 }
 
-const pool = process.env.DATABASE_URL
-  ? new Pool({
-      connectionString: process.env.DATABASE_URL,
-      ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : false,
-      max: 20, // Maximum number of clients in the pool
-      idleTimeoutMillis: 30000,
-      connectionTimeoutMillis: 10000, // Increased to 10 seconds
-    })
-  : null;
+let pool: Pool | null = null;
 
-// Handle pool errors
-if (pool) {
+function getPool(): Pool {
+  if (pool) return pool;
+
+  const connectionString = resolveDatabaseUrl();
+  if (!connectionString) {
+    throw new Error(
+      [
+        "DATABASE_URL is not set.",
+        "Set it in the runtime environment (e.g., Azure App Service -> Configuration -> Application settings).",
+      ].join(" "),
+    );
+  }
+
+  pool = new Pool({
+    connectionString,
+    ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : false,
+    max: 20, // Maximum number of clients in the pool
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 10000, // Increased to 10 seconds
+  });
+
+  // Handle pool errors
   pool.on("error", (err) => {
     console.error("Unexpected error on idle client", err);
     // Don't exit process in development
@@ -35,6 +56,8 @@ if (pool) {
       process.exit(-1);
     }
   });
+
+  return pool;
 }
 
 /**
@@ -44,9 +67,7 @@ export async function query<T extends QueryResultRow = any>(
   text: string,
   params?: any[]
 ): Promise<QueryResult<T>> {
-  if (!pool) {
-    throw new Error("DATABASE_URL environment variable is not set");
-  }
+  const pool = getPool();
 
   const start = Date.now();
   try {
@@ -66,10 +87,7 @@ export async function query<T extends QueryResultRow = any>(
  * Get a client from the pool for transactions
  */
 export function getClient() {
-  if (!pool) {
-    throw new Error("DATABASE_URL environment variable is not set");
-  }
-  return pool.connect();
+  return getPool().connect();
 }
 
 /**
