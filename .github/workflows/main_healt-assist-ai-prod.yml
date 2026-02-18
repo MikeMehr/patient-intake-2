@@ -36,7 +36,8 @@ jobs:
           mkdir -p deploy
 
           # Copy the standalone server + minimal node_modules produced by Next.
-          cp -R .next/standalone/* deploy/
+          # Use `/.` so we include hidden paths like `.next/standalone/.next`.
+          cp -R .next/standalone/. deploy/
 
           # Next serves static assets from `.next/static` at runtime.
           mkdir -p deploy/.next
@@ -58,6 +59,10 @@ jobs:
           }
           EOF
 
+          # Zip the bundle so the deployed root is correct (prevents nesting under `deploy/`).
+          rm -f deploy.zip
+          (cd deploy && zip -qr ../deploy.zip .)
+
           echo "Deploy bundle contents:"
           ls -la deploy
 
@@ -65,7 +70,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: node-app
-          path: deploy
+          path: deploy.zip
 
   deploy:
     runs-on: ubuntu-latest
@@ -79,7 +84,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: node-app
-          path: deploy
+          path: .
 
       - name: Login to Azure
         uses: azure/login@v2
@@ -93,4 +98,4 @@ jobs:
         with:
           app-name: healt-assist-ai-prod
           slot-name: Production
-          package: deploy
+          package: deploy.zip
