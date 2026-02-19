@@ -258,40 +258,53 @@ function parseInvitationSessionCookie(cookieValue: string): {
 
 export async function resolveInvitationFromCookie(): Promise<InvitationContext | null> {
   const cookieStore = await cookies();
-  const rawCookie = cookieStore.get(INVITATION_SESSION_COOKIE)?.value;
-  if (!rawCookie) return null;
+  // Some browsers (notably Safari) can send multiple cookies with the same name
+  // when the domain attribute differs (host-only vs parent domain). Try all
+  // candidate values and accept the newest valid session.
+  const candidates = (cookieStore.getAll?.(INVITATION_SESSION_COOKIE) || [])
+    .map((c) => c.value)
+    .filter(Boolean);
+  if (candidates.length === 0) {
+    const rawCookie = cookieStore.get(INVITATION_SESSION_COOKIE)?.value;
+    if (rawCookie) candidates.push(rawCookie);
+  }
+  if (candidates.length === 0) return null;
 
-  const parsed = parseInvitationSessionCookie(rawCookie);
-  if (!parsed) return null;
+  // Prefer the last cookie in the header (most recently set).
+  for (let idx = candidates.length - 1; idx >= 0; idx -= 1) {
+    const parsed = parseInvitationSessionCookie(candidates[idx]);
+    if (!parsed) continue;
 
-  const sessionHash = hashValue(parsed.sessionToken);
-  const result = await query<InvitationRow>(
-    `SELECT pi.id, pi.physician_id, pi.patient_email, pi.patient_name, pi.oscar_demographic_no, pi.token_expires_at, pi.used_at, pi.revoked_at,
-            pi.expires_at, pi.lab_report_summary, pi.previous_lab_report_summary, pi.form_summary, pi.patient_background,
-            pi.interview_guidance, p.first_name, p.last_name, p.clinic_name
-     FROM invitation_sessions isess
-     JOIN patient_invitations pi ON pi.id = isess.invitation_id
-     JOIN physicians p ON p.id = pi.physician_id
-     WHERE isess.invitation_id = $1
-       AND isess.session_token_hash = $2
-       AND isess.expires_at > NOW()
-     LIMIT 1`,
-    [parsed.invitationId, sessionHash],
-  );
+    const sessionHash = hashValue(parsed.sessionToken);
+    const result = await query<InvitationRow>(
+      `SELECT pi.id, pi.physician_id, pi.patient_email, pi.patient_name, pi.oscar_demographic_no, pi.token_expires_at, pi.used_at, pi.revoked_at,
+              pi.expires_at, pi.lab_report_summary, pi.previous_lab_report_summary, pi.form_summary, pi.patient_background,
+              pi.interview_guidance, p.first_name, p.last_name, p.clinic_name
+       FROM invitation_sessions isess
+       JOIN patient_invitations pi ON pi.id = isess.invitation_id
+       JOIN physicians p ON p.id = pi.physician_id
+       WHERE isess.invitation_id = $1
+         AND isess.session_token_hash = $2
+         AND isess.expires_at > NOW()
+       LIMIT 1`,
+      [parsed.invitationId, sessionHash],
+    );
+    if (result.rows.length === 0) continue;
 
-  if (result.rows.length === 0) return null;
+    await query(
+      `UPDATE invitation_sessions
+       SET last_accessed_at = NOW()
+       WHERE invitation_id = $1 AND session_token_hash = $2`,
+      [parsed.invitationId, sessionHash],
+    );
 
-  await query(
-    `UPDATE invitation_sessions
-     SET last_accessed_at = NOW()
-     WHERE invitation_id = $1 AND session_token_hash = $2`,
-    [parsed.invitationId, sessionHash],
-  );
+    const invite = toInvitationContext(result.rows[0]);
+    if (invite.revokedAt) return null;
+    if (invite.expiresAt && new Date(invite.expiresAt).getTime() <= Date.now()) return null;
+    return invite;
+  }
 
-  const invite = toInvitationContext(result.rows[0]);
-  if (invite.revokedAt) return null;
-  if (invite.expiresAt && new Date(invite.expiresAt).getTime() <= Date.now()) return null;
-  return invite;
+  return null;
 }
 
 export async function upsertOtpChallenge(invitationId: string, otpCode: string): Promise<void> {
