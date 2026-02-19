@@ -9,6 +9,21 @@ import {
 } from "@/lib/invitation-security";
 import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
 
+type InvalidReason = "used" | "revoked" | "expired" | null;
+
+function getInvalidReason(invitation: {
+  usedAt: string | null;
+  revokedAt: string | null;
+  tokenExpiresAt: string | null;
+  expiresAt: string | null;
+}): InvalidReason {
+  if (invitation.revokedAt) return "revoked";
+  if (invitation.usedAt) return "used";
+  const expiry = invitation.tokenExpiresAt || invitation.expiresAt;
+  if (expiry && new Date(expiry).getTime() <= Date.now()) return "expired";
+  return null;
+}
+
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ token: string }> },
@@ -55,37 +70,38 @@ export async function GET(
     }
 
     const openable = await isInvitationOpenable(invitation);
+    const invalidReason = getInvalidReason(invitation);
     if (!openable) {
       await logInvitationAudit({
         invitationId: invitation.invitationId,
         eventType: "invite_open_failed",
         ipAddress,
         userAgent,
-        metadata: { reason: "expired_or_used_or_revoked" },
+        metadata: { reason: invalidReason || "expired_or_used_or_revoked" },
       });
-      status = 410;
-      const res = NextResponse.json(
-        { error: "This invitation is no longer valid." },
-        { status },
-      );
-      logRequestMeta("/api/invitations/open/[token]", requestId, status, Date.now() - started);
-      return res;
     }
 
-    await logInvitationAudit({
-      invitationId: invitation.invitationId,
-      eventType: "invite_opened",
-      ipAddress,
-      userAgent,
-    });
+    if (openable) {
+      await logInvitationAudit({
+        invitationId: invitation.invitationId,
+        eventType: "invite_opened",
+        ipAddress,
+        userAgent,
+      });
+    }
 
     const res = NextResponse.json({
       invitationId: invitation.invitationId,
       physicianName: invitation.physicianName,
       clinicName: invitation.clinicName,
+      // Note: we still return patientName here even when openable=false so the client
+      // can detect cookie/token mismatches and show a friendlier UI. The token itself
+      // remains unguessable; full patient email is only revealed after OTP verification.
       patientName: invitation.patientName,
       maskedEmail: maskEmail(invitation.patientEmail),
       tokenExpiresAt: invitation.tokenExpiresAt || invitation.expiresAt,
+      openable,
+      invalidReason,
     });
     logRequestMeta("/api/invitations/open/[token]", requestId, status, Date.now() - started);
     return res;

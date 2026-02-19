@@ -20,6 +20,8 @@ type OpenInvitationResponse = {
   patientName: string;
   maskedEmail: string;
   tokenExpiresAt: string | null;
+  openable: boolean;
+  invalidReason: "used" | "revoked" | "expired" | null;
 };
 
 type VerifyOtpResponse = {
@@ -122,7 +124,24 @@ export default function InvitationTokenIntakePage() {
       setLoading(true);
       setError(null);
       try {
-        // Cookie-first: if the patient already verified OTP, resume from the
+        // Always resolve the token first. This gives us an invitationId so we can
+        // ensure we don't accidentally resume a different, previously-verified
+        // invitation session cookie in the same browser.
+        const openRes = await fetch(`/api/invitations/open/${encodeURIComponent(token)}`, {
+          cache: "no-store",
+        });
+        const openData = (await openRes.json()) as OpenInvitationResponse & { error?: string };
+        if (!openRes.ok) {
+          setError(openData.error || "Invitation is not valid.");
+          return;
+        }
+        setOpenInfo(openData);
+        setHeaderInfo({
+          physicianName: openData.physicianName || "Invited intake",
+          clinicName: openData.clinicName || "",
+        });
+
+        // Cookie-second: if the patient already verified OTP, resume from the
         // server-side invitation session. This prevents refresh loops after
         // the invitation token is marked used.
         const ctxRes = await fetch("/api/invitations/context", {
@@ -138,35 +157,55 @@ export default function InvitationTokenIntakePage() {
             patientName: string;
             patientEmail: string;
           };
-          persistInviteSession({
-            physicianId: ctxData.physicianId,
-            physicianName: ctxData.physicianName,
-            clinicName: ctxData.clinicName,
-            patientName: ctxData.patientName,
-            patientEmail: ctxData.patientEmail,
-          });
-          setHeaderInfo({
-            physicianName: ctxData.physicianName || "Invited intake",
-            clinicName: ctxData.clinicName || "",
-          });
-          setVerified(true);
+
+          if (ctxData.invitationId === openData.invitationId) {
+            persistInviteSession({
+              physicianId: ctxData.physicianId,
+              physicianName: ctxData.physicianName,
+              clinicName: ctxData.clinicName,
+              patientName: ctxData.patientName,
+              patientEmail: ctxData.patientEmail,
+            });
+            setHeaderInfo({
+              physicianName: ctxData.physicianName || "Invited intake",
+              clinicName: ctxData.clinicName || "",
+            });
+            setVerified(true);
+            return;
+          }
+
+          // Mismatched cookie: clear it and continue with OTP for this token.
+          try {
+            await fetch("/api/invitations/session/clear", {
+              method: "POST",
+              credentials: "include",
+            });
+          } catch {
+            // Best-effort; proceed anyway.
+          }
+          try {
+            sessionStorage.removeItem("invitedFlow");
+            sessionStorage.removeItem("invitePatientName");
+            sessionStorage.removeItem("invitePatientEmail");
+          } catch {
+            // Ignore storage failures.
+          }
+        }
+
+        if (!openData.openable) {
+          const reason =
+            openData.invalidReason === "used"
+              ? "This invitation link has already been used."
+              : openData.invalidReason === "revoked"
+                ? "This invitation link was revoked."
+                : openData.invalidReason === "expired"
+                  ? "This invitation link has expired."
+                  : "This invitation is no longer valid.";
+          setError(reason);
           return;
         }
 
-        const response = await fetch(`/api/invitations/open/${encodeURIComponent(token)}`, {
-          cache: "no-store",
-        });
-        const data = await response.json();
-        if (!response.ok) {
-          setError(data.error || "Invitation is not valid.");
-          return;
-        }
-        setOpenInfo(data);
-        setHeaderInfo({
-          physicianName: data.physicianName || "Invited intake",
-          clinicName: data.clinicName || "",
-        });
-        // Auto-send OTP only when no cookie session exists.
+        // Auto-send OTP only when no matching cookie session exists.
         await requestOtp({ source: "auto" });
       } catch {
         setError("Failed to open invitation.");
