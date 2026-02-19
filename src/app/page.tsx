@@ -1733,6 +1733,16 @@ export default function Home() {
     } else if (autoSubmit) {
     }
   };
+
+  const toggleDraftEditing = () => {
+    if (isEditingDraft) {
+      // Exit edit mode without altering the current draft text.
+      setIsEditingDraft(false);
+      return;
+    }
+    commitDraftToResponse("edit");
+  };
+
   const redoDraftTranscript = () => {
     resetDraftTranscript("redo");
   };
@@ -3983,9 +3993,9 @@ export default function Home() {
                         </button>
                         <button
                           type="button"
-                          disabled={isSubmittingResponse || hasPendingSubmission || isEditingDraft}
+                          disabled={isSubmittingResponse || hasPendingSubmission}
                           onClick={() => {
-                            commitDraftToResponse("edit");
+                            toggleDraftEditing();
                           }}
                           className={[
                             "inline-flex min-h-[44px] items-center justify-center rounded-xl px-4 py-2 text-sm font-semibold transition",
@@ -4232,7 +4242,7 @@ export default function Home() {
                           <button
                             type="button"
                             disabled={isSubmittingResponse}
-                            onClick={() => commitDraftToResponse("edit")}
+                            onClick={() => toggleDraftEditing()}
                             className={[
                               "inline-flex min-h-[44px] items-center justify-center rounded-xl px-4 py-2 text-sm font-semibold transition",
                               "select-none active:scale-[0.98] active:opacity-90",
