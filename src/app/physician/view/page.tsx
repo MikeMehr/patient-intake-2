@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import type { PatientSession } from "@/lib/session-store";
 import { jsPDF } from "jspdf";
 import { CLINICAL_ASSISTIVE_DISCLAIMER } from "@/lib/clinical-safety";
+import SessionKeepAlive from "@/components/auth/SessionKeepAlive";
 
 type RxMedicationRow = {
   id: string;
@@ -818,6 +819,7 @@ function PhysicianViewContent() {
       );
       if (!hasAnyInput && parsedRxFromHistory.medications.length > 0) {
         setRxMedications(parsedRxFromHistory.medications.map((row) => makeRxMedicationRow(row)));
+      }
     }
   }, [aiAction, parsedRxFromHistory, rxMedications]);
 
@@ -954,12 +956,10 @@ function PhysicianViewContent() {
 
   useEffect(() => {
     loadLabList();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionCode]);
 
   useEffect(() => {
     loadPrescriptionList();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionCode]);
 
   useEffect(() => {
@@ -987,7 +987,6 @@ function PhysicianViewContent() {
     };
     window.addEventListener("message", onEditorSaved);
     return () => window.removeEventListener("message", onEditorSaved);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionCode]);
 
   useEffect(() => {
@@ -1025,7 +1024,6 @@ function PhysicianViewContent() {
     };
     window.addEventListener("message", onPrescriptionEvent);
     return () => window.removeEventListener("message", onPrescriptionEvent);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionCode]);
 
   const computeLabs = () => {
@@ -1593,6 +1591,9 @@ function PhysicianViewContent() {
               <h2 className="text-lg font-semibold text-slate-900 mb-4">
                 History of Present Illness
               </h2>
+              <p className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                {CLINICAL_ASSISTIVE_DISCLAIMER}
+              </p>
               <div className="space-y-4">
                 <div>
                   <p className="text-sm font-medium text-slate-700 mb-2">Summary</p>
@@ -1678,6 +1679,16 @@ function PhysicianViewContent() {
                     </>
                   )}
                 </div>
+                {session.history.patientFinalQuestionsComments?.trim() && (
+                  <div>
+                    <p className="text-sm font-medium text-slate-700 mb-2">
+                      Patient&apos;s final questions/comments
+                    </p>
+                    <p className="text-base text-slate-900 whitespace-pre-wrap">
+                      {session.history.patientFinalQuestionsComments}
+                    </p>
+                  </div>
+                )}
               </div>
               <div className="mt-5">
                 {hpiSaveError && (
@@ -1724,9 +1735,6 @@ function PhysicianViewContent() {
                   </h3>
                   <p className="text-sm text-slate-600 mt-1">
                     Ask the AI to draft a referral note, suggest labs, or handle a custom request using the collected HPI.
-                  </p>
-                  <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-                    {CLINICAL_ASSISTIVE_DISCLAIMER}
                   </p>
                 </div>
               </div>
@@ -1860,9 +1868,6 @@ function PhysicianViewContent() {
                   </div>
                 ) : aiAction === "prescription" ? (
                   <div className="grid gap-4">
-                    <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-                      {CLINICAL_ASSISTIVE_DISCLAIMER}
-                    </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
                         <label className="block text-sm font-medium text-slate-700 mb-1">
@@ -2279,9 +2284,6 @@ function PhysicianViewContent() {
                         <p className="text-sm font-semibold text-slate-800 mb-2">
                           AI response
                         </p>
-                        <p className="mb-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-                          {CLINICAL_ASSISTIVE_DISCLAIMER}
-                        </p>
                         <p className="text-sm text-slate-900 whitespace-pre-wrap">
                           {aiResponse}
                         </p>
@@ -2645,8 +2647,11 @@ function PhysicianViewContent() {
 
 export default function PhysicianViewPage() {
   return (
-    <Suspense fallback={<div className="flex min-h-screen items-center justify-center">Loading...</div>}>
-      <PhysicianViewContent />
-    </Suspense>
+    <>
+      <SessionKeepAlive redirectTo="/auth/login" />
+      <Suspense fallback={<div className="flex min-h-screen items-center justify-center">Loading...</div>}>
+        <PhysicianViewContent />
+      </Suspense>
+    </>
   );
 }

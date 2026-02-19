@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { PatientSession } from "@/lib/session-store";
+import SessionKeepAlive from "@/components/auth/SessionKeepAlive";
 
 type PatientSessionWithChartLink = PatientSession & { patientId?: string | null };
 
@@ -516,15 +517,20 @@ export default function PhysicianDashboard() {
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-100">
-        <p className="text-slate-600">Loading dashboard...</p>
-      </div>
+      <>
+        <SessionKeepAlive redirectTo="/auth/login" />
+        <div className="flex min-h-screen items-center justify-center bg-slate-100">
+          <p className="text-slate-600">Loading dashboard...</p>
+        </div>
+      </>
     );
   }
 
   return (
-    <div className="min-h-screen bg-slate-100">
-      <div className="max-w-7xl mx-auto px-4 py-8">
+    <>
+      <SessionKeepAlive redirectTo="/auth/login" />
+      <div className="min-h-screen bg-slate-100">
+        <div className="max-w-7xl mx-auto px-4 py-8">
         {/* Header */}
         <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6 mb-6">
           <div className="flex justify-between items-center">
@@ -1142,8 +1148,9 @@ export default function PhysicianDashboard() {
             )}
           </div>
         </div>
+        </div>
       </div>
-    </div>
+    </>
   );
 }
 

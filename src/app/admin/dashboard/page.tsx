@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import SessionKeepAlive from "@/components/auth/SessionKeepAlive";
 
 interface Organization {
   id: string;
@@ -65,14 +66,19 @@ export default function SuperAdminDashboard() {
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
-        <p className="text-slate-600">Loading...</p>
-      </div>
+      <>
+        <SessionKeepAlive redirectTo="/admin/login" />
+        <div className="flex min-h-screen items-center justify-center">
+          <p className="text-slate-600">Loading...</p>
+        </div>
+      </>
     );
   }
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <>
+      <SessionKeepAlive redirectTo="/admin/login" />
+      <div className="min-h-screen bg-slate-50">
       <div className="bg-white border-b border-slate-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex items-center justify-between">
@@ -188,7 +194,8 @@ export default function SuperAdminDashboard() {
           </table>
         </div>
       </div>
-    </div>
+      </div>
+    </>
   );
 }
 

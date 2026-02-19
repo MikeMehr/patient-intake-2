@@ -21,6 +21,7 @@ export const historyResponseSchema = z.object({
   investigations: z.array(z.string()).min(0).max(6),
   assessment: z.string().min(10).max(1500),
   plan: z.array(z.string()).min(1).max(6),
+  patientFinalQuestionsComments: z.string().min(1).max(2000).optional(),
 });
 
 export type HistoryResponse = z.infer<typeof historyResponseSchema>;

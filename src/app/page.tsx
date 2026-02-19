@@ -72,6 +72,23 @@ const closingMessageTranslations: Record<string, string> = {
   fa: "این مصاحبه به پایان رسید. از اینکه برای پاسخ به پرسش‌های من وقت گذاشتید سپاسگزارم. پزشک شما به‌زودی برای گفت‌وگو درباره تشخیص و برنامه درمان با شما تماس خواهد گرفت.",
 };
 
+const finalCommentsPromptEnglish =
+  "Before you go, do you have any last questions or comments for your physician?";
+
+const finalCommentsPromptTranslations: Record<string, string> = {
+  es: "Antes de terminar, ¿tiene alguna pregunta o comentario final para su médico?",
+  fr: "Avant de terminer, avez-vous des questions ou des commentaires de derniere minute pour votre medecin?",
+  de: "Bevor wir abschliessen: Haben Sie noch letzte Fragen oder Kommentare fuer Ihren Arzt/Ihre Aerztin?",
+  it: "Prima di concludere, ha qualche ultima domanda o commento per il suo medico?",
+  pt: "Antes de terminar, voce tem alguma ultima pergunta ou comentario para o seu medico?",
+  zh: "在结束之前，您还有什么想对您的医生说的最后问题或备注吗？",
+  ja: "終了する前に、主治医への最後の質問やコメントはありますか？",
+  ko: "마치기 전에, 담당 의사에게 전할 마지막 질문이나 의견이 있나요?",
+  ar: "قبل الانتهاء، هل لديك اي اسئلة او تعليقات اخيرة لطبيبك؟",
+  hi: "समाप्त करने से पहले, क्या आपके चिकित्सक के लिए कोई अंतिम प्रश्न या टिप्पणी है?",
+  fa: "پیش از پایان، آیا پرسش یا نظر پایانی برای پزشک خود دارید؟",
+};
+
 type ChatMessage = InterviewMessage;
 
 export default function Home() {
@@ -381,6 +398,8 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [patientName, setPatientName] = useState("");
   const [patientEmail, setPatientEmail] = useState("");
+  const [pendingHistoryResult, setPendingHistoryResult] = useState<HistoryResponse | null>(null);
+  const [awaitingFinalComments, setAwaitingFinalComments] = useState(false);
   const [hasConsented, setHasConsented] = useState(false);
   const [isInvitedFlow, setIsInvitedFlow] = useState(false);
   const [physicianIdValue, setPhysicianIdValue] = useState<string | null>(null);
@@ -464,6 +483,7 @@ export default function Home() {
   const chatRef = useRef<HTMLDivElement | null>(null);
   const patientResponseInputRef = useRef<HTMLTextAreaElement | null>(null);
   const patientResponseRef = useRef<string>("");
+  const pendingHistoryResultRef = useRef<HistoryResponse | null>(null);
   const draftTranscriptRef = useRef<string>("");
   const mutedWhileSpeakingRef = useRef(false);
   const hasRequestedMicPermissionRef = useRef(false);
@@ -516,6 +536,10 @@ export default function Home() {
     closingMessageTranslations[code.trim().toLowerCase()] ?? closingMessageEnglish;
   const isClosingMessage = (content: string) =>
     content.trim() === closingMessageEnglish;
+  const getFinalCommentsPromptForLanguage = (code: string) =>
+    finalCommentsPromptTranslations[code.trim().toLowerCase()] ?? finalCommentsPromptEnglish;
+  const isFinalCommentsPrompt = (content: string) =>
+    content.trim() === finalCommentsPromptEnglish;
   const isSummaryMessage = (message: ChatMessage) =>
     message.role === "assistant" &&
     !!result?.summary &&
@@ -533,6 +557,9 @@ export default function Home() {
     if (isClosingMessage(message.content) && !isEnglishLanguage(language)) {
       return getClosingMessageForLanguage(language);
     }
+    if (isFinalCommentsPrompt(message.content) && !isEnglishLanguage(language)) {
+      return getFinalCommentsPromptForLanguage(language);
+    }
     return message.content;
   };
   const getSpokenMessageContent = (message: ChatMessage) => {
@@ -544,6 +571,9 @@ export default function Home() {
     }
     if (isClosingMessage(message.content) && !isEnglishLanguage(language)) {
       return getClosingMessageForLanguage(language);
+    }
+    if (isFinalCommentsPrompt(message.content) && !isEnglishLanguage(language)) {
+      return getFinalCommentsPromptForLanguage(language);
     }
     return message.content;
   };
@@ -2049,42 +2079,53 @@ export default function Home() {
       return;
     }
 
-    // Check if this is a response to the final question
     const lastMessage = messagesRef.current[messagesRef.current.length - 1];
-    const isFinalQuestion = lastMessage?.role === "assistant" &&
-      isClosingMessage(lastMessage.content);
-    
-    // If responding to final question with "no" or similar, end the interview
-    if (isFinalQuestion) {
-      const responseLower = trimmed.toLowerCase().trim();
-      // Check for various "no" responses - exact match or starts with "no" followed by punctuation/space
-      const noPattern = /^(no|nope|nothing|none)(\s|\.|,|!|\?|$)/i;
-      const noThanksPattern = /^no\s+(thanks|thank\s+you)/i;
-      const noQuestionsPattern = /^no\s+(questions|comments)/i;
-      const dontHavePattern = /^(i\s+)?(don'?t|do\s+not)\s+have\s+(any\s+)?(questions|comments)/i;
-      
-      if (noPattern.test(responseLower) || 
-          noThanksPattern.test(responseLower) || 
-          noQuestionsPattern.test(responseLower) ||
-          dontHavePattern.test(responseLower) ||
-          responseLower === "no" || 
-          responseLower === "nope" ||
-          responseLower === "nothing" ||
-          responseLower === "none") {
-        // Patient said no, end the interview
-        const patientMessage: ChatMessage = {
-          role: "patient",
-          content: trimmed,
-        };
-        setMessages((current) => [...current, patientMessage]);
-        messagesRef.current = [...messagesRef.current, patientMessage];
-        setPatientResponse("");
-        setInterimTranscript("");
-        interimTranscriptRef.current = "";
-        setStatus("complete");
-        statusRef.current = "complete";
+    const isFinalCommentsTurn =
+      awaitingFinalComments ||
+      (lastMessage?.role === "assistant" && isFinalCommentsPrompt(lastMessage.content));
+
+    // Final clinician-facing comment: capture and save without calling the AI.
+    if (isFinalCommentsTurn) {
+      const baseHistory = pendingHistoryResultRef.current;
+      if (!baseHistory) {
+        setError("Unable to save your final comment. Please try again.");
+        setIsSubmittingResponse(false);
+        setShowSubmitToast(false);
         return;
       }
+
+      const patientMessage: ChatMessage = { role: "patient", content: trimmed };
+      const updatedMessages = [...messagesRef.current, patientMessage];
+      messagesRef.current = updatedMessages;
+      setMessages(updatedMessages);
+
+      setPatientResponse("");
+      setInterimTranscript("");
+      interimTranscriptRef.current = "";
+
+      const historyWithFinal = {
+        ...baseHistory,
+        patientFinalQuestionsComments: trimmed,
+      } satisfies HistoryResponse;
+
+      setResult(historyWithFinal);
+      setPendingHistoryResult(null);
+      pendingHistoryResultRef.current = null;
+      setAwaitingFinalComments(false);
+
+      setStatus("complete");
+      statusRef.current = "complete";
+
+      try {
+        await saveSession(historyWithFinal);
+      } catch (err) {
+        console.error("Failed to save session with final comment:", err);
+        setError("Failed to save your final comment. Please try again.");
+      } finally {
+        setIsSubmittingResponse(false);
+        setShowSubmitToast(false);
+      }
+      return;
     }
 
     const patientMessage: ChatMessage = {
@@ -2445,18 +2486,16 @@ export default function Home() {
     
     // If there are messages, generate a summary with what we have
     if (messages.length > 0 && lockedProfile && chiefComplaint) {
+      const endRequestMessage: ChatMessage = {
+        role: "patient",
+        content:
+          "I would like to end the interview now. Please provide a summary of what we've discussed.",
+      };
       try {
         setStatus("awaitingAi");
         
         // Create a special request that forces a summary
-        // Add a final patient message indicating they want to end
-        const finalMessages = [
-          ...messages,
-          {
-            role: "patient" as const,
-            content: "I would like to end the interview now. Please provide a summary of what we've discussed.",
-          },
-        ];
+        const finalMessages = [...messages, endRequestMessage];
         
         // Call the API with a flag to force summary generation
         const response = await fetch("/api/interview", {
@@ -2494,16 +2533,28 @@ export default function Home() {
           setResult(historyResult);
           setEndedEarly(true); // Mark that patient ended interview early
           
-          // CRITICAL: Ensure messagesRef.current is up to date before saving
-          // The messages should already include the patient's "end interview" message
-          // but make sure ref is synced
-          messagesRef.current = messages.length > 0 ? messages : messagesRef.current;
-          
-          setStatus("complete");
-          statusRef.current = "complete";
-          
-          // Save the session - use current messages
-          await saveSession(historyResult);
+          const summaryMessage: ChatMessage = { role: "assistant", content: turn.summary };
+          const endMessage: ChatMessage = { role: "assistant", content: closingMessageEnglish };
+          const finalCommentsPromptMessage: ChatMessage = {
+            role: "assistant",
+            content: finalCommentsPromptEnglish,
+          };
+          const updatedMessages: ChatMessage[] = [
+            ...messages,
+            endRequestMessage,
+            summaryMessage,
+            endMessage,
+            finalCommentsPromptMessage,
+          ];
+
+          messagesRef.current = updatedMessages;
+          setMessages(updatedMessages);
+
+          setPendingHistoryResult(historyResult);
+          pendingHistoryResultRef.current = historyResult;
+          setAwaitingFinalComments(true);
+          setStatus("awaitingPatient");
+          statusRef.current = "awaitingPatient";
         } else {
           // If we got a question instead of summary, create a summary from what we have
           const patientResponses = messages
@@ -2525,14 +2576,28 @@ export default function Home() {
           setResult(historyResult);
           setEndedEarly(true); // Mark that patient ended interview early
           
-          // CRITICAL: Ensure messagesRef.current is up to date before saving
-          messagesRef.current = messages.length > 0 ? messages : messagesRef.current;
-          
-          setStatus("complete");
-          statusRef.current = "complete";
-          
-          // Save the session - use current messages
-          await saveSession(historyResult);
+          const summaryMessage: ChatMessage = { role: "assistant", content: historyResult.summary };
+          const endMessage: ChatMessage = { role: "assistant", content: closingMessageEnglish };
+          const finalCommentsPromptMessage: ChatMessage = {
+            role: "assistant",
+            content: finalCommentsPromptEnglish,
+          };
+          const updatedMessages: ChatMessage[] = [
+            ...messages,
+            endRequestMessage,
+            summaryMessage,
+            endMessage,
+            finalCommentsPromptMessage,
+          ];
+
+          messagesRef.current = updatedMessages;
+          setMessages(updatedMessages);
+
+          setPendingHistoryResult(historyResult);
+          pendingHistoryResultRef.current = historyResult;
+          setAwaitingFinalComments(true);
+          setStatus("awaitingPatient");
+          statusRef.current = "awaitingPatient";
         }
       } catch (err) {
         console.error("Error generating final summary:", err);
@@ -2557,14 +2622,28 @@ export default function Home() {
           setResult(historyResult);
           setEndedEarly(true); // Mark that patient ended interview early
           
-          // CRITICAL: Ensure messagesRef.current is up to date before saving
-          messagesRef.current = messages.length > 0 ? messages : messagesRef.current;
-          
-          setStatus("complete");
-          statusRef.current = "complete";
-          
-          // Save the session - use current messages
-          await saveSession(historyResult);
+          const summaryMessage: ChatMessage = { role: "assistant", content: historyResult.summary };
+          const endMessage: ChatMessage = { role: "assistant", content: closingMessageEnglish };
+          const finalCommentsPromptMessage: ChatMessage = {
+            role: "assistant",
+            content: finalCommentsPromptEnglish,
+          };
+          const updatedMessages: ChatMessage[] = [
+            ...messages,
+            endRequestMessage,
+            summaryMessage,
+            endMessage,
+            finalCommentsPromptMessage,
+          ];
+
+          messagesRef.current = updatedMessages;
+          setMessages(updatedMessages);
+
+          setPendingHistoryResult(historyResult);
+          pendingHistoryResultRef.current = historyResult;
+          setAwaitingFinalComments(true);
+          setStatus("awaitingPatient");
+          statusRef.current = "awaitingPatient";
         } else {
           setStatus("complete");
           statusRef.current = "complete";
@@ -2841,32 +2920,29 @@ export default function Home() {
     setResult(historyResult);
     setEndedEarly(false); // Normal completion, not ended early
     
-    // CRITICAL: Update messages and ref BEFORE calling saveSession
-    // This ensures the transcript includes all messages including the summary
+    // Add closing + final-comments prompt, then wait for patient response before saving.
     const summaryMessage: ChatMessage = { role: "assistant", content: turn.summary };
     const endMessage: ChatMessage = { role: "assistant", content: closingMessageEnglish };
-    const updatedMessages: ChatMessage[] = [...messages, summaryMessage, endMessage];
+    const finalCommentsPromptMessage: ChatMessage = {
+      role: "assistant",
+      content: finalCommentsPromptEnglish,
+    };
+    const updatedMessages: ChatMessage[] = [
+      ...messages,
+      summaryMessage,
+      endMessage,
+      finalCommentsPromptMessage,
+    ];
     
-    // Update ref immediately so saveSession can use it
     messagesRef.current = updatedMessages;
     
-    // Update state (async, but ref is already updated)
     setMessages(updatedMessages);
     
-    // Calculate interview duration
-    const duration = interviewStartTimeRef.current ? Math.round((Date.now() - interviewStartTimeRef.current) / 1000) : 0; // Duration in seconds
-    // Set status to complete to end the interview
-    setStatus("complete");
-
-    // Save session for physician to view - use saveSession function which includes transcript
-    if (lockedProfile && patientName && patientEmail) {
-      try {
-        await saveSession(historyResult);
-      } catch (err) {
-        console.error("Failed to save session:", err);
-        // Don't show error to user - they can still see the summary
-      }
-    }
+    setPendingHistoryResult(historyResult);
+    pendingHistoryResultRef.current = historyResult;
+    setAwaitingFinalComments(true);
+    setStatus("awaitingPatient");
+    statusRef.current = "awaitingPatient";
   }
 
   const microphoneBlocked =

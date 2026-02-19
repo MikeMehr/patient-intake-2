@@ -20,7 +20,11 @@ function getSessionSecret(): string {
   return secret;
 }
 const SESSION_COOKIE_NAME = "physician_session";
-const SESSION_MAX_AGE = 30 * 60 * 1000; // 30 minutes
+// Session semantics:
+// - idle timeout: extended only via explicit refresh (see getCurrentSession({ refresh: true }))
+// - absolute max: fixed since DB `created_at` (cannot be extended)
+const IDLE_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
+const ABSOLUTE_MAX_MS = 4 * 60 * 60 * 1000; // 4 hours
 
 export type UserType = "super_admin" | "org_admin" | "provider";
 
@@ -39,6 +43,54 @@ export interface UserSession {
 // Legacy interface for backward compatibility
 export interface PhysicianSession extends UserSession {
   physicianId: string; // Alias for userId when userType is 'provider'
+}
+
+type PhysicianSessionRow = {
+  user_id: string | null;
+  user_type: string | null;
+  organization_id: string | null;
+  physician_id: string | null;
+  expires_at: Date;
+  created_at: Date;
+  session_data: string | UserSession | null; // JSONB can be string or object
+};
+
+async function loadSessionRow(token: string): Promise<PhysicianSessionRow | null> {
+  if (!token) return null;
+  const { query } = await import("./db");
+  const result = await query<PhysicianSessionRow>(
+    `SELECT user_id, user_type, organization_id, physician_id, expires_at, created_at, session_data
+     FROM physician_sessions
+     WHERE token = $1
+     LIMIT 1`,
+    [token],
+  );
+  return result.rows[0] || null;
+}
+
+function parseSessionFromRow(row: PhysicianSessionRow): UserSession {
+  // PostgreSQL JSONB columns return objects directly, not strings.
+  let session: UserSession = {} as UserSession;
+  if (typeof row.session_data === "string") {
+    session = JSON.parse(row.session_data) as UserSession;
+  } else if (row.session_data && typeof row.session_data === "object") {
+    session = row.session_data as UserSession;
+  }
+
+  // Migrate old sessions to new format if needed.
+  if (!session.userType && row.user_type) {
+    session.userType = row.user_type as UserType;
+  }
+  if (!session.userId && (row.user_id || row.physician_id)) {
+    session.userId = row.user_id || row.physician_id || "";
+  }
+  if (session.organizationId === undefined && row.organization_id) {
+    session.organizationId = row.organization_id;
+  }
+
+  // Source of truth for expiry is the DB column.
+  session.expiresAt = row.expires_at.getTime();
+  return session;
 }
 
 /**
@@ -80,7 +132,7 @@ export async function createSession(
   clinicAddress?: string | null
 ): Promise<string> {
   const token = generateSessionToken();
-  const expiresAt = Date.now() + SESSION_MAX_AGE;
+  const expiresAt = Date.now() + IDLE_TIMEOUT_MS;
 
   const session: UserSession = {
     userId,
@@ -121,7 +173,7 @@ export async function createSession(
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",
-      maxAge: SESSION_MAX_AGE / 1000,
+      maxAge: IDLE_TIMEOUT_MS / 1000,
       path: "/",
     });
   } catch (error) {
@@ -165,61 +217,33 @@ export async function verifySession(
 ): Promise<UserSession | null> {
   if (!token) return null;
 
-  const { query } = await import("./db");
-  const result = await query<{
-    user_id: string | null;
-    user_type: string | null;
-    organization_id: string | null;
-    physician_id: string | null;
-    expires_at: Date;
-    session_data: string | UserSession; // JSONB can be string or object
-  }>(
-    `SELECT user_id, user_type, organization_id, physician_id, expires_at, session_data
-     FROM physician_sessions
-     WHERE token = $1 AND expires_at > NOW()`,
-    [token]
-  );
+  const row = await loadSessionRow(token);
+  if (!row) return null;
 
-  if (result.rows.length === 0) {
-    return null;
-  }
+  const nowMs = Date.now();
 
-  const row = result.rows[0];
-  
-  // PostgreSQL JSONB columns return objects directly, not strings
-  // Check if it's already an object or needs parsing
-  let session: UserSession;
-  if (typeof row.session_data === 'string') {
-    session = JSON.parse(row.session_data) as UserSession;
-  } else {
-    session = row.session_data as UserSession;
-  }
-
-  // Migrate old sessions to new format if needed
-  if (!session.userType && row.user_type) {
-    session.userType = row.user_type as UserType;
-  }
-  if (!session.userId && (row.user_id || row.physician_id)) {
-    session.userId = row.user_id || row.physician_id || "";
-  }
-  if (session.organizationId === undefined && row.organization_id) {
-    session.organizationId = row.organization_id;
-  }
-
-  // Check if session is expired
-  if (session.expiresAt < Date.now()) {
-    // Clean up expired session
+  // Enforce idle timeout from DB.
+  if (row.expires_at.getTime() <= nowMs) {
+    const { query } = await import("./db");
     await query("DELETE FROM physician_sessions WHERE token = $1", [token]);
     return null;
   }
 
-  return session;
+  // Enforce absolute max based on DB created_at.
+  const absoluteExpiresAtMs = row.created_at.getTime() + ABSOLUTE_MAX_MS;
+  if (nowMs >= absoluteExpiresAtMs) {
+    const { query } = await import("./db");
+    await query("DELETE FROM physician_sessions WHERE token = $1", [token]);
+    return null;
+  }
+
+  return parseSessionFromRow(row);
 }
 
 /**
  * Get current session from cookie
  */
-export async function getCurrentSession(): Promise<UserSession | null> {
+export async function getCurrentSession(options?: { refresh?: boolean }): Promise<UserSession | null> {
   try {
     const cookieStore = await cookies();
     const token = cookieStore.get(SESSION_COOKIE_NAME)?.value;
@@ -235,7 +259,53 @@ export async function getCurrentSession(): Promise<UserSession | null> {
       return null;
     }
 
-    const session = await verifySession(token);
+    const row = await loadSessionRow(token);
+    if (!row) {
+      // Best-effort cleanup so we don't keep sending a dead token.
+      cookieStore.delete(SESSION_COOKIE_NAME);
+      return null;
+    }
+
+    const nowMs = Date.now();
+    const absoluteExpiresAtMs = row.created_at.getTime() + ABSOLUTE_MAX_MS;
+
+    // Enforce absolute max + idle expiry first.
+    if (nowMs >= absoluteExpiresAtMs || row.expires_at.getTime() <= nowMs) {
+      const { query } = await import("./db");
+      await query("DELETE FROM physician_sessions WHERE token = $1", [token]);
+      cookieStore.delete(SESSION_COOKIE_NAME);
+      return null;
+    }
+
+    // Only extend idle expiry when explicitly requested (e.g. /api/auth/ping from UI activity).
+    if (options?.refresh === true) {
+      const newExpiresAtMs = Math.min(nowMs + IDLE_TIMEOUT_MS, absoluteExpiresAtMs);
+      const shouldUpdate = newExpiresAtMs > row.expires_at.getTime() + 1000;
+
+      if (shouldUpdate) {
+        const { query } = await import("./db");
+        await query(
+          `UPDATE physician_sessions
+           SET expires_at = $1,
+               session_data = jsonb_set(COALESCE(session_data, '{}'::jsonb), '{expiresAt}', to_jsonb($2::bigint), true)
+           WHERE token = $3`,
+          [new Date(newExpiresAtMs), newExpiresAtMs, token],
+        );
+
+        cookieStore.set(SESSION_COOKIE_NAME, token, {
+          httpOnly: true,
+          secure: process.env.NODE_ENV === "production",
+          sameSite: "lax",
+          maxAge: Math.max(1, Math.floor((newExpiresAtMs - nowMs) / 1000)),
+          path: "/",
+        });
+
+        // Keep the in-memory row expiry consistent for parsing below.
+        row.expires_at = new Date(newExpiresAtMs);
+      }
+    }
+
+    const session = parseSessionFromRow(row);
     logDebug("[auth/getCurrentSession] Session verification", {
       hasSession: !!session,
       userType: session?.userType,
