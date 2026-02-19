@@ -3873,7 +3873,14 @@ export default function Home() {
                   <>
                     {showResponseBox && (
                       <div className="group flex flex-col items-center">
-                        <div className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800">
+                        <div
+                          className={[
+                            "w-full rounded-2xl border bg-white px-4 py-3 text-sm text-slate-800 transition",
+                            isEditingDraft
+                              ? "border-red-400 ring-2 ring-red-200"
+                              : "border-slate-200",
+                          ].join(" ")}
+                        >
                         {draftTranscript.trim().length > 0 && !isEditingDraft ? (
                           <p className="mt-1 whitespace-pre-wrap">{draftTranscript}</p>
                         ) : (
@@ -3882,6 +3889,7 @@ export default function Home() {
                             maxLength={1000}
                             placeholder="Tap mic to start/stop or type your response."
                             value={draftTranscript}
+                            autoFocus={isEditingDraft}
                             disabled={isSubmittingResponse}
                             onChange={(event) => {
                               const nextValue = event.target.value;
@@ -3898,12 +3906,6 @@ export default function Home() {
                                 }
                               }
                               setDraftTranscript(nextValue);
-                            }}
-                            onFocus={() => {
-                              setIsEditingDraft(true);
-                            }}
-                            onBlur={() => {
-                              setIsEditingDraft(false);
                             }}
                             className="mt-1 w-full resize-none rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
                           />
@@ -3963,13 +3965,20 @@ export default function Home() {
                         </button>
                         <button
                           type="button"
-                          disabled={isSubmittingResponse || hasPendingSubmission}
+                          disabled={isSubmittingResponse || hasPendingSubmission || isEditingDraft}
                           onClick={() => {
                             commitDraftToResponse("edit");
                           }}
-                          className="inline-flex min-h-[44px] items-center justify-center rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+                          className={[
+                            "inline-flex min-h-[44px] items-center justify-center rounded-xl px-4 py-2 text-sm font-semibold transition",
+                            "select-none active:scale-[0.98] active:opacity-90",
+                            isEditingDraft
+                              ? "bg-red-600 text-white border border-red-600"
+                              : "border border-slate-200 text-slate-700 hover:bg-slate-100",
+                            "disabled:cursor-not-allowed disabled:opacity-60",
+                          ].join(" ")}
                         >
-                          Edit
+                          {isEditingDraft ? "Editing" : "Edit"}
                         </button>
                         <button
                           type="button"
@@ -4206,9 +4215,16 @@ export default function Home() {
                             type="button"
                             disabled={isSubmittingResponse}
                             onClick={() => commitDraftToResponse("edit")}
-                            className="inline-flex min-h-[44px] items-center justify-center rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+                            className={[
+                              "inline-flex min-h-[44px] items-center justify-center rounded-xl px-4 py-2 text-sm font-semibold transition",
+                              "select-none active:scale-[0.98] active:opacity-90",
+                              isEditingDraft
+                                ? "bg-red-600 text-white border border-red-600"
+                                : "border border-slate-200 text-slate-700 hover:bg-slate-100",
+                              "disabled:cursor-not-allowed disabled:opacity-60",
+                            ].join(" ")}
                           >
-                            Edit
+                            {isEditingDraft ? "Editing" : "Edit"}
                           </button>
                           <button
                             type="button"
