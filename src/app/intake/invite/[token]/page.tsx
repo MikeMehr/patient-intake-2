@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import dynamic from "next/dynamic";
 
@@ -37,14 +37,56 @@ export default function InvitationTokenIntakePage() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [openInfo, setOpenInfo] = useState<OpenInvitationResponse | null>(null);
+  const [headerInfo, setHeaderInfo] = useState<{ physicianName: string; clinicName: string } | null>(
+    null,
+  );
   const [otp, setOtp] = useState("");
   const [otpSent, setOtpSent] = useState(false);
   const [otpMessage, setOtpMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [verified, setVerified] = useState(false);
+  const autoOtpRequestedRef = useRef(false);
 
-  const requestOtp = async () => {
+  useEffect(() => {
+    autoOtpRequestedRef.current = false;
+  }, [token]);
+
+  const persistInviteSession = (data: {
+    physicianId: string;
+    physicianName: string;
+    clinicName: string;
+    patientName: string;
+    patientEmail: string;
+  }) => {
+    if (typeof window === "undefined") return;
+    sessionStorage.setItem("physicianId", data.physicianId);
+    sessionStorage.setItem("physicianName", data.physicianName);
+    sessionStorage.setItem("clinicName", data.clinicName);
+    sessionStorage.setItem("invitedFlow", "true");
+    sessionStorage.setItem("invitePatientName", data.patientName);
+    sessionStorage.setItem("invitePatientEmail", data.patientEmail);
+  };
+
+  const requestOtp = async (opts: { source: "auto" | "manual" }) => {
     if (!token) return;
+    if (opts.source === "auto") {
+      if (autoOtpRequestedRef.current) return;
+      autoOtpRequestedRef.current = true;
+      // Prevent auto-resends on refresh: if we already auto-sent an OTP for this
+      // token in this tab session, don't send another unless the patient taps
+      // "Resend code".
+      try {
+        const key = `inviteAutoOtpRequested:${token}`;
+        const lastSentAt = sessionStorage.getItem(key);
+        if (lastSentAt) {
+          setOtpSent(true);
+          setOtpMessage("Verification code already sent. Please check your email.");
+          return;
+        }
+      } catch {
+        // sessionStorage may be unavailable; ignore and fall back to ref guard.
+      }
+    }
     setSubmitting(true);
     setError(null);
     try {
@@ -60,6 +102,13 @@ export default function InvitationTokenIntakePage() {
       }
       setOtpSent(true);
       setOtpMessage("Verification code sent to your email.");
+      if (opts.source === "auto") {
+        try {
+          sessionStorage.setItem(`inviteAutoOtpRequested:${token}`, String(Date.now()));
+        } catch {
+          // Ignore; auto-send guard is best-effort.
+        }
+      }
     } catch {
       setError("Failed to send OTP.");
     } finally {
@@ -73,15 +122,52 @@ export default function InvitationTokenIntakePage() {
       setLoading(true);
       setError(null);
       try {
-        const response = await fetch(`/api/invitations/open/${encodeURIComponent(token)}`);
+        // Cookie-first: if the patient already verified OTP, resume from the
+        // server-side invitation session. This prevents refresh loops after
+        // the invitation token is marked used.
+        const ctxRes = await fetch("/api/invitations/context", {
+          cache: "no-store",
+          credentials: "include",
+        });
+        if (ctxRes.ok) {
+          const ctxData = (await ctxRes.json()) as {
+            invitationId: string;
+            physicianId: string;
+            physicianName: string;
+            clinicName: string;
+            patientName: string;
+            patientEmail: string;
+          };
+          persistInviteSession({
+            physicianId: ctxData.physicianId,
+            physicianName: ctxData.physicianName,
+            clinicName: ctxData.clinicName,
+            patientName: ctxData.patientName,
+            patientEmail: ctxData.patientEmail,
+          });
+          setHeaderInfo({
+            physicianName: ctxData.physicianName || "Invited intake",
+            clinicName: ctxData.clinicName || "",
+          });
+          setVerified(true);
+          return;
+        }
+
+        const response = await fetch(`/api/invitations/open/${encodeURIComponent(token)}`, {
+          cache: "no-store",
+        });
         const data = await response.json();
         if (!response.ok) {
           setError(data.error || "Invitation is not valid.");
-          setLoading(false);
           return;
         }
         setOpenInfo(data);
-        await requestOtp();
+        setHeaderInfo({
+          physicianName: data.physicianName || "Invited intake",
+          clinicName: data.clinicName || "",
+        });
+        // Auto-send OTP only when no cookie session exists.
+        await requestOtp({ source: "auto" });
       } catch {
         setError("Failed to open invitation.");
       } finally {
@@ -109,14 +195,11 @@ export default function InvitationTokenIntakePage() {
         return;
       }
 
-      if (typeof window !== "undefined") {
-        sessionStorage.setItem("physicianId", data.physicianId);
-        sessionStorage.setItem("physicianName", data.physicianName);
-        sessionStorage.setItem("clinicName", data.clinicName);
-        sessionStorage.setItem("invitedFlow", "true");
-        sessionStorage.setItem("invitePatientName", data.patientName);
-        sessionStorage.setItem("invitePatientEmail", data.patientEmail);
-      }
+      persistInviteSession(data);
+      setHeaderInfo({
+        physicianName: data.physicianName || "Invited intake",
+        clinicName: data.clinicName || "",
+      });
       setVerified(true);
     } catch {
       setError("Failed to verify OTP.");
@@ -139,9 +222,9 @@ export default function InvitationTokenIntakePage() {
         <div className="border-b border-slate-200 bg-white px-4 py-4">
           <div className="mx-auto max-w-7xl">
             <h1 className="text-xl font-semibold text-slate-900">
-              {openInfo?.physicianName || "Invited intake"}
+              {headerInfo?.physicianName || openInfo?.physicianName || "Invited intake"}
             </h1>
-            <p className="text-sm text-slate-600">{openInfo?.clinicName || ""}</p>
+            <p className="text-sm text-slate-600">{headerInfo?.clinicName || openInfo?.clinicName || ""}</p>
           </div>
         </div>
         <IntakeForm />
@@ -189,7 +272,7 @@ export default function InvitationTokenIntakePage() {
 
         <button
           type="button"
-          onClick={requestOtp}
+          onClick={() => requestOtp({ source: "manual" })}
           disabled={submitting}
           className="mt-3 w-full rounded-xl border border-slate-300 px-4 py-3 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
         >

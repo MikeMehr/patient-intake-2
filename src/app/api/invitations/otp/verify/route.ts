@@ -100,7 +100,12 @@ export async function POST(request: NextRequest) {
     res.cookies.set(INVITATION_SESSION_COOKIE, session.cookieValue, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
-      sameSite: "strict",
+      // Lax allows the cookie to be sent on top-level navigations (e.g. coming
+      // back via an email link) while still providing CSRF resistance for POSTs.
+      sameSite: "lax",
+      // Optional: set to ".health-assist.org" in Azure if you ever serve from
+      // multiple subdomains and want the invite session to persist across them.
+      domain: process.env.INVITATION_SESSION_COOKIE_DOMAIN || undefined,
       path: "/",
       maxAge: Math.max(1, Math.floor((session.expiresAtMs - Date.now()) / 1000)),
     });

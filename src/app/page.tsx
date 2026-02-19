@@ -3635,7 +3635,15 @@ export default function Home() {
                               </div>
                             </>
                           ) : (
-                            <div className="bg-emerald-600 rounded-2xl rounded-tr-sm px-5 py-3 text-white inline-block ml-auto relative group max-w-full">
+                            <div
+                              className={[
+                                "bg-emerald-600 rounded-2xl rounded-tr-sm px-5 py-3 text-white inline-block ml-auto relative group max-w-full",
+                                // Visual affordance: make it obvious when provider is editing a patient message.
+                                editingMessageIndex === index
+                                  ? "ring-4 ring-red-300 ring-offset-2 ring-offset-slate-50 bg-emerald-700/90 shadow-sm"
+                                  : "",
+                              ].join(" ")}
+                            >
                               {addingToMessageIndex === index ? (
                                 <div className="space-y-2 w-full">
                                   <p className="text-sm text-emerald-50 mb-2">Original: {message.content}</p>
@@ -3712,6 +3720,14 @@ export default function Home() {
                                 </div>
                               ) : editingMessageIndex === index ? (
                                 <div className="space-y-2 w-full">
+                                  <div className="flex items-center justify-between gap-2">
+                                    <span className="text-xs font-semibold text-red-100 bg-red-600/70 px-2 py-0.5 rounded-full border border-red-200/40">
+                                      Editing
+                                    </span>
+                                    <span className="text-[11px] text-emerald-50/90">
+                                      Save or Cancel
+                                    </span>
+                                  </div>
                                   <textarea
                                     value={editingContent}
                                     onChange={(e) => setEditingContent(e.target.value)}
@@ -3920,7 +3936,7 @@ export default function Home() {
                       </div>
                     )}
                     {showReviewActions && (
-                      <div className="mt-6 flex flex-wrap gap-2">
+                      <div className="mt-6 flex flex-wrap gap-3">
                         <button
                           type="button"
                           disabled={isSubmittingResponse || hasPendingSubmission}
@@ -3937,7 +3953,7 @@ export default function Home() {
                               commitDraftToResponse("use", true);
                             }
                           }}
-                          className="inline-flex items-center justify-center rounded-xl bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-emerald-300"
+                          className="inline-flex min-h-[44px] items-center justify-center rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-emerald-300"
                         >
                           Use this
                         </button>
@@ -3947,7 +3963,7 @@ export default function Home() {
                           onClick={() => {
                             commitDraftToResponse("edit");
                           }}
-                          className="inline-flex items-center justify-center rounded-xl border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+                          className="inline-flex min-h-[44px] items-center justify-center rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
                         >
                           Edit
                         </button>
@@ -3957,7 +3973,7 @@ export default function Home() {
                           onClick={() => {
                             redoDraftTranscript();
                           }}
-                          className="inline-flex items-center justify-center rounded-xl border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+                          className="inline-flex min-h-[44px] items-center justify-center rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
                         >
                           Redo
                         </button>
@@ -4161,7 +4177,7 @@ export default function Home() {
                       <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800">
                         <p className="text-xs uppercase tracking-wide text-slate-500">Looks right?</p>
                         <p className="mt-2 whitespace-pre-wrap">{draftTranscript}</p>
-                        <div className="mt-3 flex flex-wrap gap-2">
+                        <div className="mt-3 flex flex-wrap gap-3">
                           <button
                             type="button"
                             disabled={isSubmittingResponse}
@@ -4178,7 +4194,7 @@ export default function Home() {
                                 commitDraftToResponse("use");
                               }
                             }}
-                            className="inline-flex items-center justify-center rounded-xl bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-emerald-300"
+                            className="inline-flex min-h-[44px] items-center justify-center rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-emerald-300"
                           >
                             {isSubmittingResponse ? "Sending..." : "Use this"}
                           </button>
@@ -4186,7 +4202,7 @@ export default function Home() {
                             type="button"
                             disabled={isSubmittingResponse}
                             onClick={() => commitDraftToResponse("edit")}
-                            className="inline-flex items-center justify-center rounded-xl border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+                            className="inline-flex min-h-[44px] items-center justify-center rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
                           >
                             Edit
                           </button>
@@ -4194,7 +4210,7 @@ export default function Home() {
                             type="button"
                             disabled={isSubmittingResponse}
                             onClick={redoDraftTranscript}
-                            className="inline-flex items-center justify-center rounded-xl border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+                            className="inline-flex min-h-[44px] items-center justify-center rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
                           >
                             Redo
                           </button>

@@ -7,7 +7,9 @@ const INVITE_TOKEN_BYTES = 32;
 const OTP_TTL_MINUTES = 10;
 const OTP_COOLDOWN_MINUTES = 5;
 const INVITE_TOKEN_TTL_HOURS = 24;
-const INVITATION_SESSION_TTL_HOURS = 6;
+// Verified invitation session lifetime (httpOnly cookie + DB session). This is distinct
+// from the invite link token TTL. Keep it short to reduce exposure if a device is shared.
+const INVITATION_SESSION_TTL_HOURS = 1;
 
 type InvitationRow = {
   id: string;
