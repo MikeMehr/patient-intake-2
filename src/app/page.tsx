@@ -3209,7 +3209,7 @@ export default function Home() {
                       htmlFor="pmh"
                       className="text-sm font-medium text-slate-800"
                     >
-                      Past Medical History
+                      Past Medical History (Optional)
                     </label>
                     <p className="text-xs text-slate-500">
                       Type it in, or upload a photo/PDF and we’ll extract it below.
