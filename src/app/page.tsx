@@ -3321,7 +3321,7 @@ export default function Home() {
                       htmlFor="current-medications"
                       className="text-sm font-medium text-slate-800"
                     >
-                      Current medications
+                      Current medications (Optional)
                     </label>
                     <p className="text-xs text-slate-500">
                       Type them in, or upload a photo/PDF and we’ll extract them below.
@@ -3431,7 +3431,7 @@ export default function Home() {
                   htmlFor="family-history"
                   className="text-sm font-medium text-slate-800"
                 >
-                  Family history
+                  Family history (Optional)
                 </label>
                 <textarea
                   id="family-history"
@@ -3450,7 +3450,7 @@ export default function Home() {
                   htmlFor="family-doctor"
                   className="text-sm font-medium text-slate-800"
                 >
-                  Family doctor
+                  Family doctor (Optional)
                 </label>
                 <input
                   id="family-doctor"
@@ -3470,7 +3470,7 @@ export default function Home() {
                     htmlFor="pharmacy-name"
                     className="text-sm font-medium text-slate-800"
                   >
-                    Pharmacy name
+                    Pharmacy name (Optional)
                   </label>
                   <input
                     id="pharmacy-name"
