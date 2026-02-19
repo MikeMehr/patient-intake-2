@@ -818,9 +818,6 @@ function PhysicianViewContent() {
       );
       if (!hasAnyInput && parsedRxFromHistory.medications.length > 0) {
         setRxMedications(parsedRxFromHistory.medications.map((row) => makeRxMedicationRow(row)));
-      } else if (!hasAnyInput && parsedRxFromHistory.notes) {
-        setRxMedications([makeRxMedicationRow({ notes: parsedRxFromHistory.notes })]);
-      }
     }
   }, [aiAction, parsedRxFromHistory, rxMedications]);
 
