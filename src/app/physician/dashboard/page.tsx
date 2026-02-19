@@ -21,6 +21,9 @@ export default function PhysicianDashboard() {
     patientName: string;
     patientEmail: string;
     sentAt: string | null;
+    invitationLink: string;
+    openable: boolean;
+    invalidReason: "used" | "revoked" | "expired" | null;
   };
   const [invitations, setInvitations] = useState<Invitation[]>([]);
   const [loading, setLoading] = useState(true);
@@ -140,6 +143,9 @@ export default function PhysicianDashboard() {
               patientName: inv.patientName,
               patientEmail: inv.patientEmail,
               sentAt: inv.sentAt ?? null,
+              invitationLink: inv.invitationLink,
+              openable: Boolean(inv.openable),
+              invalidReason: (inv.invalidReason ?? null) as Invitation["invalidReason"],
             })) || [];
           setInvitations(mapped);
         }
@@ -512,6 +518,20 @@ export default function PhysicianDashboard() {
       } catch (err) {
         setInviteError("Failed to copy link");
       }
+    }
+  };
+
+  const handleCopyInvitationLink = async (link: string) => {
+    const normalized = String(link || "").trim();
+    if (!normalized) return;
+    try {
+      await navigator.clipboard.writeText(normalized);
+      setInviteSuccess("Link copied to clipboard!");
+      setTimeout(() => {
+        setInviteSuccess(null);
+      }, 2000);
+    } catch {
+      setInviteError("Failed to copy link");
     }
   };
 
@@ -997,6 +1017,9 @@ export default function PhysicianDashboard() {
                       Sent At
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
+                      Invitation Link
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
                       Actions
                     </th>
                   </tr>
@@ -1014,6 +1037,38 @@ export default function PhysicianDashboard() {
                         {invitation.sentAt
                           ? new Date(invitation.sentAt).toLocaleString()
                           : "—"}
+                      </td>
+                      <td className="px-6 py-4 text-sm">
+                        {invitation.openable ? (
+                          <div className="flex items-center gap-3 min-w-0">
+                            <a
+                              href={invitation.invitationLink}
+                              target="_blank"
+                              rel="noreferrer noopener"
+                              title={invitation.invitationLink}
+                              className="text-blue-600 hover:text-blue-900 font-medium max-w-[340px] min-w-0 truncate"
+                            >
+                              {invitation.invitationLink}
+                            </a>
+                            <button
+                              type="button"
+                              onClick={() => handleCopyInvitationLink(invitation.invitationLink)}
+                              className="text-slate-700 hover:text-slate-900 font-medium"
+                            >
+                              Copy
+                            </button>
+                          </div>
+                        ) : (
+                          <span className="text-xs text-slate-400">
+                            {invitation.invalidReason === "expired"
+                              ? "Expired"
+                              : invitation.invalidReason === "used"
+                                ? "Used"
+                                : invitation.invalidReason === "revoked"
+                                  ? "Revoked"
+                                  : "—"}
+                          </span>
+                        )}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm">
                         <button
