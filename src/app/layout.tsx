@@ -27,18 +27,25 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        <div
-          aria-hidden="true"
-          className={[
-            "pointer-events-none fixed left-0 top-0 z-50 select-none",
-            // Keep readable without impacting page layouts; also respect iOS safe-area insets.
-            "text-xs font-semibold tracking-wide text-slate-600",
-            "pt-[calc(env(safe-area-inset-top)+0.5rem)] pb-2 pr-4",
-            "pl-[calc(env(safe-area-inset-left)+1rem)]",
-          ].join(" ")}
-        >
-          Health Assist AI
-        </div>
+        <header className="w-full">
+          <div
+            className={[
+              "mx-auto max-w-7xl px-4",
+              // Respect iOS safe-area insets while keeping alignment with gutters.
+              "pt-[calc(env(safe-area-inset-top)+1rem)]",
+              "pl-[calc(env(safe-area-inset-left)+1rem)]",
+              "pr-[calc(env(safe-area-inset-right)+1rem)]",
+              "pb-3",
+            ].join(" ")}
+          >
+            <div
+              aria-hidden="true"
+              className="select-none text-xl font-semibold text-slate-900"
+            >
+              Health Assist AI
+            </div>
+          </div>
+        </header>
         {children}
       </body>
     </html>
