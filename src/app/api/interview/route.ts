@@ -11,6 +11,7 @@ import { logDebug } from "@/lib/secure-logger";
 import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
 import { query } from "@/lib/db";
 import { sanitizeAssistiveClinicalText } from "@/lib/clinical-safety";
+import { detectBodyParts } from "@/lib/body-parts";
 import {
   consumeRateLimit,
   getRequestIp,
@@ -1050,6 +1051,38 @@ Do NOT ask form questions in isolation - integrate them naturally with your clin
     ? `\n\nLANGUAGE PREFERENCE: Conduct all patient-facing questions and messages in ${languageName}. If you cannot reliably produce ${languageName}, fall back to English. Do NOT mix languages.`
     : "";
 
+  // MSK complaints: ensure pain location is assessed using the numbered body diagram.
+  // Client UI shows the diagram only when the assistant explicitly asks location, so
+  // we must reliably generate a location question during the interview.
+  const mskBodyPartSet = new Set([
+    "wrist",
+    "hand",
+    "elbow",
+    "shoulder",
+    "neck",
+    "back",
+    "lower_back",
+    "upper_back",
+    "knee",
+    "ankle",
+    "foot",
+    "hip",
+  ]);
+  const detectedFromCurrentComplaint = typeof currentComplaint === "string" ? detectBodyParts(currentComplaint) : [];
+  const detectedFromChiefComplaint = detectBodyParts(chiefComplaint);
+  const detectedForMsk = detectedFromCurrentComplaint.length > 0
+    ? detectedFromCurrentComplaint
+    : detectedFromChiefComplaint;
+  const isMskComplaint = detectedForMsk.some((bp) => mskBodyPartSet.has(bp.part));
+  const locationAlreadyCovered =
+    topicsCovered.has("location") || patientInformation.mentionedTopics.includes("location");
+  const shouldForceMskLocationNext =
+    isMskComplaint && !forceSummary && allQuestionsAsked.length >= 1 && !locationAlreadyCovered;
+  const mskBodyPartName = detectedForMsk[0]?.name || "affected area";
+  const mskLocationDirective = shouldForceMskLocationNext
+    ? `\n\nCRITICAL MSK LOCATION (DIAGRAM REQUIRED):\n- This is a musculoskeletal pain complaint and location has NOT been assessed yet.\n- Your NEXT question MUST ask the patient to identify the pain location using the numbered body diagram.\n- Use this exact style: \"Looking at the diagram of your ${mskBodyPartName}, which numbered area (1, 2, 3, etc.) corresponds to where you feel the pain? Please click the numbered area or tell me the number.\"\n- IMPORTANT: If the patient has already clearly described the location in their own words, do NOT re-ask; proceed to the next highest-yield MSK question instead (ROM, neurologic symptoms, red flags).\n`
+    : "";
+
   // Build red flag checklist based on complaint type
   const getRedFlagChecklist = (complaint: string): string[] => {
     const complaintLower = complaint.toLowerCase();
@@ -1118,7 +1151,7 @@ Family doctor: ${profile.familyDoctor}
 Documented drug allergies: ${profile.allergies}
 ${patientBackground ? `\nPhysician-provided background: ${patientBackground}` : ""}
 ${imageSection}${labReportSection}${formSection}${medPmhSection}
-${transcriptSection}${transcriptNote}${questionsList}${topicsList}${informationAlreadyProvided}${openEndedReminder}
+${transcriptSection}${transcriptNote}${questionsList}${topicsList}${informationAlreadyProvided}${openEndedReminder}${mskLocationDirective}
 
 CLINICAL INTERVIEW GUIDANCE (You are operating as a Physician Assistant):
 ${physicianGuidanceSection}

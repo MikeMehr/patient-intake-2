@@ -521,7 +521,6 @@ export default function Home() {
   const [showBodyDiagram, setShowBodyDiagram] = useState(false);
   const [selectedBodyParts, setSelectedBodyParts] = useState<Array<{ part: string; side?: "left" | "right" | "both" }>>([]);
   const [selectedDiagramArea, setSelectedDiagramArea] = useState<number | null>(null);
-  const [hasAutoShownBodyDiagram, setHasAutoShownBodyDiagram] = useState(false);
   const [endedEarly, setEndedEarly] = useState(false);
   const [interviewStartTime, setInterviewStartTime] = useState<number | null>(null);
   const interviewStartTimeRef = useRef<number | null>(null);
@@ -977,7 +976,6 @@ export default function Home() {
       setShowBodyDiagram(false);
       setSelectedBodyParts([]);
       setSelectedDiagramArea(null);
-      setHasAutoShownBodyDiagram(false);
     }
   }, [status]);
 
@@ -2688,7 +2686,6 @@ export default function Home() {
     setShowBodyDiagram(false);
     setSelectedBodyParts([]);
     setSelectedDiagramArea(null);
-    setHasAutoShownBodyDiagram(false);
   }
 
   async function searchPharmacy(details?: {
@@ -2843,7 +2840,6 @@ export default function Home() {
       // Check if the AI is asking about pain location with numbered areas
       const locationKeywords = [
         "numbered area",
-        "number",
         "which area",
         "diagram",
         "which number",
@@ -2862,31 +2858,9 @@ export default function Home() {
       if (bodyParts.length === 0) {
         bodyParts = detectBodyParts(chiefComplaint);
       }
-      const isMskBodyPart = bodyParts.some((bp) =>
-        [
-          "wrist",
-          "hand",
-          "elbow",
-          "shoulder",
-          "neck",
-          "back",
-          "lower_back",
-          "upper_back",
-          "knee",
-          "ankle",
-          "foot",
-          "hip",
-        ].includes(bp.part),
-      );
-      const assistantTurnsSoFar = messagesRef.current.filter((m) => m.role === "assistant").length;
-      const shouldAutoShowForMsk =
-        !isAskingLocation &&
-        !hasAutoShownBodyDiagram &&
-        isMskBodyPart &&
-        assistantTurnsSoFar <= 3;
 
-      // Show body diagram if location prompt is detected OR early MSK fallback applies.
-      if (bodyParts.length > 0 && (isAskingLocation || shouldAutoShowForMsk)) {
+      // Only show the diagram when the assistant explicitly asks about location.
+      if (bodyParts.length > 0 && isAskingLocation) {
         const partsToShow = bodyParts.map((bp) => ({
           part: bp.part,
           side: bp.side,
@@ -2894,11 +2868,8 @@ export default function Home() {
         setSelectedBodyParts(partsToShow);
         setShowBodyDiagram(true);
         setSelectedDiagramArea(null);
-        if (shouldAutoShowForMsk) {
-          setHasAutoShownBodyDiagram(true);
-        }
       } else {
-        // Hide diagram if no explicit location prompt and no MSK auto-fallback condition.
+        // Hide diagram unless the assistant is asking location.
         setShowBodyDiagram(false);
         setSelectedBodyParts([]);
       }
