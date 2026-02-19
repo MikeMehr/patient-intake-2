@@ -375,7 +375,7 @@ function PrescriptionPreviewContent() {
               <p className="mt-1 text-sm text-slate-600">
                 Review details before saving, adding to plan, printing, or faxing.
               </p>
-              <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+              <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-[15px] text-amber-900">
                 {CLINICAL_ASSISTIVE_DISCLAIMER}
               </p>
               <p className="mt-2 text-xs font-semibold text-red-700">
