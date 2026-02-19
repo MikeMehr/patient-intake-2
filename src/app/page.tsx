@@ -3637,7 +3637,11 @@ export default function Home() {
                           ) : (
                             <div
                               className={[
-                                "bg-emerald-600 rounded-2xl rounded-tr-sm px-5 py-3 text-white inline-block ml-auto relative group max-w-full",
+                                "bg-emerald-600 rounded-2xl rounded-tr-sm px-5 py-3 text-white ml-auto relative group max-w-full",
+                                // When editing/adding, expand the bubble so the textarea isn't cramped on desktop/tablet.
+                                addingToMessageIndex === index || editingMessageIndex === index
+                                  ? "block w-full"
+                                  : "inline-block",
                                 // Visual affordance: make it obvious when provider is editing a patient message.
                                 editingMessageIndex === index
                                   ? "ring-4 ring-red-300 ring-offset-2 ring-offset-slate-50 bg-emerald-700/90 shadow-sm"
