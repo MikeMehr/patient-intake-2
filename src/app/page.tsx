@@ -450,6 +450,7 @@ export default function Home() {
   const [isHolding, setIsHolding] = useState(false);
   const [micWarning, setMicWarning] = useState<string | null>(null);
   const [isCoarsePointer, setIsCoarsePointer] = useState(false);
+  const [isSmallWidth, setIsSmallWidth] = useState(false);
   const [isEditingDraft, setIsEditingDraft] = useState(false);
   // Note: short "no" auto-submit removed (per request)
   const speechSynthesisRef = useRef<SpeechSynthesisUtterance | null>(null);
@@ -677,6 +678,7 @@ export default function Home() {
   const showReviewActions =
     (showReview || hasPendingSubmission) &&
     (draftTranscript.trim().length > 0 || hasPendingSubmission);
+  const minPatientBubbleRows = isSmallWidth ? 3 : 2;
   useEffect(() => {
   }, [showSubmitBanner, showResponseBox, hasPendingSubmission, isSubmittingResponse, showReview, status]);
   useEffect(() => {
@@ -688,6 +690,22 @@ export default function Home() {
     if (typeof window !== "undefined") {
       const media = window.matchMedia("(pointer: coarse)");
       const handleChange = () => setIsCoarsePointer(media.matches);
+      handleChange();
+      if (media.addEventListener) {
+        media.addEventListener("change", handleChange);
+        return () => media.removeEventListener("change", handleChange);
+      }
+      media.addListener(handleChange);
+      return () => media.removeListener(handleChange);
+    }
+    return undefined;
+  }, []);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      // Tailwind `sm` is 640px; treat <640 as "phone-sized".
+      const media = window.matchMedia("(max-width: 639px)");
+      const handleChange = () => setIsSmallWidth(media.matches);
       handleChange();
       if (media.addEventListener) {
         media.addEventListener("change", handleChange);
@@ -3655,7 +3673,7 @@ export default function Home() {
                                     value={addingContent}
                                     onChange={(e) => setAddingContent(e.target.value)}
                                     className="w-full bg-white text-slate-900 rounded-lg px-3 py-2 text-sm border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500 resize-none min-h-[60px]"
-                                    rows={Math.max(2, addingContent.split('\n').length)}
+                                    rows={Math.max(minPatientBubbleRows, addingContent.split('\n').length)}
                                     placeholder="Add additional comments..."
                                     autoFocus
                                     onKeyDown={(e) => {
@@ -3736,7 +3754,7 @@ export default function Home() {
                                     value={editingContent}
                                     onChange={(e) => setEditingContent(e.target.value)}
                                     className="w-full bg-white text-slate-900 rounded-lg px-3 py-2 text-sm border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500 resize-none min-h-[60px]"
-                                    rows={Math.max(2, editingContent.split('\n').length)}
+                                    rows={Math.max(minPatientBubbleRows, editingContent.split('\n').length)}
                                     autoFocus
                                     onKeyDown={(e) => {
                                       if (e.key === 'Escape') {
