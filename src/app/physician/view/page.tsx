@@ -434,6 +434,32 @@ function PhysicianViewContent() {
     router.push("/physician/dashboard");
   };
 
+  const [reviewing, setReviewing] = useState(false);
+  const [reviewError, setReviewError] = useState<string | null>(null);
+
+  const handleMarkReviewed = async () => {
+    if (!sessionCode) return;
+    setReviewing(true);
+    setReviewError(null);
+    try {
+      const res = await fetch("/api/sessions/reviewed", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionCode }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setReviewError(data?.error || "Failed to mark reviewed");
+        return;
+      }
+      router.push("/physician/dashboard");
+    } catch {
+      setReviewError("Failed to mark reviewed");
+    } finally {
+      setReviewing(false);
+    }
+  };
+
   const handleDelete = async () => {
     if (!sessionCode || !confirm("Are you sure you want to delete this session?")) {
       return;
@@ -1512,6 +1538,14 @@ function PhysicianViewContent() {
                 Back
               </button>
               <button
+                type="button"
+                onClick={handleMarkReviewed}
+                disabled={reviewing || Boolean((session.history as any)?.physicianReviewedAt)}
+                className="px-4 py-2 text-sm font-medium text-emerald-700 bg-white border border-emerald-300 rounded-lg hover:bg-emerald-50 disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                {(session.history as any)?.physicianReviewedAt ? "Reviewed" : reviewing ? "Reviewing..." : "Reviewed"}
+              </button>
+              <button
                 onClick={handleDelete}
                 className="px-4 py-2 text-sm font-medium text-red-700 bg-white border border-red-300 rounded-lg hover:bg-red-50"
               >
@@ -1519,6 +1553,11 @@ function PhysicianViewContent() {
               </button>
             </div>
           </div>
+          {reviewError && (
+            <div className="mt-3 rounded-lg bg-red-50 border border-red-200 px-4 py-2 text-sm text-red-800">
+              {reviewError}
+            </div>
+          )}
         </div>
 
         {/* Patient Information */}

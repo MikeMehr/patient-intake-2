@@ -396,6 +396,7 @@ export async function getSessionsByPhysician(physicianId: string): Promise<Patie
         completed_at, viewed_by_physician, viewed_at
        FROM patient_sessions
        WHERE physician_id = $1
+         AND (history->>'physicianReviewedAt') IS NULL
        ORDER BY completed_at DESC`,
       [physicianId]
     );
