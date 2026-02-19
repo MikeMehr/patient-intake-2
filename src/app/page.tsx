@@ -381,6 +381,7 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [patientName, setPatientName] = useState("");
   const [patientEmail, setPatientEmail] = useState("");
+  const [hasConsented, setHasConsented] = useState(false);
   const [isInvitedFlow, setIsInvitedFlow] = useState(false);
   const [physicianIdValue, setPhysicianIdValue] = useState<string | null>(null);
   const [sessionCode, setSessionCode] = useState<string | null>(null);
@@ -1766,6 +1767,11 @@ export default function Home() {
       setPhysicianIdValue(physicianId);
     }
 
+    if (!hasConsented) {
+      setError("Please confirm the acknowledgement/consent checkbox to proceed.");
+      return;
+    }
+
     const trimmed = chiefComplaint.trim();
     if (trimmed.length < 3) {
       setError("Please describe the complaint in a few words.");
@@ -2918,6 +2924,46 @@ export default function Home() {
               </div>
             )}
             <form onSubmit={handleStart} className="space-y-4">
+              <div className="rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-3 text-sm text-slate-800">
+                <label className="flex items-start gap-3">
+                  <input
+                    type="checkbox"
+                    checked={hasConsented}
+                    disabled={status !== "idle"}
+                    onChange={(event) => {
+                      const next = event.target.checked;
+                      setHasConsented(next);
+                      if (next && error?.toLowerCase().includes("consent")) {
+                        setError(null);
+                      }
+                    }}
+                    className="mt-1 h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 disabled:cursor-not-allowed"
+                  />
+                  <span>
+                    I understand this AI interview does not provide medical advice and does not replace a physician’s
+                    assessment. If this is a medical emergency, I will seek immediate care. I understand my information
+                    will be kept confidential and secure. I agree to the{" "}
+                    <a
+                      href="https://www.health-assist.org/terms"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="font-medium text-emerald-700 underline underline-offset-2 hover:text-emerald-800"
+                    >
+                      Terms of Use
+                    </a>{" "}
+                    and{" "}
+                    <a
+                      href="https://www.health-assist.org/privacy"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="font-medium text-emerald-700 underline underline-offset-2 hover:text-emerald-800"
+                    >
+                      Privacy Policy
+                    </a>{" "}
+                    and consent to proceed.
+                  </span>
+                </label>
+              </div>
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-2">
                 <label
@@ -3059,6 +3105,25 @@ export default function Home() {
                 <p className="text-xs text-slate-500">
                   Assistant questions and patient-facing text will use this language (fallback to English if translation fails).
                 </p>
+              </div>
+
+              <div className="space-y-2">
+                <label
+                  htmlFor="allergies"
+                  className="text-sm font-medium text-slate-800"
+                >
+                  Drug allergies
+                </label>
+                <textarea
+                  id="allergies"
+                  name="allergies"
+                  rows={2}
+                  value={allergies}
+                  disabled={status !== "idle"}
+                  onChange={(event) => setAllergies(event.target.value)}
+                  placeholder='e.g., penicillin (rash) (leave blank for "None")'
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50/60 px-4 py-3 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white disabled:cursor-not-allowed disabled:opacity-70"
+                />
               </div>
 
               <div className="space-y-3 rounded-2xl border border-slate-200 bg-white/60 px-4 py-4">
@@ -3306,26 +3371,6 @@ export default function Home() {
 
               <div className="space-y-2">
                 <label
-                  htmlFor="allergies"
-                  className="text-sm font-medium text-slate-800"
-                >
-                  Drug allergies
-                </label>
-                <textarea
-                  id="allergies"
-                  name="allergies"
-                  rows={2}
-                  value={allergies}
-                  disabled={status !== "idle"}
-                  onChange={(event) => setAllergies(event.target.value)}
-                  placeholder='e.g., penicillin (rash) (leave blank for "None")'
-                  className="w-full rounded-2xl border border-slate-200 bg-slate-50/60 px-4 py-3 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white disabled:cursor-not-allowed disabled:opacity-70"
-                />
-              </div>
-
-
-              <div className="space-y-2">
-                <label
                   htmlFor="family-doctor"
                   className="text-sm font-medium text-slate-800"
                 >
@@ -3495,7 +3540,7 @@ export default function Home() {
                 <button
                   type="submit"
                   className="inline-flex flex-1 items-center justify-center rounded-2xl bg-slate-900 px-5 py-3 text-base font-semibold text-white transition hover:bg-slate-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900 disabled:cursor-not-allowed disabled:bg-slate-400"
-                  disabled={status !== "idle" || chiefComplaint.length < 3}
+                  disabled={status !== "idle" || chiefComplaint.length < 3 || !hasConsented}
                 >
                   Start interview
                 </button>
@@ -3993,9 +4038,9 @@ export default function Home() {
                         </button>
                         <button
                           type="button"
-                          disabled={isSubmittingResponse || hasPendingSubmission}
+                          disabled={isSubmittingResponse || hasPendingSubmission || isEditingDraft}
                           onClick={() => {
-                            toggleDraftEditing();
+                            commitDraftToResponse("edit");
                           }}
                           className={[
                             "inline-flex min-h-[44px] items-center justify-center rounded-xl px-4 py-2 text-sm font-semibold transition",
@@ -4242,7 +4287,7 @@ export default function Home() {
                           <button
                             type="button"
                             disabled={isSubmittingResponse}
-                            onClick={() => toggleDraftEditing()}
+                            onClick={() => commitDraftToResponse("edit")}
                             className={[
                               "inline-flex min-h-[44px] items-center justify-center rounded-xl px-4 py-2 text-sm font-semibold transition",
                               "select-none active:scale-[0.98] active:opacity-90",
