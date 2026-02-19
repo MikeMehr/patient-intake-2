@@ -1,5 +1,5 @@
 import { createHmac, randomBytes, timingSafeEqual } from "crypto";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { query } from "@/lib/db";
 
 export const INVITATION_SESSION_COOKIE = "invitation_session";
@@ -257,17 +257,32 @@ function parseInvitationSessionCookie(cookieValue: string): {
 }
 
 export async function resolveInvitationFromCookie(): Promise<InvitationContext | null> {
-  const cookieStore = await cookies();
   // Some browsers (notably Safari) can send multiple cookies with the same name
-  // when the domain attribute differs (host-only vs parent domain). Try all
-  // candidate values and accept the newest valid session.
-  const candidates = (cookieStore.getAll?.(INVITATION_SESSION_COOKIE) || [])
-    .map((c) => c.value)
-    .filter(Boolean);
+  // when the domain attribute differs (host-only vs parent domain). Next's
+  // cookie helper may collapse duplicates, so we also parse the raw Cookie
+  // header to preserve all values and select the newest valid session.
+  const candidates: string[] = [];
+
+  try {
+    const headerStore = await headers();
+    const cookieHeader = headerStore.get("cookie") || "";
+    const parts = cookieHeader.split(";").map((p) => p.trim());
+    for (const part of parts) {
+      if (part.startsWith(`${INVITATION_SESSION_COOKIE}=`)) {
+        const value = part.slice(`${INVITATION_SESSION_COOKIE}=`.length);
+        if (value) candidates.push(value);
+      }
+    }
+  } catch {
+    // Ignore and fall back to cookies() below.
+  }
+
   if (candidates.length === 0) {
+    const cookieStore = await cookies();
     const rawCookie = cookieStore.get(INVITATION_SESSION_COOKIE)?.value;
     if (rawCookie) candidates.push(rawCookie);
   }
+
   if (candidates.length === 0) return null;
 
   // Prefer the last cookie in the header (most recently set).
