@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import { AppHeader } from "@/components/AppHeader";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -27,25 +28,7 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        <header className="w-full">
-          <div
-            className={[
-              "mx-auto max-w-7xl px-4",
-              // Respect iOS safe-area insets while keeping alignment with gutters.
-              "pt-[calc(env(safe-area-inset-top)+1rem)]",
-              "pl-[calc(env(safe-area-inset-left)+1rem)]",
-              "pr-[calc(env(safe-area-inset-right)+1rem)]",
-              "pb-3",
-            ].join(" ")}
-          >
-            <div
-              aria-hidden="true"
-              className="select-none text-xl font-semibold text-slate-900"
-            >
-              Health Assist AI
-            </div>
-          </div>
-        </header>
+        <AppHeader />
         {children}
       </body>
     </html>
