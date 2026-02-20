@@ -78,25 +78,45 @@ function formatStatusDate(iso: string | null): string | null {
   return new Date(ts).toLocaleString();
 }
 
+type Invitation = {
+  id: string;
+  patientName: string;
+  patientEmail: string;
+  sentAt: string | null;
+  invitationLink: string;
+  openable: boolean;
+  invalidReason: "used" | "revoked" | "expired" | null;
+  activityStatus: InvitationActivityStatus;
+  openedAt: string | null;
+  interviewStartedAt: string | null;
+  otpVerifiedAt: string | null;
+  completedAt: string | null;
+  invitationSessionCreatedAt: string | null;
+  lastAccessedAt: string | null;
+};
+
+function mapInvitationFromApi(inv: any): Invitation {
+  return {
+    id: inv.id,
+    patientName: inv.patientName,
+    patientEmail: inv.patientEmail,
+    sentAt: inv.sentAt ?? null,
+    invitationLink: inv.invitationLink,
+    openable: Boolean(inv.openable),
+    invalidReason: (inv.invalidReason ?? null) as Invitation["invalidReason"],
+    activityStatus: (inv.activityStatus ?? "sent") as Invitation["activityStatus"],
+    openedAt: inv.openedAt ?? null,
+    interviewStartedAt: inv.interviewStartedAt ?? null,
+    otpVerifiedAt: inv.otpVerifiedAt ?? null,
+    completedAt: inv.completedAt ?? null,
+    invitationSessionCreatedAt: inv.invitationSessionCreatedAt ?? null,
+    lastAccessedAt: inv.lastAccessedAt ?? null,
+  };
+}
+
 export default function PhysicianDashboard() {
   const router = useRouter();
   const [sessions, setSessions] = useState<PatientSessionWithChartLink[]>([]);
-  type Invitation = {
-    id: string;
-    patientName: string;
-    patientEmail: string;
-    sentAt: string | null;
-    invitationLink: string;
-    openable: boolean;
-    invalidReason: "used" | "revoked" | "expired" | null;
-    activityStatus: InvitationActivityStatus;
-    openedAt: string | null;
-    interviewStartedAt: string | null;
-    otpVerifiedAt: string | null;
-    completedAt: string | null;
-    invitationSessionCreatedAt: string | null;
-    lastAccessedAt: string | null;
-  };
   const [invitations, setInvitations] = useState<Invitation[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -209,23 +229,7 @@ export default function PhysicianDashboard() {
           setInvitationsError(data?.error || "Failed to load invitations");
           setInvitations([]);
         } else {
-          const mapped =
-            data.invitations?.map((inv: any) => ({
-              id: inv.id,
-              patientName: inv.patientName,
-              patientEmail: inv.patientEmail,
-              sentAt: inv.sentAt ?? null,
-              invitationLink: inv.invitationLink,
-              openable: Boolean(inv.openable),
-              invalidReason: (inv.invalidReason ?? null) as Invitation["invalidReason"],
-              activityStatus: (inv.activityStatus ?? "sent") as Invitation["activityStatus"],
-              openedAt: inv.openedAt ?? null,
-              interviewStartedAt: inv.interviewStartedAt ?? null,
-              otpVerifiedAt: inv.otpVerifiedAt ?? null,
-              completedAt: inv.completedAt ?? null,
-              invitationSessionCreatedAt: inv.invitationSessionCreatedAt ?? null,
-              lastAccessedAt: inv.lastAccessedAt ?? null,
-            })) || [];
+          const mapped = data.invitations?.map(mapInvitationFromApi) || [];
           setInvitations(mapped);
         }
       } catch (err) {
@@ -255,6 +259,10 @@ export default function PhysicianDashboard() {
       return;
     }
     router.push(`/physician/patients/${encodeURIComponent(normalized)}`);
+  };
+
+  const handleOpenTranscription = () => {
+    router.push("/physician/transcription");
   };
 
   const handlePatientLookup = async (e: React.FormEvent) => {
@@ -388,13 +396,7 @@ export default function PhysicianDashboard() {
         const res = await fetch("/api/invitations/list");
         if (res.ok) {
           const data = await res.json();
-          const mapped =
-            data.invitations?.map((inv: any) => ({
-              id: inv.id,
-              patientName: inv.patientName,
-              patientEmail: inv.patientEmail,
-              sentAt: inv.sentAt ?? null,
-            })) || [];
+          const mapped = data.invitations?.map(mapInvitationFromApi) || [];
           setInvitations(mapped);
         }
       } catch {
@@ -644,6 +646,12 @@ export default function PhysicianDashboard() {
                 </p>
               )}
             </div>
+            <button
+              onClick={handleOpenTranscription}
+              className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 mr-2"
+            >
+              Transcription
+            </button>
             <button
               onClick={handleLogout}
               className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50"
