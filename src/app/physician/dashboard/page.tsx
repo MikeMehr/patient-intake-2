@@ -663,7 +663,7 @@ export default function PhysicianDashboard() {
 
         {/* Invite Patient Form */}
         <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6 mb-6">
-          <p className="text-sm font-medium text-slate-700 mb-1">AI Guided patient interview</p>
+          <p className="text-[1.75rem] font-medium text-slate-700 mb-1">AI Guided patient interview</p>
           <h2 className="text-lg font-semibold text-slate-900 mb-4">
             Invite Patient
           </h2>
