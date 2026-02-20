@@ -124,12 +124,38 @@ export async function GET(
       source_session_code: string | null;
       chief_complaint: string | null;
       hpi_json: any;
+      encounter_type: string | null;
+      current_soap_version_id: string | null;
+      soap_subjective: string | null;
+      soap_objective: string | null;
+      soap_assessment: string | null;
+      soap_plan: string | null;
+      soap_lifecycle_state: string | null;
+      soap_version: number | null;
+      soap_finalized_for_export_at: Date | null;
       physician_id: string | null;
       created_at: Date;
     }>(
       `
-      SELECT id, occurred_at, source_session_code, chief_complaint, hpi_json, physician_id, created_at
-      FROM patient_encounters
+      SELECT
+        pe.id,
+        pe.occurred_at,
+        pe.source_session_code,
+        pe.chief_complaint,
+        pe.hpi_json,
+        pe.encounter_type,
+        pe.current_soap_version_id,
+        snv.subjective AS soap_subjective,
+        snv.objective AS soap_objective,
+        snv.assessment AS soap_assessment,
+        snv.plan AS soap_plan,
+        snv.lifecycle_state AS soap_lifecycle_state,
+        snv.version AS soap_version,
+        snv.finalized_for_export_at AS soap_finalized_for_export_at,
+        pe.physician_id,
+        pe.created_at
+      FROM patient_encounters pe
+      LEFT JOIN soap_note_versions snv ON snv.id = pe.current_soap_version_id
       WHERE patient_id = $1
       ORDER BY occurred_at DESC
       `,
@@ -168,7 +194,27 @@ export async function GET(
         physicianId: e.physician_id,
         sourceSessionCode: e.source_session_code,
         chiefComplaint: e.chief_complaint,
-        hpi: e.hpi_json,
+        encounterType: e.encounter_type || "guided_interview",
+        soapVersionId: e.current_soap_version_id,
+        hpi:
+          e.current_soap_version_id && e.soap_subjective != null
+            ? {
+                summary: e.soap_subjective || "",
+                physicalFindings: e.soap_objective
+                  ? [e.soap_objective]
+                  : [],
+                assessment: e.soap_assessment || "",
+                plan: e.soap_plan
+                  ? String(e.soap_plan)
+                      .split("\n")
+                      .map((s) => s.trim())
+                      .filter(Boolean)
+                  : [],
+                soapLifecycleState: e.soap_lifecycle_state || null,
+                soapVersion: e.soap_version || null,
+                finalizedForExportAt: toIso(e.soap_finalized_for_export_at),
+              }
+            : e.hpi_json,
         createdAt: toIso(e.created_at),
       })),
     });
