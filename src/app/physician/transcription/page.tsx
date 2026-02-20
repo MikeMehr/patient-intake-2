@@ -54,6 +54,8 @@ export default function PhysicianTranscriptionPage() {
   const [patientSearchError, setPatientSearchError] = useState<string | null>(null);
   const [patientResults, setPatientResults] = useState<PatientSearchResult[]>([]);
   const [selectedPatient, setSelectedPatient] = useState<PatientSearchResult | null>(null);
+  const [newPatientFullName, setNewPatientFullName] = useState("");
+  const [newPatientDob, setNewPatientDob] = useState("");
   const [chiefComplaint, setChiefComplaint] = useState("");
 
   const [isRecording, setIsRecording] = useState(false);
@@ -76,10 +78,24 @@ export default function PhysicianTranscriptionPage() {
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyItems, setHistoryItems] = useState<TranscriptionListItem[]>([]);
 
-  const canGenerate = useMemo(
-    () => Boolean(selectedPatient?.id) && transcript.trim().length >= 10 && !actionLoading,
-    [selectedPatient?.id, transcript, actionLoading],
+  const hasNewPatientIdentity = useMemo(
+    () => newPatientFullName.trim().length >= 3 && /^\d{4}-\d{2}-\d{2}$/.test(newPatientDob.trim()),
+    [newPatientFullName, newPatientDob],
   );
+  const canGenerate = useMemo(
+    () =>
+      transcript.trim().length >= 10 &&
+      (Boolean(selectedPatient?.id) || hasNewPatientIdentity) &&
+      !actionLoading,
+    [selectedPatient?.id, transcript, hasNewPatientIdentity, actionLoading],
+  );
+  const generateDisabledReason = useMemo(() => {
+    if (transcript.trim().length < 10) return "Add transcript text first.";
+    if (!selectedPatient?.id && !hasNewPatientIdentity) {
+      return "Select existing patient or enter new patient full name and DOB.";
+    }
+    return null;
+  }, [transcript, selectedPatient?.id, hasNewPatientIdentity]);
 
   useEffect(() => {
     void loadHistory();
@@ -272,7 +288,7 @@ export default function PhysicianTranscriptionPage() {
   }
 
   async function generateSoap() {
-    if (!selectedPatient?.id) return;
+    if (!canGenerate) return;
     setActionLoading(true);
     setActionError(null);
     setActionSuccess(null);
@@ -281,7 +297,14 @@ export default function PhysicianTranscriptionPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          patientId: selectedPatient.id,
+          patientId: selectedPatient?.id || undefined,
+          newPatient:
+            !selectedPatient?.id && hasNewPatientIdentity
+              ? {
+                  fullName: newPatientFullName.trim(),
+                  dateOfBirth: newPatientDob.trim(),
+                }
+              : undefined,
           transcript: transcript.trim(),
           chiefComplaint: chiefComplaint.trim() || undefined,
           encounterId: encounterId || undefined,
@@ -304,6 +327,8 @@ export default function PhysicianTranscriptionPage() {
         plan: data?.draft?.plan || "",
       });
       setActionSuccess("SOAP draft generated.");
+      setNewPatientFullName("");
+      setNewPatientDob("");
       await loadHistory();
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "Failed to generate SOAP");
@@ -476,6 +501,32 @@ export default function PhysicianTranscriptionPage() {
                     ))}
                   </div>
                 )}
+                <div className="pt-2 border-t border-slate-200">
+                  <p className="text-xs font-medium text-slate-700 mb-2">
+                    Or add new patient quickly (for patients not yet in Health Assist)
+                  </p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                    <input
+                      type="text"
+                      value={newPatientFullName}
+                      onChange={(e) => {
+                        setNewPatientFullName(e.target.value);
+                        if (e.target.value.trim().length > 0) setSelectedPatient(null);
+                      }}
+                      className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
+                      placeholder="First name Last name"
+                    />
+                    <input
+                      type="date"
+                      value={newPatientDob}
+                      onChange={(e) => {
+                        setNewPatientDob(e.target.value);
+                        if (e.target.value.trim().length > 0) setSelectedPatient(null);
+                      }}
+                      className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
+                    />
+                  </div>
+                </div>
               </div>
 
               <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6 space-y-4">
@@ -516,6 +567,9 @@ export default function PhysicianTranscriptionPage() {
                 >
                   {actionLoading ? "Generating..." : "Generate SOAP"}
                 </button>
+                {generateDisabledReason && (
+                  <p className="text-xs text-slate-500">{generateDisabledReason}</p>
+                )}
               </div>
 
               <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6 space-y-4">

@@ -42,6 +42,42 @@ export async function assertPhysicianCanAccessPatient(params: {
   return { patientName: res.rows[0].full_name };
 }
 
+export async function upsertPatientFromQuickEntry(params: {
+  physicianId: string;
+  scope: Scope;
+  fullName: string;
+  dateOfBirth: string;
+}): Promise<{ patientId: string; patientName: string }> {
+  const normalizedFullName = params.fullName.trim().replace(/\s+/g, " ");
+  const dob = params.dateOfBirth.trim();
+  if (!normalizedFullName || !/^\d{4}-\d{2}-\d{2}$/.test(dob)) {
+    throw new Error("Invalid quick-entry patient identity.");
+  }
+  const { sql, params: scopeParams } = scopeWhere(params.scope, 3);
+  const existing = await query<{ id: string; full_name: string }>(
+    `SELECT p.id, p.full_name
+     FROM patients p
+     WHERE lower(p.full_name) = lower($1)
+       AND p.date_of_birth = $2::date
+       AND ${sql}
+     LIMIT 1`,
+    [normalizedFullName, dob, ...scopeParams],
+  );
+  if (existing.rowCount && existing.rows[0]) {
+    return { patientId: existing.rows[0].id, patientName: existing.rows[0].full_name };
+  }
+
+  const organizationId = "organizationId" in params.scope ? params.scope.organizationId : null;
+  const insert = await query<{ id: string; full_name: string }>(
+    `INSERT INTO patients (
+       organization_id, primary_physician_id, full_name, date_of_birth
+     ) VALUES ($1, $2, $3, $4::date)
+     RETURNING id, full_name`,
+    [organizationId, params.physicianId, normalizedFullName, dob],
+  );
+  return { patientId: insert.rows[0].id, patientName: insert.rows[0].full_name };
+}
+
 export async function createTranscriptionEncounter(params: {
   physicianId: string;
   patientId: string;

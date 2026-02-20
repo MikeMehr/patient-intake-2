@@ -9,6 +9,7 @@ import {
   createSoapDraftVersion,
   createTranscriptionEncounter,
   resolveScopeForPhysician,
+  upsertPatientFromQuickEntry,
   upsertTranscriptionSessionPointer,
 } from "@/lib/transcription-store";
 import { generateSoapFromTranscriptRequestSchema } from "@/lib/transcription-schema";
@@ -67,17 +68,41 @@ export async function POST(request: NextRequest) {
 
     const physicianId = (auth as any).physicianId || auth.userId;
     const scope = await resolveScopeForPhysician(physicianId);
-    const { patientName } = await assertPhysicianCanAccessPatient({
-      physicianId,
-      patientId: parsed.data.patientId,
-      scope,
-    });
+    let patientId = parsed.data.patientId || "";
+    let patientName = "";
+    let identityPath: "existing_patient" | "new_patient_quick_entry" = "existing_patient";
+    if (patientId) {
+      const access = await assertPhysicianCanAccessPatient({
+        physicianId,
+        patientId,
+        scope,
+      });
+      patientName = access.patientName;
+    } else if (parsed.data.newPatient) {
+      const created = await upsertPatientFromQuickEntry({
+        physicianId,
+        scope,
+        fullName: parsed.data.newPatient.fullName,
+        dateOfBirth: parsed.data.newPatient.dateOfBirth,
+      });
+      patientId = created.patientId;
+      patientName = created.patientName;
+      identityPath = "new_patient_quick_entry";
+    } else {
+      status = 400;
+      const res = NextResponse.json(
+        { error: "Select an existing patient or provide new patient full name and date of birth." },
+        { status },
+      );
+      logRequestMeta("/api/physician/transcription/generate", requestId, status, Date.now() - started);
+      return res;
+    }
 
     let encounterId = parsed.data.encounterId || "";
     if (!encounterId) {
       const encounter = await createTranscriptionEncounter({
         physicianId,
-        patientId: parsed.data.patientId,
+        patientId,
         scope,
         chiefComplaint: parsed.data.chiefComplaint || null,
       });
@@ -103,7 +128,7 @@ export async function POST(request: NextRequest) {
 
     const saved = await createSoapDraftVersion({
       encounterId,
-      patientId: parsed.data.patientId,
+      patientId,
       physicianId,
       draft: {
         subjective: String(soap.subjective || "").trim(),
@@ -115,7 +140,7 @@ export async function POST(request: NextRequest) {
     });
     await upsertTranscriptionSessionPointer({
       physicianId,
-      patientId: parsed.data.patientId,
+      patientId,
       encounterId,
       soapVersionId: saved.soapVersionId,
       previewSummary: buildPreview(String(soap.subjective || ""), String(soap.assessment || "")),
@@ -123,7 +148,7 @@ export async function POST(request: NextRequest) {
 
     await logPhysicianPhiAudit({
       physicianId,
-      patientId: parsed.data.patientId,
+      patientId,
       encounterId,
       soapVersionId: saved.soapVersionId,
       eventType: "transcription_soap_generated",
@@ -134,6 +159,7 @@ export async function POST(request: NextRequest) {
         encounterId,
         version: saved.version,
         transcriptLength: parsed.data.transcript.length,
+        identityPath,
       },
     });
 

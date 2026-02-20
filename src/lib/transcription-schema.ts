@@ -8,10 +8,19 @@ export const soapDraftSchema = z.object({
 });
 
 export const generateSoapFromTranscriptRequestSchema = z.object({
-  patientId: z.string().uuid(),
+  patientId: z.string().uuid().optional(),
+  newPatient: z
+    .object({
+      fullName: z.string().trim().min(3).max(200),
+      dateOfBirth: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/),
+    })
+    .optional(),
   transcript: z.string().trim().min(10).max(20000),
   chiefComplaint: z.string().trim().max(1000).optional(),
   encounterId: z.string().uuid().optional(),
+}).refine((data) => Boolean(data.patientId) || Boolean(data.newPatient), {
+  message: "Either patientId or newPatient is required.",
+  path: ["patientId"],
 });
 
 export const saveSoapDraftRequestSchema = z.object({
