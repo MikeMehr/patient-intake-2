@@ -4008,8 +4008,8 @@ export default function Home() {
                 )}
               </div>
               {status === "complete" && !!result?.patientFinalQuestionsComments?.trim() && (
-                <p className="mt-3 text-sm font-medium text-red-600">
-                  You are done. You will soon be contacted by your physician.
+                <p className="mt-3 text-base leading-5 font-medium text-red-600">
+                  You&apos;re all done. Your physician will contact you shortly.
                 </p>
               )}
 
