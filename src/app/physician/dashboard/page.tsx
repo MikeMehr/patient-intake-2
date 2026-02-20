@@ -735,6 +735,7 @@ export default function PhysicianDashboard() {
                   >
                     {emrLookupLoading ? "Fetching..." : "Fetch from EMR"}
                   </button>
+                  <span className="self-center text-sm text-slate-500">(Optional)</span>
                 </div>
                 <p className="text-xs text-slate-500 mt-1">
                   Use name + DOB to find the correct patient in OSCAR.
