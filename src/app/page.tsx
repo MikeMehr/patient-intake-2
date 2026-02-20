@@ -4026,35 +4026,31 @@ export default function Home() {
                               : "border-slate-200",
                           ].join(" ")}
                         >
-                        {draftTranscript.trim().length > 0 && !isEditingDraft ? (
-                          <p className="mt-1 whitespace-pre-wrap">{draftTranscript}</p>
-                        ) : (
-                          <textarea
-                            rows={4}
-                            maxLength={1000}
-                            placeholder="Tap mic to start/stop or type your response."
-                            value={draftTranscript}
-                            autoFocus={isEditingDraft}
-                            disabled={isSubmittingResponse}
-                            onChange={(event) => {
-                              const nextValue = event.target.value;
-                              const nextTrimmedLength = nextValue.trim().length;
-                              if (hasPendingSubmission && nextTrimmedLength > 0) {
-                                setHasPendingSubmission(false);
+                        <textarea
+                          rows={4}
+                          maxLength={1000}
+                          placeholder="Tap mic to start/stop or type your response."
+                          value={draftTranscript}
+                          autoFocus={isEditingDraft}
+                          disabled={isSubmittingResponse}
+                          onChange={(event) => {
+                            const nextValue = event.target.value;
+                            const nextTrimmedLength = nextValue.trim().length;
+                            if (hasPendingSubmission && nextTrimmedLength > 0) {
+                              setHasPendingSubmission(false);
+                            }
+                            if (status === "awaitingPatient") {
+                              if (nextTrimmedLength > 0) {
+                                setShowReview(true);
+                                setMicWarning(null);
+                              } else if (showReview && !draftTranscriptRef.current.trim()) {
+                                setShowReview(false);
                               }
-                              if (status === "awaitingPatient") {
-                                if (nextTrimmedLength > 0) {
-                                  setShowReview(true);
-                                  setMicWarning(null);
-                                } else if (showReview && !draftTranscriptRef.current.trim()) {
-                                  setShowReview(false);
-                                }
-                              }
-                              setDraftTranscript(nextValue);
-                            }}
-                            className="mt-1 w-full resize-none rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
-                          />
-                        )}
+                            }
+                            setDraftTranscript(nextValue);
+                          }}
+                          className="mt-1 w-full resize-none rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
+                        />
                         </div>
                         <button
                           type="button"
@@ -4110,9 +4106,9 @@ export default function Home() {
                         </button>
                         <button
                           type="button"
-                          disabled={isSubmittingResponse || hasPendingSubmission || isEditingDraft}
+                          disabled={isSubmittingResponse || hasPendingSubmission}
                           onClick={() => {
-                            commitDraftToResponse("edit");
+                            toggleDraftEditing();
                           }}
                           className={[
                             "inline-flex min-h-[44px] items-center justify-center rounded-xl px-4 py-2 text-sm font-semibold transition",
@@ -4123,7 +4119,7 @@ export default function Home() {
                             "disabled:cursor-not-allowed disabled:opacity-60",
                           ].join(" ")}
                         >
-                          {isEditingDraft ? "Editing" : "Edit"}
+                          {isEditingDraft ? "Done editing" : "Edit"}
                         </button>
                         <button
                           type="button"
