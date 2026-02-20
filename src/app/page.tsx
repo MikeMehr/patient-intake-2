@@ -4007,6 +4007,11 @@ export default function Home() {
                   ))
                 )}
               </div>
+              {status === "complete" && !!result?.patientFinalQuestionsComments?.trim() && (
+                <p className="mt-3 text-sm font-medium text-red-600">
+                  You are done. You will soon be contacted by your physician.
+                </p>
+              )}
 
               <form
                 onSubmit={handlePatientSubmit}
@@ -4197,7 +4202,7 @@ export default function Home() {
                       <div className="flex items-center gap-3">
                         {/* Thinking indicator and Paused status */}
                         {status === "awaitingAi" && !isPaused && (
-                          <span className="text-sm text-slate-500">Thinking…</span>
+                          <span className="text-sm text-slate-500 animate-pulse">Thinking…</span>
                         )}
                         {status === "paused" && (
                           <span className="text-sm text-slate-500">
