@@ -676,41 +676,48 @@ export default function PhysicianDashboard() {
           >
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {/* Keep keyboard tab order: Name -> Email -> DOB */}
-              <div>
-                <label
-                  htmlFor="patientName"
-                  className="block text-sm font-medium text-slate-700 mb-1"
-                >
-                  Patient Name
-                </label>
-                <input
-                  id="patientName"
-                  type="text"
-                  value={invitePatientName}
-                  onChange={(e) => setInvitePatientName(e.target.value)}
-                  required
-                  disabled={inviteLoading}
-                  className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200 disabled:cursor-not-allowed disabled:opacity-70"
-                  placeholder="Enter patient name"
-                />
-              </div>
-              <div>
-                <label
-                  htmlFor="patientEmail"
-                  className="block text-sm font-medium text-slate-700 mb-1"
-                >
-                  Patient Email
-                </label>
-                <input
-                  id="patientEmail"
-                  type="email"
-                  value={invitePatientEmail}
-                  onChange={(e) => setInvitePatientEmail(e.target.value)}
-                  required
-                  disabled={inviteLoading}
-                  className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200 disabled:cursor-not-allowed disabled:opacity-70"
-                  placeholder="patient@example.com"
-                />
+              <div className="md:col-span-2 rounded-xl border border-slate-300 bg-slate-50/60 p-4">
+                <p className="text-xs font-medium uppercase tracking-wide text-slate-500 mb-3">
+                  Required to invite patient
+                </p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label
+                      htmlFor="patientName"
+                      className="block text-sm font-medium text-slate-700 mb-1"
+                    >
+                      Patient Name
+                    </label>
+                    <input
+                      id="patientName"
+                      type="text"
+                      value={invitePatientName}
+                      onChange={(e) => setInvitePatientName(e.target.value)}
+                      required
+                      disabled={inviteLoading}
+                      className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200 disabled:cursor-not-allowed disabled:opacity-70"
+                      placeholder="Enter patient name"
+                    />
+                  </div>
+                  <div>
+                    <label
+                      htmlFor="patientEmail"
+                      className="block text-sm font-medium text-slate-700 mb-1"
+                    >
+                      Patient Email
+                    </label>
+                    <input
+                      id="patientEmail"
+                      type="email"
+                      value={invitePatientEmail}
+                      onChange={(e) => setInvitePatientEmail(e.target.value)}
+                      required
+                      disabled={inviteLoading}
+                      className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200 disabled:cursor-not-allowed disabled:opacity-70"
+                      placeholder="patient@example.com"
+                    />
+                  </div>
+                </div>
               </div>
               <div className="md:col-span-2">
                 <label
