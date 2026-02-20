@@ -370,6 +370,36 @@ export async function updateSessionPatientProfilePharmacyFields(
 }
 
 /**
+ * Persist the English translation of the patient's final questions/comments in history JSONB.
+ * This is used to avoid repeated translation calls on the physician view.
+ */
+export async function updateSessionFinalCommentsEnglish(
+  sessionCode: string,
+  englishText: string
+): Promise<boolean> {
+  const trimmed = englishText.trim();
+  if (!trimmed) return false;
+
+  try {
+    const result = await query(
+      `UPDATE patient_sessions
+       SET history = jsonb_set(
+         COALESCE(history, '{}'::jsonb),
+         '{patientFinalQuestionsCommentsEnglish}',
+         to_jsonb($2::text),
+         true
+       )
+       WHERE session_code = $1`,
+      [sessionCode, trimmed]
+    );
+    return (result.rowCount ?? 0) > 0;
+  } catch (error) {
+    console.error("[session-store] Error updating final comments English:", error);
+    throw error;
+  }
+}
+
+/**
  * Get all sessions for a specific physician
  */
 export async function getSessionsByPhysician(physicianId: string): Promise<PatientSession[]> {

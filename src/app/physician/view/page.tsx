@@ -98,6 +98,8 @@ function PhysicianViewContent() {
   const [session, setSession] = useState<PatientSession | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [finalCommentsTranslating, setFinalCommentsTranslating] = useState(false);
+  const lastFinalCommentsTranslateKeyRef = useRef<string | null>(null);
   const [isEditingHpi, setIsEditingHpi] = useState(false);
   const [hpiSummaryDraft, setHpiSummaryDraft] = useState("");
   const [hpiAssessmentDraft, setHpiAssessmentDraft] = useState("");
@@ -429,6 +431,64 @@ function PhysicianViewContent() {
         setLoading(false);
       });
   }, [sessionCode, router]);
+
+  useEffect(() => {
+    if (!sessionCode || !session) return;
+
+    const original = session.history?.patientFinalQuestionsComments?.trim() || "";
+    const english = session.history?.patientFinalQuestionsCommentsEnglish?.trim() || "";
+    if (!original || english) return;
+
+    const key = `${sessionCode}::${original}`;
+    if (lastFinalCommentsTranslateKeyRef.current === key) return;
+    lastFinalCommentsTranslateKeyRef.current = key;
+
+    let isActive = true;
+    setFinalCommentsTranslating(true);
+    fetch("/api/physician/translate-final-comments", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sessionCode }),
+    })
+      .then(async (res) => {
+        const payload = (await res.json().catch(() => ({}))) as {
+          translation?: string;
+          error?: string;
+        };
+        if (!res.ok) {
+          throw new Error(payload.error || "Translation failed.");
+        }
+        const translated = (payload.translation || "").trim();
+        if (!translated) return;
+        if (!isActive) return;
+
+        setSession((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            history: {
+              ...prev.history,
+              patientFinalQuestionsCommentsEnglish: translated,
+            },
+          };
+        });
+      })
+      .catch((err) => {
+        // Fall back to original text if translation fails.
+        console.warn("[physician/view] Final comments translation failed:", err);
+      })
+      .finally(() => {
+        if (isActive) setFinalCommentsTranslating(false);
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, [
+    sessionCode,
+    session?.history?.patientFinalQuestionsComments,
+    session?.history?.patientFinalQuestionsCommentsEnglish,
+  ]);
 
   const handleBack = () => {
     router.push("/physician/dashboard");
@@ -1724,7 +1784,11 @@ function PhysicianViewContent() {
                       Patient&apos;s final questions/comments
                     </p>
                     <p className="text-base text-slate-900 whitespace-pre-wrap">
-                      {session.history.patientFinalQuestionsComments}
+                      {session.history.patientFinalQuestionsCommentsEnglish?.trim()
+                        ? session.history.patientFinalQuestionsCommentsEnglish
+                        : finalCommentsTranslating
+                          ? "Translating to English..."
+                          : session.history.patientFinalQuestionsComments}
                     </p>
                   </div>
                 )}

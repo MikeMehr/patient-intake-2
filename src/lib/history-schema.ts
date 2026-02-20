@@ -22,6 +22,10 @@ export const historyResponseSchema = z.object({
   assessment: z.string().min(10).max(1500),
   plan: z.array(z.string()).min(1).max(6),
   patientFinalQuestionsComments: z.string().min(1).max(2000).optional(),
+  // The language used by the patient during the guided interview (e.g. "fa", "en").
+  interviewLanguage: z.string().min(2).max(12).optional(),
+  // English-only view for clinician; persisted to avoid repeated translation calls.
+  patientFinalQuestionsCommentsEnglish: z.string().min(1).max(4000).optional(),
 });
 
 export type HistoryResponse = z.infer<typeof historyResponseSchema>;

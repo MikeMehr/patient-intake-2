@@ -11,6 +11,7 @@ import {
 import type { PatientSession } from "@/lib/session-store";
 import type { HistoryResponse } from "@/lib/history-schema";
 import type { PatientProfile } from "@/lib/interview-schema";
+import { getAzureOpenAIClient } from "@/lib/azure-openai";
 import { logDebug } from "@/lib/secure-logger";
 import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
 import {
@@ -21,6 +22,27 @@ import {
   resolveInvitationFromCookie,
 } from "@/lib/invitation-security";
 import { createEncounterFromSession, upsertPatientFromSession } from "@/lib/patient-store";
+
+async function translatePatientTextToEnglish(text: string): Promise<string> {
+  const trimmed = text.trim();
+  if (!trimmed) return "";
+
+  const azure = getAzureOpenAIClient();
+  const instruction =
+    "You are a medical translation assistant. Translate the patient's message into English. " +
+    "Return only the English translation. Preserve medical meaning. Keep it concise.";
+
+  const completion = await azure.client.chat.completions.create({
+    model: azure.deployment,
+    messages: [
+      { role: "system", content: instruction },
+      { role: "user", content: trimmed },
+    ],
+    max_completion_tokens: 600,
+  });
+
+  return completion.choices?.[0]?.message?.content?.trim() || trimmed;
+}
 
 /**
  * GET /api/sessions?code=xxx
@@ -170,6 +192,39 @@ export async function POST(request: Request) {
     const patientEmail = invitation.patientEmail;
     const patientName = invitation.patientName;
     const sessionCode = generateSessionCode();
+
+    // Best-effort: persist an English translation of the patient's final free-text comment.
+    // (Physician view wants English-only, but should still work if translation is unavailable.)
+    let historyToStore: HistoryResponse = history;
+    try {
+      const originalFinal = history?.patientFinalQuestionsComments?.trim() || "";
+      const hasEnglish =
+        typeof history?.patientFinalQuestionsCommentsEnglish === "string" &&
+        history.patientFinalQuestionsCommentsEnglish.trim().length > 0;
+      const languageCode = (history?.interviewLanguage || "").trim().toLowerCase();
+      const interviewIsEnglish = languageCode.startsWith("en");
+
+      if (originalFinal && !hasEnglish) {
+        if (interviewIsEnglish) {
+          historyToStore = {
+            ...history,
+            patientFinalQuestionsCommentsEnglish: originalFinal,
+          };
+        } else if (process.env.HIPAA_MODE !== "true") {
+          const translated = await translatePatientTextToEnglish(originalFinal);
+          if (translated.trim()) {
+            historyToStore = {
+              ...history,
+              patientFinalQuestionsCommentsEnglish: translated.trim(),
+            };
+          }
+        }
+      }
+    } catch (err) {
+      // Never block session saving on translation failure.
+      console.error("[api/sessions] Final comments translation failed:", err);
+      historyToStore = history;
+    }
     
     // Ensure transcript is an array if provided
     // Validate transcript structure if it exists
@@ -193,7 +248,7 @@ export async function POST(request: Request) {
       patientName,
       chiefComplaint,
       patientProfile,
-      history,
+      history: historyToStore,
       completedAt: new Date(),
       physicianId: validatedPhysicianId,
       viewedByPhysician: false,
@@ -226,7 +281,7 @@ export async function POST(request: Request) {
         occurredAt: session.completedAt,
         sessionCode,
         chiefComplaint,
-        history,
+        history: historyToStore,
       });
     } catch (err) {
       console.error("[api/sessions] Failed to upsert patient/encounter from session:", err);

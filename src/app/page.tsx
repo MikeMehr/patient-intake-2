@@ -13,6 +13,7 @@ import {
   normalizeLanguageCode,
 } from "@/lib/speech-language";
 import BodyPartDiagram from "@/components/BodyPartDiagram";
+import CollapsibleSection from "@/components/CollapsibleSection";
 import { useEffect, useRef, useState } from "react";
 import { z } from "zod";
 
@@ -2386,7 +2387,14 @@ export default function Home() {
             patientEmail: finalPatientEmail,
             chiefComplaint,
             patientProfile: lockedProfile,
-            history: { ...historyResult, labReportSummary: labReportSummary || undefined, previousLabReportSummary: previousLabReportSummary || undefined, formSummary: formSummary || undefined, medPmhSummary: medPmhSummary || undefined },
+            history: {
+              ...historyResult,
+              interviewLanguage: language,
+              labReportSummary: labReportSummary || undefined,
+              previousLabReportSummary: previousLabReportSummary || undefined,
+              formSummary: formSummary || undefined,
+              medPmhSummary: medPmhSummary || undefined,
+            },
             imageSummary: imageSummary || undefined,
             imageUrl: base64String,
             imageName: selectedImage.name,
@@ -2441,7 +2449,14 @@ export default function Home() {
         patientEmail: finalPatientEmail,
         chiefComplaint,
         patientProfile: lockedProfile,
-        history: { ...historyResult, labReportSummary: labReportSummary || undefined, previousLabReportSummary: previousLabReportSummary || undefined, formSummary: formSummary || undefined, medPmhSummary: medPmhSummary || undefined },
+        history: {
+          ...historyResult,
+          interviewLanguage: language,
+          labReportSummary: labReportSummary || undefined,
+          previousLabReportSummary: previousLabReportSummary || undefined,
+          formSummary: formSummary || undefined,
+          medPmhSummary: medPmhSummary || undefined,
+        },
         imageSummary: imageSummary || undefined,
         imageUrl: undefined,
         imageName: undefined,
@@ -3173,237 +3188,235 @@ export default function Home() {
                 />
               </div>
 
-              <div className="space-y-3 rounded-2xl border border-slate-200 bg-white/60 px-4 py-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="space-y-1">
-                    <label
-                      htmlFor="pmh"
-                      className="text-sm font-medium text-slate-800"
-                    >
-                      Past Medical History (Optional)
-                    </label>
-                    <p className="text-xs text-slate-500">
-                      Type it in, or upload a photo/PDF and we’ll extract it below.
-                    </p>
-                  </div>
-                  {pmhPreview && (
+              <CollapsibleSection
+                id="pmh-section"
+                title="Past Medical History (Optional)"
+                description="Type it in, or upload a photo/PDF and we’ll extract it below."
+                previewText={pmh.trim() ? pmh : pmhExtracted}
+                headerRight={
+                  pmhPreview ? (
                     <img
                       src={pmhPreview}
                       alt="PMH preview"
                       className="h-12 w-12 rounded-lg object-cover border border-slate-200"
                     />
-                  )}
-                </div>
-                <textarea
-                  id="pmh"
-                  name="pmh"
-                  rows={2}
-                  value={pmh}
-                  disabled={status !== "idle"}
-                  onChange={(event) => setPmh(event.target.value)}
-                  placeholder="e.g., asthma, hypertension on lisinopril (leave blank for 'None')"
-                  className="w-full rounded-2xl border border-slate-200 bg-slate-50/60 px-4 py-3 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white disabled:cursor-not-allowed disabled:opacity-70"
-                />
+                  ) : null
+                }
+              >
                 <div className="space-y-2">
-                  <input
-                    type="file"
-                    accept="image/*,.pdf"
+                  <textarea
+                    id="pmh"
+                    name="pmh"
+                    rows={2}
+                    value={pmh}
                     disabled={status !== "idle"}
-                    onChange={async (event) => {
-                      const file = event.target.files?.[0] ?? null;
-                      if (pmhPreview) {
-                        URL.revokeObjectURL(pmhPreview);
-                      }
-                      if (!file) {
-                        setPmhPhoto(null);
-                        setPmhPreview(null);
-                        setPmhExtracted("");
-                        return;
-                      }
-                      if (file.size > 6 * 1024 * 1024) {
-                        setError("File too large (max 6MB). Please choose a smaller/clearer image or PDF.");
-                        return;
-                      }
-                      const previewUrl = URL.createObjectURL(file);
-                      setPmhPhoto(file);
-                      setPmhPreview(previewUrl);
-                      setAnalyzingPmh(true);
-                      setPmhExtracted("");
-                      try {
-                        const formData = new FormData();
-                        formData.append("image", file);
-                        const response = await fetch("/api/analyze-med-pmh", {
-                          method: "POST",
-                          body: formData,
-                        });
-                        if (!response.ok) {
-                          const errJson = await response.json().catch(() => ({}));
-                          throw new Error(errJson.error || errJson.details || "Failed to analyze photo.");
-                        }
-                        const data = (await response.json()) as { summary?: string };
-                        if (data.summary) {
-                          const summary = data.summary.trim();
-                          const parsed = parseMedPmhSummary(summary);
-                          const pmhOnly = parsed.pmh || summary;
-                          setPmhExtracted(pmhOnly);
-                          if (!pmh.trim()) {
-                            setPmh(pmhOnly);
-                          }
-                        }
-                      } catch (err) {
-                        console.error("[page.tsx] PMH photo analysis error:", err);
-                        setError(
-                          err instanceof Error
-                            ? err.message
-                            : "Failed to analyze the photo. Please try again."
-                        );
-                      } finally {
-                        setAnalyzingPmh(false);
-                      }
-                    }}
-                    className="block w-full text-sm text-slate-700 file:mr-3 file:rounded-md file:border file:border-slate-200 file:bg-white file:px-3 file:py-2 file:text-sm file:font-medium file:text-slate-700 hover:file:border-slate-300 hover:file:bg-slate-50 disabled:cursor-not-allowed"
+                    onChange={(event) => setPmh(event.target.value)}
+                    aria-label="Past medical history"
+                    placeholder="e.g., asthma, hypertension on lisinopril (leave blank for 'None')"
+                    className="w-full rounded-2xl border border-slate-200 bg-slate-50/60 px-4 py-3 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white disabled:cursor-not-allowed disabled:opacity-70"
                   />
-                  {analyzingPmh && (
-                    <p className="text-xs text-slate-500">Analyzing file…</p>
-                  )}
                   <div className="space-y-2">
-                    <label className="text-sm font-medium text-slate-800">
-                      AI-extracted PMH (editable)
-                    </label>
-                    <textarea
-                      rows={3}
-                      value={pmhExtracted}
+                    <input
+                      type="file"
+                      accept="image/*,.pdf"
                       disabled={status !== "idle"}
-                      onChange={(e) => setPmhExtracted(e.target.value)}
-                      placeholder="Extracted PMH will appear here. Edit freely."
-                      className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white disabled:cursor-not-allowed disabled:opacity-70"
+                      aria-label="Upload PMH photo or PDF"
+                      onChange={async (event) => {
+                        const file = event.target.files?.[0] ?? null;
+                        if (pmhPreview) {
+                          URL.revokeObjectURL(pmhPreview);
+                        }
+                        if (!file) {
+                          setPmhPhoto(null);
+                          setPmhPreview(null);
+                          setPmhExtracted("");
+                          return;
+                        }
+                        if (file.size > 6 * 1024 * 1024) {
+                          setError(
+                            "File too large (max 6MB). Please choose a smaller/clearer image or PDF."
+                          );
+                          return;
+                        }
+                        const previewUrl = URL.createObjectURL(file);
+                        setPmhPhoto(file);
+                        setPmhPreview(previewUrl);
+                        setAnalyzingPmh(true);
+                        setPmhExtracted("");
+                        try {
+                          const formData = new FormData();
+                          formData.append("image", file);
+                          const response = await fetch("/api/analyze-med-pmh", {
+                            method: "POST",
+                            body: formData,
+                          });
+                          if (!response.ok) {
+                            const errJson = await response.json().catch(() => ({}));
+                            throw new Error(
+                              errJson.error || errJson.details || "Failed to analyze photo."
+                            );
+                          }
+                          const data = (await response.json()) as { summary?: string };
+                          if (data.summary) {
+                            const summary = data.summary.trim();
+                            const parsed = parseMedPmhSummary(summary);
+                            const pmhOnly = parsed.pmh || summary;
+                            setPmhExtracted(pmhOnly);
+                            if (!pmh.trim()) {
+                              setPmh(pmhOnly);
+                            }
+                          }
+                        } catch (err) {
+                          console.error("[page.tsx] PMH photo analysis error:", err);
+                          setError(
+                            err instanceof Error
+                              ? err.message
+                              : "Failed to analyze the photo. Please try again."
+                          );
+                        } finally {
+                          setAnalyzingPmh(false);
+                        }
+                      }}
+                      className="block w-full text-sm text-slate-700 file:mr-3 file:rounded-md file:border file:border-slate-200 file:bg-white file:px-3 file:py-2 file:text-sm file:font-medium file:text-slate-700 hover:file:border-slate-300 hover:file:bg-slate-50 disabled:cursor-not-allowed"
                     />
-                    <p className="text-[11px] text-slate-500">
-                      You can edit this text. It will be shared with the assistant and your clinician.
-                    </p>
+                    {analyzingPmh && <p className="text-xs text-slate-500">Analyzing file…</p>}
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-slate-800">
+                        AI-extracted PMH (editable)
+                      </label>
+                      <textarea
+                        rows={3}
+                        value={pmhExtracted}
+                        disabled={status !== "idle"}
+                        onChange={(e) => setPmhExtracted(e.target.value)}
+                        placeholder="Extracted PMH will appear here. Edit freely."
+                        className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white disabled:cursor-not-allowed disabled:opacity-70"
+                      />
+                      <p className="text-[11px] text-slate-500">
+                        You can edit this text. It will be shared with the assistant and your clinician.
+                      </p>
+                    </div>
                   </div>
                 </div>
-              </div>
+              </CollapsibleSection>
 
-              <div className="space-y-3 rounded-2xl border border-slate-200 bg-white/60 px-4 py-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="space-y-1">
-                    <label
-                      htmlFor="current-medications"
-                      className="text-sm font-medium text-slate-800"
-                    >
-                      Current medications (Optional)
-                    </label>
-                    <p className="text-xs text-slate-500">
-                      Type them in, or upload a photo/PDF and we’ll extract them below.
-                    </p>
-                  </div>
-                  {medListPreview && (
+              <CollapsibleSection
+                id="current-medications-section"
+                title="Current medications (Optional)"
+                description="Type them in, or upload a photo/PDF and we’ll extract them below."
+                previewText={currentMedications.trim() ? currentMedications : medListExtracted}
+                headerRight={
+                  medListPreview ? (
                     <img
                       src={medListPreview}
                       alt="Medication list preview"
                       className="h-12 w-12 rounded-lg object-cover border border-slate-200"
                     />
-                  )}
-                </div>
-                <textarea
-                  id="current-medications"
-                  name="currentMedications"
-                  rows={2}
-                  value={currentMedications}
-                  disabled={status !== "idle"}
-                  onChange={(event) => setCurrentMedications(event.target.value)}
-                  placeholder="e.g., amlodipine 5 mg daily, metformin 500 mg BID (leave blank for 'None')"
-                  className="w-full rounded-2xl border border-slate-200 bg-slate-50/60 px-4 py-3 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white disabled:cursor-not-allowed disabled:opacity-70"
-                />
+                  ) : null
+                }
+              >
                 <div className="space-y-2">
-                  <input
-                    type="file"
-                    accept="image/*,.pdf"
+                  <textarea
+                    id="current-medications"
+                    name="currentMedications"
+                    rows={2}
+                    value={currentMedications}
                     disabled={status !== "idle"}
-                    onChange={async (event) => {
-                      const file = event.target.files?.[0] ?? null;
-                      if (medListPreview) {
-                        URL.revokeObjectURL(medListPreview);
-                      }
-                      if (!file) {
-                        setMedListPhoto(null);
-                        setMedListPreview(null);
-                        setMedListExtracted("");
-                        return;
-                      }
-                      if (file.size > 6 * 1024 * 1024) {
-                        setError("File too large (max 6MB). Please choose a smaller/clearer image or PDF.");
-                        return;
-                      }
-                      const previewUrl = URL.createObjectURL(file);
-                      setMedListPhoto(file);
-                      setMedListPreview(previewUrl);
-                      setAnalyzingMedList(true);
-                      setMedListExtracted("");
-                      try {
-                        const formData = new FormData();
-                        formData.append("image", file);
-                        const response = await fetch("/api/analyze-med-pmh", {
-                          method: "POST",
-                          body: formData,
-                        });
-                        if (!response.ok) {
-                          const errJson = await response.json().catch(() => ({}));
-                          throw new Error(errJson.error || errJson.details || "Failed to analyze photo.");
-                        }
-                        const data = (await response.json()) as { summary?: string };
-                        if (data.summary) {
-                          const summary = data.summary.trim();
-                          const parsed = parseMedPmhSummary(summary);
-                          const medsOnly = parsed.meds || summary;
-                          setMedListExtracted(medsOnly);
-                          if (!currentMedications.trim()) {
-                            setCurrentMedications(medsOnly);
-                          }
-                        }
-                      } catch (err) {
-                        console.error("[page.tsx] Med list photo analysis error:", err);
-                        setError(
-                          err instanceof Error
-                            ? err.message
-                            : "Failed to analyze the photo. Please try again."
-                        );
-                      } finally {
-                        setAnalyzingMedList(false);
-                      }
-                    }}
-                    className="block w-full text-sm text-slate-700 file:mr-3 file:rounded-md file:border file:border-slate-200 file:bg-white file:px-3 file:py-2 file:text-sm file:font-medium file:text-slate-700 hover:file:border-slate-300 hover:file:bg-slate-50 disabled:cursor-not-allowed"
+                    onChange={(event) => setCurrentMedications(event.target.value)}
+                    aria-label="Current medications"
+                    placeholder="e.g., amlodipine 5 mg daily, metformin 500 mg BID (leave blank for 'None')"
+                    className="w-full rounded-2xl border border-slate-200 bg-slate-50/60 px-4 py-3 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white disabled:cursor-not-allowed disabled:opacity-70"
                   />
-                  {analyzingMedList && (
-                    <p className="text-xs text-slate-500">Analyzing file…</p>
-                  )}
                   <div className="space-y-2">
-                    <label className="text-sm font-medium text-slate-800">
-                      AI-extracted medications (editable)
-                    </label>
-                    <textarea
-                      rows={3}
-                      value={medListExtracted}
+                    <input
+                      type="file"
+                      accept="image/*,.pdf"
                       disabled={status !== "idle"}
-                      onChange={(e) => setMedListExtracted(e.target.value)}
-                      placeholder="Extracted medications will appear here. Edit freely."
-                      className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white disabled:cursor-not-allowed disabled:opacity-70"
+                      aria-label="Upload medication list photo or PDF"
+                      onChange={async (event) => {
+                        const file = event.target.files?.[0] ?? null;
+                        if (medListPreview) {
+                          URL.revokeObjectURL(medListPreview);
+                        }
+                        if (!file) {
+                          setMedListPhoto(null);
+                          setMedListPreview(null);
+                          setMedListExtracted("");
+                          return;
+                        }
+                        if (file.size > 6 * 1024 * 1024) {
+                          setError(
+                            "File too large (max 6MB). Please choose a smaller/clearer image or PDF."
+                          );
+                          return;
+                        }
+                        const previewUrl = URL.createObjectURL(file);
+                        setMedListPhoto(file);
+                        setMedListPreview(previewUrl);
+                        setAnalyzingMedList(true);
+                        setMedListExtracted("");
+                        try {
+                          const formData = new FormData();
+                          formData.append("image", file);
+                          const response = await fetch("/api/analyze-med-pmh", {
+                            method: "POST",
+                            body: formData,
+                          });
+                          if (!response.ok) {
+                            const errJson = await response.json().catch(() => ({}));
+                            throw new Error(
+                              errJson.error || errJson.details || "Failed to analyze photo."
+                            );
+                          }
+                          const data = (await response.json()) as { summary?: string };
+                          if (data.summary) {
+                            const summary = data.summary.trim();
+                            const parsed = parseMedPmhSummary(summary);
+                            const medsOnly = parsed.meds || summary;
+                            setMedListExtracted(medsOnly);
+                            if (!currentMedications.trim()) {
+                              setCurrentMedications(medsOnly);
+                            }
+                          }
+                        } catch (err) {
+                          console.error("[page.tsx] Med list photo analysis error:", err);
+                          setError(
+                            err instanceof Error
+                              ? err.message
+                              : "Failed to analyze the photo. Please try again."
+                          );
+                        } finally {
+                          setAnalyzingMedList(false);
+                        }
+                      }}
+                      className="block w-full text-sm text-slate-700 file:mr-3 file:rounded-md file:border file:border-slate-200 file:bg-white file:px-3 file:py-2 file:text-sm file:font-medium file:text-slate-700 hover:file:border-slate-300 hover:file:bg-slate-50 disabled:cursor-not-allowed"
                     />
-                    <p className="text-[11px] text-slate-500">
-                      You can edit this text. It will be shared with the assistant and your clinician.
-                    </p>
+                    {analyzingMedList && <p className="text-xs text-slate-500">Analyzing file…</p>}
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-slate-800">
+                        AI-extracted medications (editable)
+                      </label>
+                      <textarea
+                        rows={3}
+                        value={medListExtracted}
+                        disabled={status !== "idle"}
+                        onChange={(e) => setMedListExtracted(e.target.value)}
+                        placeholder="Extracted medications will appear here. Edit freely."
+                        className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white disabled:cursor-not-allowed disabled:opacity-70"
+                      />
+                      <p className="text-[11px] text-slate-500">
+                        You can edit this text. It will be shared with the assistant and your clinician.
+                      </p>
+                    </div>
                   </div>
                 </div>
-              </div>
+              </CollapsibleSection>
 
-              <div className="space-y-2">
-                <label
-                  htmlFor="family-history"
-                  className="text-sm font-medium text-slate-800"
-                >
-                  Family history (Optional)
-                </label>
+              <CollapsibleSection
+                id="family-history-section"
+                title="Family history (Optional)"
+                previewText={familyHistory}
+              >
                 <textarea
                   id="family-history"
                   name="familyHistory"
@@ -3411,18 +3424,17 @@ export default function Home() {
                   value={familyHistory}
                   disabled={status !== "idle"}
                   onChange={(event) => setFamilyHistory(event.target.value)}
+                  aria-label="Family history"
                   placeholder="e.g., mother with HTN, father with type 2 diabetes (leave blank for 'None')"
                   className="w-full rounded-2xl border border-slate-200 bg-slate-50/60 px-4 py-3 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white disabled:cursor-not-allowed disabled:opacity-70"
                 />
-              </div>
+              </CollapsibleSection>
 
-              <div className="space-y-2">
-                <label
-                  htmlFor="family-doctor"
-                  className="text-sm font-medium text-slate-800"
-                >
-                  Family doctor (Optional)
-                </label>
+              <CollapsibleSection
+                id="family-doctor-section"
+                title="Family doctor (Optional)"
+                previewText={familyDoctor}
+              >
                 <input
                   id="family-doctor"
                   name="familyDoctor"
@@ -3430,30 +3442,42 @@ export default function Home() {
                   value={familyDoctor}
                   disabled={status !== "idle"}
                   onChange={(event) => setFamilyDoctor(event.target.value)}
+                  aria-label="Family doctor"
                   placeholder='e.g., Dr. Kim Lee (leave blank for "Unknown")'
                   className="w-full rounded-2xl border border-slate-200 bg-slate-50/60 px-4 py-3 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white disabled:cursor-not-allowed disabled:opacity-70"
                 />
-              </div>
+              </CollapsibleSection>
 
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <label
-                    htmlFor="pharmacy-name"
-                    className="text-sm font-medium text-slate-800"
-                  >
-                    Pharmacy name (Optional)
-                  </label>
-                  <input
-                    id="pharmacy-name"
-                    name="pharmacyName"
-                    type="text"
-                    value={pharmacyNameInput}
-                    disabled={status !== "idle"}
-                    onChange={(event) => setPharmacyNameInput(event.target.value)}
-                    placeholder="e.g., Shoppers Drug Mart"
-                    className="w-full rounded-2xl border border-slate-200 bg-slate-50/60 px-4 py-3 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white disabled:cursor-not-allowed disabled:opacity-70"
-                  />
-                </div>
+              <CollapsibleSection
+                id="pharmacy-section"
+                title="Pharmacy (Optional)"
+                previewText={
+                  pharmacyInfo?.name ||
+                  [pharmacyNameInput, pharmacyAddressInput, pharmacyCityInput]
+                    .map((v) => v.trim())
+                    .filter(Boolean)
+                    .join(" • ")
+                }
+              >
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <label
+                      htmlFor="pharmacy-name"
+                      className="text-sm font-medium text-slate-800"
+                    >
+                      Pharmacy name (Optional)
+                    </label>
+                    <input
+                      id="pharmacy-name"
+                      name="pharmacyName"
+                      type="text"
+                      value={pharmacyNameInput}
+                      disabled={status !== "idle"}
+                      onChange={(event) => setPharmacyNameInput(event.target.value)}
+                      placeholder="e.g., Shoppers Drug Mart"
+                      className="w-full rounded-2xl border border-slate-200 bg-slate-50/60 px-4 py-3 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white disabled:cursor-not-allowed disabled:opacity-70"
+                    />
+                  </div>
 
                 <div className="space-y-2">
                   <label
@@ -3555,15 +3579,16 @@ export default function Home() {
                     )}
                   </div>
                 )}
-                {!pharmacyInfo &&
-                  !searchingPharmacy &&
-                  (pharmacyNameInput.trim() !== "" ||
-                    pharmacyAddressInput.trim() !== "") && (
-                  <p className="text-xs text-slate-500 italic">
-                    Pharmacy information will appear here after search. If not found, you can manually enter the details.
-                  </p>
-                )}
-              </div>
+                  {!pharmacyInfo &&
+                    !searchingPharmacy &&
+                    (pharmacyNameInput.trim() !== "" ||
+                      pharmacyAddressInput.trim() !== "") && (
+                    <p className="text-xs text-slate-500 italic">
+                      Pharmacy information will appear here after search. If not found, you can manually enter the details.
+                    </p>
+                  )}
+                </div>
+              </CollapsibleSection>
 
               <div
                 className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/80 px-5 py-4 text-sm text-slate-600"
