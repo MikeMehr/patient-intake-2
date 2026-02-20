@@ -4180,7 +4180,7 @@ export default function Home() {
                             <button
                               type="button"
                               onClick={() => {
-                                if (window.confirm("Are you sure you want to end the interview? Your responses will be saved and a summary will be generated for your doctor.")) {
+                                if (window.confirm("Are you sure you want to end the interview early? Your answers so far will be saved, and a summary will still be prepared for your doctor.")) {
                                   endInterview();
                                 }
                               }}

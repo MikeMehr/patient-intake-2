@@ -6,12 +6,77 @@ import type { PatientSession } from "@/lib/session-store";
 import SessionKeepAlive from "@/components/auth/SessionKeepAlive";
 
 type PatientSessionWithChartLink = PatientSession & { patientId?: string | null };
+type InvitationActivityStatus =
+  | "sent"
+  | "opened"
+  | "in_progress"
+  | "active_recently"
+  | "completed"
+  | "expired"
+  | "revoked";
 
 const isUuid = (value: unknown): value is string => {
   if (typeof value !== "string") return false;
   const v = value.trim();
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(v);
 };
+
+const invitationStatusMeta: Record<
+  InvitationActivityStatus,
+  { label: string; className: string; hint?: string }
+> = {
+  sent: {
+    label: "Sent",
+    className: "text-slate-700 bg-slate-100",
+  },
+  opened: {
+    label: "Clicked",
+    className: "text-indigo-800 bg-indigo-100",
+  },
+  in_progress: {
+    label: "In Progress",
+    className: "text-amber-800 bg-amber-100",
+  },
+  active_recently: {
+    label: "Active Recently",
+    className: "text-emerald-800 bg-emerald-100",
+    hint: "Recent activity detected",
+  },
+  completed: {
+    label: "Completed",
+    className: "text-green-800 bg-green-100",
+  },
+  expired: {
+    label: "Expired",
+    className: "text-orange-800 bg-orange-100",
+  },
+  revoked: {
+    label: "Revoked",
+    className: "text-rose-800 bg-rose-100",
+  },
+};
+
+function formatRelativeTime(iso: string | null): string | null {
+  if (!iso) return null;
+  const ts = new Date(iso).getTime();
+  if (Number.isNaN(ts)) return null;
+  const diffMs = Date.now() - ts;
+  if (diffMs < 0) return "just now";
+  const minutes = Math.floor(diffMs / (60 * 1000));
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
+
+function formatStatusDate(iso: string | null): string | null {
+  if (!iso) return null;
+  const ts = new Date(iso).getTime();
+  if (Number.isNaN(ts)) return null;
+  return new Date(ts).toLocaleString();
+}
 
 export default function PhysicianDashboard() {
   const router = useRouter();
@@ -24,6 +89,13 @@ export default function PhysicianDashboard() {
     invitationLink: string;
     openable: boolean;
     invalidReason: "used" | "revoked" | "expired" | null;
+    activityStatus: InvitationActivityStatus;
+    openedAt: string | null;
+    interviewStartedAt: string | null;
+    otpVerifiedAt: string | null;
+    completedAt: string | null;
+    invitationSessionCreatedAt: string | null;
+    lastAccessedAt: string | null;
   };
   const [invitations, setInvitations] = useState<Invitation[]>([]);
   const [loading, setLoading] = useState(true);
@@ -146,6 +218,13 @@ export default function PhysicianDashboard() {
               invitationLink: inv.invitationLink,
               openable: Boolean(inv.openable),
               invalidReason: (inv.invalidReason ?? null) as Invitation["invalidReason"],
+              activityStatus: (inv.activityStatus ?? "sent") as Invitation["activityStatus"],
+              openedAt: inv.openedAt ?? null,
+              interviewStartedAt: inv.interviewStartedAt ?? null,
+              otpVerifiedAt: inv.otpVerifiedAt ?? null,
+              completedAt: inv.completedAt ?? null,
+              invitationSessionCreatedAt: inv.invitationSessionCreatedAt ?? null,
+              lastAccessedAt: inv.lastAccessedAt ?? null,
             })) || [];
           setInvitations(mapped);
         }
@@ -914,7 +993,16 @@ export default function PhysicianDashboard() {
                       Completed
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
-                      Status
+                      <span className="inline-flex items-center gap-1">
+                        Status
+                        <span
+                          title="Status order: Revoked/Expired/Completed first; then Active Recently (last 15m), In Progress (started), Clicked (opened), otherwise Sent."
+                          aria-label="Status logic"
+                          className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-slate-400 text-[10px] normal-case text-slate-600"
+                        >
+                          i
+                        </span>
+                      </span>
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
                       Actions
@@ -985,13 +1073,76 @@ export default function PhysicianDashboard() {
 
         {/* Invitations List */}
         <div className="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden mt-6">
-          <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-slate-900">
-              Invited Patients {invitations.length ? `(${invitations.length})` : ""}
-            </h2>
-            {invitationsLoading && (
-              <span className="text-sm text-slate-500">Loading...</span>
-            )}
+          <div className="px-6 py-4 border-b border-slate-200">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-slate-900">
+                Invited Patients {invitations.length ? `(${invitations.length})` : ""}
+              </h2>
+              {invitationsLoading && (
+                <span className="text-sm text-slate-500">Loading...</span>
+              )}
+            </div>
+            <div className="mt-2 flex flex-wrap gap-2 text-xs">
+              {(
+                [
+                  "sent",
+                  "clicked",
+                  "in-progress",
+                  "active-recently",
+                  "completed",
+                  "expired",
+                  "revoked",
+                ] as const
+              ).map((item) => {
+                const map: Record<(typeof item), { label: string; className: string; title: string }> = {
+                  sent: {
+                    label: "Sent",
+                    className: invitationStatusMeta.sent.className,
+                    title: "Invitation delivered but not opened yet.",
+                  },
+                  clicked: {
+                    label: "Clicked",
+                    className: invitationStatusMeta.opened.className,
+                    title: "Invitation link opened, intake not started yet.",
+                  },
+                  "in-progress": {
+                    label: "In Progress",
+                    className: invitationStatusMeta.in_progress.className,
+                    title: "Patient verified and started intake, not yet submitted.",
+                  },
+                  "active-recently": {
+                    label: "Active Recently",
+                    className: invitationStatusMeta.active_recently.className,
+                    title: "Recent intake activity within the last 15 minutes.",
+                  },
+                  completed: {
+                    label: "Completed",
+                    className: invitationStatusMeta.completed.className,
+                    title: "Patient submitted the intake.",
+                  },
+                  expired: {
+                    label: "Expired",
+                    className: invitationStatusMeta.expired.className,
+                    title: "Invitation token expired before submission.",
+                  },
+                  revoked: {
+                    label: "Revoked",
+                    className: invitationStatusMeta.revoked.className,
+                    title: "Invitation was manually revoked.",
+                  },
+                };
+                const legend = map[item];
+                return (
+                  <span
+                    key={item}
+                    title={legend.title}
+                    className={`inline-flex items-center rounded-full px-2 py-1 font-medium ${legend.className}`}
+                  >
+                    {legend.label}
+                  </span>
+                );
+              })}
+            </div>
           </div>
           {invitationsError && (
             <div className="px-6 py-4 bg-red-50 text-sm text-red-800 border-b border-red-200">
@@ -1017,6 +1168,9 @@ export default function PhysicianDashboard() {
                       Sent At
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
+                      Status
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
                       Invitation Link
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
@@ -1037,6 +1191,49 @@ export default function PhysicianDashboard() {
                         {invitation.sentAt
                           ? new Date(invitation.sentAt).toLocaleString()
                           : "—"}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm">
+                        {(() => {
+                          const meta = invitationStatusMeta[invitation.activityStatus];
+                          const recentActivity = formatRelativeTime(invitation.lastAccessedAt);
+                          const detail =
+                            invitation.activityStatus === "active_recently" && recentActivity
+                              ? `Last activity ${recentActivity}`
+                              : meta.hint || null;
+                          const statusTimeLabel = (() => {
+                            if (invitation.activityStatus === "completed") {
+                              return formatStatusDate(invitation.completedAt);
+                            }
+                            if (invitation.activityStatus === "active_recently") {
+                              return formatStatusDate(invitation.lastAccessedAt);
+                            }
+                            if (invitation.activityStatus === "in_progress") {
+                              return (
+                                formatStatusDate(invitation.interviewStartedAt) ||
+                                formatStatusDate(invitation.otpVerifiedAt) ||
+                                formatStatusDate(invitation.invitationSessionCreatedAt)
+                              );
+                            }
+                            if (invitation.activityStatus === "opened") {
+                              return formatStatusDate(invitation.openedAt);
+                            }
+                            return null;
+                          })();
+                          const title = statusTimeLabel
+                            ? `${meta.label} at ${statusTimeLabel}`
+                            : meta.label;
+                          return (
+                            <div className="flex flex-col">
+                              <span
+                                title={title}
+                                className={`inline-flex w-fit px-2 py-1 text-xs font-medium rounded-full ${meta.className}`}
+                              >
+                                {meta.label}
+                              </span>
+                              {detail ? <span className="mt-1 text-xs text-slate-500">{detail}</span> : null}
+                            </div>
+                          );
+                        })()}
                       </td>
                       <td className="px-6 py-4 text-sm">
                         {invitation.openable ? (
