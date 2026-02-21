@@ -1,5 +1,20 @@
 import { NextResponse, type NextRequest } from "next/server";
 
+function buildCspHeader() {
+  return [
+    "default-src 'self'",
+    "base-uri 'self'",
+    "frame-ancestors 'none'",
+    "object-src 'none'",
+    "form-action 'self'",
+    "img-src 'self' data: blob:",
+    "font-src 'self' data:",
+    "style-src 'self' 'unsafe-inline'",
+    "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+    "connect-src 'self' https: wss:",
+  ].join("; ");
+}
+
 // Generate or propagate a request ID, attach to request and response headers.
 export function proxy(req: NextRequest) {
   const incomingId =
@@ -19,6 +34,17 @@ export function proxy(req: NextRequest) {
   });
 
   res.headers.set("x-request-id", incomingId);
+  res.headers.set("Content-Security-Policy", buildCspHeader());
+  res.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
+  res.headers.set("X-Content-Type-Options", "nosniff");
+  res.headers.set("X-Frame-Options", "DENY");
+  res.headers.set("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+  if (process.env.NODE_ENV === "production") {
+    res.headers.set(
+      "Strict-Transport-Security",
+      "max-age=31536000; includeSubDomains; preload",
+    );
+  }
   return res;
 }
 
