@@ -9,6 +9,11 @@ import { query } from "@/lib/db";
 import { hashPassword, validatePassword } from "@/lib/auth";
 import { randomBytes } from "crypto";
 import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
+import { consumeDbRateLimit } from "@/lib/rate-limit";
+import { getRequestIp } from "@/lib/invitation-security";
+
+const REGISTER_MAX_ATTEMPTS = 10;
+const REGISTER_WINDOW_SECONDS = 60 * 60;
 
 function generateSlug(firstName: string, lastName: string, clinicName: string): string {
   const clean = (str: string) => str.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
@@ -24,6 +29,35 @@ export async function POST(request: NextRequest) {
   const started = Date.now();
   let status = 200;
   try {
+    if (process.env.AUTH_ALLOW_SELF_REGISTER !== "true") {
+      status = 403;
+      const res = NextResponse.json(
+        { error: "Self-registration is disabled. Contact an administrator." },
+        { status },
+      );
+      logRequestMeta("/api/auth/register", requestId, status, Date.now() - started);
+      return res;
+    }
+
+    const ip = getRequestIp(request.headers);
+    const limiter = await consumeDbRateLimit({
+      bucketKey: `auth-register:${ip}`,
+      maxAttempts: REGISTER_MAX_ATTEMPTS,
+      windowSeconds: REGISTER_WINDOW_SECONDS,
+    });
+    if (!limiter.allowed) {
+      status = 429;
+      const res = NextResponse.json(
+        {
+          error: "Too many registration attempts. Please try again later.",
+          retryAfterSeconds: limiter.retryAfterSeconds,
+        },
+        { status },
+      );
+      logRequestMeta("/api/auth/register", requestId, status, Date.now() - started);
+      return res;
+    }
+
     const body = await request.json();
     const {
       firstName,

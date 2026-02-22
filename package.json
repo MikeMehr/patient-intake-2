@@ -9,10 +9,10 @@
     "lint": "eslint",
     "lint:env": "node scripts/check-env-no-secrets.js",
     "test": "vitest run",
-    "test:azure-openai": "node scripts/azure-sanity-test.js"
+    "test:azure-openai": "node scripts/azure-sanity-test.js",
+    "audit:prod": "npm audit --omit=dev --audit-level=high"
   },
   "dependencies": {
-    "@google-cloud/text-to-speech": "^6.4.0",
     "@google/generative-ai": "^0.24.1",
     "@sparticuz/chromium": "^143.0.4",
     "@types/bcrypt": "^6.0.0",

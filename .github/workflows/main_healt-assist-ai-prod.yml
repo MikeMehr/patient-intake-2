@@ -27,6 +27,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Security audit (runtime dependencies)
+        run: npm run audit:prod
+
       - name: Build
         run: npm run build --if-present
 

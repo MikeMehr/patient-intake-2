@@ -9,14 +9,37 @@ import { randomBytes } from "crypto";
 import { logDebug } from "@/lib/secure-logger";
 import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
 import { hashResetToken } from "@/lib/reset-token-security";
+import { consumeDbRateLimit } from "@/lib/rate-limit";
+import { getRequestIp } from "@/lib/invitation-security";
 
 const RESET_TOKEN_EXPIRY_HOURS = 24;
+const RESET_REQUEST_MAX_ATTEMPTS = 5;
+const RESET_REQUEST_WINDOW_SECONDS = 15 * 60;
 
 export async function POST(request: NextRequest) {
   const requestId = getRequestId(request.headers);
   const started = Date.now();
   let status = 200;
   try {
+    const ip = getRequestIp(request.headers);
+    const limiter = await consumeDbRateLimit({
+      bucketKey: `auth-reset-request:${ip}`,
+      maxAttempts: RESET_REQUEST_MAX_ATTEMPTS,
+      windowSeconds: RESET_REQUEST_WINDOW_SECONDS,
+    });
+    if (!limiter.allowed) {
+      status = 429;
+      const res = NextResponse.json(
+        {
+          error: "Too many password reset attempts. Please try again later.",
+          retryAfterSeconds: limiter.retryAfterSeconds,
+        },
+        { status },
+      );
+      logRequestMeta("/api/auth/reset-password", requestId, status, Date.now() - started);
+      return res;
+    }
+
     const body = await request.json();
     const { email } = body;
 

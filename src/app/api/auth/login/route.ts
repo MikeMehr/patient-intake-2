@@ -5,7 +5,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
-import { verifyPassword, createSession, validatePassword } from "@/lib/auth";
+import { verifyPassword, createSession } from "@/lib/auth";
 import {
   getSuperAdminByUsername,
   getOrgAdminByUsername,
@@ -13,6 +13,8 @@ import {
 } from "@/lib/auth-helpers";
 import { logDebug } from "@/lib/secure-logger";
 import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
+import { getRequestIp } from "@/lib/invitation-security";
+import { clearDbRateLimit, consumeDbRateLimit } from "@/lib/rate-limit";
 
 // Minimal audit helper (avoid PHI/credentials). Wire to real log sink in production.
 function auditAuthEvent(event: {
@@ -31,27 +33,8 @@ function auditAuthEvent(event: {
   }
 }
 
-// Simple rate limiting (in production, use Redis or similar)
-const loginAttempts = new Map<string, { count: number; resetAt: number }>();
 const MAX_ATTEMPTS = 5;
-const LOCKOUT_DURATION = 15 * 60 * 1000; // 15 minutes
-
-function checkRateLimit(ip: string): boolean {
-  const now = Date.now();
-  const attempts = loginAttempts.get(ip);
-
-  if (!attempts || attempts.resetAt < now) {
-    loginAttempts.set(ip, { count: 1, resetAt: now + LOCKOUT_DURATION });
-    return true;
-  }
-
-  if (attempts.count >= MAX_ATTEMPTS) {
-    return false;
-  }
-
-  attempts.count++;
-  return true;
-}
+const LOCKOUT_WINDOW_SECONDS = 15 * 60; // 15 minutes
 
 export async function POST(request: NextRequest) {
   const requestId = getRequestId(request.headers);
@@ -59,12 +42,21 @@ export async function POST(request: NextRequest) {
   let status = 200;
   try {
     // Rate limiting
-    const ip = request.headers.get("x-forwarded-for") || request.headers.get("x-real-ip") || "unknown";
-    if (!checkRateLimit(ip)) {
+    const ip = getRequestIp(request.headers);
+    const bucketKey = `auth-login:${ip}`;
+    const limiter = await consumeDbRateLimit({
+      bucketKey,
+      maxAttempts: MAX_ATTEMPTS,
+      windowSeconds: LOCKOUT_WINDOW_SECONDS,
+    });
+    if (!limiter.allowed) {
       auditAuthEvent({ outcome: "failure", reason: "rate_limited" });
       status = 429;
       const res = NextResponse.json(
-        { error: "Too many login attempts. Please try again later." },
+        {
+          error: "Too many login attempts. Please try again later.",
+          retryAfterSeconds: limiter.retryAfterSeconds,
+        },
         { status }
       );
       logRequestMeta("/api/auth/login", requestId, status, Date.now() - started);
@@ -169,8 +161,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Clear rate limit on successful login
-    loginAttempts.delete(ip);
+    // Best effort: allow legitimate users to recover quickly after successful auth.
+    await clearDbRateLimit(bucketKey);
 
     auditAuthEvent({ outcome: "success", userType });
 

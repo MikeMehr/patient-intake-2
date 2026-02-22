@@ -20,6 +20,9 @@ describe("POST /api/auth/reset-password/[token]", () => {
   it("accepts a valid token once and marks it used", async () => {
     queryMock
       .mockResolvedValueOnce({
+        rows: [{ attempt_count: 1, expires_at: new Date(Date.now() + 60_000) }],
+      })
+      .mockResolvedValueOnce({
         rows: [
           {
             id: "reset-token-id",
@@ -46,14 +49,18 @@ describe("POST /api/auth/reset-password/[token]", () => {
     );
 
     expect(response.status).toBe(200);
-    expect(queryMock).toHaveBeenCalledTimes(4);
-    expect(queryMock.mock.calls[0][1][0]).toMatch(/^[a-f0-9]{64}$/);
-    expect(queryMock.mock.calls[0][1][1]).toBe(rawToken);
-    expect(queryMock.mock.calls[2][1]).toEqual(["reset-token-id"]);
+    expect(queryMock).toHaveBeenCalledTimes(5);
+    expect(queryMock.mock.calls[1][1][0]).toMatch(/^[a-f0-9]{64}$/);
+    expect(queryMock.mock.calls[1][1][1]).toBe(rawToken);
+    expect(queryMock.mock.calls[3][1]).toEqual(["reset-token-id"]);
   });
 
   it("rejects replay/unknown tokens", async () => {
-    queryMock.mockResolvedValueOnce({ rows: [] });
+    queryMock
+      .mockResolvedValueOnce({
+        rows: [{ attempt_count: 1, expires_at: new Date(Date.now() + 60_000) }],
+      })
+      .mockResolvedValueOnce({ rows: [] });
     const { POST } = await import("./route");
 
     const response = await POST(
@@ -69,7 +76,11 @@ describe("POST /api/auth/reset-password/[token]", () => {
   });
 
   it("rejects expired tokens", async () => {
-    queryMock.mockResolvedValueOnce({ rows: [] });
+    queryMock
+      .mockResolvedValueOnce({
+        rows: [{ attempt_count: 1, expires_at: new Date(Date.now() + 60_000) }],
+      })
+      .mockResolvedValueOnce({ rows: [] });
     const { POST } = await import("./route");
 
     const response = await POST(

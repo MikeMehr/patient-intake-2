@@ -7,6 +7,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import { hashPassword, validatePassword } from "@/lib/auth";
 import { hashResetToken } from "@/lib/reset-token-security";
+import { getRequestIp } from "@/lib/invitation-security";
+import { consumeDbRateLimit } from "@/lib/rate-limit";
+
+const RESET_CONSUME_MAX_ATTEMPTS = 10;
+const RESET_CONSUME_WINDOW_SECONDS = 15 * 60;
 
 export async function POST(
   request: NextRequest,
@@ -15,6 +20,21 @@ export async function POST(
   try {
     const { token } = await params;
     const tokenHash = hashResetToken(token);
+    const ip = getRequestIp(request.headers);
+    const limiter = await consumeDbRateLimit({
+      bucketKey: `auth-reset-consume:${ip}:${tokenHash}`,
+      maxAttempts: RESET_CONSUME_MAX_ATTEMPTS,
+      windowSeconds: RESET_CONSUME_WINDOW_SECONDS,
+    });
+    if (!limiter.allowed) {
+      return NextResponse.json(
+        {
+          error: "Too many reset attempts. Please try again later.",
+          retryAfterSeconds: limiter.retryAfterSeconds,
+        },
+        { status: 429 },
+      );
+    }
     const body = await request.json();
     const { newPassword } = body;
 
