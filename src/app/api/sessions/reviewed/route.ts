@@ -1,7 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentSession } from "@/lib/auth";
 import { query } from "@/lib/db";
+import { logPhysicianPhiAudit } from "@/lib/phi-audit";
 import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
+import { getRequestIp } from "@/lib/invitation-security";
+import {
+  canAccessSessionInScope,
+  loadSessionAccessScope,
+  loadSessionPatientId,
+} from "@/lib/session-access";
 
 export const runtime = "nodejs";
 
@@ -25,13 +32,6 @@ export async function POST(request: NextRequest) {
       logRequestMeta("/api/sessions/reviewed", requestId, status, Date.now() - started);
       return res;
     }
-    if (session.userType !== "provider") {
-      status = 403;
-      const res = NextResponse.json({ error: "Only providers can review sessions" }, { status });
-      logRequestMeta("/api/sessions/reviewed", requestId, status, Date.now() - started);
-      return res;
-    }
-
     const body = (await request.json().catch(() => ({}))) as { sessionCode?: unknown };
     const sessionCode = typeof body.sessionCode === "string" ? body.sessionCode.trim() : "";
     if (!sessionCode) {
@@ -41,15 +41,27 @@ export async function POST(request: NextRequest) {
       return res;
     }
 
-    const physicianId = (session as any).physicianId || session.userId;
+    const scope = await loadSessionAccessScope(sessionCode);
+    if (!scope) {
+      status = 404;
+      const res = NextResponse.json({ error: "Session not found" }, { status });
+      logRequestMeta("/api/sessions/reviewed", requestId, status, Date.now() - started);
+      return res;
+    }
+    if (!canAccessSessionInScope({ viewer: session, resource: scope })) {
+      status = 403;
+      const res = NextResponse.json({ error: "Access denied" }, { status });
+      logRequestMeta("/api/sessions/reviewed", requestId, status, Date.now() - started);
+      return res;
+    }
+
     const reviewedAtIso = new Date().toISOString();
 
     const result = await query(
       `UPDATE patient_sessions
-       SET history = jsonb_set(history, '{physicianReviewedAt}', to_jsonb($3::text), true)
-       WHERE physician_id = $1
-         AND session_code = $2`,
-      [physicianId, sessionCode, reviewedAtIso],
+       SET history = jsonb_set(history, '{physicianReviewedAt}', to_jsonb($2::text), true)
+       WHERE session_code = $1`,
+      [sessionCode, reviewedAtIso],
     );
 
     if ((result.rowCount ?? 0) === 0) {
@@ -57,6 +69,23 @@ export async function POST(request: NextRequest) {
       const res = NextResponse.json({ error: "Session not found" }, { status });
       logRequestMeta("/api/sessions/reviewed", requestId, status, Date.now() - started);
       return res;
+    }
+
+    try {
+      const patientId = await loadSessionPatientId(sessionCode);
+      await logPhysicianPhiAudit({
+        physicianId: session.userId,
+        patientId,
+        eventType: "session_marked_reviewed",
+        ipAddress: getRequestIp(request.headers),
+        userAgent: request.headers.get("user-agent"),
+        metadata: {
+          sessionCode,
+          viewerUserType: session.userType,
+        },
+      });
+    } catch {
+      // Best-effort audit logging.
     }
 
     const res = NextResponse.json({ success: true, reviewedAt: reviewedAtIso });

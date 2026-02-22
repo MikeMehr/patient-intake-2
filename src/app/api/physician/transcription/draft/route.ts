@@ -4,7 +4,12 @@ import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
 import { getRequestIp } from "@/lib/invitation-security";
 import { logPhysicianPhiAudit } from "@/lib/phi-audit";
 import { saveSoapDraftRequestSchema } from "@/lib/transcription-schema";
-import { getSoapVersionById, updateSoapDraftVersion, upsertTranscriptionSessionPointer } from "@/lib/transcription-store";
+import {
+  getSoapVersionByIdForScope,
+  resolveWorkforceScope,
+  updateSoapDraftVersion,
+  upsertTranscriptionSessionPointer,
+} from "@/lib/transcription-store";
 import { HEALTHASSIST_SNAPSHOT_LABEL } from "@/lib/transcription-policy";
 
 function buildPreview(subjective: string, assessment: string) {
@@ -31,6 +36,17 @@ export async function PUT(request: NextRequest) {
       logRequestMeta("/api/physician/transcription/draft", requestId, status, Date.now() - started);
       return res;
     }
+    const scope = resolveWorkforceScope({
+      userType: auth.userType,
+      userId: auth.userId,
+      organizationId: auth.organizationId || null,
+    });
+    if (!scope) {
+      status = 403;
+      const res = NextResponse.json({ error: "Provider access required." }, { status });
+      logRequestMeta("/api/physician/transcription/draft", requestId, status, Date.now() - started);
+      return res;
+    }
 
     const body = await request.json().catch(() => null);
     const parsed = saveSoapDraftRequestSchema.safeParse(body);
@@ -41,10 +57,10 @@ export async function PUT(request: NextRequest) {
       return res;
     }
 
-    const physicianId = (auth as any).physicianId || auth.userId;
-    const version = await getSoapVersionById({
+    const physicianId = auth.userId;
+    const version = await getSoapVersionByIdForScope({
       soapVersionId: parsed.data.soapVersionId,
-      physicianId,
+      scope,
     });
     if (!version) {
       status = 404;
@@ -54,7 +70,7 @@ export async function PUT(request: NextRequest) {
     }
     await updateSoapDraftVersion({
       soapVersionId: parsed.data.soapVersionId,
-      physicianId,
+      scope,
       draft: parsed.data.draft,
     });
     await upsertTranscriptionSessionPointer({

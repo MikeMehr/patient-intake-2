@@ -1,9 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createHash } from "node:crypto";
 import { getCurrentSession } from "@/lib/auth";
-import { getSession } from "@/lib/session-store";
 import { query } from "@/lib/db";
 import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
+import { logPhysicianPhiAudit } from "@/lib/phi-audit";
+import { getRequestIp } from "@/lib/invitation-security";
+import {
+  canAccessSessionInScope,
+  loadSessionAccessScope,
+  loadSessionPatientId,
+} from "@/lib/session-access";
 
 function badRequest(message: string, status = 400) {
   return NextResponse.json({ error: message }, { status });
@@ -107,21 +113,21 @@ export async function POST(request: NextRequest) {
       logRequestMeta("/api/prescriptions", requestId, status, Date.now() - started);
       return res;
     }
-    if (session.userType !== "provider") {
+    if (session.userType !== "provider" && session.userType !== "org_admin") {
       status = 403;
-      const res = badRequest("Only providers can save prescriptions.", status);
+      const res = badRequest("Workforce access required.", status);
       logRequestMeta("/api/prescriptions", requestId, status, Date.now() - started);
       return res;
     }
 
-    const patientSession = await getSession(sessionCode);
-    if (!patientSession) {
+    const scope = await loadSessionAccessScope(sessionCode);
+    if (!scope) {
       status = 404;
       const res = badRequest("Session not found.", status);
       logRequestMeta("/api/prescriptions", requestId, status, Date.now() - started);
       return res;
     }
-    if (patientSession.physicianId !== session.userId) {
+    if (!canAccessSessionInScope({ viewer: session, resource: scope })) {
       status = 403;
       const res = badRequest("You do not have access to this session.", status);
       logRequestMeta("/api/prescriptions", requestId, status, Date.now() - started);
@@ -301,6 +307,24 @@ export async function POST(request: NextRequest) {
     }
 
     const res = NextResponse.json({ success: true, id: insertedId });
+    try {
+      const patientId = await loadSessionPatientId(sessionCode);
+      await logPhysicianPhiAudit({
+        physicianId: session.userId,
+        patientId,
+        eventType: "prescription_saved",
+        ipAddress: getRequestIp(request.headers),
+        userAgent: request.headers.get("user-agent"),
+        metadata: {
+          sessionCode,
+          viewerUserType: session.userType,
+          prescriptionId: insertedId,
+          medicationsCount: medsToPersist.length,
+        },
+      });
+    } catch {
+      // Best-effort audit logging.
+    }
     logRequestMeta("/api/prescriptions", requestId, status, Date.now() - started);
     return res;
   } catch (error) {
@@ -334,21 +358,21 @@ export async function GET(request: NextRequest) {
       logRequestMeta("/api/prescriptions", requestId, status, Date.now() - started);
       return res;
     }
-    if (session.userType !== "provider") {
+    if (session.userType !== "provider" && session.userType !== "org_admin") {
       status = 403;
-      const res = badRequest("Only providers can view prescriptions.", status);
+      const res = badRequest("Workforce access required.", status);
       logRequestMeta("/api/prescriptions", requestId, status, Date.now() - started);
       return res;
     }
 
-    const patientSession = await getSession(sessionCode);
-    if (!patientSession) {
+    const scope = await loadSessionAccessScope(sessionCode);
+    if (!scope) {
       status = 404;
       const res = badRequest("Session not found.", status);
       logRequestMeta("/api/prescriptions", requestId, status, Date.now() - started);
       return res;
     }
-    if (patientSession.physicianId !== session.userId) {
+    if (!canAccessSessionInScope({ viewer: session, resource: scope })) {
       status = 403;
       const res = badRequest("You do not have access to this session.", status);
       logRequestMeta("/api/prescriptions", requestId, status, Date.now() - started);
@@ -495,6 +519,24 @@ export async function GET(request: NextRequest) {
       ...latest,
       prescriptions: rows,
     });
+    try {
+      const patientId = await loadSessionPatientId(sessionCode);
+      await logPhysicianPhiAudit({
+        physicianId: session.userId,
+        patientId,
+        eventType: "prescription_viewed",
+        ipAddress: getRequestIp(request.headers),
+        userAgent: request.headers.get("user-agent"),
+        metadata: {
+          sessionCode,
+          viewerUserType: session.userType,
+          returnedCount: rows.length,
+          latestPrescriptionId: latest?.id || null,
+        },
+      });
+    } catch {
+      // Best-effort audit logging.
+    }
     logRequestMeta("/api/prescriptions", requestId, status, Date.now() - started);
     return res;
   } catch (error) {
