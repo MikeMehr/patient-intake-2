@@ -21,7 +21,7 @@ type InvitationRow = {
   patient_name: string;
   patient_email: string;
   sent_at: string | null;
-  invitation_link: string;
+  invitation_link: string | null;
   used_at: DbTimestamp;
   revoked_at: DbTimestamp;
   token_expires_at: DbTimestamp;

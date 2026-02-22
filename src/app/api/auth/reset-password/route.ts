@@ -8,6 +8,7 @@ import { query } from "@/lib/db";
 import { randomBytes } from "crypto";
 import { logDebug } from "@/lib/secure-logger";
 import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
+import { hashResetToken } from "@/lib/reset-token-security";
 
 const RESET_TOKEN_EXPIRY_HOURS = 24;
 
@@ -49,14 +50,15 @@ export async function POST(request: NextRequest) {
 
     // Generate reset token
     const token = randomBytes(32).toString("hex");
+    const tokenHash = hashResetToken(token);
     const expiresAt = new Date();
     expiresAt.setHours(expiresAt.getHours() + RESET_TOKEN_EXPIRY_HOURS);
 
-    // Store reset token
+    // Store reset token hash (raw token is only delivered to the user)
     await query(
-      `INSERT INTO password_reset_tokens (physician_id, token, expires_at)
+      `INSERT INTO password_reset_tokens (physician_id, token_hash, expires_at)
        VALUES ($1, $2, $3)`,
-      [physician.id, token, expiresAt]
+      [physician.id, tokenHash, expiresAt]
     );
 
     // In production, send email here (never log or return the token)

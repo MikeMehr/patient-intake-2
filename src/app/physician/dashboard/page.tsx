@@ -83,7 +83,7 @@ type Invitation = {
   patientName: string;
   patientEmail: string;
   sentAt: string | null;
-  invitationLink: string;
+  invitationLink: string | null;
   openable: boolean;
   invalidReason: "used" | "revoked" | "expired" | null;
   activityStatus: InvitationActivityStatus;
@@ -101,7 +101,7 @@ function mapInvitationFromApi(inv: any): Invitation {
     patientName: inv.patientName,
     patientEmail: inv.patientEmail,
     sentAt: inv.sentAt ?? null,
-    invitationLink: inv.invitationLink,
+    invitationLink: inv.invitationLink ?? null,
     openable: Boolean(inv.openable),
     invalidReason: (inv.invalidReason ?? null) as Invitation["invalidReason"],
     activityStatus: (inv.activityStatus ?? "sent") as Invitation["activityStatus"],
@@ -602,7 +602,7 @@ export default function PhysicianDashboard() {
     }
   };
 
-  const handleCopyInvitationLink = async (link: string) => {
+  const handleCopyInvitationLink = async (link: string | null) => {
     const normalized = String(link || "").trim();
     if (!normalized) return;
     try {
@@ -1253,7 +1253,7 @@ export default function PhysicianDashboard() {
                         })()}
                       </td>
                       <td className="px-6 py-4 text-sm">
-                        {invitation.openable ? (
+                        {invitation.openable && invitation.invitationLink ? (
                           <div className="flex items-center gap-3 min-w-0">
                             <a
                               href={invitation.invitationLink}
@@ -1274,7 +1274,9 @@ export default function PhysicianDashboard() {
                           </div>
                         ) : (
                           <span className="text-xs text-slate-400">
-                            {invitation.invalidReason === "expired"
+                            {!invitation.invitationLink && invitation.openable
+                              ? "Not retained after send"
+                              : invitation.invalidReason === "expired"
                               ? "Expired"
                               : invitation.invalidReason === "used"
                                 ? "Used"

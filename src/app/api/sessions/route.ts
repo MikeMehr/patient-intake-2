@@ -12,6 +12,8 @@ import type { PatientSession } from "@/lib/session-store";
 import type { HistoryResponse } from "@/lib/history-schema";
 import type { PatientProfile } from "@/lib/interview-schema";
 import { getAzureOpenAIClient } from "@/lib/azure-openai";
+import { getCurrentSession } from "@/lib/auth";
+import { logPhysicianPhiAudit } from "@/lib/phi-audit";
 import { logDebug } from "@/lib/secure-logger";
 import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
 import {
@@ -22,6 +24,12 @@ import {
   resolveInvitationFromCookie,
 } from "@/lib/invitation-security";
 import { createEncounterFromSession, upsertPatientFromSession } from "@/lib/patient-store";
+import {
+  canAccessSessionInScope,
+  loadSessionAccessScope,
+  loadSessionPatientId,
+} from "@/lib/session-access";
+import { startSessionRetentionCleanup } from "@/lib/session-retention-cleanup";
 
 async function translatePatientTextToEnglish(text: string): Promise<string> {
   const trimmed = text.trim();
@@ -49,6 +57,7 @@ async function translatePatientTextToEnglish(text: string): Promise<string> {
  * Get a session by code (for physician to view)
  */
 export async function GET(request: Request) {
+  startSessionRetentionCleanup();
   const requestId = getRequestId(request.headers);
   const started = Date.now();
   let status = 200;
@@ -58,6 +67,29 @@ export async function GET(request: Request) {
   if (!code) {
     status = 400;
     const res = NextResponse.json({ error: "Session code required" }, { status });
+    logRequestMeta("/api/sessions", requestId, status, Date.now() - started);
+    return res;
+  }
+
+  const authSession = await getCurrentSession();
+  if (!authSession) {
+    status = 401;
+    const res = NextResponse.json({ error: "Authentication required" }, { status });
+    logRequestMeta("/api/sessions", requestId, status, Date.now() - started);
+    return res;
+  }
+
+  const scope = await loadSessionAccessScope(code);
+  if (!scope) {
+    status = 404;
+    const res = NextResponse.json({ error: "Session not found or expired" }, { status });
+    logRequestMeta("/api/sessions", requestId, status, Date.now() - started);
+    return res;
+  }
+
+  if (!canAccessSessionInScope({ viewer: authSession, resource: scope })) {
+    status = 403;
+    const res = NextResponse.json({ error: "Access denied" }, { status });
     logRequestMeta("/api/sessions", requestId, status, Date.now() - started);
     return res;
   }
@@ -82,6 +114,31 @@ export async function GET(request: Request) {
     }
   }
 
+  let patientId: string | null = null;
+  try {
+    patientId = await loadSessionPatientId(code);
+  } catch {
+    patientId = null;
+  }
+
+  const ipAddress = getRequestIp(request.headers);
+  const userAgent = request.headers.get("user-agent");
+  try {
+    await logPhysicianPhiAudit({
+      physicianId: authSession.userId,
+      patientId,
+      eventType: "session_viewed",
+      ipAddress,
+      userAgent,
+      metadata: {
+        sessionCode: code,
+        viewerUserType: authSession.userType,
+      },
+    });
+  } catch {
+    // Best-effort audit logging: do not fail a valid access path on sink issues.
+  }
+
   // Convert Date objects to ISO strings for JSON serialization
   // Ensure transcript is always included (even if empty array or undefined)
   const res = NextResponse.json({
@@ -99,6 +156,7 @@ export async function GET(request: Request) {
  * Create a new session (when patient completes form)
  */
 export async function POST(request: Request) {
+  startSessionRetentionCleanup();
   const requestId = getRequestId(request.headers);
   const started = Date.now();
   let status = 200;
@@ -323,6 +381,7 @@ export async function POST(request: Request) {
  * Update physician-editable fields on a session
  */
 export async function PUT(request: Request) {
+  startSessionRetentionCleanup();
   const requestId = getRequestId(request.headers);
   const started = Date.now();
   let status = 200;
@@ -443,7 +502,6 @@ export async function PUT(request: Request) {
       }
     }
 
-    const { getCurrentSession } = await import("@/lib/auth");
     const session = await getCurrentSession();
     if (!session) {
       status = 401;
@@ -452,22 +510,15 @@ export async function PUT(request: Request) {
       return res;
     }
 
-    if (session.userType !== "provider") {
-      status = 403;
-      const res = NextResponse.json({ error: "Only providers can update sessions" }, { status });
-      logRequestMeta("/api/sessions", requestId, status, Date.now() - started);
-      return res;
-    }
-
-    const patientSession = await getSession(sessionCode);
-    if (!patientSession) {
+    const scope = await loadSessionAccessScope(sessionCode);
+    if (!scope) {
       status = 404;
       const res = NextResponse.json({ error: "Session not found or expired" }, { status });
       logRequestMeta("/api/sessions", requestId, status, Date.now() - started);
       return res;
     }
 
-    if (patientSession.physicianId !== session.userId) {
+    if (!canAccessSessionInScope({ viewer: session, resource: scope })) {
       status = 403;
       const res = NextResponse.json({ error: "Access denied" }, { status });
       logRequestMeta("/api/sessions", requestId, status, Date.now() - started);
@@ -513,6 +564,24 @@ export async function PUT(request: Request) {
       historyPlan: wantsHistoryUpdate ? trimmedPlan : undefined,
       pharmacy: wantsPharmacyUpdate ? normalizedPharmacy : undefined,
     });
+    try {
+      const patientId = await loadSessionPatientId(sessionCode);
+      await logPhysicianPhiAudit({
+        physicianId: session.userId,
+        patientId,
+        eventType: "session_updated",
+        ipAddress: getRequestIp(request.headers),
+        userAgent: request.headers.get("user-agent"),
+        metadata: {
+          sessionCode,
+          viewerUserType: session.userType,
+          updatedHistory: wantsHistoryUpdate,
+          updatedPharmacy: wantsPharmacyUpdate,
+        },
+      });
+    } catch {
+      // Best-effort audit logging.
+    }
     logRequestMeta("/api/sessions", requestId, status, Date.now() - started);
     return res;
   } catch (error) {
@@ -533,6 +602,7 @@ export async function PUT(request: Request) {
  * Verifies that the logged-in physician owns this session
  */
 export async function DELETE(request: Request) {
+  startSessionRetentionCleanup();
   const requestId = getRequestId(request.headers);
   const started = Date.now();
   let status = 200;
@@ -547,7 +617,6 @@ export async function DELETE(request: Request) {
   }
 
   // Verify authentication
-  const { getCurrentSession } = await import("@/lib/auth");
   const session = await getCurrentSession();
   if (!session) {
     status = 401;
@@ -556,17 +625,15 @@ export async function DELETE(request: Request) {
     return res;
   }
 
-  // Verify physician owns this session
-  const patientSession = await getSession(code);
-  if (!patientSession) {
+  const scope = await loadSessionAccessScope(code);
+  if (!scope) {
     status = 404;
     const res = NextResponse.json({ error: "Session not found" }, { status });
     logRequestMeta("/api/sessions", requestId, status, Date.now() - started);
     return res;
   }
 
-  // Use userId from UserSession (which is the physicianId for provider users)
-  if (patientSession.physicianId !== session.userId) {
+  if (!canAccessSessionInScope({ viewer: session, resource: scope })) {
     status = 403;
     const res = NextResponse.json({ error: "Access denied" }, { status });
     logRequestMeta("/api/sessions", requestId, status, Date.now() - started);
@@ -574,6 +641,22 @@ export async function DELETE(request: Request) {
   }
 
   await deleteSession(code);
+  try {
+    const patientId = await loadSessionPatientId(code);
+    await logPhysicianPhiAudit({
+      physicianId: session.userId,
+      patientId,
+      eventType: "session_deleted",
+      ipAddress: getRequestIp(request.headers),
+      userAgent: request.headers.get("user-agent"),
+      metadata: {
+        sessionCode: code,
+        viewerUserType: session.userType,
+      },
+    });
+  } catch {
+    // Best-effort audit logging.
+  }
   const res = NextResponse.json({ success: true });
   logRequestMeta("/api/sessions", requestId, status, Date.now() - started);
   return res;

@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentSession } from "@/lib/auth";
-import { getSessionsByPhysician } from "@/lib/session-store";
+import { getSessionsByScope } from "@/lib/session-store";
 import { query } from "@/lib/db";
+import { logPhysicianPhiAudit } from "@/lib/phi-audit";
 import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
 import { logDebug } from "@/lib/secure-logger";
+import { getRequestIp } from "@/lib/invitation-security";
+import { isWorkforceSessionViewer } from "@/lib/session-access";
+import { startSessionRetentionCleanup } from "@/lib/session-retention-cleanup";
 
 function isUuid(value: unknown): value is string {
   if (typeof value !== "string") return false;
@@ -17,6 +21,7 @@ function isUuid(value: unknown): value is string {
  * Requires authentication
  */
 export async function GET(request: NextRequest) {
+  startSessionRetentionCleanup();
   const requestId = getRequestId(request.headers);
   const started = Date.now();
   let status = 200;
@@ -33,20 +38,28 @@ export async function GET(request: NextRequest) {
       return res;
     }
 
-    // Only providers can view sessions
-    if (session.userType !== "provider") {
+    if (!isWorkforceSessionViewer(session)) {
       status = 403;
       const res = NextResponse.json(
-        { error: "Only providers can view patient sessions" },
+        { error: "Workforce access required" },
         { status }
       );
       logRequestMeta("/api/sessions/list", requestId, status, Date.now() - started);
       return res;
     }
 
-    // Get sessions for this physician only
-    // Use userId for the new session format, or fall back to physicianId for legacy sessions
     const physicianId = (session as any).physicianId || session.userId;
+    const orgId = session.organizationId || null;
+
+    if (session.userType === "org_admin" && !orgId) {
+      status = 403;
+      const res = NextResponse.json(
+        { error: "Organization-scoped access required" },
+        { status }
+      );
+      logRequestMeta("/api/sessions/list", requestId, status, Date.now() - started);
+      return res;
+    }
     
     logDebug("[sessions-list-route] Fetching sessions", {
       physicianId,
@@ -55,7 +68,10 @@ export async function GET(request: NextRequest) {
       hasLegacyPhysicianId: !!(session as any).physicianId
     });
     
-    const sessions = await getSessionsByPhysician(physicianId);
+    const sessions = await getSessionsByScope({
+      organizationId: orgId,
+      physicianId,
+    });
     
     logDebug("[sessions-list-route] Found sessions", { count: sessions.length });
 
@@ -65,7 +81,6 @@ export async function GET(request: NextRequest) {
     let patientIdByCode = new Map<string, string>();
     if (sessionCodes.length > 0) {
       try {
-        const orgId = session.organizationId || null;
         const enc = await query<{ source_session_code: string; patient_id: string }>(
           `SELECT pe.source_session_code, pe.patient_id
            FROM patient_encounters pe
@@ -106,6 +121,22 @@ export async function GET(request: NextRequest) {
       completedAt: s.completedAt.toISOString(),
       viewedAt: s.viewedAt?.toISOString(),
     }));
+
+    try {
+      await logPhysicianPhiAudit({
+        physicianId: session.userId,
+        eventType: "session_list_viewed",
+        ipAddress: getRequestIp(request.headers),
+        userAgent: request.headers.get("user-agent"),
+        metadata: {
+          viewerUserType: session.userType,
+          organizationId: orgId,
+          returnedCount: serializedSessions.length,
+        },
+      });
+    } catch {
+      // Best-effort audit logging.
+    }
 
     const res = NextResponse.json({ sessions: serializedSessions });
     logRequestMeta("/api/sessions/list", requestId, status, Date.now() - started);
