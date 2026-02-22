@@ -14,6 +14,12 @@ This directory contains the detailed HIPAA launch compliance documentation for `
   - Vendor inventory, PHI handling, BAA status, and review cadence.
 - `launch-evidence-matrix.md`
   - Launch control-to-evidence mapping with owner, status, review date, and closure criteria.
+- `release-candidate-go-no-go.md`
+  - Final launch decision template with technical gate results and compliance sign-off fields.
+- `runbooks/incident-response-and-breach-notification.md`
+- `runbooks/access-provisioning-and-review-sop.md`
+- `runbooks/backup-disaster-recovery-sop.md`
+- `runbooks/key-management-and-rotation-sop.md`
 
 ## Canonical References
 

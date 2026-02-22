@@ -56,25 +56,25 @@ This matrix links launch controls to objective evidence, owner, and closure crit
 
 - Control ID: O-01
   - Control: Incident response + breach notification runbook
-  - Evidence: documented runbook and on-call escalation path
+  - Evidence: `docs/compliance/runbooks/incident-response-and-breach-notification.md`
   - Owner: Security/Compliance
-  - Status: pending
+  - Status: documented_pending_approval
   - Last review: 2026-02-22
   - Closure criteria: approved runbook published
 
 - Control ID: O-02
   - Control: Backup and restore validation
-  - Evidence: restore test log, RTO/RPO record
+  - Evidence: `docs/compliance/runbooks/backup-disaster-recovery-sop.md` plus restore test log and RTO/RPO record
   - Owner: Ops
-  - Status: pending
+  - Status: documented_pending_evidence
   - Last review: 2026-02-22
   - Closure criteria: restore drill completed
 
 - Control ID: O-03
   - Control: Access review process
-  - Evidence: periodic access review SOP and first review output
+  - Evidence: `docs/compliance/runbooks/access-provisioning-and-review-sop.md` and first review output
   - Owner: Security/IT
-  - Status: pending
+  - Status: documented_pending_approval
   - Last review: 2026-02-22
   - Closure criteria: first review completed and signed
 
@@ -84,7 +84,7 @@ This matrix links launch controls to objective evidence, owner, and closure crit
   - Control: Vendor BAAs complete for PHI paths
   - Evidence: `docs/compliance/vendor-baa-register.md`
   - Owner: Legal/Compliance
-  - Status: pending
+  - Status: documented_pending_execution
   - Last review: 2026-02-22
   - Closure criteria: all required vendors marked executed
 
@@ -98,9 +98,9 @@ This matrix links launch controls to objective evidence, owner, and closure crit
 
 - Control ID: A-03
   - Control: Sanctions policy and officer designation
-  - Evidence: approved policy + named security/privacy officers
+  - Evidence: `docs/compliance/administrative-safeguards.md` plus approved policy and named security/privacy officers
   - Owner: Compliance/Leadership
-  - Status: pending
+  - Status: documented_pending_execution
   - Last review: 2026-02-22
   - Closure criteria: policy approved and communicated
 
