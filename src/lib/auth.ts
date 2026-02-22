@@ -26,6 +26,16 @@ const SESSION_COOKIE_NAME = "physician_session";
 const IDLE_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
 const ABSOLUTE_MAX_MS = 4 * 60 * 60 * 1000; // 4 hours
 
+function getSessionCookieBaseOptions() {
+  return {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    // Workforce auth cookie does not need cross-site requests.
+    sameSite: "strict" as const,
+    path: "/",
+  };
+}
+
 export type UserType = "super_admin" | "org_admin" | "provider";
 
 export interface UserSession {
@@ -170,11 +180,8 @@ export async function createSession(
     
     // Set cookie AFTER successful database storage
     cookieStore.set(SESSION_COOKIE_NAME, token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
+      ...getSessionCookieBaseOptions(),
       maxAge: IDLE_TIMEOUT_MS / 1000,
-      path: "/",
     });
   } catch (error) {
     console.error("[auth/createSession] Error storing session in database:", error);
@@ -262,7 +269,10 @@ export async function getCurrentSession(options?: { refresh?: boolean }): Promis
     const row = await loadSessionRow(token);
     if (!row) {
       // Best-effort cleanup so we don't keep sending a dead token.
-      cookieStore.delete(SESSION_COOKIE_NAME);
+      cookieStore.set(SESSION_COOKIE_NAME, "", {
+        ...getSessionCookieBaseOptions(),
+        maxAge: 0,
+      });
       return null;
     }
 
@@ -273,7 +283,10 @@ export async function getCurrentSession(options?: { refresh?: boolean }): Promis
     if (nowMs >= absoluteExpiresAtMs || row.expires_at.getTime() <= nowMs) {
       const { query } = await import("./db");
       await query("DELETE FROM physician_sessions WHERE token = $1", [token]);
-      cookieStore.delete(SESSION_COOKIE_NAME);
+      cookieStore.set(SESSION_COOKIE_NAME, "", {
+        ...getSessionCookieBaseOptions(),
+        maxAge: 0,
+      });
       return null;
     }
 
@@ -293,11 +306,8 @@ export async function getCurrentSession(options?: { refresh?: boolean }): Promis
         );
 
         cookieStore.set(SESSION_COOKIE_NAME, token, {
-          httpOnly: true,
-          secure: process.env.NODE_ENV === "production",
-          sameSite: "lax",
+          ...getSessionCookieBaseOptions(),
           maxAge: Math.max(1, Math.floor((newExpiresAtMs - nowMs) / 1000)),
-          path: "/",
         });
 
         // Keep the in-memory row expiry consistent for parsing below.
@@ -340,7 +350,10 @@ export async function deleteSession(token: string): Promise<void> {
   await query("DELETE FROM physician_sessions WHERE token = $1", [token]);
 
   const cookieStore = await cookies();
-  cookieStore.delete(SESSION_COOKIE_NAME);
+  cookieStore.set(SESSION_COOKIE_NAME, "", {
+    ...getSessionCookieBaseOptions(),
+    maxAge: 0,
+  });
 }
 
 /**
