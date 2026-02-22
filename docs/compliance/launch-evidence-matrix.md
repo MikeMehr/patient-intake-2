@@ -110,7 +110,7 @@ This matrix links launch controls to objective evidence, owner, and closure crit
   - Source: `SECURITY_RISK_ACCEPTANCE_P0-4B.md`
   - Description: Temporary acceptance for minimatch transitive chain (now superseded by runtime remediation)
   - Owner: Engineering/Security
-  - Status: review required
+  - Status: pending_formal_closure
   - Expiration: 2026-03-31
   - Compensating controls: lockfile installs, protected branch deploys, periodic audit checks
   - Closure criteria:

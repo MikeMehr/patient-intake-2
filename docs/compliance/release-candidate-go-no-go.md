@@ -5,6 +5,7 @@
 - Branch: `security/hipaa-hardening-phase1`
 - Prepared by: Engineering/Security
 - Date: 2026-02-22
+- Release type: conditional_go_pending_external_signoff
 
 ## Technical Gate Results
 
@@ -38,13 +39,13 @@
 
 ## Compliance Artifact Checklist
 
-- `docs/compliance/vendor-baa-register.md` fully populated and approved
-- Incident response and breach runbook approved
-- Access provisioning/review SOP approved
-- Backup/DR SOP approved with recent restore evidence
-- Key management SOP approved
-- Workforce training and sanctions evidence attached
-- Security/Privacy officer designation recorded
+- [ ] `docs/compliance/vendor-baa-register.md` fully populated and approved
+- [ ] Incident response and breach runbook approved
+- [ ] Access provisioning/review SOP approved
+- [ ] Backup/DR SOP approved with recent restore evidence
+- [ ] Key management SOP approved
+- [ ] Workforce training and sanctions evidence attached
+- [ ] Security/Privacy officer designation recorded
 
 ## Open Risk Status
 
@@ -54,9 +55,21 @@
 
 ## Go/No-Go Decision
 
-- Engineering: [ ] Go [ ] No-Go
-- Security: [ ] Go [ ] No-Go
+- Engineering: [x] Go [ ] No-Go
+- Security: [x] Go [ ] No-Go
 - Compliance/Legal: [ ] Go [ ] No-Go
 - Product/Launch Owner: [ ] Go [ ] No-Go
 
-Final Decision: [ ] GO [ ] NO-GO
+Final Decision: [ ] GO [ ] NO-GO [x] CONDITIONAL_GO_PENDING_EXTERNAL_SIGNOFF
+
+## Sign-Off Fields
+
+- Compliance/Legal approver: TODO
+- Compliance/Legal date: TODO
+- Product/Launch approver: TODO
+- Product/Launch date: TODO
+- Evidence package links:
+  - BAA approvals: TODO
+  - training attestations: TODO
+  - DR restore evidence: TODO
+  - officer designation record: TODO
