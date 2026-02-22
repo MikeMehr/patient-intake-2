@@ -97,24 +97,21 @@ An image/PDF is attached. Extract medications and PMH as instructed.
     return NextResponse.json({ summary });
   } catch (error: unknown) {
     status = 500;
-    let message = error instanceof Error ? error.message : String(error);
-    // Surface OpenAI response details when available
-    if ((error as any)?.response?.data) {
-      const data = (error as any).response.data;
-      message = data.error?.message || JSON.stringify(data);
-    }
-    // Log to console for visibility in dev
+    const message = error instanceof Error ? error.message : String(error);
+    // Avoid logging provider response payloads that could contain PHI echoes.
     console.error("[analyze-med-pmh] Error analyzing image", {
-      error: message,
       statusCode: (error as any)?.response?.status,
-      data: (error as any)?.response?.data,
+      errorType: error instanceof Error ? error.name : typeof error,
     });
     logDebug("[analyze-med-pmh] Error analyzing image", {
       error: message,
       statusCode: (error as any)?.response?.status,
     });
     return NextResponse.json(
-      { error: "Failed to analyze medication/PMH photo.", details: message },
+      {
+        error: "Failed to analyze medication/PMH photo.",
+        details: process.env.NODE_ENV === "development" ? message : undefined,
+      },
       { status },
     );
   }

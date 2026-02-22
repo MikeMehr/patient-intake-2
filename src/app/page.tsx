@@ -1893,62 +1893,56 @@ export default function Home() {
     let finalLabReportSummary = labReportSummary;
     let finalPreviousLabReportSummary = previousLabReportSummary;
     let finalFormSummary = formSummary;
-    console.log("[page.tsx] handleStart - Current labReportSummary state:", finalLabReportSummary ? `${finalLabReportSummary.substring(0, 50)}...` : "null");
-    console.log("[page.tsx] handleStart - Current previousLabReportSummary state:", finalPreviousLabReportSummary ? `${finalPreviousLabReportSummary.substring(0, 50)}...` : "null");
-    console.log("[page.tsx] handleStart - Current formSummary state:", finalFormSummary ? `${finalFormSummary.substring(0, 50)}...` : "null");
+    if (process.env.NODE_ENV === "development") {
+      console.log("[page.tsx] handleStart - Summary presence", {
+        hasLabReportSummary: Boolean(finalLabReportSummary),
+        hasPreviousLabReportSummary: Boolean(finalPreviousLabReportSummary),
+        hasFormSummary: Boolean(finalFormSummary),
+      });
+    }
     
     if ((!finalLabReportSummary || !finalPreviousLabReportSummary || !finalFormSummary) && typeof window !== "undefined") {
       const physicianId = sessionStorage.getItem("physicianId");
-      console.log("[page.tsx] handleStart - Fetching lab report summaries, physicianId:", physicianId, "patientEmail:", patientEmail);
+      if (process.env.NODE_ENV === "development") {
+        console.log("[page.tsx] handleStart - Fetching invitation summaries");
+      }
       
       if (physicianId && patientEmail && patientEmail.includes("@")) {
         try {
           const response = await fetch(`/api/invitations/lab-report`);
-          console.log("[page.tsx] handleStart - Lab report fetch response status:", response.status);
+          if (process.env.NODE_ENV === "development") {
+            console.log("[page.tsx] handleStart - Summary fetch status:", response.status);
+          }
           
           if (response.ok) {
             const data = await response.json();
-            console.log("[page.tsx] handleStart - Lab report fetch response data:", data);
-            
             if (data.labReportSummary) {
               finalLabReportSummary = data.labReportSummary;
               setLabReportSummary(data.labReportSummary);
-              console.log("[page.tsx] handleStart - Fetched lab report summary:", data.labReportSummary.substring(0, 100));
-            } else {
-              console.log("[page.tsx] handleStart - No lab report summary in response");
             }
             
             if (data.previousLabReportSummary) {
               finalPreviousLabReportSummary = data.previousLabReportSummary;
               setPreviousLabReportSummary(data.previousLabReportSummary);
-              console.log("[page.tsx] handleStart - Fetched previous lab report summary:", data.previousLabReportSummary.substring(0, 100));
-            } else {
-              console.log("[page.tsx] handleStart - No previous lab report summary in response");
             }
             
             if (data.formSummary) {
               finalFormSummary = data.formSummary;
               setFormSummary(data.formSummary);
-              console.log("[page.tsx] handleStart - Fetched form summary:", data.formSummary.substring(0, 100));
-            } else {
-              console.log("[page.tsx] handleStart - No form summary in response");
             }
           } else {
-            const errorText = await response.text();
-            console.error("[page.tsx] handleStart - Lab report fetch failed:", response.status, errorText);
+            console.error("[page.tsx] handleStart - Summary fetch failed:", response.status);
           }
         } catch (err) {
           console.error("[page.tsx] handleStart - Failed to fetch lab report summaries:", err);
           // Continue without lab report summaries - they're optional
         }
       } else {
-        console.log("[page.tsx] handleStart - Missing physicianId or patientEmail, skipping lab report fetch");
+        if (process.env.NODE_ENV === "development") {
+          console.log("[page.tsx] handleStart - Missing physician context; skipping summary fetch");
+        }
       }
     }
-    
-    console.log("[page.tsx] handleStart - Final labReportSummary to send:", finalLabReportSummary ? `${finalLabReportSummary.substring(0, 50)}...` : "null");
-    console.log("[page.tsx] handleStart - Final previousLabReportSummary to send:", finalPreviousLabReportSummary ? `${finalPreviousLabReportSummary.substring(0, 50)}...` : "null");
-    console.log("[page.tsx] handleStart - Final formSummary to send:", finalFormSummary ? `${finalFormSummary.substring(0, 50)}...` : "null");
     
     // Start timer when interview begins
     const startTime = Date.now();
@@ -2316,10 +2310,7 @@ export default function Home() {
     const finalPatientEmail = patientEmail?.trim() || `patient-${Date.now()}@unknown.com`;
     
     if (!patientName || !patientEmail) {
-      console.warn("[saveSession] Patient name or email missing, using defaults:", {
-        patientName: finalPatientName,
-        patientEmail: finalPatientEmail
-      });
+      console.warn("[saveSession] Patient identifiers missing; using fallback placeholders");
     }
 
     // Calculate interview duration in seconds
@@ -2339,30 +2330,21 @@ export default function Home() {
     // Ensure transcript is always an array (even if empty)
     const transcriptToSave: InterviewMessage[] = Array.isArray(sourceMessages) ? sourceMessages : [];
     
-    // CRITICAL: Log detailed information about transcript state
-    console.log("[saveSession] Saving session with transcript:", {
-      transcriptLength: transcriptToSave.length,
-      messagesLength: messages.length,
-      messagesRefLength: messagesRef.current.length,
-      sourceMessagesLength: sourceMessages.length,
-      transcriptSample: transcriptToSave.length > 0 ? transcriptToSave[0] : null,
-      messagesSample: messages.length > 0 ? messages[0] : null,
-      messagesRefSample: messagesRef.current.length > 0 ? messagesRef.current[0] : null,
-      allMessages: messages.map(m => ({ role: m.role, contentLength: m.content.length })),
-      allMessagesRef: messagesRef.current.map(m => ({ role: m.role, contentLength: m.content.length })),
-      sourceMessages: sourceMessages.map(m => ({ role: m.role, contentLength: m.content.length })),
-    });
+    if (process.env.NODE_ENV === "development") {
+      console.log("[saveSession] Persisting interview transcript", {
+        transcriptLength: transcriptToSave.length,
+        messagesLength: messages.length,
+        messagesRefLength: messagesRef.current.length,
+      });
+    }
     
     // If transcript is empty, this is a problem - log warning
     if (transcriptToSave.length === 0) {
-      console.error("[saveSession] ERROR: Transcript is empty! This should not happen if interview completed.", {
+      console.error("[saveSession] ERROR: Transcript is empty at save time", {
         messagesCount: messages.length,
         messagesRefCount: messagesRef.current.length,
         sourceMessagesCount: sourceMessages.length,
         status: statusRef.current,
-        messages: messages,
-        messagesRef: messagesRef.current,
-        sourceMessages: sourceMessages,
       });
     }
 
@@ -2402,16 +2384,13 @@ export default function Home() {
             transcript: finalTranscriptToSave,
           };
           
-          console.log("[saveSession] Sending POST request (with image) with body:", {
-            hasTranscript: !!requestBody.transcript,
-            transcriptLength: requestBody.transcript?.length || 0,
-            transcriptType: Array.isArray(requestBody.transcript) ? "array" : typeof requestBody.transcript,
-            transcriptSample: requestBody.transcript && requestBody.transcript.length > 0 ? requestBody.transcript[0] : null,
-            bodyKeys: Object.keys(requestBody),
-            latestTranscriptLength: latestTranscript.length,
-            messagesRefLength: messagesRef.current.length,
-            messagesLength: messages.length,
-          });
+          if (process.env.NODE_ENV === "development") {
+            console.log("[saveSession] Sending POST request (with image)", {
+              hasTranscript: !!requestBody.transcript,
+              transcriptLength: requestBody.transcript?.length || 0,
+              bodyKeys: Object.keys(requestBody),
+            });
+          }
           
           fetch("/api/sessions", {
             method: "POST",
@@ -2464,13 +2443,13 @@ export default function Home() {
         transcript: transcriptToSave,
       };
       
-      console.log("[saveSession] Sending POST request (no image) with body:", {
-        hasTranscript: !!requestBody.transcript,
-        transcriptLength: requestBody.transcript?.length || 0,
-        transcriptType: Array.isArray(requestBody.transcript) ? "array" : typeof requestBody.transcript,
-        transcriptSample: requestBody.transcript && requestBody.transcript.length > 0 ? requestBody.transcript[0] : null,
-        bodyKeys: Object.keys(requestBody),
-      });
+      if (process.env.NODE_ENV === "development") {
+        console.log("[saveSession] Sending POST request (no image)", {
+          hasTranscript: !!requestBody.transcript,
+          transcriptLength: requestBody.transcript?.length || 0,
+          bodyKeys: Object.keys(requestBody),
+        });
+      }
       
       const response = await fetch("/api/sessions", {
         method: "POST",
@@ -4554,10 +4533,14 @@ async function requestTurn(
   physicianId: string,
   language: string,
 ): Promise<InterviewResponse> {
-  console.log("[requestTurn] Sending request with labReportSummary:", labReportSummary ? `${labReportSummary.substring(0, 50)}...` : "null");
-  console.log("[requestTurn] Sending request with previousLabReportSummary:", previousLabReportSummary ? `${previousLabReportSummary.substring(0, 50)}...` : "null");
-  console.log("[requestTurn] Sending request with formSummary:", formSummary ? `${formSummary.substring(0, 50)}...` : "null");
-  console.log("[requestTurn] Sending request with interviewGuidance:", interviewGuidance ? `${interviewGuidance.substring(0, 50)}...` : "null");
+  if (process.env.NODE_ENV === "development") {
+    console.log("[requestTurn] Sending request with optional summary fields", {
+      hasLabReportSummary: Boolean(labReportSummary),
+      hasPreviousLabReportSummary: Boolean(previousLabReportSummary),
+      hasFormSummary: Boolean(formSummary),
+      hasInterviewGuidance: Boolean(interviewGuidance),
+    });
+  }
   
   const response = await fetch("/api/interview", {
     method: "POST",
@@ -4626,7 +4609,6 @@ async function requestTurn(
       console.error("[requestTurn] Error response:", {
         status: response.status,
         statusText: response.statusText,
-        errorPayload,
         isQuotaError,
       });
     }
@@ -4644,7 +4626,6 @@ async function requestTurn(
     try {
       const clonedResponse = response.clone();
       responseText = await clonedResponse.text();
-      console.error("[requestTurn] Response text:", responseText.substring(0, 500));
     } catch (textError) {
       console.error("[requestTurn] Could not read response text:", textError);
     }
