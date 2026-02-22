@@ -118,13 +118,12 @@ export async function POST(request: NextRequest) {
              patient_background,
              oscar_demographic_no
            )
-           VALUES ($1, $2, $3, $4, $5, $6, $6, NOW(), $7, $8)
+          VALUES ($1, $2, $3, NULL, $4, $5, $5, NOW(), $6, $7)
            RETURNING id`,
           [
             physicianId,
             patientName,
             patientEmail.toLowerCase(),
-            invitationLink,
             tokenHash,
             expiresAt,
             patientBackground || null,

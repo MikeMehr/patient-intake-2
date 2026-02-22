@@ -6,6 +6,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import { hashPassword, validatePassword } from "@/lib/auth";
+import { hashResetToken } from "@/lib/reset-token-security";
 
 export async function POST(
   request: NextRequest,
@@ -13,6 +14,7 @@ export async function POST(
 ) {
   try {
     const { token } = await params;
+    const tokenHash = hashResetToken(token);
     const body = await request.json();
     const { newPassword } = body;
 
@@ -34,14 +36,19 @@ export async function POST(
 
     // Find valid reset token
     const tokenResult = await query<{
+      id: string;
       physician_id: string;
       expires_at: Date;
       used: boolean;
     }>(
-      `SELECT physician_id, expires_at, used
+      `SELECT id, physician_id, expires_at, used
        FROM password_reset_tokens
-       WHERE token = $1 AND expires_at > NOW() AND used = FALSE`,
-      [token]
+       WHERE (token_hash = $1 OR token = $2)
+         AND expires_at > NOW()
+         AND used = FALSE
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [tokenHash, token]
     );
 
     if (tokenResult.rows.length === 0) {
@@ -64,8 +71,8 @@ export async function POST(
 
     // Mark token as used
     await query(
-      `UPDATE password_reset_tokens SET used = TRUE WHERE token = $1`,
-      [token]
+      `UPDATE password_reset_tokens SET used = TRUE WHERE id = $1`,
+      [resetToken.id]
     );
 
     // Invalidate all existing sessions for this physician

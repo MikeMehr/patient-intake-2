@@ -1,6 +1,6 @@
 /**
  * Database-backed storage for patient intake sessions.
- * Patient sessions are retained until explicitly deleted.
+ * Patient sessions are retained for a configurable window.
  */
 
 import type { HistoryResponse } from "./history-schema";
@@ -28,9 +28,20 @@ export interface PatientSession {
 /**
  * Clean up expired sessions from database
  */
-export async function cleanupExpiredSessions(): Promise<void> {
-  // Session expiry cleanup is intentionally disabled.
-  return;
+export async function cleanupExpiredSessions(): Promise<number> {
+  const configuredHours = Number(process.env.SESSION_EXPIRY_HOURS);
+  const retentionHours =
+    Number.isFinite(configuredHours) && configuredHours > 0
+      ? configuredHours
+      : 24 * 30;
+
+  const result = await query(
+    `DELETE FROM patient_sessions
+     WHERE completed_at < NOW() - ($1::int * INTERVAL '1 hour')`,
+    [Math.floor(retentionHours)],
+  );
+
+  return result.rowCount ?? 0;
 }
 
 /**
@@ -461,6 +472,87 @@ export async function getSessionsByPhysician(physicianId: string): Promise<Patie
     });
   } catch (error) {
     console.error("[session-store] Error getting sessions by physician:", error);
+    return [];
+  }
+}
+
+export async function getSessionsByScope(params: {
+  organizationId: string | null;
+  physicianId: string;
+}): Promise<PatientSession[]> {
+  const { organizationId, physicianId } = params;
+  try {
+    const result = await query<{
+      physician_id: string;
+      session_code: string;
+      patient_name: string;
+      patient_email: string;
+      chief_complaint: string;
+      patient_profile: any;
+      history: any;
+      image_summary: string | null;
+      image_url: string | null;
+      image_name: string | null;
+      completed_at: Date;
+      viewed_by_physician: boolean;
+      viewed_at: Date | null;
+    }>(
+      `SELECT
+        ps.physician_id, ps.session_code, ps.patient_name, ps.patient_email,
+        ps.chief_complaint, ps.patient_profile, ps.history,
+        ps.image_summary, ps.image_url, ps.image_name,
+        ps.completed_at, ps.viewed_by_physician, ps.viewed_at
+       FROM patient_sessions ps
+       JOIN physicians ph ON ph.id = ps.physician_id
+       WHERE (ps.history->>'physicianReviewedAt') IS NULL
+         AND (
+           (
+             $1::uuid IS NOT NULL
+             AND ph.organization_id = $1::uuid
+           )
+           OR
+           (
+             $1::uuid IS NULL
+             AND ph.organization_id IS NULL
+             AND ps.physician_id = $2::uuid
+           )
+         )
+       ORDER BY ps.completed_at DESC`,
+      [organizationId, physicianId],
+    );
+
+    return result.rows.map((row) => {
+      const historyData = row.history as HistoryResponse & {
+        interviewDuration?: number;
+        transcript?: InterviewMessage[];
+      };
+      const { interviewDuration, transcript, ...history } = historyData;
+
+      let extractedTranscript: InterviewMessage[] | undefined = undefined;
+      if (transcript && Array.isArray(transcript)) {
+        extractedTranscript = transcript;
+      }
+
+      return {
+        sessionCode: row.session_code,
+        patientEmail: row.patient_email,
+        patientName: row.patient_name,
+        chiefComplaint: row.chief_complaint,
+        patientProfile: row.patient_profile as PatientProfile,
+        history: history as HistoryResponse,
+        completedAt: row.completed_at,
+        physicianId: row.physician_id,
+        viewedByPhysician: row.viewed_by_physician,
+        viewedAt: row.viewed_at || undefined,
+        imageSummary: row.image_summary || undefined,
+        imageUrl: row.image_url || undefined,
+        imageName: row.image_name || undefined,
+        duration: interviewDuration,
+        transcript: extractedTranscript,
+      };
+    });
+  } catch (error) {
+    console.error("[session-store] Error getting sessions by scope:", error);
     return [];
   }
 }
