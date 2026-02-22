@@ -1,8 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentSession } from "@/lib/auth";
-import { getSession } from "@/lib/session-store";
 import { query } from "@/lib/db";
 import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
+import { logPhysicianPhiAudit } from "@/lib/phi-audit";
+import { getRequestIp } from "@/lib/invitation-security";
+import {
+  canAccessSessionInScope,
+  loadSessionAccessScope,
+  loadSessionPatientId,
+} from "@/lib/session-access";
 
 function badRequest(message: string, status = 400) {
   return NextResponse.json({ error: message }, { status });
@@ -41,21 +47,21 @@ export async function POST(request: NextRequest) {
       logRequestMeta("/api/lab-requisitions", requestId, status, Date.now() - started);
       return res;
     }
-    if (session.userType !== "provider") {
+    if (session.userType !== "provider" && session.userType !== "org_admin") {
       status = 403;
-      const res = badRequest("Only providers can save lab requisitions.", status);
+      const res = badRequest("Workforce access required.", status);
       logRequestMeta("/api/lab-requisitions", requestId, status, Date.now() - started);
       return res;
     }
 
-    const patientSession = await getSession(sessionCode);
-    if (!patientSession) {
+    const scope = await loadSessionAccessScope(sessionCode);
+    if (!scope) {
       status = 404;
       const res = badRequest("Session not found.", status);
       logRequestMeta("/api/lab-requisitions", requestId, status, Date.now() - started);
       return res;
     }
-    if (patientSession.physicianId !== session.userId) {
+    if (!canAccessSessionInScope({ viewer: session, resource: scope })) {
       status = 403;
       const res = badRequest("You do not have access to this session.", status);
       logRequestMeta("/api/lab-requisitions", requestId, status, Date.now() - started);
@@ -105,6 +111,23 @@ export async function POST(request: NextRequest) {
     );
 
     const res = NextResponse.json({ success: true });
+    try {
+      const patientId = await loadSessionPatientId(sessionCode);
+      await logPhysicianPhiAudit({
+        physicianId: session.userId,
+        patientId,
+        eventType: "lab_requisition_saved",
+        ipAddress: getRequestIp(request.headers),
+        userAgent: request.headers.get("user-agent"),
+        metadata: {
+          sessionCode,
+          viewerUserType: session.userType,
+          labsCount: Array.isArray(labs) ? labs.length : 0,
+        },
+      });
+    } catch {
+      // Best-effort audit logging.
+    }
     logRequestMeta("/api/lab-requisitions", requestId, status, Date.now() - started);
     return res;
   } catch (error) {
@@ -139,21 +162,21 @@ export async function GET(request: NextRequest) {
       logRequestMeta("/api/lab-requisitions", requestId, status, Date.now() - started);
       return res;
     }
-    if (session.userType !== "provider") {
+    if (session.userType !== "provider" && session.userType !== "org_admin") {
       status = 403;
-      const res = badRequest("Only providers can view lab requisitions.", status);
+      const res = badRequest("Workforce access required.", status);
       logRequestMeta("/api/lab-requisitions", requestId, status, Date.now() - started);
       return res;
     }
 
-    const patientSession = await getSession(sessionCode);
-    if (!patientSession) {
+    const scope = await loadSessionAccessScope(sessionCode);
+    if (!scope) {
       status = 404;
       const res = badRequest("Session not found.", status);
       logRequestMeta("/api/lab-requisitions", requestId, status, Date.now() - started);
       return res;
     }
-    if (patientSession.physicianId !== session.userId) {
+    if (!canAccessSessionInScope({ viewer: session, resource: scope })) {
       status = 403;
       const res = badRequest("You do not have access to this session.", status);
       logRequestMeta("/api/lab-requisitions", requestId, status, Date.now() - started);
@@ -191,6 +214,24 @@ export async function GET(request: NextRequest) {
 
       const row = result.rows[0];
       if (row.pdf_bytes) {
+        try {
+          const patientId = await loadSessionPatientId(sessionCode);
+          await logPhysicianPhiAudit({
+            physicianId: session.userId,
+            patientId,
+            eventType: "lab_requisition_viewed",
+            ipAddress: getRequestIp(request.headers),
+            userAgent: request.headers.get("user-agent"),
+            metadata: {
+              sessionCode,
+              viewerUserType: session.userType,
+              requisitionId: row.id,
+              responseType: "pdf",
+            },
+          });
+        } catch {
+          // Best-effort audit logging.
+        }
         const res = new NextResponse(new Uint8Array(row.pdf_bytes), {
           status: 200,
           headers: {
@@ -213,6 +254,24 @@ export async function GET(request: NextRequest) {
         createdAt: row.created_at,
         pdfBase64: null,
       });
+      try {
+        const patientId = await loadSessionPatientId(sessionCode);
+        await logPhysicianPhiAudit({
+          physicianId: session.userId,
+          patientId,
+          eventType: "lab_requisition_viewed",
+          ipAddress: getRequestIp(request.headers),
+          userAgent: request.headers.get("user-agent"),
+          metadata: {
+            sessionCode,
+            viewerUserType: session.userType,
+            requisitionId: row.id,
+            responseType: "json",
+          },
+        });
+      } catch {
+        // Best-effort audit logging.
+      }
       logRequestMeta("/api/lab-requisitions", requestId, status, Date.now() - started);
       return res;
     } else {
@@ -248,6 +307,24 @@ export async function GET(request: NextRequest) {
           createdAt: row.created_at,
         })),
       });
+      try {
+        const patientId = await loadSessionPatientId(sessionCode);
+        await logPhysicianPhiAudit({
+          physicianId: session.userId,
+          patientId,
+          eventType: "lab_requisition_viewed",
+          ipAddress: getRequestIp(request.headers),
+          userAgent: request.headers.get("user-agent"),
+          metadata: {
+            sessionCode,
+            viewerUserType: session.userType,
+            responseType: "list",
+            returnedCount: result.rows.length,
+          },
+        });
+      } catch {
+        // Best-effort audit logging.
+      }
       logRequestMeta("/api/lab-requisitions", requestId, status, Date.now() - started);
       return res;
     }
@@ -283,21 +360,21 @@ export async function DELETE(request: NextRequest) {
       logRequestMeta("/api/lab-requisitions", requestId, status, Date.now() - started);
       return res;
     }
-    if (session.userType !== "provider") {
+    if (session.userType !== "provider" && session.userType !== "org_admin") {
       status = 403;
-      const res = badRequest("Only providers can delete lab requisitions.", status);
+      const res = badRequest("Workforce access required.", status);
       logRequestMeta("/api/lab-requisitions", requestId, status, Date.now() - started);
       return res;
     }
 
-    const patientSession = await getSession(sessionCode);
-    if (!patientSession) {
+    const scope = await loadSessionAccessScope(sessionCode);
+    if (!scope) {
       status = 404;
       const res = badRequest("Session not found.", status);
       logRequestMeta("/api/lab-requisitions", requestId, status, Date.now() - started);
       return res;
     }
-    if (patientSession.physicianId !== session.userId) {
+    if (!canAccessSessionInScope({ viewer: session, resource: scope })) {
       status = 403;
       const res = badRequest("You do not have access to this session.", status);
       logRequestMeta("/api/lab-requisitions", requestId, status, Date.now() - started);
@@ -317,6 +394,23 @@ export async function DELETE(request: NextRequest) {
     }
 
     const res = NextResponse.json({ success: true });
+    try {
+      const patientId = await loadSessionPatientId(sessionCode);
+      await logPhysicianPhiAudit({
+        physicianId: session.userId,
+        patientId,
+        eventType: "lab_requisition_deleted",
+        ipAddress: getRequestIp(request.headers),
+        userAgent: request.headers.get("user-agent"),
+        metadata: {
+          sessionCode,
+          viewerUserType: session.userType,
+          requisitionId: id,
+        },
+      });
+    } catch {
+      // Best-effort audit logging.
+    }
     logRequestMeta("/api/lab-requisitions", requestId, status, Date.now() - started);
     return res;
   } catch (error) {

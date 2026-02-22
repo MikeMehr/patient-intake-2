@@ -5,6 +5,22 @@ import { EMR_EXPORT_STATUS, SOAP_LIFECYCLE_STATES } from "@/lib/transcription-po
 
 type Scope = { organizationId: string; physicianId?: never } | { organizationId?: never; physicianId: string };
 
+export function resolveWorkforceScope(params: {
+  userType: string;
+  userId: string;
+  organizationId?: string | null;
+}): Scope | null {
+  if (params.userType === "org_admin") {
+    if (!params.organizationId) return null;
+    return { organizationId: params.organizationId };
+  }
+  if (params.userType === "provider") {
+    if (params.organizationId) return { organizationId: params.organizationId };
+    return { physicianId: params.userId };
+  }
+  return null;
+}
+
 function scopeWhere(scope: Scope, startIndex: number): { sql: string; params: any[] } {
   if ("organizationId" in scope) {
     return { sql: `p.organization_id = $${startIndex}`, params: [scope.organizationId] };
@@ -150,9 +166,10 @@ export async function createSoapDraftVersion(params: {
 
 export async function updateSoapDraftVersion(params: {
   soapVersionId: string;
-  physicianId: string;
+  scope: Scope;
   draft: SoapDraft;
 }): Promise<void> {
+  const { sql: scopeSql, params: scopeParams } = scopeWhere(params.scope, 7);
   const res = await query(
     `UPDATE soap_note_versions
      SET subjective = $3,
@@ -161,16 +178,22 @@ export async function updateSoapDraftVersion(params: {
          plan = $6,
          updated_at = NOW()
      WHERE id = $1
-       AND physician_id = $2
-       AND lifecycle_state = $7`,
+       AND lifecycle_state = $2
+       AND EXISTS (
+         SELECT 1
+         FROM patient_encounters pe
+         JOIN patients p ON p.id = pe.patient_id
+         WHERE pe.id = soap_note_versions.encounter_id
+           AND ${scopeSql}
+       )`,
     [
       params.soapVersionId,
-      params.physicianId,
+      SOAP_LIFECYCLE_STATES.DRAFT,
       params.draft.subjective,
       params.draft.objective,
       params.draft.assessment,
       params.draft.plan,
-      SOAP_LIFECYCLE_STATES.DRAFT,
+      ...scopeParams,
     ],
   );
   if ((res.rowCount ?? 0) === 0) {
@@ -180,8 +203,10 @@ export async function updateSoapDraftVersion(params: {
 
 export async function finalizeSoapVersion(params: {
   soapVersionId: string;
-  physicianId: string;
+  scope: Scope;
+  actorUserId: string;
 }): Promise<{ encounterId: string; patientId: string; version: number }> {
+  const { sql: scopeSql, params: scopeParams } = scopeWhere(params.scope, 2);
   const rowRes = await query<{
     id: string;
     encounter_id: string;
@@ -195,9 +220,16 @@ export async function finalizeSoapVersion(params: {
   }>(
     `SELECT id, encounter_id, patient_id, version, subjective, objective, assessment, plan, lifecycle_state
      FROM soap_note_versions
-     WHERE id = $1 AND physician_id = $2
+     WHERE id = $1
+       AND EXISTS (
+         SELECT 1
+         FROM patient_encounters pe
+         JOIN patients p ON p.id = pe.patient_id
+         WHERE pe.id = soap_note_versions.encounter_id
+           AND ${scopeSql}
+       )
      LIMIT 1`,
-    [params.soapVersionId, params.physicianId],
+    [params.soapVersionId, ...scopeParams],
   );
   const row = rowRes.rows[0];
   if (!row) throw new Error("SOAP version not found.");
@@ -223,7 +255,7 @@ export async function finalizeSoapVersion(params: {
          draft_transcript = NULL,
          updated_at = NOW()
      WHERE id = $1`,
-    [params.soapVersionId, params.physicianId, SOAP_LIFECYCLE_STATES.FINALIZED_FOR_EXPORT, contentHash],
+    [params.soapVersionId, params.actorUserId, SOAP_LIFECYCLE_STATES.FINALIZED_FOR_EXPORT, contentHash],
   );
   if ((updated.rowCount ?? 0) === 0) {
     throw new Error("Failed to finalize SOAP version.");
@@ -379,6 +411,56 @@ export async function getTranscriptionSessionsForPhysician(physicianId: string) 
   }));
 }
 
+export async function getTranscriptionSessionsForScope(scope: Scope) {
+  const { sql: scopeSql, params: scopeParams } = scopeWhere(scope, 1);
+  const res = await query<{
+    transcription_session_id: string;
+    encounter_id: string;
+    soap_version_id: string;
+    patient_id: string;
+    patient_name: string;
+    chief_complaint: string | null;
+    lifecycle_state: string;
+    version: number;
+    preview_summary: string | null;
+    created_at: Date;
+    finalized_for_export_at: Date | null;
+  }>(
+    `SELECT
+       pts.id AS transcription_session_id,
+       pts.encounter_id,
+       pts.soap_version_id,
+       pts.patient_id,
+       p.full_name AS patient_name,
+       pe.chief_complaint,
+       snv.lifecycle_state,
+       snv.version,
+       pts.preview_summary,
+       pts.created_at,
+       snv.finalized_for_export_at
+     FROM physician_transcription_sessions pts
+     JOIN patients p ON p.id = pts.patient_id
+     JOIN patient_encounters pe ON pe.id = pts.encounter_id
+     JOIN soap_note_versions snv ON snv.id = pts.soap_version_id
+     WHERE ${scopeSql}
+     ORDER BY pts.created_at DESC`,
+    scopeParams,
+  );
+  return res.rows.map((r) => ({
+    transcriptionSessionId: r.transcription_session_id,
+    encounterId: r.encounter_id,
+    soapVersionId: r.soap_version_id,
+    patientId: r.patient_id,
+    patientName: r.patient_name,
+    chiefComplaint: r.chief_complaint,
+    lifecycleState: r.lifecycle_state,
+    version: r.version,
+    previewSummary: r.preview_summary,
+    createdAt: r.created_at.toISOString(),
+    finalizedForExportAt: r.finalized_for_export_at ? r.finalized_for_export_at.toISOString() : null,
+  }));
+}
+
 export async function getSoapVersionById(params: { soapVersionId: string; physicianId: string }) {
   const res = await query<{
     id: string;
@@ -402,6 +484,35 @@ export async function getSoapVersionById(params: { soapVersionId: string; physic
        AND pe.physician_id = $2
      LIMIT 1`,
     [params.soapVersionId, params.physicianId],
+  );
+  return res.rows[0] || null;
+}
+
+export async function getSoapVersionByIdForScope(params: { soapVersionId: string; scope: Scope }) {
+  const { sql: scopeSql, params: scopeParams } = scopeWhere(params.scope, 2);
+  const res = await query<{
+    id: string;
+    encounter_id: string;
+    patient_id: string;
+    version: number;
+    lifecycle_state: string;
+    subjective: string;
+    objective: string;
+    assessment: string;
+    plan: string;
+    draft_transcript: string | null;
+    finalized_for_export_at: Date | null;
+  }>(
+    `SELECT
+       snv.id, snv.encounter_id, snv.patient_id, snv.version, snv.lifecycle_state,
+       snv.subjective, snv.objective, snv.assessment, snv.plan, snv.draft_transcript, snv.finalized_for_export_at
+     FROM soap_note_versions snv
+     JOIN patient_encounters pe ON pe.id = snv.encounter_id
+     JOIN patients p ON p.id = pe.patient_id
+     WHERE snv.id = $1
+       AND ${scopeSql}
+     LIMIT 1`,
+    [params.soapVersionId, ...scopeParams],
   );
   return res.rows[0] || null;
 }

@@ -8,7 +8,7 @@ import {
   assertPhysicianCanAccessPatient,
   createSoapDraftVersion,
   createTranscriptionEncounter,
-  resolveScopeForPhysician,
+  resolveWorkforceScope,
   upsertPatientFromQuickEntry,
   upsertTranscriptionSessionPointer,
 } from "@/lib/transcription-store";
@@ -56,6 +56,17 @@ export async function POST(request: NextRequest) {
       logRequestMeta("/api/physician/transcription/generate", requestId, status, Date.now() - started);
       return res;
     }
+    const scope = resolveWorkforceScope({
+      userType: auth.userType,
+      userId: auth.userId,
+      organizationId: auth.organizationId || null,
+    });
+    if (!scope) {
+      status = 403;
+      const res = NextResponse.json({ error: "Provider access required." }, { status });
+      logRequestMeta("/api/physician/transcription/generate", requestId, status, Date.now() - started);
+      return res;
+    }
 
     const body = await request.json().catch(() => null);
     const parsed = generateSoapFromTranscriptRequestSchema.safeParse(body);
@@ -66,8 +77,7 @@ export async function POST(request: NextRequest) {
       return res;
     }
 
-    const physicianId = (auth as any).physicianId || auth.userId;
-    const scope = await resolveScopeForPhysician(physicianId);
+    const physicianId = auth.userId;
     let patientId = parsed.data.patientId || "";
     let patientName = "";
     let identityPath: "existing_patient" | "new_patient_quick_entry" = "existing_patient";

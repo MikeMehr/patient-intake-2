@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentSession } from "@/lib/auth";
+import { getRequestIp } from "@/lib/invitation-security";
+import { logPhysicianPhiAudit } from "@/lib/phi-audit";
 import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
-import { getSoapVersionById } from "@/lib/transcription-store";
+import { getSoapVersionByIdForScope, resolveWorkforceScope } from "@/lib/transcription-store";
 import { HEALTHASSIST_SNAPSHOT_LABEL } from "@/lib/transcription-policy";
 
 export async function GET(
@@ -19,15 +21,19 @@ export async function GET(
       logRequestMeta("/api/physician/transcription/soap/[soapVersionId]", requestId, status, Date.now() - started);
       return res;
     }
-    if (auth.userType !== "provider") {
+    const scope = resolveWorkforceScope({
+      userType: auth.userType,
+      userId: auth.userId,
+      organizationId: auth.organizationId || null,
+    });
+    if (!scope) {
       status = 403;
-      const res = NextResponse.json({ error: "Provider access required." }, { status });
+      const res = NextResponse.json({ error: "Workforce access required." }, { status });
       logRequestMeta("/api/physician/transcription/soap/[soapVersionId]", requestId, status, Date.now() - started);
       return res;
     }
     const { soapVersionId } = await ctx.params;
-    const physicianId = (auth as any).physicianId || auth.userId;
-    const soap = await getSoapVersionById({ soapVersionId, physicianId });
+    const soap = await getSoapVersionByIdForScope({ soapVersionId, scope });
     if (!soap) {
       status = 404;
       const res = NextResponse.json({ error: "SOAP version not found." }, { status });
@@ -50,6 +56,23 @@ export async function GET(
       },
       snapshotLabel: HEALTHASSIST_SNAPSHOT_LABEL,
     });
+    try {
+      await logPhysicianPhiAudit({
+        physicianId: auth.userId,
+        patientId: soap.patient_id,
+        encounterId: soap.encounter_id,
+        soapVersionId: soap.id,
+        eventType: "transcription_soap_viewed",
+        ipAddress: getRequestIp(request.headers),
+        userAgent: request.headers.get("user-agent"),
+        metadata: {
+          requestId,
+          viewerUserType: auth.userType,
+        },
+      });
+    } catch {
+      // Best-effort audit logging.
+    }
     logRequestMeta("/api/physician/transcription/soap/[soapVersionId]", requestId, status, Date.now() - started);
     return res;
   } catch (error) {

@@ -4,7 +4,7 @@ import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
 import { getRequestIp } from "@/lib/invitation-security";
 import { logPhysicianPhiAudit } from "@/lib/phi-audit";
 import { finalizeSoapRequestSchema } from "@/lib/transcription-schema";
-import { finalizeSoapVersion } from "@/lib/transcription-store";
+import { finalizeSoapVersion, resolveWorkforceScope } from "@/lib/transcription-store";
 import { HEALTHASSIST_SNAPSHOT_LABEL } from "@/lib/transcription-policy";
 
 export async function POST(request: NextRequest) {
@@ -25,6 +25,17 @@ export async function POST(request: NextRequest) {
       logRequestMeta("/api/physician/transcription/finalize", requestId, status, Date.now() - started);
       return res;
     }
+    const scope = resolveWorkforceScope({
+      userType: auth.userType,
+      userId: auth.userId,
+      organizationId: auth.organizationId || null,
+    });
+    if (!scope) {
+      status = 403;
+      const res = NextResponse.json({ error: "Provider access required." }, { status });
+      logRequestMeta("/api/physician/transcription/finalize", requestId, status, Date.now() - started);
+      return res;
+    }
     const body = await request.json().catch(() => null);
     const parsed = finalizeSoapRequestSchema.safeParse(body);
     if (!parsed.success) {
@@ -34,10 +45,11 @@ export async function POST(request: NextRequest) {
       return res;
     }
 
-    const physicianId = (auth as any).physicianId || auth.userId;
+    const physicianId = auth.userId;
     const finalized = await finalizeSoapVersion({
       soapVersionId: parsed.data.soapVersionId,
-      physicianId,
+      scope,
+      actorUserId: physicianId,
     });
 
     await logPhysicianPhiAudit({

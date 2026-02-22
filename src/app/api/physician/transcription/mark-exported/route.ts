@@ -4,7 +4,11 @@ import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
 import { getRequestIp } from "@/lib/invitation-security";
 import { logPhysicianPhiAudit } from "@/lib/phi-audit";
 import { markExportedRequestSchema } from "@/lib/transcription-schema";
-import { getSoapVersionById, recordEmrExportAttempt } from "@/lib/transcription-store";
+import {
+  getSoapVersionByIdForScope,
+  recordEmrExportAttempt,
+  resolveWorkforceScope,
+} from "@/lib/transcription-store";
 import { EMR_EXPORT_STATUS, HEALTHASSIST_SNAPSHOT_LABEL, SOAP_LIFECYCLE_STATES } from "@/lib/transcription-policy";
 
 export async function POST(request: NextRequest) {
@@ -25,6 +29,17 @@ export async function POST(request: NextRequest) {
       logRequestMeta("/api/physician/transcription/mark-exported", requestId, status, Date.now() - started);
       return res;
     }
+    const scope = resolveWorkforceScope({
+      userType: auth.userType,
+      userId: auth.userId,
+      organizationId: auth.organizationId || null,
+    });
+    if (!scope) {
+      status = 403;
+      const res = NextResponse.json({ error: "Provider access required." }, { status });
+      logRequestMeta("/api/physician/transcription/mark-exported", requestId, status, Date.now() - started);
+      return res;
+    }
     const body = await request.json().catch(() => null);
     const parsed = markExportedRequestSchema.safeParse(body);
     if (!parsed.success) {
@@ -33,10 +48,10 @@ export async function POST(request: NextRequest) {
       logRequestMeta("/api/physician/transcription/mark-exported", requestId, status, Date.now() - started);
       return res;
     }
-    const physicianId = (auth as any).physicianId || auth.userId;
-    const version = await getSoapVersionById({
+    const physicianId = auth.userId;
+    const version = await getSoapVersionByIdForScope({
       soapVersionId: parsed.data.soapVersionId,
-      physicianId,
+      scope,
     });
     if (!version) {
       status = 404;

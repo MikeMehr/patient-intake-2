@@ -2,12 +2,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const {
   getCurrentSessionMock,
-  getSoapVersionByIdMock,
+  getSoapVersionByIdForScopeMock,
   recordEmrExportAttemptMock,
   logPhysicianPhiAuditMock,
 } = vi.hoisted(() => ({
   getCurrentSessionMock: vi.fn(),
-  getSoapVersionByIdMock: vi.fn(),
+  getSoapVersionByIdForScopeMock: vi.fn(),
   recordEmrExportAttemptMock: vi.fn(),
   logPhysicianPhiAuditMock: vi.fn(),
 }));
@@ -17,8 +17,13 @@ vi.mock("@/lib/auth", () => ({
 }));
 
 vi.mock("@/lib/transcription-store", () => ({
-  getSoapVersionById: getSoapVersionByIdMock,
+  getSoapVersionByIdForScope: getSoapVersionByIdForScopeMock,
   recordEmrExportAttempt: recordEmrExportAttemptMock,
+  resolveWorkforceScope: vi.fn(({ userType, userId, organizationId }) => {
+    if (userType !== "provider") return null;
+    if (organizationId) return { organizationId };
+    return { physicianId: userId };
+  }),
 }));
 
 vi.mock("@/lib/phi-audit", () => ({
@@ -35,7 +40,7 @@ describe("POST /api/physician/transcription/mark-exported", () => {
       userId: "22222222-2222-4222-8222-222222222222",
       userType: "provider",
     });
-    getSoapVersionByIdMock.mockResolvedValue({
+    getSoapVersionByIdForScopeMock.mockResolvedValue({
       id: "33333333-3333-4333-8333-333333333333",
       lifecycle_state: "FINALIZED_FOR_EXPORT",
     });
