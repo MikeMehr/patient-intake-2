@@ -862,6 +862,130 @@ function computeQuestionBudget(escalation: EscalationState): { budget: number | 
   return { budget, modifiers };
 }
 
+type InterviewPhase = "hpi_phase" | "form_phase";
+
+type FormInterviewPhaseState = {
+  hasStructuredForm: boolean;
+  questionCountSoFar: number;
+  targetQuestionCount: number;
+  secondHalfStart: number;
+  phase: InterviewPhase;
+};
+
+type FormCoverageHint = {
+  label: string;
+  patterns: RegExp[];
+  topicHints?: string[];
+};
+
+const FORM_COVERAGE_HINTS: FormCoverageHint[] = [
+  {
+    label: "symptom onset and timeline",
+    patterns: [/\bonset\b/, /\bwhen\b/, /\bstart(?:ed)?\b/, /\bduration\b/, /\btimeline\b/],
+    topicHints: ["duration/onset"],
+  },
+  {
+    label: "symptom severity and functional impact",
+    patterns: [/\bseverity\b/, /\bhow bad\b/, /\bscale\b/, /\bfunctional\b/, /\blimit(?:ed|ation)\b/],
+    topicHints: ["severity", "range of motion"],
+  },
+  {
+    label: "work and activity limitations",
+    patterns: [/\bwork\b/, /\bdut(?:y|ies)\b/, /\bactivity\b/, /\brestriction\b/, /\bmodified duty\b/],
+  },
+  {
+    label: "accident details and mechanism",
+    patterns: [/\baccident\b/, /\bmva\b/, /\bmotor vehicle\b/, /\bcollision\b/, /\bmechanism\b/],
+    topicHints: ["accident details", "accident response"],
+  },
+  {
+    label: "previous injuries and baseline status",
+    patterns: [/\bprevious injur(?:y|ies)\b/, /\bprior injur(?:y|ies)\b/, /\bpre[- ]?existing\b/, /\bbaseline\b/],
+    topicHints: ["previous injuries"],
+  },
+  {
+    label: "medications and allergies relevant to the form",
+    patterns: [/\bmedication\b/, /\bcurrent meds?\b/, /\ballerg(?:y|ies)\b/, /\bdrug reaction\b/],
+  },
+  {
+    label: "insurance/employer/claim details",
+    patterns: [/\binsurance\b/, /\bclaim\b/, /\bemployer\b/, /\bworksafe\b/, /\bwsib\b/],
+  },
+  {
+    label: "treating provider and follow-up details",
+    patterns: [/\bfamily doctor\b/, /\bphysician\b/, /\bprovider\b/, /\bfollow[- ]?up\b/, /\breferral\b/],
+  },
+];
+
+function computeFormInterviewPhase(params: {
+  hasStructuredForm: boolean;
+  questionCountSoFar: number;
+  budget: { budget: number | null; modifiers: string[] };
+  escalation: EscalationState;
+  hasMultipleComplaints: boolean;
+}): FormInterviewPhaseState {
+  const { hasStructuredForm, questionCountSoFar, budget, escalation, hasMultipleComplaints } = params;
+  let targetQuestionCount =
+    budget.budget ??
+    BASE_QUESTION_BUDGET +
+      (hasMultipleComplaints ? 4 : 0) +
+      (escalation.hasRedFlagSignal ? 3 : 0) +
+      (escalation.hasMultiSystemSymptoms ? 3 : 0) +
+      (escalation.isTraumaOrMva ? 4 : 0);
+
+  if (hasStructuredForm) {
+    targetQuestionCount = Math.max(targetQuestionCount, hasMultipleComplaints ? 18 : 14);
+  } else {
+    targetQuestionCount = Math.max(targetQuestionCount, hasMultipleComplaints ? 12 : 8);
+  }
+
+  const secondHalfStart = Math.max(4, Math.ceil(targetQuestionCount / 2));
+  const phase: InterviewPhase =
+    hasStructuredForm && questionCountSoFar >= secondHalfStart ? "form_phase" : "hpi_phase";
+
+  return {
+    hasStructuredForm,
+    questionCountSoFar,
+    targetQuestionCount,
+    secondHalfStart,
+    phase,
+  };
+}
+
+function getFormCoverageHints(formSummary: string | null): FormCoverageHint[] {
+  if (!formSummary || formSummary.trim().length === 0) {
+    return [];
+  }
+  const text = formSummary.toLowerCase();
+  return FORM_COVERAGE_HINTS.filter((hint) => hint.patterns.some((pattern) => pattern.test(text)));
+}
+
+function getRemainingFormCoverageHints(params: {
+  formHints: FormCoverageHint[];
+  allQuestionsAsked: string[];
+  patientAnswers: string[];
+  topicsCovered: Set<string>;
+  patientMentionedTopics: string[];
+}): string[] {
+  if (params.formHints.length === 0) {
+    return [];
+  }
+  const askedAndAnsweredText = `${params.allQuestionsAsked.join(" ")} ${params.patientAnswers.join(" ")}`.toLowerCase();
+  const coveredTopics = new Set([
+    ...params.topicsCovered,
+    ...params.patientMentionedTopics,
+  ]);
+
+  return params.formHints
+    .filter((hint) => {
+      const coveredByText = hint.patterns.some((pattern) => pattern.test(askedAndAnsweredText));
+      const coveredByTopic =
+        hint.topicHints?.some((topic) => coveredTopics.has(topic)) ?? false;
+      return !(coveredByText || coveredByTopic);
+    })
+    .map((hint) => hint.label);
+}
+
 /**
  * Extract topics/themes from a question to help detect semantic duplicates
  */
@@ -1127,15 +1251,12 @@ If the patient asks about a lab value or test result NOT mentioned in these summ
 
   // Build form section
   const formSection = formSummary
-    ? `\n\nForm to Complete (from physician-uploaded PDF):\n${formSummary}\n\nCRITICAL: This form needs to be completed for the patient. During the interview:
+    ? `\n\nForm to Complete (from physician-uploaded PDF):\n${formSummary}\n\nCRITICAL: This form needs to be completed for the patient.
 1. Understand the form's purpose and context (e.g., school form, work form, MVA insurance form)
-2. Ask questions from the form naturally, mixing them with clinical questions based on relevance
-3. For MVA forms, ensure you gather all accident details, injuries, and related information
-4. For school/work forms, gather relevant medical information needed
-5. Collect all information required to complete the form
-6. In your final summary, include a section noting the form responses so the physician can complete the form
-
-Do NOT ask form questions in isolation - integrate them naturally with your clinical questioning about the chief complaint.`
+2. Collect enough information for the physician to mostly complete the form
+3. Keep interview style natural (not a robotic checklist)
+4. Maintain clinical safety priorities at all times
+5. In your final summary, include concise form-relevant responses the physician can reuse`
     : "";
   
   logDebug("[buildPrompt] formSummary metadata", {
@@ -1307,18 +1428,50 @@ Do NOT ask form questions in isolation - integrate them naturally with your clin
     formSummary,
   });
   const budget = computeQuestionBudget(escalation);
+  const phaseState = computeFormInterviewPhase({
+    hasStructuredForm: escalation.hasStructuredFormUpload,
+    questionCountSoFar: allQuestionsAsked.length,
+    budget,
+    escalation,
+    hasMultipleComplaints,
+  });
+  const formCoverageHints = getFormCoverageHints(formSummary);
+  const remainingFormCoverageHints = getRemainingFormCoverageHints({
+    formHints: formCoverageHints,
+    allQuestionsAsked,
+    patientAnswers,
+    topicsCovered,
+    patientMentionedTopics: patientInformation.mentionedTopics,
+  });
+
   const fatigueSignals = detectFatigueSignals(patientAnswers);
   const redFlagChecklist = getScopedRedFlags(complaintClass);
   const reachedBudget = budget.budget !== null && allQuestionsAsked.length >= budget.budget;
+  const hasFormCatchUpWork =
+    phaseState.hasStructuredForm &&
+    phaseState.phase === "form_phase" &&
+    remainingFormCoverageHints.length > 0;
   const shouldEarlyStop =
     !forceSummary &&
     (
-      (reachedBudget && !escalation.active) ||
+      (reachedBudget && !escalation.active && !phaseState.hasStructuredForm) ||
       (fatigueSignals.active && allQuestionsAsked.length >= 6)
-    );
+    ) &&
+    !hasFormCatchUpWork &&
+    !(phaseState.hasStructuredForm && phaseState.phase === "hpi_phase");
 
   const redFlagSection = `\n\nRED FLAG ASSESSMENT CHECKLIST for "${currentComplaint}":\nBefore moving to the next complaint or summarizing, ensure you have assessed:\n${redFlagChecklist.map((flag, i) => `  ${i + 1}. ${flag}`).join('\n')}\n\nCRITICAL: If you have NOT asked about these red flags yet, you MUST ask about them before moving on.\nCRITICAL: Bundle related red flags into ONE question (enumerate them) instead of separate questions. Example: “Have you had any of the following: uncontrolled bleeding from mouth/nose; rash, joint pain, or swelling; changes in your voice or hoarseness; difficulty opening your mouth?”`;
   const controllerSection = `\n\nFOCUS CONTROLLER (ENFORCE STRICTLY):\n- Complaint class: ${complaintClass}\n- Scoped red flags only: ask ONLY from this complaint class; do NOT ask unrelated red-flag groups.\n- Questions asked so far: ${allQuestionsAsked.length}\n- Question budget: ${budget.budget === null ? "Unlimited (structured physician form uploaded)" : budget.budget}\n- Budget modifiers: ${budget.modifiers.join(", ")}\n- Escalation active: ${escalation.active ? "yes" : "no"}\n- Escalation reasons: ${escalation.reasons.length > 0 ? escalation.reasons.join(", ") : "none"}\n- Fatigue signals detected: ${fatigueSignals.active ? `yes (${fatigueSignals.signals.join(", ")})` : "no"}\n- Early-stop condition: ${shouldEarlyStop ? "MET — summarize now unless safety-critical data is missing." : "not met"}\n\nRules:\n1) Prioritize relevance over exhaustiveness.\n2) For straightforward complaints, limit to onset/location/duration/severity/key associated symptoms/relevant negatives/risk factors.\n3) Expand depth only when escalation is active.\n4) If early-stop condition is met, stop asking and summarize for physician handoff.`;
+  const interviewPhaseSection = phaseState.hasStructuredForm
+    ? `\n\nINTERVIEW PHASE CONTROLLER:\n- Current phase: ${phaseState.phase === "hpi_phase" ? "HPI_FIRST" : "FORM_CATCHUP"}\n- questionCountSoFar: ${phaseState.questionCountSoFar}\n- targetQuestionCount: ${phaseState.targetQuestionCount}\n- secondHalfStart: ${phaseState.secondHalfStart}\n- Safety-critical or urgent clarification questions can be asked in any phase.\n- Precedence: safety-critical > complaint-scoped red flags > HPI-first sequencing > form completion.\n\nPHASE RULES:\n${phaseState.phase === "hpi_phase"
+      ? "1) Focus on HPI and complaint-scoped clinical reasoning.\n2) Defer non-urgent form-only administrative questions until FORM_CATCHUP phase.\n3) You may ask urgent form-linked safety questions earlier if clinically necessary."
+      : "1) Continue clinical safety checks, but prioritize remaining form-completion items.\n2) Ask targeted form questions now so the physician can mostly complete the form from your summary.\n3) Do not finish with summary while major required form items remain unaddressed unless the patient explicitly stops the interview."}`
+    : "";
+  const formCoverageSection = phaseState.hasStructuredForm && formCoverageHints.length > 0
+    ? `\n\nFORM COVERAGE REMINDER:\n${remainingFormCoverageHints.length > 0
+      ? `Remaining likely form items to capture:\n${remainingFormCoverageHints.map((item, i) => `  ${i + 1}. ${item}`).join("\n")}`
+      : "No obvious uncovered form buckets detected from the current transcript. Confirm any final required fields, then proceed."}`
+    : "";
 
   const doNotAskAboutSection = hasMultipleComplaints && remainingComplaints.length > 0
     ? `\n\n🚫 DO NOT ASK ABOUT (FORBIDDEN UNTIL CURRENT COMPLAINT IS COMPLETE):\n${remainingComplaints.map((c, i) => `  - Complaint #${currentComplaintIndex + 2 + i}: "${c}"`).join('\n')}\n\nCRITICAL: You are FORBIDDEN from asking questions about these complaints until you have completed ALL questions and red flag assessment for "${currentComplaint}". Before asking each question, verify it relates ONLY to "${currentComplaint}". If your question relates to any of the forbidden complaints above, you MUST wait.`
@@ -1349,7 +1502,7 @@ Family doctor: ${profile.familyDoctor}
 Documented drug allergies: ${profile.allergies}
 ${patientBackground ? `\nPhysician-provided background: ${patientBackground}` : ""}
 ${imageSection}${labReportSection}${formSection}${medPmhSection}
-${transcriptSection}${transcriptNote}${questionsList}${topicsList}${informationAlreadyProvided}${openEndedReminder}${mskLocationDirective}${controllerSection}
+${transcriptSection}${transcriptNote}${questionsList}${topicsList}${informationAlreadyProvided}${openEndedReminder}${mskLocationDirective}${controllerSection}${interviewPhaseSection}${formCoverageSection}
 
 CLINICAL INTERVIEW GUIDANCE (You are operating as a Physician Assistant):
 ${physicianGuidanceSection}
@@ -1361,6 +1514,7 @@ ${physicianGuidanceSection}
 - Think clinically: Each question should help you rule in/out differential diagnoses, assess complaint-scoped red flags, and gather information needed for physician review.
 - ${hasMultipleComplaints ? `Aim for efficient complaint-scoped questioning per complaint and complete ALL complaints before summarizing.` : "Aim for efficient complaint-scoped questioning with minimal patient burden."}
 - Before asking each question, verify it relates ONLY to the CURRENT complaint. If multiple complaints exist, you are FORBIDDEN from asking about other complaints until the current one is complete.
+- When a physician form is present: prioritize HPI in the early half, then prioritize remaining form-required questions in the later half.
 
 MANDATORY PRE-QUESTION VALIDATION (CRITICAL - MUST DO BEFORE EVERY QUESTION):
 1. Read the "QUESTIONS ALREADY ASKED" list above (${allQuestionsAsked.length} questions total)
@@ -1400,6 +1554,13 @@ ${languageSection}
   
   return fullPrompt;
 }
+
+export const __interviewRouteTestUtils = {
+  buildPrompt,
+  computeFormInterviewPhase,
+  getFormCoverageHints,
+  getRemainingFormCoverageHints,
+};
 
 function formatTranscript(transcript: InterviewMessage[]) {
   return (

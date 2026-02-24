@@ -1,6 +1,6 @@
 import type { InterviewResponse } from "@/lib/interview-schema";
 import { describe, expect, it } from "vitest";
-import { POST } from "./route";
+import { __interviewRouteTestUtils, POST } from "./route";
 
 const endpoint = "http://localhost/api/interview";
 const patientProfile = {
@@ -81,6 +81,68 @@ describe("POST /api/interview", () => {
       expect(payload.summary.length).toBeGreaterThan(10);
       expect(payload.plan.length).toBeGreaterThan(0);
     }
+  });
+});
+
+describe("interview prompt phase controller", () => {
+  it("uses HPI_FIRST phase in first half when a form exists", () => {
+    const phase = __interviewRouteTestUtils.computeFormInterviewPhase({
+      hasStructuredForm: true,
+      questionCountSoFar: 3,
+      budget: { budget: null, modifiers: ["unlimited-structured-form"] },
+      escalation: {
+        active: true,
+        reasons: ["structured-form-uploaded"],
+        hasRedFlagSignal: false,
+        hasMultiSystemSymptoms: false,
+        hasChronicComplexity: false,
+        isTraumaOrMva: false,
+        hasMedicoLegalDocumentation: false,
+        hasStructuredFormUpload: true,
+      },
+      hasMultipleComplaints: false,
+    });
+
+    expect(phase.phase).toBe("hpi_phase");
+    expect(phase.secondHalfStart).toBeGreaterThan(phase.questionCountSoFar);
+  });
+
+  it("switches to FORM_CATCHUP in later half and retains safety precedence text", () => {
+    const transcript = [
+      { role: "assistant", content: "Tell me about your shoulder pain." },
+      { role: "patient", content: "It started last week." },
+      { role: "assistant", content: "Where exactly is the pain located?" },
+      { role: "patient", content: "Right shoulder and upper arm." },
+      { role: "assistant", content: "How severe is it from 0 to 10?" },
+      { role: "patient", content: "About 7 out of 10." },
+      { role: "assistant", content: "What movements make it worse?" },
+      { role: "patient", content: "Lifting and reaching overhead." },
+      { role: "assistant", content: "Any numbness or weakness?" },
+      { role: "patient", content: "No numbness." },
+      { role: "assistant", content: "Any prior injury to this shoulder?" },
+      { role: "patient", content: "Not before this one." },
+      { role: "assistant", content: "Does this limit your work duties?" },
+      { role: "patient", content: "Yes, I cannot lift heavy boxes." },
+    ] as const;
+
+    const prompt = __interviewRouteTestUtils.buildPrompt(
+      "Right shoulder pain after work injury",
+      patientProfile,
+      transcript as any,
+      null,
+      null,
+      null,
+      "Work injury form asks for injury date, mechanism, activity limitation, and prior injury history.",
+      null,
+      null,
+      null,
+      false,
+      "English",
+    );
+
+    expect(prompt).toContain("Current phase: FORM_CATCHUP");
+    expect(prompt).toContain("FORM COVERAGE REMINDER");
+    expect(prompt).toContain("Safety-critical or urgent clarification questions can be asked in any phase.");
   });
 });
 
