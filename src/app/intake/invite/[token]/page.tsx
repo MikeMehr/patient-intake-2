@@ -18,6 +18,7 @@ type VerifyOtpResponse = {
   success: boolean;
   patientName: string;
   patientEmail: string;
+  patientDob: string | null;
   physicianId: string;
   physicianName: string;
   clinicName: string;
@@ -56,6 +57,7 @@ export default function InvitationTokenIntakePage() {
     clinicName: string;
     patientName: string;
     patientEmail: string;
+    patientDob: string | null;
   }) => {
     if (typeof window === "undefined") return;
     sessionStorage.setItem("physicianId", data.physicianId);
@@ -64,6 +66,7 @@ export default function InvitationTokenIntakePage() {
     sessionStorage.setItem("invitedFlow", "true");
     sessionStorage.setItem("invitePatientName", data.patientName);
     sessionStorage.setItem("invitePatientEmail", data.patientEmail);
+    sessionStorage.setItem("invitePatientDob", data.patientDob || "");
   };
 
   const requestOtp = async (opts: { source: "auto" | "manual" }) => {
@@ -153,6 +156,7 @@ export default function InvitationTokenIntakePage() {
             clinicName: string;
             patientName: string;
             patientEmail: string;
+            patientDob: string | null;
           };
 
           if (ctxData.invitationId === openData.invitationId) {
@@ -162,6 +166,7 @@ export default function InvitationTokenIntakePage() {
               clinicName: ctxData.clinicName,
               patientName: ctxData.patientName,
               patientEmail: ctxData.patientEmail,
+              patientDob: ctxData.patientDob,
             });
             setHeaderInfo({
               physicianName: ctxData.physicianName || "Invited intake",

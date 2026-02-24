@@ -319,6 +319,10 @@ export default function PhysicianDashboard() {
     setInviteSuccess(null);
     setInvitationLink(null);
     setLabReportSummary(null);
+    if (!invitePatientDob.trim()) {
+      setInviteError("Date of birth is required to send an invitation.");
+      return;
+    }
     setInviteLoading(true);
 
     try {
@@ -717,37 +721,38 @@ export default function PhysicianDashboard() {
                       placeholder="patient@example.com"
                     />
                   </div>
+                  <div className="md:col-span-2">
+                    <label
+                      htmlFor="patientDob"
+                      className="block text-sm font-medium text-slate-700 mb-1"
+                    >
+                      Date of birth
+                    </label>
+                    <div className="flex gap-2">
+                      <input
+                        id="patientDob"
+                        type="date"
+                        value={invitePatientDob}
+                        onChange={(e) => setInvitePatientDob(e.target.value)}
+                        required
+                        disabled={inviteLoading || emrLookupLoading}
+                        className="flex-1 rounded-lg border border-slate-300 bg-white px-4 py-2 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200 disabled:cursor-not-allowed disabled:opacity-70"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleFetchFromEmr}
+                        disabled={inviteLoading || emrLookupLoading}
+                        className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {emrLookupLoading ? "Fetching..." : "Fetch from EMR"}
+                      </button>
+                      <span className="self-center text-sm text-slate-500">(Optional)</span>
+                    </div>
+                    <p className="text-xs text-slate-500 mt-1">
+                      DOB is required to match returning patients to the same chart. EMR fetch remains optional.
+                    </p>
+                  </div>
                 </div>
-              </div>
-              <div className="md:col-span-2">
-                <label
-                  htmlFor="patientDob"
-                  className="block text-sm font-medium text-slate-700 mb-1"
-                >
-                  Date of birth
-                </label>
-                <div className="flex gap-2">
-                  <input
-                    id="patientDob"
-                    type="date"
-                    value={invitePatientDob}
-                    onChange={(e) => setInvitePatientDob(e.target.value)}
-                    disabled={inviteLoading || emrLookupLoading}
-                    className="flex-1 rounded-lg border border-slate-300 bg-white px-4 py-2 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200 disabled:cursor-not-allowed disabled:opacity-70"
-                  />
-                  <button
-                    type="button"
-                    onClick={handleFetchFromEmr}
-                    disabled={inviteLoading || emrLookupLoading}
-                    className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    {emrLookupLoading ? "Fetching..." : "Fetch from EMR"}
-                  </button>
-                  <span className="self-center text-sm text-slate-500">(Optional)</span>
-                </div>
-                <p className="text-xs text-slate-500 mt-1">
-                  Use name + DOB to find the correct patient in OSCAR.
-                </p>
               </div>
             </div>
 

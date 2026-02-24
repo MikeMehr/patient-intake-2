@@ -20,6 +20,7 @@ import {
 } from "@/lib/invitation-security";
 
 const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
+const DOB_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 
 function resolveAppUrl(request: NextRequest): string {
   const envUrl = (process.env.NEXT_PUBLIC_APP_URL || "").trim();
@@ -82,6 +83,7 @@ export async function POST(request: NextRequest) {
     const {
       patientName,
       patientEmail,
+      patientDob,
       patientBackground,
       oscarDemographicNo,
       labReportFile,
@@ -95,6 +97,16 @@ export async function POST(request: NextRequest) {
       const res = NextResponse.json(
         { error: "Patient name and email are required" },
         { status }
+      );
+      logRequestMeta("/api/invitations/send", requestId, status, Date.now() - started);
+      return res;
+    }
+
+    if (!patientDob || !DOB_REGEX.test(patientDob)) {
+      status = 400;
+      const res = NextResponse.json(
+        { error: "Patient date of birth is required in YYYY-MM-DD format" },
+        { status },
       );
       logRequestMeta("/api/invitations/send", requestId, status, Date.now() - started);
       return res;
@@ -179,6 +191,7 @@ export async function POST(request: NextRequest) {
              physician_id,
              patient_name,
              patient_email,
+             patient_dob,
              invitation_link,
              token_hash,
              token_expires_at,
@@ -192,12 +205,13 @@ export async function POST(request: NextRequest) {
              summary_expires_at,
              summary_deleted_at
            )
-          VALUES ($1, $2, $3, $4, $5, $6, $6, NOW(), $7, $8, $9, $10, $11, $12, NULL)
+          VALUES ($1, $2, $3, $4::date, $5, $6, $7, $7, NOW(), $8, $9, $10, $11, $12, $13, NULL)
            RETURNING id`,
           [
             physicianId,
             patientName,
             patientEmail.toLowerCase(),
+            patientDob,
             retainInvitationLink ? invitationLink : null,
             tokenHash,
             expiresAt,
@@ -353,6 +367,7 @@ export async function POST(request: NextRequest) {
 async function parseRequestBody(request: NextRequest): Promise<{
   patientName: string;
   patientEmail: string;
+  patientDob: string | null;
   patientBackground: string | null;
   oscarDemographicNo: string | null;
   labReportFile: File | null;
@@ -366,6 +381,7 @@ async function parseRequestBody(request: NextRequest): Promise<{
     return {
       patientName: (formData.get("patientName") as string | null) || "",
       patientEmail: (formData.get("patientEmail") as string | null) || "",
+      patientDob: ((formData.get("patientDob") as string | null) || "").trim() || null,
       patientBackground: ((formData.get("patientBackground") as string | null) || "").trim() || null,
       oscarDemographicNo: ((formData.get("oscarDemographicNo") as string | null) || "").trim() || null,
       labReportFile: formData.get("labReport") instanceof File ? (formData.get("labReport") as File) : null,
@@ -383,6 +399,7 @@ async function parseRequestBody(request: NextRequest): Promise<{
     return {
       patientName: (body?.patientName as string) || "",
       patientEmail: (body?.patientEmail as string) || "",
+      patientDob: (body?.patientDob as string)?.trim() || null,
       patientBackground: (body?.patientBackground as string)?.trim() || null,
       oscarDemographicNo: (body?.oscarDemographicNo as string)?.trim() || null,
       labReportFile: null,
@@ -397,6 +414,7 @@ async function parseRequestBody(request: NextRequest): Promise<{
     return {
       patientName: "",
       patientEmail: "",
+      patientDob: null,
       patientBackground: null,
       oscarDemographicNo: null,
       labReportFile: null,

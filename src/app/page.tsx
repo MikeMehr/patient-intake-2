@@ -399,6 +399,7 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [patientName, setPatientName] = useState("");
   const [patientEmail, setPatientEmail] = useState("");
+  const [invitePatientDob, setInvitePatientDob] = useState<string | null>(null);
   const [pendingHistoryResult, setPendingHistoryResult] = useState<HistoryResponse | null>(null);
   const [awaitingFinalComments, setAwaitingFinalComments] = useState(false);
   const [finalCommentsChoice, setFinalCommentsChoice] = useState<"yes" | "no" | null>(null);
@@ -919,6 +920,7 @@ export default function Home() {
       const invitedFlow = sessionStorage.getItem("invitedFlow") === "true";
       const invitePatientName = sessionStorage.getItem("invitePatientName");
       const invitePatientEmail = sessionStorage.getItem("invitePatientEmail");
+      const inviteDob = sessionStorage.getItem("invitePatientDob");
       setIsInvitedFlow(invitedFlow);
       if (invitedFlow) {
         if (invitePatientName) {
@@ -926,6 +928,9 @@ export default function Home() {
         }
         if (invitePatientEmail) {
           setPatientEmail(invitePatientEmail);
+        }
+        if (inviteDob && inviteDob.trim()) {
+          setInvitePatientDob(inviteDob.trim());
         }
       }
       if (physicianId) {
@@ -1907,6 +1912,7 @@ export default function Home() {
     const profile: PatientProfile = {
       sex,
       age: ageValue,
+      dateOfBirth: isInvitedFlow && invitePatientDob ? invitePatientDob : undefined,
       pmh: pmhFinal,
       familyHistory: familyFinal,
       familyDoctor: familyDoctorFinal,

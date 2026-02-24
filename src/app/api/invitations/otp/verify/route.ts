@@ -93,6 +93,7 @@ export async function POST(request: NextRequest) {
       success: true,
       patientName: invitation.patientName,
       patientEmail: invitation.patientEmail,
+      patientDob: invitation.patientDob,
       physicianId: invitation.physicianId,
       physicianName: invitation.physicianName,
       clinicName: invitation.clinicName,
