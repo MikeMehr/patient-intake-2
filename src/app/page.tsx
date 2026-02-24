@@ -4372,7 +4372,7 @@ export default function Home() {
                       </div>
                     </div>
                     {/* Body part diagrams - shown below buttons, side by side if multiple */}
-                    {showBodyDiagram && selectedBodyParts.length > 0 && status !== "complete" && (
+                    {showBodyDiagram && selectedBodyParts.length > 0 && (
                       <div className="mt-4 mb-4 flex flex-wrap justify-center gap-4 z-10 relative">
                         {selectedBodyParts.map((bodyPart, index) => {
                           const safeSide = bodyPart.side === "both" ? undefined : bodyPart.side;
@@ -4422,9 +4422,7 @@ export default function Home() {
                             ? isSpeaking
                               ? "AI is speaking... please wait"
                               : "Tap mic to start/stop (or type your response)"
-                            : status === "complete"
-                              ? "Interview complete."
-                              : "Start the interview to respond."
+                            : "Start the interview to respond."
                         }
                         value={patientResponse}
                         onChange={(event) => {
