@@ -104,3 +104,5 @@ jobs:
           app-name: healt-assist-ai-prod
           slot-name: Production
           package: deploy.zip
+          clean: true
+          restart: true
