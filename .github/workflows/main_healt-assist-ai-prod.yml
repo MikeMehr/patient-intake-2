@@ -50,6 +50,11 @@ jobs:
           cp -R .next/server/. deploy/.next/server/
           cp .next/BUILD_ID deploy/.next/BUILD_ID
 
+          # Ensure runtime node_modules matches the build exactly.
+          # Some App Service instances may keep stale extracted modules between deploys.
+          mkdir -p deploy/node_modules
+          cp -R node_modules/. deploy/node_modules/
+
           # Public assets (e.g. images) still need to be present.
           if [ -d "public" ]; then
             cp -R public deploy/public
