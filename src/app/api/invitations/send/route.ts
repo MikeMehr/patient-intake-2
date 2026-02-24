@@ -141,6 +141,8 @@ export async function POST(request: NextRequest) {
     const { rawToken, tokenHash, expiresAt } = createInvitationToken();
     const appUrl = resolveAppUrl(request);
     const invitationLink = `${appUrl}/intake/invite/${rawToken}`;
+    const retainInvitationLink =
+      process.env.RETAIN_INVITATION_LINKS === "true" || process.env.NODE_ENV === "development";
 
     const hasUploadedPdf =
       Boolean(labReportFile) || Boolean(previousLabReportFile) || Boolean(formFile);
@@ -190,12 +192,13 @@ export async function POST(request: NextRequest) {
              summary_expires_at,
              summary_deleted_at
            )
-          VALUES ($1, $2, $3, NULL, $4, $5, $5, NOW(), $6, $7, $8, $9, $10, $11, NULL)
+          VALUES ($1, $2, $3, $4, $5, $6, $6, NOW(), $7, $8, $9, $10, $11, $12, NULL)
            RETURNING id`,
           [
             physicianId,
             patientName,
             patientEmail.toLowerCase(),
+            retainInvitationLink ? invitationLink : null,
             tokenHash,
             expiresAt,
             patientBackground || null,
@@ -215,6 +218,7 @@ export async function POST(request: NextRequest) {
               physicianId,
               patientEmail: patientEmail.toLowerCase(),
               tokenized: true,
+              invitationLinkRetained: retainInvitationLink,
               hasPdfSummaries: hasUploadedPdf,
               summaryExpiresAt: summaryExpiresAt ? summaryExpiresAt.toISOString() : null,
             },
