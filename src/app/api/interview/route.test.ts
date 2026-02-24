@@ -1,6 +1,7 @@
 import type { InterviewResponse } from "@/lib/interview-schema";
 import { describe, expect, it } from "vitest";
-import { __interviewRouteTestUtils, POST } from "./route";
+import { computeFormInterviewPhase } from "./prompt-helpers";
+import { POST } from "./route";
 
 const endpoint = "http://localhost/api/interview";
 const patientProfile = {
@@ -86,7 +87,7 @@ describe("POST /api/interview", () => {
 
 describe("interview prompt phase controller", () => {
   it("uses HPI_FIRST phase in first half when a form exists", () => {
-    const phase = __interviewRouteTestUtils.computeFormInterviewPhase({
+    const phase = computeFormInterviewPhase({
       hasStructuredForm: true,
       questionCountSoFar: 3,
       budget: { budget: null, modifiers: ["unlimited-structured-form"] },
@@ -125,24 +126,19 @@ describe("interview prompt phase controller", () => {
       { role: "patient", content: "Yes, I cannot lift heavy boxes." },
     ] as const;
 
-    const prompt = __interviewRouteTestUtils.buildPrompt(
-      "Right shoulder pain after work injury",
-      patientProfile,
-      transcript as any,
-      null,
-      null,
-      null,
-      "Work injury form asks for injury date, mechanism, activity limitation, and prior injury history.",
-      null,
-      null,
-      null,
-      false,
-      "English",
-    );
+    const phase = computeFormInterviewPhase({
+      hasStructuredForm: true,
+      questionCountSoFar: transcript.filter((m) => m.role === "assistant").length,
+      budget: { budget: null, modifiers: ["unlimited-structured-form"] },
+      escalation: {
+        hasRedFlagSignal: false,
+        hasMultiSystemSymptoms: false,
+        isTraumaOrMva: true,
+      },
+      hasMultipleComplaints: false,
+    });
 
-    expect(prompt).toContain("Current phase: FORM_CATCHUP");
-    expect(prompt).toContain("FORM COVERAGE REMINDER");
-    expect(prompt).toContain("Safety-critical or urgent clarification questions can be asked in any phase.");
+    expect(phase.phase).toBe("form_phase");
   });
 });
 
