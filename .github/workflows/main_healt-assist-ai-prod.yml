@@ -44,8 +44,10 @@ jobs:
 
           # Next serves static assets from `.next/static` at runtime.
           mkdir -p deploy/.next
-          cp -R .next/static deploy/.next/static
-          cp -R .next/server deploy/.next/server
+          mkdir -p deploy/.next/static
+          mkdir -p deploy/.next/server
+          cp -R .next/static/. deploy/.next/static/
+          cp -R .next/server/. deploy/.next/server/
           cp .next/BUILD_ID deploy/.next/BUILD_ID
 
           # Public assets (e.g. images) still need to be present.
