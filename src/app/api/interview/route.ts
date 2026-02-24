@@ -1039,82 +1039,6 @@ function extractInformationFromAnswers(answers: string[]): {
   };
 }
 
-function extractRequiredFormItems(formSummary: string): string[] {
-  const normalized = formSummary.replace(/\r/g, "");
-  const lines = normalized.split("\n");
-  const headerRegex = /^[A-Za-z][A-Za-z\/ ]+:\s*$/;
-  const required: string[] = [];
-  let inClarifySection = false;
-
-  for (const rawLine of lines) {
-    const line = rawLine.trim();
-    if (!line) continue;
-    if (line.toLowerCase().startsWith("items to clarify with patient:")) {
-      inClarifySection = true;
-      continue;
-    }
-    if (inClarifySection && headerRegex.test(line)) {
-      inClarifySection = false;
-      continue;
-    }
-    if (!inClarifySection) continue;
-    if (line.startsWith("-")) {
-      const item = line.replace(/^-+\s*/, "").trim();
-      if (item && !/not specified in source/i.test(item)) {
-        required.push(item);
-      }
-    }
-  }
-
-  const fallback: string[] = [];
-  const lower = normalized.toLowerCase();
-  const addFallback = (needle: string, item: string) => {
-    if (lower.includes(needle)) fallback.push(item);
-  };
-  addFallback("claim", "Insurance claim number");
-  addFallback("insurance", "Insurance company name");
-  addFallback("date of accident", "Exact date of accident");
-  addFallback("accident", "Accident mechanism details");
-  addFallback("passenger", "Passenger injury details");
-  addFallback("vehicle", "Vehicle types and damage details");
-  addFallback("seatbelt", "Seatbelt and airbag details");
-  addFallback("ambulance", "Ambulance / ER attendance details");
-  addFallback("work", "Work duties and activity limitations");
-  addFallback("prior", "Prior injuries to affected area");
-
-  return [...new Set([...required, ...fallback])];
-}
-
-function isFormItemCovered(item: string, transcriptText: string): boolean {
-  const lowerItem = item.toLowerCase();
-  const text = transcriptText.toLowerCase();
-
-  if (lowerItem.includes("claim")) return /claim|icbc/i.test(text);
-  if (lowerItem.includes("insurance")) return /insurance|icbc/i.test(text);
-  if (lowerItem.includes("date of accident")) {
-    return /date of accident|accident date|january|february|march|april|may|june|july|august|september|october|november|december|\b20\d{2}\b/.test(text);
-  }
-  if (lowerItem.includes("passenger")) return /passenger|driving alone|alone in (my|the) car/.test(text);
-  if (lowerItem.includes("vehicle")) return /vehicle|car|truck|semi|damage|rear-end|rear ended|collision/.test(text);
-  if (lowerItem.includes("seatbelt") || lowerItem.includes("airbag")) return /seatbelt|seat belt|airbag/.test(text);
-  if (lowerItem.includes("ambulance") || lowerItem.includes("er")) return /ambulance|emergency room|\ber\b|hospital|police/.test(text);
-  if (lowerItem.includes("work")) return /work|job|duties|unable to work|functional limitation/.test(text);
-  if (lowerItem.includes("prior")) return /prior|previous|before this accident|past injury/.test(text);
-
-  const stopwords = new Set([
-    "the", "and", "for", "with", "from", "that", "this", "your", "patient", "details", "detail",
-    "information", "history", "about", "into", "during", "needs", "required", "report", "form",
-  ]);
-  const tokens = lowerItem
-    .replace(/[^a-z0-9\s]/g, " ")
-    .split(/\s+/)
-    .filter((token) => token.length > 3 && !stopwords.has(token));
-  if (tokens.length === 0) return false;
-  const matches = tokens.filter((token) => text.includes(token)).length;
-  const requiredMatches = Math.min(2, tokens.length);
-  return matches >= requiredMatches;
-}
-
 export function buildPrompt(
   chiefComplaint: string,
   profile: PatientProfile,
@@ -1213,34 +1137,10 @@ If the patient asks about a lab value or test result NOT mentioned in these summ
 
 Do NOT ask form questions in isolation - integrate them naturally with your clinical questioning about the chief complaint.`
     : "";
-
-  const transcriptTextForFormCoverage = transcript
-    .map((message) => message.content || "")
-    .join(" ")
-    .toLowerCase();
-  const requiredFormItems = formSummary ? extractRequiredFormItems(formSummary) : [];
-  const missingFormItems = requiredFormItems.filter(
-    (item) => !isFormItemCovered(item, transcriptTextForFormCoverage),
-  );
-  const hasMissingRequiredFormItems = formSummary ? missingFormItems.length > 0 : false;
-  const formCompletionControllerSection = formSummary
-    ? `\n\nFORM COMPLETION CONTROLLER (MANDATORY):
-- Required form items identified: ${requiredFormItems.length}
-- Still missing from interview: ${missingFormItems.length}
-${missingFormItems.length > 0 ? `- Missing required form items to cover before summary:\n${missingFormItems
-        .slice(0, 12)
-        .map((item, index) => `  ${index + 1}. ${item}`)
-        .join("\n")}
-- CRITICAL: Do NOT return {"type":"summary"} while required form items remain unaddressed, unless the patient explicitly declines/cannot provide details. Ask one high-yield question that closes the most important missing item.` : "- All currently identified required form items appear addressed. You may proceed with normal summary logic once other clinical conditions are met."}`
-    : "";
   
   logDebug("[buildPrompt] formSummary metadata", {
     present: !!formSummary,
     length: formSummary?.length ?? 0,
-  });
-  logDebug("[buildPrompt] form completion coverage", {
-    requiredCount: requiredFormItems.length,
-    missingCount: missingFormItems.length,
   });
   logDebug("[buildPrompt] formSection length", { length: formSection.length });
 
@@ -1449,7 +1349,6 @@ Family doctor: ${profile.familyDoctor}
 Documented drug allergies: ${profile.allergies}
 ${patientBackground ? `\nPhysician-provided background: ${patientBackground}` : ""}
 ${imageSection}${labReportSection}${formSection}${medPmhSection}
-${formCompletionControllerSection}
 ${transcriptSection}${transcriptNote}${questionsList}${topicsList}${informationAlreadyProvided}${openEndedReminder}${mskLocationDirective}${controllerSection}
 
 CLINICAL INTERVIEW GUIDANCE (You are operating as a Physician Assistant):
@@ -1484,12 +1383,10 @@ ${forceSummary ? `CRITICAL: The patient has requested to end the interview. You 
 - Identified key associated symptoms ${hasMultipleComplaints ? "for ALL complaints" : ""}
 - Completed relevant virtual physical exam maneuvers if applicable (especially for MSK cases)
 - Have enough information to form a clinical assessment with differential diagnoses ${hasMultipleComplaints ? "for ALL complaints" : ""}
-- ${formSummary ? "If a physician-uploaded form is present: all required form items are addressed, OR explicitly documented as patient declined/unable to provide" : "No physician-uploaded form remains pending"}
 - Have enough information for physician handoff and follow-up planning ${hasMultipleComplaints ? "for ALL complaints" : ""}
 - ${hasMultipleComplaints ? "Explicit confirmation: You have asked comprehensive clinical questions for ALL complaints AND assessed red flags for ALL complaints AND can form differential diagnoses and physician-handoff recommendations" : "Explicit confirmation: You have asked comprehensive clinical questions and assessed all red flags and can form differential diagnoses and physician-handoff recommendations"}`}
 
 If you still need more critical clinical information${forceSummary ? "" : " and the patient hasn't requested to end"}${forceSummary ? "" : ", respond with a JSON object shaped like {\"type\":\"question\",\"question\":\"...\",\"rationale\":\"...\"}"}. The rationale should explain the clinical purpose of your question (e.g., "To assess for cardiac risk factors" or "To distinguish between viral and bacterial pharyngitis").
-${hasMissingRequiredFormItems && !forceSummary ? "CRITICAL OVERRIDE: Required form items are still missing. Your next response MUST be a {\"type\":\"question\"} that addresses one missing required form item. Do NOT summarize yet." : ""}
 If you have sufficient information for a clinical assessment with differential diagnoses and physician handoff${forceSummary ? " or the patient has requested to end" : ` (typically when complaint-scoped data is sufficient and relevant red flags are addressed)`}, OR if the FOCUS CONTROLLER says early-stop is met, respond with {"type":"summary","positives":[],"negatives":[],"summary":"","investigations":[],"assessment":"","plan":[]}. Remember: Your assessment must include differential diagnoses, and your plan must avoid treatment/medication advice and focus on physician handoff.
 
 CRITICAL: You MUST respond with valid JSON only. Do not include any text before or after the JSON object. Ensure all strings are properly escaped and all JSON syntax is correct.

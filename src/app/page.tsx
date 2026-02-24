@@ -4222,11 +4222,14 @@ export default function Home() {
                           </svg>
                           {isHolding ? "Stop listening" : "Start listening"}
                         </button>
-                        <div className="mt-2 min-h-[20px] w-full text-xs">
+                        <div className="mt-2 flex min-h-[20px] w-full items-center justify-between gap-3 text-xs">
                           {micWarning ? (
                             <p className="text-amber-600">{micWarning}</p>
                           ) : (
                             <p className={micStatusClassName}>{micStatusText}</p>
+                          )}
+                          {status === "awaitingAi" && !isPaused && (
+                            <span className="text-slate-500 animate-pulse">Thinking...</span>
                           )}
                         </div>
                       </div>
@@ -4356,10 +4359,7 @@ export default function Home() {
                         )}
                       </div>
                       <div className="flex items-center gap-3">
-                        {/* Thinking indicator and Paused status */}
-                        {status === "awaitingAi" && !isPaused && (
-                          <span className="text-sm text-slate-500 animate-pulse">Thinking…</span>
-                        )}
+                        {/* Paused status */}
                         {status === "paused" && (
                           <span className="text-sm text-slate-500">
                             {pauseCountdownSeconds !== null
@@ -4478,11 +4478,14 @@ export default function Home() {
                         {isHolding ? "Stop listening" : "Start listening"}
                       </button>
                     </div>
-                    <div className="min-h-[20px] text-xs">
+                    <div className="flex min-h-[20px] items-center justify-between gap-3 text-xs">
                       {micWarning ? (
                         <p className="text-amber-600">{micWarning}</p>
                       ) : (
                         <p className={micStatusClassName}>{micStatusText}</p>
+                      )}
+                      {status === "awaitingAi" && !isPaused && (
+                        <span className="text-slate-500 animate-pulse">Thinking...</span>
                       )}
                     </div>
                     {isSubmittingResponse && (

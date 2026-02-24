@@ -163,31 +163,6 @@ describe("interview focus controller", () => {
     expect(prompt).toContain("Early-stop condition: MET");
   });
 
-  it("enforces missing required form items before summary", () => {
-    const prompt = makePrompt({
-      chiefComplaint: "MVA 2 days ago",
-      transcript: [
-        {
-          role: "patient",
-          content:
-            "I was rear-ended 2 days ago and have neck and lower back pain. My insurance is ICBC.",
-        },
-      ],
-      formSummary: [
-        "Document Type: Form",
-        "Items To Clarify With Patient:",
-        "- Exact date of accident",
-        "- Insurance claim number",
-        "- Work duties and specific functional limitations",
-      ].join("\n"),
-    });
-
-    expect(prompt).toContain("FORM COMPLETION CONTROLLER (MANDATORY)");
-    expect(prompt).toContain("Missing required form items to cover before summary");
-    expect(prompt).toContain("CRITICAL OVERRIDE: Required form items are still missing.");
-    expect(prompt).toContain("Your next response MUST be a {\"type\":\"question\"}");
-  });
-
   it("exports classifier and scoped red flag helpers", () => {
     expect(classifyComplaint("sudden vision loss and weakness")).toBe("Neuro");
     expect(getScopedRedFlags("MSK")).toContain("Inability to weight bear or severe functional loss");

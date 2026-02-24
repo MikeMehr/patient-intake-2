@@ -20,7 +20,34 @@ import {
 } from "@/lib/invitation-security";
 
 const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+
+function resolveAppUrl(request: NextRequest): string {
+  const envUrl = (process.env.NEXT_PUBLIC_APP_URL || "").trim();
+  const requestOrigin = request.nextUrl.origin;
+
+  if (!envUrl) {
+    return requestOrigin || "http://localhost:3000";
+  }
+
+  // In local/dev, prefer the active request origin when env points to a different localhost port.
+  if (process.env.NODE_ENV !== "production") {
+    try {
+      const env = new URL(envUrl);
+      const req = new URL(requestOrigin);
+      if (
+        env.hostname === "localhost" &&
+        req.hostname === "localhost" &&
+        env.port !== req.port
+      ) {
+        return requestOrigin;
+      }
+    } catch {
+      return requestOrigin || "http://localhost:3000";
+    }
+  }
+
+  return envUrl;
+}
 
 export async function POST(request: NextRequest) {
   startInvitationCleanup();
@@ -112,7 +139,8 @@ export async function POST(request: NextRequest) {
 
     const physician = physicianResult.rows[0];
     const { rawToken, tokenHash, expiresAt } = createInvitationToken();
-    const invitationLink = `${APP_URL}/intake/invite/${rawToken}`;
+    const appUrl = resolveAppUrl(request);
+    const invitationLink = `${appUrl}/intake/invite/${rawToken}`;
 
     const hasUploadedPdf =
       Boolean(labReportFile) || Boolean(previousLabReportFile) || Boolean(formFile);
