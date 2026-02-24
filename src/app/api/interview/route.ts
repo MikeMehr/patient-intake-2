@@ -20,8 +20,22 @@ import {
   resolveInvitationFromCookie,
 } from "@/lib/invitation-security";
 
-const systemInstruction = `
-You are a Physician Assistant conducting a clinical interview. Your role is to gather a comprehensive history of present illness, perform a virtual physical examination when appropriate, systematically rule out red flags, and formulate a clinical assessment and treatment plan based on the information gathered.
+export const systemInstruction = `
+You are a Physician Assistant conducting a clinical interview. Your role is to gather a comprehensive history of present illness, perform a virtual physical examination when appropriate, and systematically rule out red flags.
+
+HIGHEST PRIORITY SAFETY RULE:
+- You are FORBIDDEN from giving treatment recommendations, medication instructions, dosing advice, or treatment plans to the patient.
+- You may explain provided findings in plain language and ask clarifying questions.
+- You must defer treatment decisions to the physician.
+
+INTERVIEW FOCUS POLICY:
+- Chief complaint anchoring: stay focused on the primary complaint unless new clinically linked symptoms emerge.
+- Relevance over exhaustiveness: ask only questions that materially affect differential diagnosis, risk stratification, triage, or physician decision-making.
+- Targeted red flag screening only: ask red flags scoped to the complaint class. Do NOT screen unrelated red-flag groups.
+- Question volume control: for straightforward complaints, prioritize onset, location, duration, severity, key associated symptoms, relevant negatives, and pertinent risk factors.
+- Adaptive depth: go deeper only when clinically justified (trauma/MVA, multi-system symptoms, chronic complexity, medico-legal documentation, physician forms, or uploaded forms requiring completion).
+- Avoid patient fatigue: combine related questions, avoid redundancy, do not re-ask answered items, and stop once diagnostic clarity is sufficient.
+- Clinical boundary: gather and clarify history only. Do NOT provide diagnosis, treatment plans, or medical advice. Final interpretation belongs to the physician.
 
 CHIEF COMPLAINT PROCESSING:
 - CRITICAL: When you see the chief complaint, you MUST understand it and rephrase it into a natural sentence. DO NOT simply repeat what's in the chief complaint box verbatim.
@@ -155,14 +169,8 @@ LAB REPORT ANALYSIS AND DISCUSSION (CRITICAL):
      * For elevated liver enzymes: Ask about alcohol consumption, medications, supplements, diet
      * For abnormal kidney function: Ask about hydration, medications, diet, family history
      * For abnormal thyroid: Ask about family history, symptoms, medications
-  5. Make evidence-based lifestyle recommendations based on abnormal findings:
-     * Dietary modifications (e.g., "Reducing saturated fats and increasing fiber can help lower cholesterol")
-     * Exercise recommendations (e.g., "Regular physical activity, such as 30 minutes of moderate exercise most days, can help improve [condition]")
-     * Smoking cessation if relevant
-     * Weight management if relevant
-     * Other lifestyle changes specific to the abnormal finding
-- Document all lifestyle recommendations made during the interview - these will be included in the summary for the physician to review.
-- When discussing lab results, be professional, empathetic, and educational. Help the patient understand what the results mean and what they can do about them.
+  5. Do NOT provide any treatment, medication, or management recommendations. State that the physician will decide treatment.
+- When discussing lab results, be professional, empathetic, and educational. Help the patient understand what the results mean, while deferring treatment decisions to the physician.
 - If multiple abnormal findings exist, prioritize the most clinically significant ones, but address all relevant findings.
 - Integrate lab report discussion naturally into the clinical interview - don't make it feel like a separate conversation.
 
@@ -198,7 +206,7 @@ CLINICAL REASONING AND DIFFERENTIAL DIAGNOSIS:
   1. Rule out serious/urgent conditions (red flags)
   2. Distinguish between likely differential diagnoses
   3. Assess severity and urgency
-  4. Gather information needed for treatment planning
+  4. Gather information needed for physician decision-making
 - Think about what conditions could cause the patient's symptoms and ask questions that help differentiate between them.
 - Use clinical judgment to prioritize questions based on likelihood and severity of potential diagnoses.
 
@@ -250,8 +258,8 @@ CLINICAL DECISION-MAKING RULES:
   2. Core symptom characteristics (onset, duration, severity, quality, location) - essential for differential diagnosis
   3. Key associated symptoms and triggers/relieving factors - help distinguish between differential diagnoses
   4. Virtual physical exam findings (especially for MSK cases) - provide objective clinical data
-  5. Relevant context from past medical history, family history, and allergies - inform risk assessment and treatment planning
-- Each question should contribute to your clinical assessment. Ask yourself: "How does this answer help me form a diagnosis and treatment plan?"
+  5. Relevant context from past medical history, family history, and allergies - inform risk assessment and physician handoff
+- Each question should contribute to your clinical assessment. Ask yourself: "How does this answer help clarify diagnosis and urgency for physician review?"
 - For MULTIPLE chief complaints: Complete all questions for one complaint before moving to the next. Do NOT summarize until ALL complaints are fully addressed.
 - CRITICAL: Do NOT mention, ask about, or reference other complaints until the current complaint is complete. Stay focused on ONE complaint at a time.
 - Aim for 8-20 focused questions PER complaint. Do NOT ask repetitive or redundant questions.
@@ -274,7 +282,7 @@ CLINICAL DECISION-MAKING RULES:
 - Return ONLY valid JSON. For question turns respond with {"type":"question","question":"...","rationale":"..."}. For summary turns respond with {"type":"summary","positives":[],"negatives":[],"physicalFindings":[],"summary":"...","investigations":[],"assessment":"...","plan":[]}.
 - When summarizing, CRITICAL: The summary field must be ONE comprehensive paragraph that combines ALL chief complaints into a natural clinical narrative. Start with patient demographics and all complaints together (e.g., "30 year old female with 3 days of vaginal discharge and 5 days of sore throat."), then describe each complaint's details in sequence, flowing naturally (e.g., "The vaginal discharge is associated with itchiness and white, thickened discharge. She has history of vaginal yeast infection. She is experiencing sore throat with fever. There is no cough, bodyache or rhinorrhea..."). If lifestyle recommendations were made during the interview (diet modifications, exercise, smoking cessation, etc.), include them in the summary paragraph. Example: "Lifestyle recommendations were discussed, including dietary modifications to reduce cholesterol and increasing physical activity to 30 minutes most days." Do NOT create separate paragraphs for each complaint. 
 - ASSESSMENT: Must include a non-definitive clinical assessment with differential diagnoses. Rank considerations by likelihood without declaring final diagnosis. Prefer phrasing like "Clinical features suggest..." and "Differential considerations include...".
-- PLAN: Must be a suggestive, physician-review treatment draft with specific actionable options. Include: diagnostic tests if indicated, medications with dosing if appropriate, patient education, follow-up instructions, and when to seek urgent care. Use non-directive language such as "consider", "may benefit from", "could include".
+- PLAN: Must be physician-handoff focused only. Include recommended diagnostics if indicated, key follow-up needs, and escalation/urgent-care triggers. Do NOT include medications, dosing, or treatment instructions.
 - When to recommend in-person physical exam in PLAN:
   * When virtual/physical exam findings are insufficient for diagnosis
   * When concerning findings require hands-on assessment (e.g., palpable masses, abnormal heart sounds, abdominal tenderness with guarding)
@@ -379,10 +387,6 @@ export async function POST(request: Request) {
     physicianId: clientPhysicianId,
     chiefComplaint,
     imageSummary,
-    labReportSummary,
-    previousLabReportSummary,
-    formSummary,
-    interviewGuidance,
     medPmhSummary,
     patientBackground,
     forceSummary = false,
@@ -565,18 +569,10 @@ export async function POST(request: Request) {
       typeof imageSummary === "string" && imageSummary.trim().length > 0
         ? imageSummary.trim()
         : null,
-      typeof labReportSummary === "string" && labReportSummary.trim().length > 0
-        ? labReportSummary.trim()
-        : null,
-      typeof previousLabReportSummary === "string" && previousLabReportSummary.trim().length > 0
-        ? previousLabReportSummary.trim()
-        : null,
-      typeof formSummary === "string" && formSummary.trim().length > 0
-        ? formSummary.trim()
-        : null,
-      typeof interviewGuidance === "string" && interviewGuidance.trim().length > 0
-        ? interviewGuidance.trim()
-        : null,
+      invitationContext.labReportSummary,
+      invitationContext.previousLabReportSummary,
+      invitationContext.formSummary,
+      invitationContext.interviewGuidance,
       typeof medPmhSummary === "string" && medPmhSummary.trim().length > 0
         ? medPmhSummary.trim()
         : null,
@@ -645,6 +641,225 @@ export async function POST(request: Request) {
     logRequestMeta("/api/interview", requestId, status, Date.now() - started);
     return res;
   }
+}
+
+type ComplaintClass =
+  | "MSK"
+  | "Neuro"
+  | "Cardio"
+  | "GI"
+  | "Respiratory"
+  | "Trauma"
+  | "Dermatology"
+  | "General";
+
+type EscalationState = {
+  active: boolean;
+  reasons: string[];
+  hasRedFlagSignal: boolean;
+  hasMultiSystemSymptoms: boolean;
+  hasChronicComplexity: boolean;
+  isTraumaOrMva: boolean;
+  hasMedicoLegalDocumentation: boolean;
+  hasStructuredFormUpload: boolean;
+};
+
+const BASE_QUESTION_BUDGET = 10;
+const FATIGUE_PHRASES = [
+  "i already answered",
+  "already answered that",
+  "too many questions",
+  "stop asking",
+  "you asked that",
+  "enough questions",
+];
+
+export function classifyComplaint(complaint: string): ComplaintClass {
+  const text = complaint.toLowerCase();
+  if (text.match(/\b(mva|motor vehicle|car accident|collision|fall|workplace injury|assault|sports injury|trauma)\b/)) {
+    return "Trauma";
+  }
+  if (text.match(/\b(headache|migraine|weakness|numbness|tingling|vision loss|syncope|faint|dizziness|seizure)\b/)) {
+    return "Neuro";
+  }
+  if (text.match(/\b(chest pain|palpitation|heart|angina|pressure)\b/)) {
+    return "Cardio";
+  }
+  if (text.match(/\b(abdominal|stomach|nausea|vomit|diarrhea|constipation|gi bleed|melena|hematemesis)\b/)) {
+    return "GI";
+  }
+  if (text.match(/\b(shortness of breath|dyspnea|cough|wheeze|respiratory|hemoptysis)\b/)) {
+    return "Respiratory";
+  }
+  if (text.match(/\b(rash|lesion|eczema|hives|wound|ulcer|skin)\b/)) {
+    return "Dermatology";
+  }
+  if (text.match(/\b(back pain|neck pain|joint pain|ankle|knee|shoulder|wrist|sprain|strain|musculoskeletal)\b/)) {
+    return "MSK";
+  }
+  return "General";
+}
+
+export function getScopedRedFlags(complaintClass: ComplaintClass): string[] {
+  switch (complaintClass) {
+    case "Cardio":
+      return [
+        "Exertional chest pain or pressure",
+        "Radiation to arm/jaw/back",
+        "Associated dyspnea, diaphoresis, or syncope",
+        "Known cardiac risk factors",
+      ];
+    case "Neuro":
+      return [
+        "Worst headache of life / thunderclap onset",
+        "Focal neurologic deficit (weakness, numbness, speech or vision changes)",
+        "Fever/meningismus with headache",
+        "Head trauma, immunosuppression, or known malignancy",
+      ];
+    case "GI":
+      return [
+        "Severe or worsening abdominal pain",
+        "GI bleeding (melena, hematemesis, or hematochezia)",
+        "Persistent vomiting/dehydration",
+        "Peritoneal signs or systemic toxicity",
+      ];
+    case "Respiratory":
+      return [
+        "Severe dyspnea at rest",
+        "Hypoxia/cyanosis signs",
+        "Pleuritic chest pain or hemoptysis",
+        "Inability to speak full sentences",
+      ];
+    case "MSK":
+      return [
+        "Inability to weight bear or severe functional loss",
+        "Open injury or gross deformity",
+        "Neurovascular compromise",
+        "Rapid progressive swelling or compartment-like pain",
+      ];
+    case "Trauma":
+      return [
+        "Loss of consciousness or amnesia",
+        "High-impact mechanism / major vehicle damage",
+        "Neurologic deficits or spine symptoms",
+        "Chest/abdominal injury or uncontrolled bleeding",
+      ];
+    case "Dermatology":
+      return [
+        "Rapidly progressive rash with systemic symptoms",
+        "Mucosal involvement",
+        "Signs of severe infection/necrosis",
+        "Immunocompromised host",
+      ];
+    default:
+      return [
+        "Severe uncontrolled pain",
+        "Acute mental status change",
+        "Persistent high fever with systemic symptoms",
+      ];
+  }
+}
+
+export function detectFatigueSignals(patientAnswers: string[]): { active: boolean; signals: string[] } {
+  const lowerAnswers = patientAnswers.map((a) => a.toLowerCase().trim()).filter(Boolean);
+  const signals: string[] = [];
+
+  if (lowerAnswers.some((a) => FATIGUE_PHRASES.some((p) => a.includes(p)))) {
+    signals.push("explicit-fatigue-statement");
+  }
+
+  const oneWordCount = lowerAnswers.filter((a) => a.split(/\s+/).length <= 1).length;
+  if (lowerAnswers.length >= 3 && oneWordCount >= Math.ceil(lowerAnswers.length * 0.6)) {
+    signals.push("predominantly-one-word-responses");
+  }
+
+  return { active: signals.length > 0, signals };
+}
+
+export function detectEscalationTriggers(params: {
+  chiefComplaint: string;
+  currentComplaint: string;
+  patientProfile: PatientProfile;
+  patientAnswers: string[];
+  formSummary: string | null;
+}): EscalationState {
+  const text = `${params.chiefComplaint} ${params.currentComplaint}`.toLowerCase();
+  const answersText = params.patientAnswers.join(" ").toLowerCase();
+  const profileText = `${params.patientProfile.pmh} ${params.patientProfile.currentMedications}`.toLowerCase();
+  const formText = (params.formSummary || "").toLowerCase();
+
+  const deepDiveComplaint = Boolean(
+    text.match(/\b(chest pain|neurologic deficit|severe headache|shortness of breath|abdominal pain|trauma|mva|syncope|gi bleeding|vision loss)\b/),
+  );
+  const mechanismBased = Boolean(
+    `${text} ${answersText}`.match(/\b(car accident|motor vehicle|mva|fall|workplace injury|assault|sports injury)\b/),
+  );
+  const hasRedFlagSignal = Boolean(
+    `${text} ${answersText}`.match(/\b(loss of consciousness|faint|syncope|hemoptysis|gi bleed|melena|hematemesis|vision loss|focal weakness|severe pain|thunderclap)\b/),
+  );
+  const hasMultiSystemSymptoms = Boolean(
+    `${text} ${answersText}`.match(/\b(chest pain.*shortness of breath|headache.*neurologic|abdominal pain.*vomit|multiple complaints|and also)\b/),
+  );
+  const hasChronicComplexity = Boolean(
+    profileText.match(/\b(diabetes|copd|chf|heart failure|ckd|kidney disease|cancer|immunosupp|cirrhosis|anticoagulant|pregnan)\b/),
+  );
+  const hasMedicoLegalDocumentation = Boolean(
+    `${text} ${answersText} ${formText}`.match(/\b(insurance|claim number|legal|lawsuit|disability|worksafe|work safe|medico-legal)\b/),
+  );
+  const hasStructuredFormUpload = formText.length > 0;
+  const isTraumaOrMva = classifyComplaint(params.currentComplaint) === "Trauma";
+
+  const reasons = [
+    ...(deepDiveComplaint ? ["automatic-deep-dive-complaint"] : []),
+    ...(mechanismBased ? ["mechanism-based-escalation"] : []),
+    ...(hasRedFlagSignal ? ["red-flag-identified"] : []),
+    ...(hasMultiSystemSymptoms ? ["multi-system-symptoms"] : []),
+    ...(hasChronicComplexity ? ["chronic-complexity"] : []),
+    ...(isTraumaOrMva ? ["trauma-mva"] : []),
+    ...(hasMedicoLegalDocumentation ? ["medico-legal-documentation"] : []),
+    ...(hasStructuredFormUpload ? ["structured-form-uploaded"] : []),
+  ];
+
+  return {
+    active: reasons.length > 0,
+    reasons,
+    hasRedFlagSignal,
+    hasMultiSystemSymptoms,
+    hasChronicComplexity,
+    isTraumaOrMva,
+    hasMedicoLegalDocumentation,
+    hasStructuredFormUpload,
+  };
+}
+
+export function computeQuestionBudget(escalation: EscalationState): { budget: number | null; modifiers: string[] } {
+  if (escalation.hasStructuredFormUpload) {
+    return { budget: null, modifiers: ["unlimited-structured-form"] };
+  }
+
+  let budget = BASE_QUESTION_BUDGET;
+  const modifiers: string[] = [`base:${BASE_QUESTION_BUDGET}`];
+  if (escalation.hasRedFlagSignal) {
+    budget += 5;
+    modifiers.push("+5-red-flag");
+  }
+  if (escalation.hasMultiSystemSymptoms) {
+    budget += 5;
+    modifiers.push("+5-multi-system");
+  }
+  if (escalation.hasChronicComplexity) {
+    budget += 5;
+    modifiers.push("+5-chronic-complexity");
+  }
+  if (escalation.isTraumaOrMva) {
+    budget += 10;
+    modifiers.push("+10-trauma-mva");
+  }
+  if (escalation.hasMedicoLegalDocumentation) {
+    budget += 10;
+    modifiers.push("+10-medico-legal");
+  }
+  return { budget, modifiers };
 }
 
 /**
@@ -824,7 +1039,83 @@ function extractInformationFromAnswers(answers: string[]): {
   };
 }
 
-function buildPrompt(
+function extractRequiredFormItems(formSummary: string): string[] {
+  const normalized = formSummary.replace(/\r/g, "");
+  const lines = normalized.split("\n");
+  const headerRegex = /^[A-Za-z][A-Za-z\/ ]+:\s*$/;
+  const required: string[] = [];
+  let inClarifySection = false;
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    if (line.toLowerCase().startsWith("items to clarify with patient:")) {
+      inClarifySection = true;
+      continue;
+    }
+    if (inClarifySection && headerRegex.test(line)) {
+      inClarifySection = false;
+      continue;
+    }
+    if (!inClarifySection) continue;
+    if (line.startsWith("-")) {
+      const item = line.replace(/^-+\s*/, "").trim();
+      if (item && !/not specified in source/i.test(item)) {
+        required.push(item);
+      }
+    }
+  }
+
+  const fallback: string[] = [];
+  const lower = normalized.toLowerCase();
+  const addFallback = (needle: string, item: string) => {
+    if (lower.includes(needle)) fallback.push(item);
+  };
+  addFallback("claim", "Insurance claim number");
+  addFallback("insurance", "Insurance company name");
+  addFallback("date of accident", "Exact date of accident");
+  addFallback("accident", "Accident mechanism details");
+  addFallback("passenger", "Passenger injury details");
+  addFallback("vehicle", "Vehicle types and damage details");
+  addFallback("seatbelt", "Seatbelt and airbag details");
+  addFallback("ambulance", "Ambulance / ER attendance details");
+  addFallback("work", "Work duties and activity limitations");
+  addFallback("prior", "Prior injuries to affected area");
+
+  return [...new Set([...required, ...fallback])];
+}
+
+function isFormItemCovered(item: string, transcriptText: string): boolean {
+  const lowerItem = item.toLowerCase();
+  const text = transcriptText.toLowerCase();
+
+  if (lowerItem.includes("claim")) return /claim|icbc/i.test(text);
+  if (lowerItem.includes("insurance")) return /insurance|icbc/i.test(text);
+  if (lowerItem.includes("date of accident")) {
+    return /date of accident|accident date|january|february|march|april|may|june|july|august|september|october|november|december|\b20\d{2}\b/.test(text);
+  }
+  if (lowerItem.includes("passenger")) return /passenger|driving alone|alone in (my|the) car/.test(text);
+  if (lowerItem.includes("vehicle")) return /vehicle|car|truck|semi|damage|rear-end|rear ended|collision/.test(text);
+  if (lowerItem.includes("seatbelt") || lowerItem.includes("airbag")) return /seatbelt|seat belt|airbag/.test(text);
+  if (lowerItem.includes("ambulance") || lowerItem.includes("er")) return /ambulance|emergency room|\ber\b|hospital|police/.test(text);
+  if (lowerItem.includes("work")) return /work|job|duties|unable to work|functional limitation/.test(text);
+  if (lowerItem.includes("prior")) return /prior|previous|before this accident|past injury/.test(text);
+
+  const stopwords = new Set([
+    "the", "and", "for", "with", "from", "that", "this", "your", "patient", "details", "detail",
+    "information", "history", "about", "into", "during", "needs", "required", "report", "form",
+  ]);
+  const tokens = lowerItem
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter((token) => token.length > 3 && !stopwords.has(token));
+  if (tokens.length === 0) return false;
+  const matches = tokens.filter((token) => text.includes(token)).length;
+  const requiredMatches = Math.min(2, tokens.length);
+  return matches >= requiredMatches;
+}
+
+export function buildPrompt(
   chiefComplaint: string,
   profile: PatientProfile,
   transcript: InterviewMessage[],
@@ -889,15 +1180,15 @@ function buildPrompt(
 3. New abnormalities that appeared in the current report
 4. Abnormalities that resolved between the two reports
 
-Discuss these changes with the patient, ask about interventions or lifestyle changes between the two dates, and provide context about what the changes mean clinically. Proactively discuss abnormal findings and trends. Ask about relevant history, family history, and lifestyle factors (diet, exercise, smoking, alcohol) when appropriate. Make evidence-based lifestyle recommendations based on the trends observed.
+Discuss these changes with the patient, ask about interventions or lifestyle changes between the two dates, and provide context about what the changes mean clinically. Proactively discuss abnormal findings and trends. Ask about relevant history, family history, and lifestyle factors (diet, exercise, smoking, alcohol) when appropriate. Do NOT provide treatment or medication recommendations; defer treatment decisions to the physician.
 
 If the patient asks about a lab value or test result NOT mentioned in these summaries, you MUST respond: "I don't have that specific result in the lab report summaries provided. Your physician will be able to discuss that with you in detail during your visit." Do NOT make up or guess about results not in the summaries.`;
   } else if (labReportSummary) {
     // Only current report exists
-    labReportSection = `\n\nLab Report Summary (from physician-uploaded PDF):\n${labReportSummary}\n\nCRITICAL: Use this lab report information to guide your questions. Proactively discuss abnormal findings with the patient. Ask about relevant history, family history, and lifestyle factors (diet, exercise, smoking, alcohol) when appropriate. Make evidence-based lifestyle recommendations. If the patient asks about a lab value or test result NOT mentioned in this summary, you MUST respond: "I don't have that specific result in the lab report summary provided. Your physician will be able to discuss that with you in detail during your visit." Do NOT make up or guess about results not in the summary.`;
+    labReportSection = `\n\nLab Report Summary (from physician-uploaded PDF):\n${labReportSummary}\n\nCRITICAL: Use this lab report information to guide your questions. Proactively discuss abnormal findings with the patient. Ask about relevant history, family history, and lifestyle factors (diet, exercise, smoking, alcohol) when appropriate. Do NOT provide treatment or medication recommendations; defer treatment decisions to the physician. If the patient asks about a lab value or test result NOT mentioned in this summary, you MUST respond: "I don't have that specific result in the lab report summary provided. Your physician will be able to discuss that with you in detail during your visit." Do NOT make up or guess about results not in the summary.`;
   } else if (previousLabReportSummary) {
     // Only previous report exists (edge case)
-    labReportSection = `\n\nPrevious Lab Report Summary (from physician-uploaded PDF):\n${previousLabReportSummary}\n\nCRITICAL: Use this previous lab report information to guide your questions. Proactively discuss abnormal findings with the patient. Ask about relevant history, family history, and lifestyle factors (diet, exercise, smoking, alcohol) when appropriate. Make evidence-based lifestyle recommendations. If the patient asks about a lab value or test result NOT mentioned in this summary, you MUST respond: "I don't have that specific result in the lab report summary provided. Your physician will be able to discuss that with you in detail during your visit." Do NOT make up or guess about results not in the summary.`;
+    labReportSection = `\n\nPrevious Lab Report Summary (from physician-uploaded PDF):\n${previousLabReportSummary}\n\nCRITICAL: Use this previous lab report information to guide your questions. Proactively discuss abnormal findings with the patient. Ask about relevant history, family history, and lifestyle factors (diet, exercise, smoking, alcohol) when appropriate. Do NOT provide treatment or medication recommendations; defer treatment decisions to the physician. If the patient asks about a lab value or test result NOT mentioned in this summary, you MUST respond: "I don't have that specific result in the lab report summary provided. Your physician will be able to discuss that with you in detail during your visit." Do NOT make up or guess about results not in the summary.`;
   }
   
   logDebug("[buildPrompt] labReportSummary metadata", {
@@ -922,10 +1213,34 @@ If the patient asks about a lab value or test result NOT mentioned in these summ
 
 Do NOT ask form questions in isolation - integrate them naturally with your clinical questioning about the chief complaint.`
     : "";
+
+  const transcriptTextForFormCoverage = transcript
+    .map((message) => message.content || "")
+    .join(" ")
+    .toLowerCase();
+  const requiredFormItems = formSummary ? extractRequiredFormItems(formSummary) : [];
+  const missingFormItems = requiredFormItems.filter(
+    (item) => !isFormItemCovered(item, transcriptTextForFormCoverage),
+  );
+  const hasMissingRequiredFormItems = formSummary ? missingFormItems.length > 0 : false;
+  const formCompletionControllerSection = formSummary
+    ? `\n\nFORM COMPLETION CONTROLLER (MANDATORY):
+- Required form items identified: ${requiredFormItems.length}
+- Still missing from interview: ${missingFormItems.length}
+${missingFormItems.length > 0 ? `- Missing required form items to cover before summary:\n${missingFormItems
+        .slice(0, 12)
+        .map((item, index) => `  ${index + 1}. ${item}`)
+        .join("\n")}
+- CRITICAL: Do NOT return {"type":"summary"} while required form items remain unaddressed, unless the patient explicitly declines/cannot provide details. Ask one high-yield question that closes the most important missing item.` : "- All currently identified required form items appear addressed. You may proceed with normal summary logic once other clinical conditions are met."}`
+    : "";
   
   logDebug("[buildPrompt] formSummary metadata", {
     present: !!formSummary,
     length: formSummary?.length ?? 0,
+  });
+  logDebug("[buildPrompt] form completion coverage", {
+    requiredCount: requiredFormItems.length,
+    missingCount: missingFormItems.length,
   });
   logDebug("[buildPrompt] formSection length", { length: formSection.length });
 
@@ -1083,44 +1398,27 @@ Do NOT ask form questions in isolation - integrate them naturally with your clin
     ? `\n\nCRITICAL MSK LOCATION (DIAGRAM REQUIRED):\n- This is a musculoskeletal pain complaint and location has NOT been assessed yet.\n- Your NEXT question MUST ask the patient to identify the pain location using the numbered body diagram.\n- Use this exact style: \"Looking at the diagram of your ${mskBodyPartName}, which numbered area (1, 2, 3, etc.) corresponds to where you feel the pain? Please click the numbered area or tell me the number.\"\n- IMPORTANT: If the patient has already clearly described the location in their own words, do NOT re-ask; proceed to the next highest-yield MSK question instead (ROM, neurologic symptoms, red flags).\n`
     : "";
 
-  // Build red flag checklist based on complaint type
-  const getRedFlagChecklist = (complaint: string): string[] => {
-    const complaintLower = complaint.toLowerCase();
-    const flags: string[] = [];
-    
-    // MVA/Trauma-specific red flags
-    if (complaintLower.includes('mva') || complaintLower.includes('motor vehicle') || 
-        complaintLower.includes('car accident') || complaintLower.includes('mvc') ||
-        complaintLower.includes('collision') || (complaintLower.includes('trauma') && complaintLower.includes('vehicle'))) {
-      flags.push('Loss of consciousness at scene', 'Amnesia of the accident', 'High-speed collision', 
-                 'Major vehicle damage', 'Airbag deployment', 'Ejection from vehicle', 
-                 'Neurological deficits', 'Spinal cord injury signs', 'Internal bleeding signs',
-                 'Chest trauma', 'Abdominal trauma', 'Head injury');
-    }
-    
-    if (complaintLower.includes('chest') || complaintLower.includes('heart')) {
-      flags.push('Cardiac risk factors', 'Radiation to arm/jaw', 'Associated with exertion', 'Shortness of breath');
-    }
-    if (complaintLower.includes('breath') || complaintLower.includes('dyspnea') || complaintLower.includes('respiratory')) {
-      flags.push('Severe dyspnea', 'Inability to speak in full sentences', 'Cyanosis', 'Respiratory distress');
-    }
-    if (complaintLower.includes('abdominal') || complaintLower.includes('stomach') || complaintLower.includes('belly')) {
-      flags.push('Severe abdominal pain', 'Peritoneal signs', 'Signs of sepsis', 'Uncontrolled bleeding');
-    }
-    if (complaintLower.includes('head') || complaintLower.includes('headache')) {
-      flags.push('Neurological deficits', 'Vision changes', 'Severe headache', 'Signs of stroke');
-    }
-    if (complaintLower.includes('pain') || complaintLower.includes('ache')) {
-      flags.push('Severe pain', 'Uncontrolled pain', 'Signs of trauma');
-    }
-    // General red flags for all complaints
-    flags.push('Loss of consciousness', 'Severe mental status changes', 'Uncontrolled bleeding', 'Signs of sepsis');
-    
-    return [...new Set(flags)]; // Remove duplicates
-  };
+  const complaintClass = classifyComplaint(currentComplaint || chiefComplaint);
+  const escalation = detectEscalationTriggers({
+    chiefComplaint,
+    currentComplaint: currentComplaint || chiefComplaint,
+    patientProfile: profile,
+    patientAnswers,
+    formSummary,
+  });
+  const budget = computeQuestionBudget(escalation);
+  const fatigueSignals = detectFatigueSignals(patientAnswers);
+  const redFlagChecklist = getScopedRedFlags(complaintClass);
+  const reachedBudget = budget.budget !== null && allQuestionsAsked.length >= budget.budget;
+  const shouldEarlyStop =
+    !forceSummary &&
+    (
+      (reachedBudget && !escalation.active) ||
+      (fatigueSignals.active && allQuestionsAsked.length >= 6)
+    );
 
-  const redFlagChecklist = getRedFlagChecklist(currentComplaint);
   const redFlagSection = `\n\nRED FLAG ASSESSMENT CHECKLIST for "${currentComplaint}":\nBefore moving to the next complaint or summarizing, ensure you have assessed:\n${redFlagChecklist.map((flag, i) => `  ${i + 1}. ${flag}`).join('\n')}\n\nCRITICAL: If you have NOT asked about these red flags yet, you MUST ask about them before moving on.\nCRITICAL: Bundle related red flags into ONE question (enumerate them) instead of separate questions. Example: “Have you had any of the following: uncontrolled bleeding from mouth/nose; rash, joint pain, or swelling; changes in your voice or hoarseness; difficulty opening your mouth?”`;
+  const controllerSection = `\n\nFOCUS CONTROLLER (ENFORCE STRICTLY):\n- Complaint class: ${complaintClass}\n- Scoped red flags only: ask ONLY from this complaint class; do NOT ask unrelated red-flag groups.\n- Questions asked so far: ${allQuestionsAsked.length}\n- Question budget: ${budget.budget === null ? "Unlimited (structured physician form uploaded)" : budget.budget}\n- Budget modifiers: ${budget.modifiers.join(", ")}\n- Escalation active: ${escalation.active ? "yes" : "no"}\n- Escalation reasons: ${escalation.reasons.length > 0 ? escalation.reasons.join(", ") : "none"}\n- Fatigue signals detected: ${fatigueSignals.active ? `yes (${fatigueSignals.signals.join(", ")})` : "no"}\n- Early-stop condition: ${shouldEarlyStop ? "MET — summarize now unless safety-critical data is missing." : "not met"}\n\nRules:\n1) Prioritize relevance over exhaustiveness.\n2) For straightforward complaints, limit to onset/location/duration/severity/key associated symptoms/relevant negatives/risk factors.\n3) Expand depth only when escalation is active.\n4) If early-stop condition is met, stop asking and summarize for physician handoff.`;
 
   const doNotAskAboutSection = hasMultipleComplaints && remainingComplaints.length > 0
     ? `\n\n🚫 DO NOT ASK ABOUT (FORBIDDEN UNTIL CURRENT COMPLAINT IS COMPLETE):\n${remainingComplaints.map((c, i) => `  - Complaint #${currentComplaintIndex + 2 + i}: "${c}"`).join('\n')}\n\nCRITICAL: You are FORBIDDEN from asking questions about these complaints until you have completed ALL questions and red flag assessment for "${currentComplaint}". Before asking each question, verify it relates ONLY to "${currentComplaint}". If your question relates to any of the forbidden complaints above, you MUST wait.`
@@ -1151,17 +1449,18 @@ Family doctor: ${profile.familyDoctor}
 Documented drug allergies: ${profile.allergies}
 ${patientBackground ? `\nPhysician-provided background: ${patientBackground}` : ""}
 ${imageSection}${labReportSection}${formSection}${medPmhSection}
-${transcriptSection}${transcriptNote}${questionsList}${topicsList}${informationAlreadyProvided}${openEndedReminder}${mskLocationDirective}
+${formCompletionControllerSection}
+${transcriptSection}${transcriptNote}${questionsList}${topicsList}${informationAlreadyProvided}${openEndedReminder}${mskLocationDirective}${controllerSection}
 
 CLINICAL INTERVIEW GUIDANCE (You are operating as a Physician Assistant):
 ${physicianGuidanceSection}
 - DO NOT repeat the chief complaint verbatim. Rephrase it naturally into a clinical sentence when asking your first question.
 - Bundle related red flags or associated symptoms into ONE question (enumerate items) rather than separate questions. Use yes/no or “which apply.” Example: “Have you had any of the following: uncontrolled bleeding from mouth/nose; rash, joint pain, or swelling; changes in your voice/hoarseness; difficulty opening your mouth?”
 - If the complaint is visible (rash, lesion, wound, swelling, bruising, deformity, skin changes), proactively offer the patient the option to upload/share a photo unless one is already provided (imageSummary present).
-- TOTAL QUESTIONS ALREADY ASKED: ${allQuestionsAsked.length}. ABSOLUTE MAX: 15 questions total (or 12–15 per complaint). If you have reached 15 questions already, or you have enough information, STOP asking questions and provide the summary now.
+- TOTAL QUESTIONS ALREADY ASKED: ${allQuestionsAsked.length}. Use the FOCUS CONTROLLER budget above instead of fixed exhaustive questioning.
 - Be focused and efficient. Review the transcript carefully to avoid repetition. Ask only the most diagnostically important questions that contribute to your clinical assessment.
-- Think clinically: Each question should help you rule in/out differential diagnoses, assess red flags, or gather information needed for treatment planning.
-- ${hasMultipleComplaints ? `Aim for 8-20 targeted clinical questions PER complaint. Complete ALL complaints before summarizing.` : "Aim for 8-20 targeted clinical questions total."}
+- Think clinically: Each question should help you rule in/out differential diagnoses, assess complaint-scoped red flags, and gather information needed for physician review.
+- ${hasMultipleComplaints ? `Aim for efficient complaint-scoped questioning per complaint and complete ALL complaints before summarizing.` : "Aim for efficient complaint-scoped questioning with minimal patient burden."}
 - Before asking each question, verify it relates ONLY to the CURRENT complaint. If multiple complaints exist, you are FORBIDDEN from asking about other complaints until the current one is complete.
 
 MANDATORY PRE-QUESTION VALIDATION (CRITICAL - MUST DO BEFORE EVERY QUESTION):
@@ -1176,20 +1475,22 @@ MANDATORY PRE-QUESTION VALIDATION (CRITICAL - MUST DO BEFORE EVERY QUESTION):
    - Formulate a NEW question about that different topic
 7. Only proceed with your question if it's about a NEW topic that hasn't been covered
 
-- Remember: Your goal is to gather enough information to form a clinical assessment (with differential diagnoses) and create an appropriate treatment plan.
+- Remember: Your goal is to gather enough information to form a clinical assessment (with differential diagnoses) for physician review, without giving treatment advice.
 
-${forceSummary ? `CRITICAL: The patient has requested to end the interview. You MUST provide a summary now based on all the information gathered so far. Generate a comprehensive one-paragraph summary (max 1500 characters) that combines ALL complaints into a natural clinical narrative (e.g., "30 year old female with 3 days of vaginal discharge and 5 days of sore throat. The vaginal discharge is associated with itchiness..."). Your ASSESSMENT must include differential diagnoses, and your PLAN must be a clinically appropriate treatment plan.` : `CRITICAL SUMMARY CONDITIONS - As a Physician Assistant, only summarize when you have:
+${forceSummary ? `CRITICAL: The patient has requested to end the interview. You MUST provide a summary now based on all the information gathered so far. Generate a comprehensive one-paragraph summary (max 1500 characters) that combines ALL complaints into a natural clinical narrative (e.g., "30 year old female with 3 days of vaginal discharge and 5 days of sore throat. The vaginal discharge is associated with itchiness..."). Your ASSESSMENT must include differential diagnoses, and your PLAN must remain physician-handoff only (no treatment recommendations).` : `CRITICAL SUMMARY CONDITIONS - As a Physician Assistant, only summarize when you have:
 - ${hasMultipleComplaints ? "Fully explored ALL chief complaints (meaning ALL questions asked for ALL complaints)" : "Fully explored this complaint (meaning all questions asked)"}
 - Assessed ALL critical red flags relevant to ${hasMultipleComplaints ? "ALL complaints" : "this complaint"} and ruled them out or confirmed them
 - Gathered core symptom characteristics ${hasMultipleComplaints ? "for ALL complaints" : ""} (onset, duration, severity, quality, location, triggers, relieving factors)
 - Identified key associated symptoms ${hasMultipleComplaints ? "for ALL complaints" : ""}
 - Completed relevant virtual physical exam maneuvers if applicable (especially for MSK cases)
 - Have enough information to form a clinical assessment with differential diagnoses ${hasMultipleComplaints ? "for ALL complaints" : ""}
-- Have enough information to create an appropriate treatment plan ${hasMultipleComplaints ? "for ALL complaints" : ""}
-- ${hasMultipleComplaints ? "Explicit confirmation: You have asked comprehensive clinical questions for ALL complaints AND assessed red flags for ALL complaints AND can form differential diagnoses and treatment plans" : "Explicit confirmation: You have asked comprehensive clinical questions and assessed all red flags and can form differential diagnoses and treatment plan"}`}
+- ${formSummary ? "If a physician-uploaded form is present: all required form items are addressed, OR explicitly documented as patient declined/unable to provide" : "No physician-uploaded form remains pending"}
+- Have enough information for physician handoff and follow-up planning ${hasMultipleComplaints ? "for ALL complaints" : ""}
+- ${hasMultipleComplaints ? "Explicit confirmation: You have asked comprehensive clinical questions for ALL complaints AND assessed red flags for ALL complaints AND can form differential diagnoses and physician-handoff recommendations" : "Explicit confirmation: You have asked comprehensive clinical questions and assessed all red flags and can form differential diagnoses and physician-handoff recommendations"}`}
 
 If you still need more critical clinical information${forceSummary ? "" : " and the patient hasn't requested to end"}${forceSummary ? "" : ", respond with a JSON object shaped like {\"type\":\"question\",\"question\":\"...\",\"rationale\":\"...\"}"}. The rationale should explain the clinical purpose of your question (e.g., "To assess for cardiac risk factors" or "To distinguish between viral and bacterial pharyngitis").
-If you have sufficient information for a clinical assessment with differential diagnoses and can formulate a treatment plan${forceSummary ? " or the patient has requested to end" : ` (typically after ${hasMultipleComplaints ? "8-20 focused clinical questions per complaint AND red flag assessment for each complaint" : "8-20 focused clinical questions AND red flag assessment"})`}, respond with {"type":"summary","positives":[],"negatives":[],"summary":"","investigations":[],"assessment":"","plan":[]}. Remember: Your assessment must include differential diagnoses, and your plan must be a clinically appropriate, specific treatment plan.
+${hasMissingRequiredFormItems && !forceSummary ? "CRITICAL OVERRIDE: Required form items are still missing. Your next response MUST be a {\"type\":\"question\"} that addresses one missing required form item. Do NOT summarize yet." : ""}
+If you have sufficient information for a clinical assessment with differential diagnoses and physician handoff${forceSummary ? " or the patient has requested to end" : ` (typically when complaint-scoped data is sufficient and relevant red flags are addressed)`}, OR if the FOCUS CONTROLLER says early-stop is met, respond with {"type":"summary","positives":[],"negatives":[],"summary":"","investigations":[],"assessment":"","plan":[]}. Remember: Your assessment must include differential diagnoses, and your plan must avoid treatment/medication advice and focus on physician handoff.
 
 CRITICAL: You MUST respond with valid JSON only. Do not include any text before or after the JSON object. Ensure all strings are properly escaped and all JSON syntax is correct.
 ${languageSection}

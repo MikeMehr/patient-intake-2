@@ -1,6 +1,6 @@
 "use client";
 
-import type { HistoryResponse } from "@/lib/history-schema";
+import type { HistoryResponse, PatientUploads } from "@/lib/history-schema";
 import type {
   InterviewMessage,
   InterviewResponse,
@@ -401,6 +401,7 @@ export default function Home() {
   const [patientEmail, setPatientEmail] = useState("");
   const [pendingHistoryResult, setPendingHistoryResult] = useState<HistoryResponse | null>(null);
   const [awaitingFinalComments, setAwaitingFinalComments] = useState(false);
+  const [finalCommentsChoice, setFinalCommentsChoice] = useState<"yes" | "no" | null>(null);
   const [hasConsented, setHasConsented] = useState(false);
   const [isInvitedFlow, setIsInvitedFlow] = useState(false);
   const [physicianIdValue, setPhysicianIdValue] = useState<string | null>(null);
@@ -808,31 +809,21 @@ export default function Home() {
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (hasRequestedMicPermissionRef.current) return;
-    if (!navigator.mediaDevices?.getUserMedia) return;
-
     hasRequestedMicPermissionRef.current = true;
-    const timer = window.setTimeout(() => {
-      void (async () => {
-        try {
-          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-          stream.getTracks().forEach((track) => track.stop());
-        } catch (error) {
-          // Ignore expected denials/unsupported cases here; on-demand mic start
-          // still shows proper UI messaging when user presses and holds.
-          if (
-            error instanceof DOMException &&
-            (error.name === "NotAllowedError" ||
-              error.name === "NotFoundError" ||
-              error.name === "NotReadableError")
-          ) {
-            return;
-          }
-          console.warn("[speech] Initial microphone permission preflight failed:", error);
-        }
-      })();
-    }, 250);
 
-    return () => window.clearTimeout(timer);
+    // Do not trigger getUserMedia() on load; that can create an accidental deny
+    // which blocks later press-to-talk attempts. Only check current permission state.
+    if (!navigator.permissions?.query) return;
+    void navigator.permissions
+      .query({ name: "microphone" as PermissionName })
+      .then((result) => {
+        if (result.state === "denied") {
+          setMicWarning("Microphone is blocked in browser settings. Please allow access and try again.");
+        }
+      })
+      .catch(() => {
+        // Ignore browser-specific permission API failures.
+      });
   }, []);
 
   const getMedPmhSummary = () => {
@@ -840,6 +831,60 @@ export default function Home() {
       .map((s) => s?.trim())
       .filter((s): s is string => !!s);
     return parts.length ? parts.join("\n") : null;
+  };
+
+  const buildPatientUploads = (lesionImageUrl?: string): PatientUploads | undefined => {
+    const medPmhSummary = getMedPmhSummary();
+    const medPmhSourceNames = [medListPhoto?.name, pmhPhoto?.name]
+      .map((name) => name?.trim())
+      .filter((name): name is string => Boolean(name));
+
+    const selectedParts: Array<{ part: string; side?: "left" | "right" | "both" }> = [];
+    for (const part of selectedBodyParts) {
+      const trimmedPart = part.part?.trim();
+      if (!trimmedPart) continue;
+      selectedParts.push({
+        part: trimmedPart,
+        side: part.side,
+      });
+    }
+
+    const bodyDiagramNoteParts: string[] = [];
+    if (selectedParts.length > 0) {
+      bodyDiagramNoteParts.push(
+        selectedParts.map((part) => (part.side ? `${part.side} ${part.part}` : part.part)).join(", "),
+      );
+    }
+    if (selectedDiagramArea) {
+      bodyDiagramNoteParts.push(`Area ${selectedDiagramArea}`);
+    }
+
+    const uploads: PatientUploads = {};
+
+    if (medPmhSummary) {
+      uploads.medPmh = {
+        summary: medPmhSummary,
+        sourceFileName: medPmhSourceNames.length > 0 ? medPmhSourceNames.join(", ") : undefined,
+      };
+    }
+
+    if (imageSummary || lesionImageUrl || selectedImage?.name) {
+      uploads.lesionImage = {
+        summary: imageSummary?.trim() || undefined,
+        imageUrl: lesionImageUrl,
+        imageName: selectedImage?.name?.trim() || undefined,
+      };
+    }
+
+    if (selectedParts.length > 0 || selectedDiagramArea) {
+      uploads.bodyDiagram = {
+        selectedArea: selectedDiagramArea || undefined,
+        selectedParts,
+        note: bodyDiagramNoteParts.join(" | ") || undefined,
+      };
+    }
+
+    return Object.keys(uploads).length > 0 ? uploads : undefined;
   };
 
   const parseMedPmhSummary = (summary: string) => {
@@ -2010,6 +2055,7 @@ export default function Home() {
 
   async function handlePatientSubmit(
     event?: React.FormEvent<HTMLFormElement>,
+    submitOptions?: { finalChoiceOverride?: "yes" | "no" },
   ): Promise<void> {
     if (event) {
       event.preventDefault();
@@ -2045,13 +2091,6 @@ export default function Home() {
     
     // Use ref to get current response value
     const currentResponse = patientResponseRef.current.trim();
-    if (!currentResponse) {
-      console.log("[handlePatientSubmit] No response text");
-      setIsSubmittingResponse(false);
-      setShowSubmitToast(false);
-      return;
-    }
-    setLastSubmittedDraft(currentResponse);
     let trimmed = currentResponse;
 
     // If a diagram area is selected, append it to the response
@@ -2067,18 +2106,14 @@ export default function Home() {
       // Don't hide the diagram - keep it visible for reference
     }
 
-    if (trimmed.length > 1000) {
-      setError("Your response is too long. Please keep it under 1000 characters.");
-      return;
-    }
-
     const lastMessage = messagesRef.current[messagesRef.current.length - 1];
     const isFinalCommentsTurn =
       awaitingFinalComments ||
       (lastMessage?.role === "assistant" && isFinalCommentsPrompt(lastMessage.content));
+    const effectiveFinalCommentsChoice =
+      submitOptions?.finalChoiceOverride ?? finalCommentsChoice;
 
-    // Final clinician-facing comment: capture and save without calling the AI.
-    if (isFinalCommentsTurn) {
+    const finalizeFinalCommentsTurn = async (finalComment?: string) => {
       const baseHistory = pendingHistoryResultRef.current;
       if (!baseHistory) {
         setError("Unable to save your final comment. Please try again.");
@@ -2087,24 +2122,29 @@ export default function Home() {
         return;
       }
 
-      const patientMessage: ChatMessage = { role: "patient", content: trimmed };
-      const updatedMessages = [...messagesRef.current, patientMessage];
-      messagesRef.current = updatedMessages;
-      setMessages(updatedMessages);
+      if (finalComment) {
+        const patientMessage: ChatMessage = { role: "patient", content: finalComment };
+        const updatedMessages = [...messagesRef.current, patientMessage];
+        messagesRef.current = updatedMessages;
+        setMessages(updatedMessages);
+      }
 
       setPatientResponse("");
       setInterimTranscript("");
       interimTranscriptRef.current = "";
 
-      const historyWithFinal = {
-        ...baseHistory,
-        patientFinalQuestionsComments: trimmed,
-      } satisfies HistoryResponse;
+      const historyWithFinal = finalComment
+        ? ({
+            ...baseHistory,
+            patientFinalQuestionsComments: finalComment,
+          } satisfies HistoryResponse)
+        : ({ ...baseHistory } satisfies HistoryResponse);
 
       setResult(historyWithFinal);
       setPendingHistoryResult(null);
       pendingHistoryResultRef.current = null;
       setAwaitingFinalComments(false);
+      setFinalCommentsChoice(null);
 
       setStatus("complete");
       statusRef.current = "complete";
@@ -2118,6 +2158,59 @@ export default function Home() {
         setIsSubmittingResponse(false);
         setShowSubmitToast(false);
       }
+    };
+
+    // Final clinician-facing comment: capture and save without calling the AI.
+    if (isFinalCommentsTurn) {
+      if (interviewMode === "conversation") {
+        if (effectiveFinalCommentsChoice === "no") {
+          await finalizeFinalCommentsTurn();
+          return;
+        }
+
+        if (effectiveFinalCommentsChoice !== "yes") {
+          setError("Please choose Yes or No before continuing.");
+          setIsSubmittingResponse(false);
+          setShowSubmitToast(false);
+          return;
+        }
+      }
+
+      if (!currentResponse && effectiveFinalCommentsChoice !== "no") {
+        console.log("[handlePatientSubmit] No final comment text");
+        setIsSubmittingResponse(false);
+        setShowSubmitToast(false);
+        return;
+      }
+
+      if (trimmed.length > 1000) {
+        setError("Your response is too long. Please keep it under 1000 characters.");
+        setIsSubmittingResponse(false);
+        setShowSubmitToast(false);
+        return;
+      }
+
+      if (effectiveFinalCommentsChoice !== "no" && currentResponse) {
+        setLastSubmittedDraft(currentResponse);
+      }
+      await finalizeFinalCommentsTurn(
+        effectiveFinalCommentsChoice === "no" ? undefined : trimmed,
+      );
+      return;
+    }
+
+    if (!currentResponse) {
+      console.log("[handlePatientSubmit] No response text");
+      setIsSubmittingResponse(false);
+      setShowSubmitToast(false);
+      return;
+    }
+    setLastSubmittedDraft(currentResponse);
+
+    if (trimmed.length > 1000) {
+      setError("Your response is too long. Please keep it under 1000 characters.");
+      setIsSubmittingResponse(false);
+      setShowSubmitToast(false);
       return;
     }
 
@@ -2376,6 +2469,7 @@ export default function Home() {
               previousLabReportSummary: previousLabReportSummary || undefined,
               formSummary: formSummary || undefined,
               medPmhSummary: medPmhSummary || undefined,
+              patientUploads: buildPatientUploads(base64String),
             },
             imageSummary: imageSummary || undefined,
             imageUrl: base64String,
@@ -2435,10 +2529,11 @@ export default function Home() {
           previousLabReportSummary: previousLabReportSummary || undefined,
           formSummary: formSummary || undefined,
           medPmhSummary: medPmhSummary || undefined,
+          patientUploads: buildPatientUploads(imageUrl),
         },
         imageSummary: imageSummary || undefined,
-        imageUrl: undefined,
-        imageName: undefined,
+        imageUrl: imageUrl,
+        imageName: selectedImage?.name || undefined,
         duration,
         transcript: transcriptToSave,
       };
@@ -2545,6 +2640,7 @@ export default function Home() {
           setPendingHistoryResult(historyResult);
           pendingHistoryResultRef.current = historyResult;
           setAwaitingFinalComments(true);
+          setFinalCommentsChoice(null);
           setStatus("awaitingPatient");
           statusRef.current = "awaitingPatient";
         } else {
@@ -2588,6 +2684,7 @@ export default function Home() {
           setPendingHistoryResult(historyResult);
           pendingHistoryResultRef.current = historyResult;
           setAwaitingFinalComments(true);
+          setFinalCommentsChoice(null);
           setStatus("awaitingPatient");
           statusRef.current = "awaitingPatient";
         }
@@ -2634,6 +2731,7 @@ export default function Home() {
           setPendingHistoryResult(historyResult);
           pendingHistoryResultRef.current = historyResult;
           setAwaitingFinalComments(true);
+          setFinalCommentsChoice(null);
           setStatus("awaitingPatient");
           statusRef.current = "awaitingPatient";
         } else {
@@ -2661,6 +2759,7 @@ export default function Home() {
     setMessages([]);
     setResult(null);
     setPatientResponse("");
+    setFinalCommentsChoice(null);
     setError(null);
     // Keep chief complaint - don't clear it
     setLockedProfile(null);
@@ -2906,6 +3005,7 @@ export default function Home() {
     setPendingHistoryResult(historyResult);
     pendingHistoryResultRef.current = historyResult;
     setAwaitingFinalComments(true);
+    setFinalCommentsChoice(null);
     setStatus("awaitingPatient");
     statusRef.current = "awaitingPatient";
   }
@@ -3986,12 +4086,13 @@ export default function Home() {
                   ))
                 )}
               </div>
-              {status === "complete" && !!result?.patientFinalQuestionsComments?.trim() && (
+              {status === "complete" && (
                 <p className="mt-3 text-sm font-medium text-red-600">
                   You are done. You will soon be contacted by your physician.
                 </p>
               )}
 
+              {status !== "complete" && (
               <form
                 onSubmit={handlePatientSubmit}
                 className={`mt-5 flex flex-col gap-3 ${
@@ -4000,6 +4101,57 @@ export default function Home() {
               >
                 {interviewMode === "conversation" ? (
                   <>
+                    {awaitingFinalComments && (
+                      <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-3">
+                        <p className="text-sm font-medium text-slate-800">
+                          Do you have any last comments or questions for your provider?
+                        </p>
+                        <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setFinalCommentsChoice("yes");
+                              setError(null);
+                              resetDraftTranscript("final-comments-yes");
+                              setPatientResponse("");
+                              patientResponseRef.current = "";
+                            }}
+                            disabled={status !== "awaitingPatient" || isSubmittingResponse}
+                            className={`inline-flex min-h-[56px] items-center justify-center rounded-2xl px-5 py-3 text-base font-semibold transition ${
+                              finalCommentsChoice === "yes"
+                                ? "bg-emerald-600 text-white"
+                                : "border border-slate-300 bg-white text-slate-700 hover:bg-slate-100"
+                            } disabled:cursor-not-allowed disabled:opacity-60`}
+                          >
+                            Yes
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (status !== "awaitingPatient" || isSubmittingResponse) {
+                                return;
+                              }
+                              setFinalCommentsChoice("no");
+                              setError(null);
+                              resetDraftTranscript("final-comments-no");
+                              setPatientResponse("");
+                              patientResponseRef.current = "";
+                              void handlePatientSubmit(undefined, {
+                                finalChoiceOverride: "no",
+                              });
+                            }}
+                            disabled={status !== "awaitingPatient" || isSubmittingResponse}
+                            className={`inline-flex min-h-[56px] items-center justify-center rounded-2xl px-5 py-3 text-base font-semibold transition ${
+                              finalCommentsChoice === "no"
+                                ? "bg-slate-900 text-white"
+                                : "border border-slate-300 bg-white text-slate-700 hover:bg-slate-100"
+                            } disabled:cursor-not-allowed disabled:opacity-60`}
+                          >
+                            No
+                          </button>
+                        </div>
+                      </div>
+                    )}
                     {showResponseBox && (
                       <div className="group flex flex-col items-center">
                         <div
@@ -4013,10 +4165,17 @@ export default function Home() {
                         <textarea
                           rows={4}
                           maxLength={1000}
-                          placeholder="Tap mic to start/stop or type your response."
+                          placeholder={
+                            awaitingFinalComments && finalCommentsChoice === "yes"
+                              ? "Type your final comment for your provider."
+                              : "Tap mic to start/stop or type your response."
+                          }
                           value={draftTranscript}
                           autoFocus={isEditingDraft}
-                          disabled={isSubmittingResponse}
+                          disabled={
+                            isSubmittingResponse ||
+                            (awaitingFinalComments && finalCommentsChoice !== "yes")
+                          }
                           onChange={(event) => {
                             const nextValue = event.target.value;
                             const nextTrimmedLength = nextValue.trim().length;
@@ -4041,7 +4200,13 @@ export default function Home() {
                           onClick={() => {
                             toggleListening({ allowDuringReview: true });
                           }}
-                          disabled={status !== "awaitingPatient" || isPaused || isSpeaking || cleaningTranscript}
+                          disabled={
+                            status !== "awaitingPatient" ||
+                            isPaused ||
+                            isSpeaking ||
+                            cleaningTranscript ||
+                            (awaitingFinalComments && finalCommentsChoice !== "yes")
+                          }
                           style={{ touchAction: "manipulation", WebkitUserSelect: "none", userSelect: "none" }}
                           className={`mt-2 inline-flex items-center gap-2 rounded-full px-5 py-2 text-base font-semibold shadow-sm transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 select-none ${
                             isHolding
@@ -4070,7 +4235,11 @@ export default function Home() {
                       <div className="mt-6 flex flex-wrap gap-3">
                         <button
                           type="button"
-                          disabled={isSubmittingResponse || hasPendingSubmission}
+                          disabled={
+                            isSubmittingResponse ||
+                            hasPendingSubmission ||
+                            (awaitingFinalComments && finalCommentsChoice !== "yes")
+                          }
                           onPointerDown={(event) => {
                             event.preventDefault();
                             if (!isSubmittingResponse && !hasPendingSubmission) {
@@ -4090,7 +4259,11 @@ export default function Home() {
                         </button>
                         <button
                           type="button"
-                          disabled={isSubmittingResponse || hasPendingSubmission}
+                          disabled={
+                            isSubmittingResponse ||
+                            hasPendingSubmission ||
+                            (awaitingFinalComments && finalCommentsChoice !== "yes")
+                          }
                           onClick={() => {
                             toggleDraftEditing();
                           }}
@@ -4107,7 +4280,11 @@ export default function Home() {
                         </button>
                         <button
                           type="button"
-                          disabled={isSubmittingResponse || hasPendingSubmission}
+                          disabled={
+                            isSubmittingResponse ||
+                            hasPendingSubmission ||
+                            (awaitingFinalComments && finalCommentsChoice !== "yes")
+                          }
                           onClick={() => {
                             redoDraftTranscript();
                           }}
@@ -4509,6 +4686,7 @@ export default function Home() {
                   </div>
                 )}
               </form>
+              )}
             </section>
           </div>
 

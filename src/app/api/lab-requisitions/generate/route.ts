@@ -94,14 +94,9 @@ function resolveRequestOrigin(request: NextRequest): string {
 }
 
 function resolveCanonicalOrigin(request: NextRequest): string {
-  const configured = (process.env.NEXT_PUBLIC_APP_URL || "").trim();
-  if (configured) {
-    try {
-      return new URL(configured).origin;
-    } catch {
-      // ignore invalid env value
-    }
-  }
+  // Always prefer request-derived origin for editor links so the eForm host
+  // matches the active authenticated dashboard origin (avoids cross-origin
+  // editor-session/save calls when env points to a different domain).
   return resolveRequestOrigin(request);
 }
 

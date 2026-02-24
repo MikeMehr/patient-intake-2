@@ -1,4 +1,8 @@
 import { query } from "@/lib/db";
+import {
+  clearExpiredInvitationSummaries,
+  clearInactiveInvitationSummaries,
+} from "@/lib/invitation-security";
 
 const DEFAULT_INTERVAL_MINUTES = 15;
 // Avoid multiple intervals in hot-reload / multi-import scenarios
@@ -8,6 +12,9 @@ declare const global: typeof globalThis & {
 
 async function runCleanup() {
   try {
+    await clearExpiredInvitationSummaries();
+    await clearInactiveInvitationSummaries();
+
     await query(
       `DELETE FROM patient_invitations
        WHERE (

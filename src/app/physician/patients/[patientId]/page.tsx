@@ -55,21 +55,11 @@ function isUuid(value: unknown): value is string {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(v);
 }
 
-export default function PatientChartPage({ params }: { params: { patientId: string } }) {
+export default function PatientChartPage() {
   const router = useRouter();
   const pathname = usePathname();
-  const patientIdRaw = params.patientId;
-  const patientIdFromParams = useMemo(() => {
-    const raw = String(patientIdRaw || "");
-    try {
-      return decodeURIComponent(raw).trim();
-    } catch {
-      return raw.trim();
-    }
-  }, [patientIdRaw]);
   const patientId = useMemo(() => {
-    // Fallback for rare cases where Next route params are empty due to caching/deploy mismatch.
-    if (patientIdFromParams) return patientIdFromParams;
+    // Derive patientId directly from pathname to avoid async params access in Next 16.
     const path = typeof pathname === "string" ? pathname : "";
     const prefix = "/physician/patients/";
     if (!path.startsWith(prefix)) return "";
@@ -79,7 +69,7 @@ export default function PatientChartPage({ params }: { params: { patientId: stri
     } catch {
       return last.trim();
     }
-  }, [patientIdFromParams, pathname]);
+  }, [pathname]);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);

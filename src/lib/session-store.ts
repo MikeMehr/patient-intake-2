@@ -7,13 +7,24 @@ import type { HistoryResponse } from "./history-schema";
 import type { PatientProfile, InterviewMessage } from "./interview-schema";
 import { query } from "./db";
 
+export type SessionHistory = HistoryResponse & {
+  interviewDuration?: number;
+  transcript?: InterviewMessage[];
+  labReportSummary?: string;
+  previousLabReportSummary?: string;
+  formSummary?: string;
+  medPmhSummary?: string;
+  physicianReviewedAt?: string;
+  hpiUpdatedAt?: string;
+};
+
 export interface PatientSession {
   sessionCode: string;
   patientEmail: string;
   patientName: string;
   chiefComplaint: string;
   patientProfile: PatientProfile;
-  history: HistoryResponse;
+  history: SessionHistory;
   completedAt: Date;
   physicianId: string;
   viewedByPhysician: boolean;
@@ -159,7 +170,7 @@ export async function getSession(sessionCode: string): Promise<PatientSession | 
     }
 
     // PostgreSQL returns JSON as a parsed object, but let's ensure it's properly typed
-    const historyData = (row.history as any) as HistoryResponse & { interviewDuration?: number; transcript?: InterviewMessage[] };
+    const historyData = (row.history as any) as SessionHistory;
     
     // Extract transcript and interviewDuration from historyData
     const { interviewDuration, transcript, ...history } = historyData || {};
@@ -182,7 +193,7 @@ export async function getSession(sessionCode: string): Promise<PatientSession | 
       patientName: row.patient_name,
       chiefComplaint: row.chief_complaint,
       patientProfile: row.patient_profile as PatientProfile,
-      history: history as HistoryResponse,
+      history: history as SessionHistory,
       completedAt: row.completed_at,
       physicianId: row.physician_id,
       viewedByPhysician: row.viewed_by_physician,
@@ -281,31 +292,65 @@ export async function updateSessionHistoryFields(
     summary: string;
     assessment: string;
     plan: string[];
+    physicalFindings: string[];
+    patientFinalQuestionsComments: string;
+    hpiUpdatedAt: string;
   }
 ): Promise<boolean> {
   try {
-    const { summary, assessment, plan } = updates;
+    const {
+      summary,
+      assessment,
+      plan,
+      physicalFindings,
+      patientFinalQuestionsComments,
+      hpiUpdatedAt,
+    } = updates;
     const planJson = JSON.stringify(plan);
+    const physicalFindingsJson = JSON.stringify(physicalFindings);
     const result = await query(
       `UPDATE patient_sessions
        SET history = jsonb_set(
          jsonb_set(
            jsonb_set(
-             COALESCE(history, '{}'::jsonb),
-             '{summary}',
-             to_jsonb($2::text),
+             jsonb_set(
+               jsonb_set(
+                 jsonb_set(
+                   COALESCE(history, '{}'::jsonb),
+                   '{summary}',
+                   to_jsonb($2::text),
+                   true
+                 ),
+                 '{assessment}',
+                 to_jsonb($3::text),
+                 true
+               ),
+               '{plan}',
+               $4::jsonb,
+               true
+             ),
+             '{physicalFindings}',
+             $5::jsonb,
              true
            ),
-           '{assessment}',
-           to_jsonb($3::text),
+           '{patientFinalQuestionsComments}',
+           to_jsonb($6::text),
            true
          ),
-         '{plan}',
-         $4::jsonb,
+         '{hpiUpdatedAt}',
+         to_jsonb($7::text),
          true
        )
        WHERE session_code = $1`,
-      [sessionCode, summary, assessment, planJson]
+      [
+        sessionCode,
+        summary,
+        assessment,
+        planJson,
+        physicalFindingsJson,
+        patientFinalQuestionsComments,
+        hpiUpdatedAt,
+      ]
     );
     return (result.rowCount ?? 0) > 0;
   } catch (error) {
@@ -443,7 +488,7 @@ export async function getSessionsByPhysician(physicianId: string): Promise<Patie
     );
 
     return result.rows.map((row) => {
-      const historyData = row.history as HistoryResponse & { interviewDuration?: number; transcript?: InterviewMessage[] };
+      const historyData = row.history as SessionHistory;
       const { interviewDuration, transcript, ...history } = historyData;
       
       // Ensure transcript is always an array if it exists
@@ -458,7 +503,7 @@ export async function getSessionsByPhysician(physicianId: string): Promise<Patie
         patientName: row.patient_name,
         chiefComplaint: row.chief_complaint,
         patientProfile: row.patient_profile as PatientProfile,
-        history: history as HistoryResponse,
+        history: history as SessionHistory,
         completedAt: row.completed_at,
         physicianId: row.physician_id,
         viewedByPhysician: row.viewed_by_physician,
@@ -522,10 +567,7 @@ export async function getSessionsByScope(params: {
     );
 
     return result.rows.map((row) => {
-      const historyData = row.history as HistoryResponse & {
-        interviewDuration?: number;
-        transcript?: InterviewMessage[];
-      };
+      const historyData = row.history as SessionHistory;
       const { interviewDuration, transcript, ...history } = historyData;
 
       let extractedTranscript: InterviewMessage[] | undefined = undefined;
@@ -539,7 +581,7 @@ export async function getSessionsByScope(params: {
         patientName: row.patient_name,
         chiefComplaint: row.chief_complaint,
         patientProfile: row.patient_profile as PatientProfile,
-        history: history as HistoryResponse,
+        history: history as SessionHistory,
         completedAt: row.completed_at,
         physicianId: row.physician_id,
         viewedByPhysician: row.viewed_by_physician,
@@ -587,7 +629,7 @@ export async function getAllSessions(): Promise<PatientSession[]> {
     );
 
     return result.rows.map((row) => {
-      const historyData = row.history as HistoryResponse & { interviewDuration?: number; transcript?: InterviewMessage[] };
+      const historyData = row.history as SessionHistory;
       const { interviewDuration, transcript, ...history } = historyData;
       
       // Ensure transcript is always an array if it exists
@@ -602,7 +644,7 @@ export async function getAllSessions(): Promise<PatientSession[]> {
         patientName: row.patient_name,
         chiefComplaint: row.chief_complaint,
         patientProfile: row.patient_profile as PatientProfile,
-        history: history as HistoryResponse,
+        history: history as SessionHistory,
         completedAt: row.completed_at,
         physicianId: row.physician_id,
         viewedByPhysician: row.viewed_by_physician,

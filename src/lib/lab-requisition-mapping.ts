@@ -14,7 +14,7 @@ const LAB_FIELD_MAP: Array<{ id: string; terms: string[] }> = [
   { id: "ACR", terms: ["acr", "albumin creatinine ratio", "urine acr"] },
   { id: "CreatinineGFR", terms: ["creatinine", "egfr", "renal function", "kidney function"] },
   { id: "Sodium", terms: ["sodium", "na"] },
-  { id: "Potassium", terms: ["potassium", "k+"] },
+  { id: "Potassium", terms: ["potassium", "k+", "k"] },
   { id: "ALT", terms: ["alt", "alanine aminotransferase"] },
   { id: "AST", terms: ["ast", "aspartate aminotransferase"] },
   { id: "AlkPhos", terms: ["alk phos", "alkaline phosphatase", "alp"] },
@@ -51,7 +51,9 @@ function matchesCandidate(candidate: string, term: string): boolean {
     return candidate.includes(single);
   }
 
-  return candidate.includes(term) || term.includes(candidate);
+  // For multi-word terms, avoid reverse substring checks (e.g. candidate "k"
+  // matching term "kidney function"), which causes false positives.
+  return candidate.includes(term);
 }
 
 export function mapLabTestsToEformFields(tests: string[]): LabOrderMappingResult {

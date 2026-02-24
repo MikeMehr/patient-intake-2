@@ -40,6 +40,36 @@ const initialDraft: SoapDraft = {
   plan: "",
 };
 
+function composeUnifiedSoapText(draft: SoapDraft): string {
+  return [
+    "Subjective:",
+    draft.subjective || "",
+    "",
+    "Objective:",
+    draft.objective || "",
+    "",
+    "Assessment:",
+    draft.assessment || "",
+    "",
+    "Plan:",
+    draft.plan || "",
+  ].join("\n");
+}
+
+function parseUnifiedSoapText(value: string): SoapDraft | null {
+  const normalized = value.replace(/\r\n/g, "\n").trim();
+  const pattern =
+    /Subjective:\s*([\s\S]*?)\n\s*Objective:\s*([\s\S]*?)\n\s*Assessment:\s*([\s\S]*?)\n\s*Plan:\s*([\s\S]*)$/i;
+  const match = normalized.match(pattern);
+  if (!match) return null;
+  return {
+    subjective: (match[1] || "").trim(),
+    objective: (match[2] || "").trim(),
+    assessment: (match[3] || "").trim(),
+    plan: (match[4] || "").trim(),
+  };
+}
+
 function formatDateTime(value: string | null): string {
   if (!value) return "—";
   const d = new Date(value);
@@ -71,12 +101,15 @@ export default function PhysicianTranscriptionPage() {
   const [lifecycleState, setLifecycleState] = useState<"DRAFT" | "FINALIZED_FOR_EXPORT" | null>(null);
   const [snapshotLabel, setSnapshotLabel] = useState<string>("");
   const [draft, setDraft] = useState<SoapDraft>(initialDraft);
+  const [reviewText, setReviewText] = useState<string>(composeUnifiedSoapText(initialDraft));
   const [actionLoading, setActionLoading] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
 
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyItems, setHistoryItems] = useState<TranscriptionListItem[]>([]);
+  const [deletingSnapshotId, setDeletingSnapshotId] = useState<string | null>(null);
+  const [deletingAllSnapshots, setDeletingAllSnapshots] = useState(false);
 
   const hasNewPatientIdentity = useMemo(
     () => newPatientFullName.trim().length >= 3 && /^\d{4}-\d{2}-\d{2}$/.test(newPatientDob.trim()),
@@ -320,12 +353,14 @@ export default function PhysicianTranscriptionPage() {
       setEncounterId(data.encounterId || null);
       setLifecycleState(data.lifecycleState || "DRAFT");
       setSnapshotLabel(typeof data?.snapshotLabel === "string" ? data.snapshotLabel : "");
-      setDraft({
+      const nextDraft = {
         subjective: data?.draft?.subjective || "",
         objective: data?.draft?.objective || "",
         assessment: data?.draft?.assessment || "",
         plan: data?.draft?.plan || "",
-      });
+      };
+      setDraft(nextDraft);
+      setReviewText(composeUnifiedSoapText(nextDraft));
       setActionSuccess("SOAP draft generated.");
       setNewPatientFullName("");
       setNewPatientDob("");
@@ -339,6 +374,11 @@ export default function PhysicianTranscriptionPage() {
 
   async function saveDraft() {
     if (!soapVersionId) return;
+    const parsedDraft = parseUnifiedSoapText(reviewText);
+    if (!parsedDraft) {
+      setActionError("Invalid SOAP format. Keep the headers: Subjective, Objective, Assessment, Plan.");
+      return;
+    }
     setActionLoading(true);
     setActionError(null);
     setActionSuccess(null);
@@ -346,10 +386,12 @@ export default function PhysicianTranscriptionPage() {
       const res = await fetch("/api/physician/transcription/draft", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ soapVersionId, draft }),
+        body: JSON.stringify({ soapVersionId, draft: parsedDraft }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || "Failed to save draft");
+      setDraft(parsedDraft);
+      setReviewText(composeUnifiedSoapText(parsedDraft));
       setActionSuccess("SOAP draft saved.");
       await loadHistory();
     } catch (err) {
@@ -423,16 +465,74 @@ export default function PhysicianTranscriptionPage() {
       setSoapVersionId(data.soapVersionId || null);
       setEncounterId(data.encounterId || null);
       setLifecycleState(data.lifecycleState || null);
-      setDraft({
+      const nextDraft = {
         subjective: data?.draft?.subjective || "",
         objective: data?.draft?.objective || "",
         assessment: data?.draft?.assessment || "",
         plan: data?.draft?.plan || "",
-      });
+      };
+      setDraft(nextDraft);
+      setReviewText(composeUnifiedSoapText(nextDraft));
       setTranscript(data?.draftTranscript || "");
       if (typeof data?.snapshotLabel === "string") setSnapshotLabel(data.snapshotLabel);
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "Failed to load SOAP version");
+    }
+  }
+
+  function clearEditorState() {
+    setSoapVersionId(null);
+    setEncounterId(null);
+    setLifecycleState(null);
+    setDraft(initialDraft);
+    setReviewText(composeUnifiedSoapText(initialDraft));
+    setTranscript("");
+  }
+
+  async function deleteSnapshot(item: TranscriptionListItem) {
+    if (!window.confirm("Delete this snapshot from Recent snapshots?")) return;
+    setDeletingSnapshotId(item.transcriptionSessionId);
+    setActionError(null);
+    setActionSuccess(null);
+    try {
+      const res = await fetch(
+        `/api/physician/transcription/snapshots/${encodeURIComponent(item.transcriptionSessionId)}`,
+        { method: "DELETE" },
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || "Failed to delete snapshot");
+      if (item.soapVersionId === soapVersionId) {
+        clearEditorState();
+      }
+      setActionSuccess("Snapshot deleted.");
+      await loadHistory();
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Failed to delete snapshot");
+    } finally {
+      setDeletingSnapshotId(null);
+    }
+  }
+
+  async function deleteAllSnapshots() {
+    if (!window.confirm("Delete all recent snapshots? This cannot be undone.")) return;
+    setDeletingAllSnapshots(true);
+    setActionError(null);
+    setActionSuccess(null);
+    try {
+      const res = await fetch("/api/physician/transcription/snapshots", {
+        method: "DELETE",
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || "Failed to delete all snapshots");
+      clearEditorState();
+      setActionSuccess(
+        `Deleted ${typeof data?.deletedCount === "number" ? data.deletedCount : 0} snapshots.`,
+      );
+      await loadHistory();
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Failed to delete all snapshots");
+    } finally {
+      setDeletingAllSnapshots(false);
     }
   }
 
@@ -576,35 +676,11 @@ export default function PhysicianTranscriptionPage() {
                 <h2 className="text-lg font-semibold text-slate-900">3) Review and export</h2>
                 <div className="grid grid-cols-1 gap-3">
                   <textarea
-                    value={draft.subjective}
-                    onChange={(e) => setDraft((d) => ({ ...d, subjective: e.target.value }))}
-                    rows={4}
+                    value={reviewText}
+                    onChange={(e) => setReviewText(e.target.value)}
+                    rows={16}
                     className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                    placeholder="Subjective"
-                    disabled={!soapVersionId || lifecycleState === "FINALIZED_FOR_EXPORT"}
-                  />
-                  <textarea
-                    value={draft.objective}
-                    onChange={(e) => setDraft((d) => ({ ...d, objective: e.target.value }))}
-                    rows={3}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                    placeholder="Objective"
-                    disabled={!soapVersionId || lifecycleState === "FINALIZED_FOR_EXPORT"}
-                  />
-                  <textarea
-                    value={draft.assessment}
-                    onChange={(e) => setDraft((d) => ({ ...d, assessment: e.target.value }))}
-                    rows={3}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                    placeholder="Assessment"
-                    disabled={!soapVersionId || lifecycleState === "FINALIZED_FOR_EXPORT"}
-                  />
-                  <textarea
-                    value={draft.plan}
-                    onChange={(e) => setDraft((d) => ({ ...d, plan: e.target.value }))}
-                    rows={4}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                    placeholder="Plan"
+                    placeholder={"Subjective:\n\nObjective:\n\nAssessment:\n\nPlan:"}
                     disabled={!soapVersionId || lifecycleState === "FINALIZED_FOR_EXPORT"}
                   />
                 </div>
@@ -643,7 +719,17 @@ export default function PhysicianTranscriptionPage() {
             </div>
 
             <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6">
-              <h2 className="text-lg font-semibold text-slate-900 mb-3">Recent snapshots</h2>
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <h2 className="text-lg font-semibold text-slate-900">Recent snapshots</h2>
+                <button
+                  type="button"
+                  onClick={deleteAllSnapshots}
+                  disabled={historyLoading || historyItems.length === 0 || deletingAllSnapshots}
+                  className="px-3 py-1.5 text-xs font-medium text-red-700 bg-white border border-red-300 rounded-lg hover:bg-red-50 disabled:opacity-60"
+                >
+                  {deletingAllSnapshots ? "Deleting..." : "Delete All"}
+                </button>
+              </div>
               {historyLoading ? (
                 <p className="text-sm text-slate-600">Loading...</p>
               ) : historyItems.length === 0 ? (
@@ -651,20 +737,34 @@ export default function PhysicianTranscriptionPage() {
               ) : (
                 <div className="space-y-2">
                   {historyItems.map((item) => (
-                    <button
+                    <div
                       key={item.transcriptionSessionId}
-                      type="button"
-                      onClick={() => loadSoapVersion(item.soapVersionId)}
-                      className="w-full rounded-lg border border-slate-200 px-3 py-2 text-left hover:bg-slate-50"
+                      className="rounded-lg border border-slate-200 px-3 py-2"
                     >
-                      <div className="text-sm font-medium text-slate-900">{item.patientName}</div>
-                      <div className="text-xs text-slate-500">
-                        v{item.version} • {item.lifecycleState} • {formatDateTime(item.createdAt)}
+                      <div className="flex items-start justify-between gap-2">
+                        <button
+                          type="button"
+                          onClick={() => loadSoapVersion(item.soapVersionId)}
+                          className="flex-1 text-left hover:bg-slate-50 rounded-md"
+                        >
+                          <div className="text-sm font-medium text-slate-900">{item.patientName}</div>
+                          <div className="text-xs text-slate-500">
+                            v{item.version} • {item.lifecycleState} • {formatDateTime(item.createdAt)}
+                          </div>
+                          {item.previewSummary && (
+                            <div className="text-xs text-slate-600 mt-1 line-clamp-2">{item.previewSummary}</div>
+                          )}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => deleteSnapshot(item)}
+                          disabled={deletingSnapshotId === item.transcriptionSessionId}
+                          className="shrink-0 px-2 py-1 text-xs font-medium text-red-700 bg-white border border-red-300 rounded hover:bg-red-50 disabled:opacity-60"
+                        >
+                          {deletingSnapshotId === item.transcriptionSessionId ? "Deleting..." : "Delete"}
+                        </button>
                       </div>
-                      {item.previewSummary && (
-                        <div className="text-xs text-slate-600 mt-1 line-clamp-2">{item.previewSummary}</div>
-                      )}
-                    </button>
+                    </div>
                   ))}
                 </div>
               )}

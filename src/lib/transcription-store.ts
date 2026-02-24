@@ -516,3 +516,40 @@ export async function getSoapVersionByIdForScope(params: { soapVersionId: string
   );
   return res.rows[0] || null;
 }
+
+export async function deleteTranscriptionSessionByIdForScope(params: {
+  transcriptionSessionId: string;
+  scope: Scope;
+}): Promise<{ deleted: boolean; soapVersionId: string | null }> {
+  const { sql: scopeSql, params: scopeParams } = scopeWhere(params.scope, 2);
+  const res = await query<{ soap_version_id: string | null }>(
+    `DELETE FROM physician_transcription_sessions pts
+     USING patients p
+     WHERE pts.id = $1
+       AND p.id = pts.patient_id
+       AND ${scopeSql}
+     RETURNING pts.soap_version_id`,
+    [params.transcriptionSessionId, ...scopeParams],
+  );
+  return {
+    deleted: (res.rowCount ?? 0) > 0,
+    soapVersionId: res.rows[0]?.soap_version_id ?? null,
+  };
+}
+
+export async function deleteAllTranscriptionSessionsForScope(params: {
+  scope: Scope;
+}): Promise<{ deletedCount: number }> {
+  const { sql: scopeSql, params: scopeParams } = scopeWhere(params.scope, 1);
+  const res = await query<{ id: string }>(
+    `DELETE FROM physician_transcription_sessions pts
+     USING patients p
+     WHERE p.id = pts.patient_id
+       AND ${scopeSql}
+     RETURNING pts.id`,
+    scopeParams,
+  );
+  return {
+    deletedCount: res.rowCount ?? 0,
+  };
+}

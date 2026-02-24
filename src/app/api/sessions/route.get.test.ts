@@ -40,6 +40,7 @@ vi.mock("@/lib/azure-openai", () => ({
 }));
 
 vi.mock("@/lib/invitation-security", () => ({
+  clearInvitationSummaries: vi.fn(),
   consumeRateLimit: vi.fn(),
   getRequestIp: vi.fn(() => "127.0.0.1"),
   logInvitationAudit: vi.fn(),

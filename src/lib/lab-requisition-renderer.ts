@@ -10,6 +10,13 @@ type ChromiumCompat = {
   headless?: boolean | "shell";
 };
 
+type LaunchAttempt = {
+  executablePath?: string;
+  args: string[];
+  headless: boolean;
+  label: string;
+};
+
 function getChromiumCompat(): ChromiumCompat {
   const fallback = (chromiumModule as any).default ?? {};
   const args = (chromiumModule as any).args ?? fallback.args;
@@ -45,17 +52,79 @@ async function resolveExecutablePath(chromium: ChromiumCompat): Promise<string> 
   return resolved;
 }
 
+function resolveLocalBrowserExecutablePath(): string | null {
+  const envPath = process.env.CHROMIUM_EXECUTABLE_PATH?.trim();
+  if (envPath && fs.existsSync(envPath)) {
+    return envPath;
+  }
+
+  const candidates = [
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+    "/Applications/Chromium.app/Contents/MacOS/Chromium",
+    "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+    "/usr/bin/google-chrome",
+    "/usr/bin/chromium-browser",
+    "/usr/bin/chromium",
+  ];
+
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) {
+      return candidate;
+    }
+  }
+
+  return null;
+}
+
+async function launchRequisitionBrowser(): Promise<import("playwright-core").Browser> {
+  const attempts: LaunchAttempt[] = [];
+  const localExecutable = resolveLocalBrowserExecutablePath();
+
+  if (localExecutable) {
+    attempts.push({
+      executablePath: localExecutable,
+      args: [],
+      headless: true,
+      label: `local-browser:${localExecutable}`,
+    });
+  }
+
+  const chromium = getChromiumCompat();
+  const sparticuzExecutable = await resolveExecutablePath(chromium);
+  attempts.push({
+    executablePath: sparticuzExecutable,
+    args: chromium.args,
+    headless: chromium.headless === false ? false : true,
+    label: "sparticuz-chromium",
+  });
+
+  let lastError: unknown = null;
+  for (const attempt of attempts) {
+    try {
+      return await playwrightChromium.launch({
+        executablePath: attempt.executablePath,
+        args: attempt.args,
+        headless: attempt.headless,
+      });
+    } catch (error) {
+      lastError = error;
+      console.error("[lab-requisition-renderer] Browser launch attempt failed:", {
+        attempt: attempt.label,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  throw lastError instanceof Error
+    ? lastError
+    : new Error("Failed to launch browser for lab requisition rendering.");
+}
+
 export async function renderLabRequisitionPdf(params: {
   formUrl: string;
   payload: LabRequisitionPrefillPayload;
 }): Promise<Buffer> {
-  const chromium = getChromiumCompat();
-  const executablePath = await resolveExecutablePath(chromium);
-  const browser = await playwrightChromium.launch({
-    executablePath,
-    args: chromium.args,
-    headless: chromium.headless === false ? false : true,
-  });
+  const browser = await launchRequisitionBrowser();
 
   try {
     const page = await browser.newPage({

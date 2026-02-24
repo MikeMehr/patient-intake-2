@@ -62,6 +62,7 @@ function PrescriptionPreviewContent() {
   const [savedPrescriptionId, setSavedPrescriptionId] = useState<string | null>(null);
   const [attestationAccepted, setAttestationAccepted] = useState(false);
   const [attestedAtIso, setAttestedAtIso] = useState<string | null>(null);
+  const [pdfBlobUrl, setPdfBlobUrl] = useState("");
   const [safetyChecklist, setSafetyChecklist] = useState({
     allergiesReviewed: false,
     interactionsReviewed: false,
@@ -103,6 +104,27 @@ function PrescriptionPreviewContent() {
     () => (payload?.pdfBase64 ? `data:application/pdf;base64,${payload.pdfBase64}` : ""),
     [payload],
   );
+
+  useEffect(() => {
+    if (!payload?.pdfBase64) {
+      setPdfBlobUrl("");
+      return;
+    }
+    try {
+      const binary = window.atob(payload.pdfBase64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i += 1) {
+        bytes[i] = binary.charCodeAt(i);
+      }
+      const blob = new Blob([bytes], { type: "application/pdf" });
+      const objectUrl = URL.createObjectURL(blob);
+      setPdfBlobUrl(objectUrl);
+      return () => URL.revokeObjectURL(objectUrl);
+    } catch {
+      setPdfBlobUrl("");
+      return;
+    }
+  }, [payload?.pdfBase64]);
 
   const notifyParent = (type: string) => {
     if (!window.opener) return;
@@ -330,7 +352,8 @@ function PrescriptionPreviewContent() {
 
   const handlePrint = () => {
     if (!requireSafetyChecklist() || !requireAttestation()) return;
-    if (!pdfDataUri) return;
+    const printableSrc = pdfBlobUrl || pdfDataUri;
+    if (!printableSrc) return;
     const frame = document.createElement("iframe");
     frame.style.position = "fixed";
     frame.style.right = "0";
@@ -338,11 +361,16 @@ function PrescriptionPreviewContent() {
     frame.style.width = "0";
     frame.style.height = "0";
     frame.style.border = "0";
-    frame.src = pdfDataUri;
+    frame.src = printableSrc;
     document.body.appendChild(frame);
     frame.onload = () => {
-      frame.contentWindow?.focus();
-      frame.contentWindow?.print();
+      try {
+        frame.contentWindow?.focus();
+        frame.contentWindow?.print();
+      } catch {
+        window.open(printableSrc, "_blank");
+        setStatus("Opened prescription in a new tab. Use browser print there.");
+      }
       setTimeout(() => document.body.removeChild(frame), 1500);
     };
   };
@@ -382,13 +410,6 @@ function PrescriptionPreviewContent() {
                 Draft prescription — requires physician authorization.
               </p>
             </div>
-            <button
-              type="button"
-              onClick={() => setIsEditingPharmacy((prev) => !prev)}
-              className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-            >
-              {isEditingPharmacy ? "Close pharmacy edit" : "Edit pharmacy"}
-            </button>
           </div>
 
           <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -403,7 +424,16 @@ function PrescriptionPreviewContent() {
               </div>
             </div>
             <div className="rounded-md border border-slate-200 p-3">
-              <p className="text-sm font-semibold text-slate-800">Pharmacy</p>
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-sm font-semibold text-slate-800">Pharmacy</p>
+                <button
+                  type="button"
+                  onClick={() => setIsEditingPharmacy((prev) => !prev)}
+                  className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                >
+                  {isEditingPharmacy ? "Close pharmacy edit" : "Edit pharmacy"}
+                </button>
+              </div>
               {!isEditingPharmacy ? (
                 <div className="mt-2 space-y-1 text-sm text-slate-700">
                   <p>Name: {pharmacyDraft.pharmacyName || "Not provided"}</p>
@@ -645,15 +675,22 @@ function PrescriptionPreviewContent() {
             >
               Cancel
             </button>
+            <button
+              type="button"
+              onClick={() => window.close()}
+              className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+            >
+              Close
+            </button>
           </div>
           {status && <p className="mt-3 text-sm text-slate-700">{status}</p>}
         </div>
 
         <div className="rounded-lg border border-slate-200 bg-white p-2 shadow-sm">
-          {pdfDataUri ? (
+          {pdfBlobUrl || pdfDataUri ? (
             <iframe
               title="Prescription PDF preview"
-              src={pdfDataUri}
+              src={pdfBlobUrl || pdfDataUri}
               className="h-[70vh] w-full rounded-md border border-slate-200"
             />
           ) : (

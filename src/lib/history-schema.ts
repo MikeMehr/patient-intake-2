@@ -1,5 +1,33 @@
 import { z } from "zod";
 
+export const patientUploadBodyPartSchema = z.object({
+  part: z.string().min(1).max(120),
+  side: z.enum(["left", "right", "both"]).optional(),
+});
+
+export const patientUploadsSchema = z.object({
+  medPmh: z
+    .object({
+      summary: z.string().min(1).max(10000),
+      sourceFileName: z.string().min(1).max(255).optional(),
+    })
+    .optional(),
+  lesionImage: z
+    .object({
+      summary: z.string().min(1).max(800).optional(),
+      imageUrl: z.string().min(1).max(2_500_000).optional(),
+      imageName: z.string().min(1).max(255).optional(),
+    })
+    .optional(),
+  bodyDiagram: z
+    .object({
+      selectedArea: z.number().int().positive().optional(),
+      selectedParts: z.array(patientUploadBodyPartSchema).max(30).optional(),
+      note: z.string().min(1).max(500).optional(),
+    })
+    .optional(),
+});
+
 export const historyRequestSchema = z.object({
   chiefComplaint: z
     .string()
@@ -26,7 +54,11 @@ export const historyResponseSchema = z.object({
   interviewLanguage: z.string().min(2).max(12).optional(),
   // English-only view for clinician; persisted to avoid repeated translation calls.
   patientFinalQuestionsCommentsEnglish: z.string().min(1).max(4000).optional(),
+  // Optional patient-uploaded clinical context persisted with history.
+  patientUploads: patientUploadsSchema.optional(),
 });
 
 export type HistoryResponse = z.infer<typeof historyResponseSchema>;
+export type PatientUploads = z.infer<typeof patientUploadsSchema>;
+export type PatientUploadBodyPart = z.infer<typeof patientUploadBodyPartSchema>;
 

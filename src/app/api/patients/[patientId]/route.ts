@@ -156,8 +156,8 @@ export async function GET(
         pe.created_at
       FROM patient_encounters pe
       LEFT JOIN soap_note_versions snv ON snv.id = pe.current_soap_version_id
-      WHERE patient_id = $1
-      ORDER BY occurred_at DESC
+      WHERE pe.patient_id = $1
+      ORDER BY pe.occurred_at DESC
       `,
       [id],
     );

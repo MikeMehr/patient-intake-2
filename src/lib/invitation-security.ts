@@ -24,6 +24,8 @@ type InvitationRow = {
   lab_report_summary: string | null;
   previous_lab_report_summary: string | null;
   form_summary: string | null;
+  summary_expires_at: Date | null;
+  summary_deleted_at: Date | null;
   patient_background: string | null;
   interview_guidance: string | null;
   first_name: string;
@@ -46,6 +48,8 @@ export type InvitationContext = {
   labReportSummary: string | null;
   previousLabReportSummary: string | null;
   formSummary: string | null;
+  summaryExpiresAt: string | null;
+  summaryDeletedAt: string | null;
   patientBackground: string | null;
   interviewGuidance: string | null;
 };
@@ -58,6 +62,9 @@ type RateLimitResult = {
 function getSessionSecret(): string {
   const secret = process.env.INVITATION_SESSION_SECRET || process.env.SESSION_SECRET;
   if (!secret) {
+    if (process.env.NODE_ENV !== "production") {
+      return "dev-only-invitation-secret-change-me";
+    }
     throw new Error("INVITATION_SESSION_SECRET or SESSION_SECRET is required");
   }
   return secret;
@@ -97,6 +104,15 @@ function safeCompare(a: string, b: string): boolean {
 }
 
 function toInvitationContext(row: InvitationRow): InvitationContext {
+  const hasAnySummary = Boolean(
+    row.lab_report_summary || row.previous_lab_report_summary || row.form_summary,
+  );
+  const summaryDeleted = Boolean(row.summary_deleted_at);
+  const summaryExpired = Boolean(
+    row.summary_expires_at && new Date(row.summary_expires_at).getTime() <= Date.now(),
+  );
+  const summaryActive = hasAnySummary && !summaryDeleted && !summaryExpired;
+
   return {
     invitationId: row.id,
     physicianId: row.physician_id,
@@ -109,9 +125,11 @@ function toInvitationContext(row: InvitationRow): InvitationContext {
     usedAt: row.used_at ? new Date(row.used_at).toISOString() : null,
     revokedAt: row.revoked_at ? new Date(row.revoked_at).toISOString() : null,
     expiresAt: row.expires_at ? new Date(row.expires_at).toISOString() : null,
-    labReportSummary: row.lab_report_summary,
-    previousLabReportSummary: row.previous_lab_report_summary,
-    formSummary: row.form_summary,
+    labReportSummary: summaryActive ? row.lab_report_summary : null,
+    previousLabReportSummary: summaryActive ? row.previous_lab_report_summary : null,
+    formSummary: summaryActive ? row.form_summary : null,
+    summaryExpiresAt: row.summary_expires_at ? new Date(row.summary_expires_at).toISOString() : null,
+    summaryDeletedAt: row.summary_deleted_at ? new Date(row.summary_deleted_at).toISOString() : null,
     patientBackground: row.patient_background,
     interviewGuidance: row.interview_guidance,
   };
@@ -191,7 +209,7 @@ export async function getInvitationByRawToken(rawToken: string): Promise<Invitat
   const tokenHash = hashValue(rawToken);
   const result = await query<InvitationRow>(
     `SELECT pi.id, pi.physician_id, pi.patient_email, pi.patient_name, pi.oscar_demographic_no, pi.token_expires_at, pi.used_at, pi.revoked_at,
-            pi.expires_at, pi.lab_report_summary, pi.previous_lab_report_summary, pi.form_summary, pi.patient_background,
+            pi.expires_at, pi.lab_report_summary, pi.previous_lab_report_summary, pi.form_summary, pi.summary_expires_at, pi.summary_deleted_at, pi.patient_background,
             pi.interview_guidance, p.first_name, p.last_name, p.clinic_name
      FROM patient_invitations pi
      JOIN physicians p ON p.id = pi.physician_id
@@ -293,7 +311,7 @@ export async function resolveInvitationFromCookie(): Promise<InvitationContext |
     const sessionHash = hashValue(parsed.sessionToken);
     const result = await query<InvitationRow>(
       `SELECT pi.id, pi.physician_id, pi.patient_email, pi.patient_name, pi.oscar_demographic_no, pi.token_expires_at, pi.used_at, pi.revoked_at,
-              pi.expires_at, pi.lab_report_summary, pi.previous_lab_report_summary, pi.form_summary, pi.patient_background,
+              pi.expires_at, pi.lab_report_summary, pi.previous_lab_report_summary, pi.form_summary, pi.summary_expires_at, pi.summary_deleted_at, pi.patient_background,
               pi.interview_guidance, p.first_name, p.last_name, p.clinic_name
        FROM invitation_sessions isess
        JOIN patient_invitations pi ON pi.id = isess.invitation_id
@@ -429,6 +447,61 @@ export async function markInvitationUsed(invitationId: string): Promise<void> {
      WHERE id = $1`,
     [invitationId],
   );
+}
+
+export async function clearInvitationSummaries(invitationId: string): Promise<void> {
+  await query(
+    `UPDATE patient_invitations
+     SET lab_report_summary = NULL,
+         previous_lab_report_summary = NULL,
+         form_summary = NULL,
+         summary_expires_at = NULL,
+         summary_deleted_at = COALESCE(summary_deleted_at, NOW())
+     WHERE id = $1`,
+    [invitationId],
+  );
+}
+
+export async function clearExpiredInvitationSummaries(): Promise<number> {
+  const result = await query(
+    `UPDATE patient_invitations
+     SET lab_report_summary = NULL,
+         previous_lab_report_summary = NULL,
+         form_summary = NULL,
+         summary_expires_at = NULL,
+         summary_deleted_at = COALESCE(summary_deleted_at, NOW())
+     WHERE summary_deleted_at IS NULL
+       AND summary_expires_at IS NOT NULL
+       AND summary_expires_at <= NOW()
+       AND (
+         lab_report_summary IS NOT NULL OR
+         previous_lab_report_summary IS NOT NULL OR
+         form_summary IS NOT NULL
+       )`,
+  );
+  return result.rowCount ?? 0;
+}
+
+export async function clearInactiveInvitationSummaries(): Promise<number> {
+  const result = await query(
+    `UPDATE patient_invitations
+     SET lab_report_summary = NULL,
+         previous_lab_report_summary = NULL,
+         form_summary = NULL,
+         summary_expires_at = NULL,
+         summary_deleted_at = COALESCE(summary_deleted_at, NOW())
+     WHERE summary_deleted_at IS NULL
+       AND (
+         revoked_at IS NOT NULL OR
+         (expires_at IS NOT NULL AND expires_at <= NOW())
+       )
+       AND (
+         lab_report_summary IS NOT NULL OR
+         previous_lab_report_summary IS NOT NULL OR
+         form_summary IS NOT NULL
+       )`,
+  );
+  return result.rowCount ?? 0;
 }
 
 export function maskEmail(email: string): string {

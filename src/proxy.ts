@@ -5,6 +5,7 @@ function buildCspHeader() {
     "default-src 'self'",
     "base-uri 'self'",
     "frame-ancestors 'none'",
+    "frame-src 'self' data: blob:",
     "object-src 'none'",
     "form-action 'self'",
     "img-src 'self' data: blob:",
@@ -38,7 +39,7 @@ export function proxy(req: NextRequest) {
   res.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
   res.headers.set("X-Content-Type-Options", "nosniff");
   res.headers.set("X-Frame-Options", "DENY");
-  res.headers.set("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+  res.headers.set("Permissions-Policy", "camera=(), microphone=(self), geolocation=()");
   if (process.env.NODE_ENV === "production") {
     res.headers.set(
       "Strict-Transport-Security",

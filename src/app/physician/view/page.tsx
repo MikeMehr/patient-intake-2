@@ -90,6 +90,94 @@ const RX_NOTE_MEDICATION_HINT_REGEX =
 const RX_NOTE_NON_MEDICATION_HINT_REGEX =
   /\b(lab|labs|blood work|requisition|cbc|crp|esr|ana|rf|anti-ccp|ferritin|sodium|potassium|x-?ray|mri|ct|ultrasound|referral|refer)\b/i;
 
+const stripOptionalNone = (value: string): string => {
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  return /^none$/i.test(trimmed) ? "" : trimmed;
+};
+
+const normalizeListBlock = (value: string): string[] =>
+  value
+    .split("\n")
+    .map((line) => line.trim().replace(/^[-*•]\s+/, ""))
+    .filter(Boolean)
+    .filter((line) => !/^none$/i.test(line));
+
+const toStringList = (value: unknown): string[] => {
+  if (Array.isArray(value)) {
+    return value.map((item) => `${item ?? ""}`.trim()).filter(Boolean);
+  }
+  if (typeof value === "string" && value.trim()) {
+    return normalizeListBlock(value);
+  }
+  return [];
+};
+
+const formatListSection = (items: string[]): string =>
+  items.length > 0 ? items.map((item) => `- ${item}`).join("\n") : "None";
+
+const composeUnifiedHpiText = (history: PatientSession["history"]): string => {
+  const subjective = stripOptionalNone(history?.summary || "");
+  const assessment = stripOptionalNone(history?.assessment || "");
+  const physicalFindings = toStringList((history as any)?.physicalFindings);
+  const plan = toStringList((history as any)?.plan);
+  const patientFinalComments = stripOptionalNone(
+    history?.patientFinalQuestionsCommentsEnglish?.trim()
+      ? history.patientFinalQuestionsCommentsEnglish
+      : history?.patientFinalQuestionsComments || "",
+  );
+
+  return [
+    "Subjective:",
+    subjective || "None",
+    "",
+    "Assessment:",
+    assessment || "None",
+    "",
+    "Physical Findings:",
+    formatListSection(physicalFindings),
+    "",
+    "Plan:",
+    formatListSection(plan),
+    "",
+    "Patient Final Comments:",
+    patientFinalComments || "None",
+  ].join("\n");
+};
+
+type ParsedUnifiedHpi = {
+  subjective: string;
+  assessment: string;
+  physicalFindings: string[];
+  plan: string[];
+  patientFinalComments: string;
+};
+
+const parseUnifiedHpiText = (value: string): ParsedUnifiedHpi | null => {
+  const normalized = value.replace(/\r\n/g, "\n").trim();
+  const pattern =
+    /Subjective:\s*([\s\S]*?)\n\s*Assessment:\s*([\s\S]*?)\n\s*Physical Findings:\s*([\s\S]*?)\n\s*Plan:\s*([\s\S]*?)\n\s*Patient Final Comments:\s*([\s\S]*)$/i;
+  const match = normalized.match(pattern);
+  if (!match) return null;
+
+  return {
+    subjective: stripOptionalNone(match[1] || ""),
+    assessment: stripOptionalNone(match[2] || ""),
+    physicalFindings: normalizeListBlock(match[3] || ""),
+    plan: normalizeListBlock(match[4] || ""),
+    patientFinalComments: stripOptionalNone(match[5] || ""),
+  };
+};
+
+const formatHpiUpdatedAt = (value?: string): string => {
+  if (!value) return "";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return value;
+  }
+  return parsed.toLocaleString();
+};
+
 function PhysicianViewContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -98,15 +186,13 @@ function PhysicianViewContent() {
   const [session, setSession] = useState<PatientSession | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [finalCommentsTranslating, setFinalCommentsTranslating] = useState(false);
   const lastFinalCommentsTranslateKeyRef = useRef<string | null>(null);
   const [isEditingHpi, setIsEditingHpi] = useState(false);
-  const [hpiSummaryDraft, setHpiSummaryDraft] = useState("");
-  const [hpiAssessmentDraft, setHpiAssessmentDraft] = useState("");
-  const [hpiPlanDraft, setHpiPlanDraft] = useState("");
+  const [hpiCombinedDraft, setHpiCombinedDraft] = useState("");
   const [hpiSaving, setHpiSaving] = useState(false);
   const [hpiSaveError, setHpiSaveError] = useState<string | null>(null);
   const [hpiSaveSuccess, setHpiSaveSuccess] = useState<string | null>(null);
+  const [hpiCopyStatus, setHpiCopyStatus] = useState<string | null>(null);
   const [showTranscript, setShowTranscript] = useState(false);
   const [aiAction, setAiAction] = useState<"referral_letter" | "labs" | "custom" | "lab_requisition" | "prescription">("referral_letter");
   const [aiPrompt, setAiPrompt] = useState("");
@@ -444,7 +530,6 @@ function PhysicianViewContent() {
     lastFinalCommentsTranslateKeyRef.current = key;
 
     let isActive = true;
-    setFinalCommentsTranslating(true);
     fetch("/api/physician/translate-final-comments", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -476,9 +561,6 @@ function PhysicianViewContent() {
       .catch((err) => {
         // Fall back to original text if translation fails.
         console.warn("[physician/view] Final comments translation failed:", err);
-      })
-      .finally(() => {
-        if (isActive) setFinalCommentsTranslating(false);
       });
 
     return () => {
@@ -542,32 +624,18 @@ function PhysicianViewContent() {
   };
 
   const handleStartHpiEdit = () => {
-    setHpiSummaryDraft(session?.history?.summary || "");
-    setHpiAssessmentDraft(session?.history?.assessment || "");
-    const existingPlan = session?.history?.plan;
-    const planText = Array.isArray(existingPlan)
-      ? existingPlan.join("\n")
-      : typeof existingPlan === "string"
-        ? existingPlan
-        : "";
-    setHpiPlanDraft(planText);
+    setHpiCombinedDraft(composeUnifiedHpiText(session?.history || ({} as PatientSession["history"])));
     setHpiSaveError(null);
     setHpiSaveSuccess(null);
+    setHpiCopyStatus(null);
     setIsEditingHpi(true);
   };
 
   const handleCancelHpiEdit = () => {
-    setHpiSummaryDraft(session?.history?.summary || "");
-    setHpiAssessmentDraft(session?.history?.assessment || "");
-    const existingPlan = session?.history?.plan;
-    const planText = Array.isArray(existingPlan)
-      ? existingPlan.join("\n")
-      : typeof existingPlan === "string"
-        ? existingPlan
-        : "";
-    setHpiPlanDraft(planText);
+    setHpiCombinedDraft(composeUnifiedHpiText(session?.history || ({} as PatientSession["history"])));
     setHpiSaveError(null);
     setHpiSaveSuccess(null);
+    setHpiCopyStatus(null);
     setIsEditingHpi(false);
   };
 
@@ -577,22 +645,32 @@ function PhysicianViewContent() {
       return;
     }
 
-    const trimmedSummary = hpiSummaryDraft.trim();
-    const trimmedAssessment = hpiAssessmentDraft.trim();
-    const normalizedPlan = hpiPlanDraft
-      .split("\n")
-      .map((item) => item.trim())
-      .filter(Boolean);
-    if (trimmedSummary.length < 10 || trimmedSummary.length > 1500) {
-      setHpiSaveError("Summary must be between 10 and 1500 characters.");
+    const parsed = parseUnifiedHpiText(hpiCombinedDraft);
+    if (!parsed) {
+      setHpiSaveError(
+        "Invalid HPI format. Keep the section headers: Subjective, Assessment, Physical Findings, Plan, Patient Final Comments.",
+      );
       return;
     }
-    if (trimmedAssessment.length < 10 || trimmedAssessment.length > 1500) {
+
+    if (parsed.subjective.length < 10 || parsed.subjective.length > 1500) {
+      setHpiSaveError("Subjective must be between 10 and 1500 characters.");
+      return;
+    }
+    if (parsed.assessment.length < 10 || parsed.assessment.length > 1500) {
       setHpiSaveError("Assessment must be between 10 and 1500 characters.");
       return;
     }
-    if (normalizedPlan.length < 1 || normalizedPlan.length > 6) {
-      setHpiSaveError("Plan must include between 1 and 6 items (one per line).");
+    if (parsed.physicalFindings.length > 60) {
+      setHpiSaveError("Physical Findings must include at most 60 items.");
+      return;
+    }
+    if (parsed.plan.length > 60) {
+      setHpiSaveError("Plan must include at most 60 items.");
+      return;
+    }
+    if (parsed.patientFinalComments.length > 4000) {
+      setHpiSaveError("Patient Final Comments must be 4000 characters or less.");
       return;
     }
 
@@ -608,9 +686,11 @@ function PhysicianViewContent() {
         },
         body: JSON.stringify({
           sessionCode,
-          historySummary: trimmedSummary,
-          historyAssessment: trimmedAssessment,
-          historyPlan: normalizedPlan,
+          historySummary: parsed.subjective,
+          historyAssessment: parsed.assessment,
+          historyPlan: parsed.plan,
+          historyPhysicalFindings: parsed.physicalFindings,
+          historyPatientFinalComments: parsed.patientFinalComments,
         }),
       });
 
@@ -618,6 +698,10 @@ function PhysicianViewContent() {
       if (!res.ok) {
         throw new Error(data?.error || "Failed to save HPI summary.");
       }
+      const savedHpiUpdatedAt =
+        typeof data?.historyHpiUpdatedAt === "string" && data.historyHpiUpdatedAt.trim().length > 0
+          ? data.historyHpiUpdatedAt
+          : new Date().toISOString();
 
       setSession((prev) => {
         if (!prev) return prev;
@@ -625,9 +709,15 @@ function PhysicianViewContent() {
           ...prev,
           history: {
             ...prev.history,
-            summary: trimmedSummary,
-            assessment: trimmedAssessment,
-            plan: normalizedPlan,
+            summary: parsed.subjective,
+            assessment: parsed.assessment,
+            physicalFindings: parsed.physicalFindings,
+            plan: parsed.plan,
+            patientFinalQuestionsComments: parsed.patientFinalComments || undefined,
+            patientFinalQuestionsCommentsEnglish: parsed.patientFinalComments
+              ? parsed.patientFinalComments
+              : prev.history.patientFinalQuestionsCommentsEnglish,
+            hpiUpdatedAt: savedHpiUpdatedAt,
           },
         };
       });
@@ -637,6 +727,17 @@ function PhysicianViewContent() {
       setHpiSaveError(err instanceof Error ? err.message : "Failed to save HPI.");
     } finally {
       setHpiSaving(false);
+    }
+  };
+
+  const handleCopyHpi = async () => {
+    if (!session?.history) return;
+    try {
+      await navigator.clipboard.writeText(composeUnifiedHpiText(session.history));
+      setHpiCopyStatus("HPI copied.");
+      setHpiSaveError(null);
+    } catch {
+      setHpiCopyStatus("Unable to copy HPI.");
     }
   };
 
@@ -825,15 +926,11 @@ function PhysicianViewContent() {
   }, [session]);
 
   useEffect(() => {
-    setHpiSummaryDraft(session?.history?.summary || "");
-    setHpiAssessmentDraft(session?.history?.assessment || "");
-    const existingPlan = session?.history?.plan;
-    const planText = Array.isArray(existingPlan)
-      ? existingPlan.join("\n")
-      : typeof existingPlan === "string"
-        ? existingPlan
-        : "";
-    setHpiPlanDraft(planText);
+    if (session?.history) {
+      setHpiCombinedDraft(composeUnifiedHpiText(session.history));
+    } else {
+      setHpiCombinedDraft("");
+    }
   }, [session?.history]);
 
   useEffect(() => {
@@ -1117,7 +1214,17 @@ function PhysicianViewContent() {
       .split(/[\n,]/)
       .map((s) => s.trim())
       .filter(Boolean);
-    let labs = [...raw];
+    const expandedRaw = raw.flatMap((entry) => {
+      // Handle compact entries like "basic metabolic panel k" where users omit comma.
+      // We split a trailing shorthand lab token into a separate item.
+      const trailingTokenMatch = entry.match(/^(.*\S)\s+(k\+?|k|na)$/i);
+      if (!trailingTokenMatch) return [entry];
+      const base = trailingTokenMatch[1]?.trim();
+      const trailing = trailingTokenMatch[2]?.trim();
+      if (!base || !trailing) return [entry];
+      return [base, trailing];
+    });
+    let labs = [...expandedRaw];
 
     const instructions = labInstructions.split(/[\n\.]/).map((s) => s.trim()).filter(Boolean);
     instructions.forEach((line) => {
@@ -1581,6 +1688,29 @@ function PhysicianViewContent() {
     );
   }
 
+  const patientUploads = session.history.patientUploads;
+  const hpiMedPmhSummary =
+    patientUploads?.medPmh?.summary || (session.history as any).medPmhSummary || "";
+  const hpiMedPmhSourceName = patientUploads?.medPmh?.sourceFileName || "";
+
+  const hpiLesionSummary = patientUploads?.lesionImage?.summary || session.imageSummary || "";
+  const hpiLesionImageUrl = patientUploads?.lesionImage?.imageUrl || session.imageUrl || "";
+  const hpiLesionImageName = patientUploads?.lesionImage?.imageName || session.imageName || "";
+
+  const hpiBodyDiagramArea = patientUploads?.bodyDiagram?.selectedArea;
+  const hpiBodyDiagramParts = patientUploads?.bodyDiagram?.selectedParts || [];
+  const hpiBodyDiagramNote = patientUploads?.bodyDiagram?.note || "";
+
+  const hasPatientUploadedContext = Boolean(
+    hpiMedPmhSummary ||
+      hpiLesionSummary ||
+      hpiLesionImageUrl ||
+      hpiBodyDiagramNote ||
+      hpiBodyDiagramArea ||
+      hpiBodyDiagramParts.length > 0,
+  );
+  const shouldShowLegacyImageAnalysisCard = Boolean(session.imageSummary && !patientUploads?.lesionImage);
+
   return (
     <div className="min-h-screen bg-slate-100">
       <div className="max-w-5xl mx-auto px-4 py-8">
@@ -1687,109 +1817,108 @@ function PhysicianViewContent() {
         {session.history && (
           <>
             <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6 mb-6">
-              <h2 className="text-lg font-semibold text-slate-900 mb-4">
-                History of Present Illness
-              </h2>
+              <div className="mb-4 flex items-start justify-between gap-3">
+                <h2 className="text-lg font-semibold text-slate-900">
+                  History of Present Illness
+                </h2>
+                <button
+                  onClick={handleCopyHpi}
+                  className="px-3 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 disabled:opacity-60"
+                  disabled={!session?.history}
+                >
+                  Copy
+                </button>
+              </div>
               <p className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-[15px] text-amber-900">
                 {CLINICAL_ASSISTIVE_DISCLAIMER}
               </p>
               <div className="space-y-4">
                 <div>
-                  <p className="text-sm font-medium text-slate-700 mb-2">Summary</p>
+                  <p className="text-sm font-medium text-slate-700 mb-2">HPI</p>
                   {isEditingHpi ? (
                     <textarea
-                      value={hpiSummaryDraft}
-                      onChange={(e) => setHpiSummaryDraft(e.target.value)}
-                      rows={6}
+                      value={hpiCombinedDraft}
+                      onChange={(e) => setHpiCombinedDraft(e.target.value)}
+                      rows={16}
                       className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-base text-slate-900 shadow-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
                       disabled={hpiSaving}
+                      placeholder={"Subjective:\n\nAssessment:\n\nPhysical Findings:\n\nPlan:\n\nPatient Final Comments:"}
                     />
                   ) : (
                     <p className="text-base text-slate-900 whitespace-pre-wrap">
-                      {session.history.summary}
+                      {composeUnifiedHpiText(session.history)}
                     </p>
                   )}
                 </div>
-                {(session.history as any).medPmhSummary && (
+                {hasPatientUploadedContext && (
                   <div>
                     <p className="text-sm font-medium text-slate-700 mb-2">
-                      Medications / PMH (uploaded photo)
+                      Patient Uploaded Context
                     </p>
-                    <p className="text-base text-slate-900 whitespace-pre-wrap">
-                      {(session.history as any).medPmhSummary}
-                    </p>
-                  </div>
-                )}
-                {Array.isArray((session.history as any).physicalFindings) &&
-                  (session.history as any).physicalFindings.length > 0 && (
-                    <div>
-                      <p className="text-sm font-medium text-slate-700 mb-2">
-                        Physical Findings
-                      </p>
-                      <ul className="list-disc list-inside space-y-1 text-base text-slate-900">
-                        {(session.history as any).physicalFindings.map(
-                          (item: string, idx: number) => (
-                            <li key={idx}>{item}</li>
-                          ),
-                        )}
-                      </ul>
-                    </div>
-                  )}
-                <div>
-                  <p className="text-sm font-medium text-slate-700 mb-2">Assessment</p>
-                  {isEditingHpi ? (
-                    <textarea
-                      value={hpiAssessmentDraft}
-                      onChange={(e) => setHpiAssessmentDraft(e.target.value)}
-                      rows={4}
-                      className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-base text-slate-900 shadow-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
-                      disabled={hpiSaving}
-                    />
-                  ) : (
-                    <p className="text-base text-slate-900 whitespace-pre-wrap">
-                      {session.history.assessment}
-                    </p>
-                  )}
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-slate-700 mb-2">Plan</p>
-                  {isEditingHpi ? (
-                    <textarea
-                      value={hpiPlanDraft}
-                      onChange={(e) => setHpiPlanDraft(e.target.value)}
-                      rows={4}
-                      className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-base text-slate-900 shadow-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
-                      disabled={hpiSaving}
-                      placeholder="One plan item per line"
-                    />
-                  ) : (
-                    <>
-                      {Array.isArray(session.history.plan) ? (
-                        <ul className="list-disc list-inside space-y-1 text-base text-slate-900">
-                          {(session.history.plan as string[]).map((item, idx) => (
-                            <li key={idx}>{item}</li>
-                          ))}
-                        </ul>
-                      ) : (
-                        <p className="text-base text-slate-900 whitespace-pre-wrap">
-                          {session.history.plan as string}
-                        </p>
+                    <div className="space-y-3 rounded-md border border-slate-200 bg-slate-50/60 p-3">
+                      {hpiMedPmhSummary && (
+                        <div>
+                          <p className="text-sm font-medium text-slate-700">
+                            Medications / PMH (uploaded file)
+                          </p>
+                          {hpiMedPmhSourceName && (
+                            <p className="text-xs text-slate-500">Source: {hpiMedPmhSourceName}</p>
+                          )}
+                          <p className="text-base text-slate-900 whitespace-pre-wrap mt-1">
+                            {hpiMedPmhSummary}
+                          </p>
+                        </div>
                       )}
-                    </>
-                  )}
-                </div>
-                {session.history.patientFinalQuestionsComments?.trim() && (
-                  <div>
-                    <p className="text-sm font-medium text-slate-700 mb-2">
-                      Patient&apos;s final questions/comments
-                    </p>
-                    <p className="text-base text-slate-900 whitespace-pre-wrap">
-                      {session.history.patientFinalQuestionsCommentsEnglish?.trim()
-                        ? session.history.patientFinalQuestionsCommentsEnglish
-                        : finalCommentsTranslating
-                          ? "Translating to English..."
-                          : session.history.patientFinalQuestionsComments}
-                    </p>
+
+                      {(hpiLesionImageUrl || hpiLesionSummary) && (
+                        <div>
+                          <p className="text-sm font-medium text-slate-700">
+                            Lesion / Body Photo
+                          </p>
+                          {hpiLesionImageUrl && (
+                            <img
+                              src={hpiLesionImageUrl}
+                              alt={hpiLesionImageName || "Patient uploaded lesion image"}
+                              className="mt-2 max-w-full max-h-80 h-auto rounded-lg border border-slate-200 object-contain bg-white"
+                            />
+                          )}
+                          {hpiLesionImageName && (
+                            <p className="mt-2 text-xs text-slate-500">File: {hpiLesionImageName}</p>
+                          )}
+                          {hpiLesionSummary && (
+                            <p className="text-base text-slate-900 whitespace-pre-wrap mt-1">
+                              {hpiLesionSummary}
+                            </p>
+                          )}
+                        </div>
+                      )}
+
+                      {(hpiBodyDiagramParts.length > 0 || hpiBodyDiagramArea || hpiBodyDiagramNote) && (
+                        <div>
+                          <p className="text-sm font-medium text-slate-700">
+                            Body Diagram Selection
+                          </p>
+                          {hpiBodyDiagramArea && (
+                            <p className="text-sm text-slate-700 mt-1">Selected area: {hpiBodyDiagramArea}</p>
+                          )}
+                          {hpiBodyDiagramParts.length > 0 && (
+                            <p className="text-sm text-slate-700 mt-1">
+                              Selected parts:{" "}
+                              {hpiBodyDiagramParts
+                                .map((part) =>
+                                  part.side ? `${part.side} ${part.part}` : part.part,
+                                )
+                                .join(", ")}
+                            </p>
+                          )}
+                          {hpiBodyDiagramNote && (
+                            <p className="text-base text-slate-900 whitespace-pre-wrap mt-1">
+                              {hpiBodyDiagramNote}
+                            </p>
+                          )}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 )}
               </div>
@@ -1799,6 +1928,9 @@ function PhysicianViewContent() {
                 )}
                 {hpiSaveSuccess && (
                   <p className="text-sm text-green-700 mb-2">{hpiSaveSuccess}</p>
+                )}
+                {hpiCopyStatus && (
+                  <p className="text-sm text-slate-700 mb-2">{hpiCopyStatus}</p>
                 )}
                 <div className="flex justify-end gap-2">
                   {isEditingHpi ? (
@@ -1827,6 +1959,11 @@ function PhysicianViewContent() {
                     </button>
                   )}
                 </div>
+                {session?.history?.hpiUpdatedAt && (
+                  <p className="mt-3 text-xs text-slate-500">
+                    Note updated: {formatHpiUpdatedAt(session.history.hpiUpdatedAt)}
+                  </p>
+                )}
               </div>
             </div>
 
@@ -2626,7 +2763,7 @@ function PhysicianViewContent() {
         )}
 
         {/* Image Analysis */}
-        {session.imageSummary && (
+        {shouldShowLegacyImageAnalysisCard && (
           <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6 mb-6">
             <h2 className="text-lg font-semibold text-slate-900 mb-4">
               Image Analysis

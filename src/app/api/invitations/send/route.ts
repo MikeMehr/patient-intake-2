@@ -11,6 +11,10 @@ import { logDebug } from "@/lib/secure-logger";
 import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
 import { startInvitationCleanup } from "@/lib/invitations-cleanup";
 import {
+  buildInvitationUploadSummaries,
+  type InvitationUploadSummaries,
+} from "@/lib/invitation-pdf-summary";
+import {
   createInvitationToken,
   logInvitationAudit,
 } from "@/lib/invitation-security";
@@ -48,7 +52,15 @@ export async function POST(request: NextRequest) {
       return res;
     }
 
-    const { patientName, patientEmail, patientBackground, oscarDemographicNo } =
+    const {
+      patientName,
+      patientEmail,
+      patientBackground,
+      oscarDemographicNo,
+      labReportFile,
+      previousLabReportFile,
+      formFile,
+    } =
       await parseRequestBody(request);
 
     if (!patientName || !patientEmail) {
@@ -102,6 +114,33 @@ export async function POST(request: NextRequest) {
     const { rawToken, tokenHash, expiresAt } = createInvitationToken();
     const invitationLink = `${APP_URL}/intake/invite/${rawToken}`;
 
+    const hasUploadedPdf =
+      Boolean(labReportFile) || Boolean(previousLabReportFile) || Boolean(formFile);
+    let uploadSummaries: InvitationUploadSummaries = {
+      labReportSummary: null,
+      previousLabReportSummary: null,
+      formSummary: null,
+    };
+    let summaryExpiresAt: Date | null = null;
+
+    if (hasUploadedPdf) {
+      try {
+        uploadSummaries = await buildInvitationUploadSummaries({
+          labReport: labReportFile,
+          previousLabReport: previousLabReportFile,
+          form: formFile,
+        });
+        summaryExpiresAt = new Date(Date.now() + 60 * 60 * 1000);
+      } catch (summaryError) {
+        status = 502;
+        const message =
+          summaryError instanceof Error ? summaryError.message : "Unable to process uploaded PDF files.";
+        const res = NextResponse.json({ error: message }, { status });
+        logRequestMeta("/api/invitations/send", requestId, status, Date.now() - started);
+        return res;
+      }
+    }
+
     // Helper to persist the invitation regardless of delivery method
     const persistInvitation = async () => {
       try {
@@ -116,9 +155,14 @@ export async function POST(request: NextRequest) {
              expires_at,
              sent_at,
              patient_background,
-             oscar_demographic_no
+             oscar_demographic_no,
+             lab_report_summary,
+             previous_lab_report_summary,
+             form_summary,
+             summary_expires_at,
+             summary_deleted_at
            )
-          VALUES ($1, $2, $3, NULL, $4, $5, $5, NOW(), $6, $7)
+          VALUES ($1, $2, $3, NULL, $4, $5, $5, NOW(), $6, $7, $8, $9, $10, $11, NULL)
            RETURNING id`,
           [
             physicianId,
@@ -128,6 +172,10 @@ export async function POST(request: NextRequest) {
             expiresAt,
             patientBackground || null,
             oscarDemographicNo || null,
+            uploadSummaries.labReportSummary,
+            uploadSummaries.previousLabReportSummary,
+            uploadSummaries.formSummary,
+            summaryExpiresAt,
           ],
         );
         const invitationId = invitationResult.rows[0]?.id || null;
@@ -139,6 +187,8 @@ export async function POST(request: NextRequest) {
               physicianId,
               patientEmail: patientEmail.toLowerCase(),
               tokenized: true,
+              hasPdfSummaries: hasUploadedPdf,
+              summaryExpiresAt: summaryExpiresAt ? summaryExpiresAt.toISOString() : null,
             },
           });
         }
@@ -200,6 +250,9 @@ export async function POST(request: NextRequest) {
         const res = NextResponse.json({
           success: true,
           message: "Invitation sent successfully",
+          labReportSummary: uploadSummaries.labReportSummary || undefined,
+          previousLabReportSummary: uploadSummaries.previousLabReportSummary || undefined,
+          formSummary: uploadSummaries.formSummary || undefined,
         });
         logRequestMeta("/api/invitations/send", requestId, status, Date.now() - started);
         return res;
@@ -214,6 +267,9 @@ export async function POST(request: NextRequest) {
             success: true,
             message: "Invitation link generated (email not sent - check RESEND_API_KEY)",
             invitationLink,
+            labReportSummary: uploadSummaries.labReportSummary || undefined,
+            previousLabReportSummary: uploadSummaries.previousLabReportSummary || undefined,
+            formSummary: uploadSummaries.formSummary || undefined,
           });
           logRequestMeta("/api/invitations/send", requestId, status, Date.now() - started);
           return res;
@@ -238,6 +294,9 @@ export async function POST(request: NextRequest) {
           ? "Invitation link generated (email sending disabled in HIPAA mode)"
           : "Invitation link generated (email not configured)",
       invitationLink,
+      labReportSummary: uploadSummaries.labReportSummary || undefined,
+      previousLabReportSummary: uploadSummaries.previousLabReportSummary || undefined,
+      formSummary: uploadSummaries.formSummary || undefined,
     });
     logRequestMeta("/api/invitations/send", requestId, status, Date.now() - started);
     return res;
@@ -258,13 +317,15 @@ export async function POST(request: NextRequest) {
 
 /**
  * Support both JSON and multipart/form-data (used by the dashboard form with optional files).
- * We only need patientName and patientEmail; other form parts are ignored here.
  */
 async function parseRequestBody(request: NextRequest): Promise<{
   patientName: string;
   patientEmail: string;
   patientBackground: string | null;
   oscarDemographicNo: string | null;
+  labReportFile: File | null;
+  previousLabReportFile: File | null;
+  formFile: File | null;
 }> {
   const contentType = request.headers.get("content-type") || "";
 
@@ -275,6 +336,12 @@ async function parseRequestBody(request: NextRequest): Promise<{
       patientEmail: (formData.get("patientEmail") as string | null) || "",
       patientBackground: ((formData.get("patientBackground") as string | null) || "").trim() || null,
       oscarDemographicNo: ((formData.get("oscarDemographicNo") as string | null) || "").trim() || null,
+      labReportFile: formData.get("labReport") instanceof File ? (formData.get("labReport") as File) : null,
+      previousLabReportFile:
+        formData.get("previousLabReport") instanceof File
+          ? (formData.get("previousLabReport") as File)
+          : null,
+      formFile: formData.get("form") instanceof File ? (formData.get("form") as File) : null,
     };
   }
 
@@ -286,13 +353,24 @@ async function parseRequestBody(request: NextRequest): Promise<{
       patientEmail: (body?.patientEmail as string) || "",
       patientBackground: (body?.patientBackground as string)?.trim() || null,
       oscarDemographicNo: (body?.oscarDemographicNo as string)?.trim() || null,
+      labReportFile: null,
+      previousLabReportFile: null,
+      formFile: null,
     };
   } catch (err) {
     console.error("[invitations/send] Failed to parse JSON body");
     logDebug("[invitations/send] JSON parse error details", {
       errorMessage: err instanceof Error ? err.message : String(err),
     });
-    return { patientName: "", patientEmail: "", patientBackground: null, oscarDemographicNo: null };
+    return {
+      patientName: "",
+      patientEmail: "",
+      patientBackground: null,
+      oscarDemographicNo: null,
+      labReportFile: null,
+      previousLabReportFile: null,
+      formFile: null,
+    };
   }
 }
 

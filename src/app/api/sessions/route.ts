@@ -9,7 +9,7 @@ import {
   updateSessionPatientProfilePharmacyFields,
 } from "@/lib/session-store";
 import type { PatientSession } from "@/lib/session-store";
-import type { HistoryResponse } from "@/lib/history-schema";
+import type { SessionHistory } from "@/lib/session-store";
 import type { PatientProfile } from "@/lib/interview-schema";
 import { getAzureOpenAIClient } from "@/lib/azure-openai";
 import { getCurrentSession } from "@/lib/auth";
@@ -17,6 +17,7 @@ import { logPhysicianPhiAudit } from "@/lib/phi-audit";
 import { logDebug } from "@/lib/secure-logger";
 import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
 import {
+  clearInvitationSummaries,
   consumeRateLimit,
   getRequestIp,
   logInvitationAudit,
@@ -180,7 +181,7 @@ export async function POST(request: Request) {
       patientName: string;
       chiefComplaint: string;
       patientProfile: PatientProfile;
-      history: HistoryResponse;
+      history: SessionHistory;
       imageSummary?: string;
       imageUrl?: string;
       imageName?: string;
@@ -251,9 +252,13 @@ export async function POST(request: Request) {
     const patientName = invitation.patientName;
     const sessionCode = generateSessionCode();
 
+    const initialHpiUpdatedAt = new Date().toISOString();
     // Best-effort: persist an English translation of the patient's final free-text comment.
     // (Physician view wants English-only, but should still work if translation is unavailable.)
-    let historyToStore: HistoryResponse = history;
+    let historyToStore: SessionHistory = {
+      ...history,
+      hpiUpdatedAt: initialHpiUpdatedAt,
+    };
     try {
       const originalFinal = history?.patientFinalQuestionsComments?.trim() || "";
       const hasEnglish =
@@ -281,7 +286,10 @@ export async function POST(request: Request) {
     } catch (err) {
       // Never block session saving on translation failure.
       console.error("[api/sessions] Final comments translation failed:", err);
-      historyToStore = history;
+      historyToStore = {
+        ...history,
+        hpiUpdatedAt: initialHpiUpdatedAt,
+      };
     }
     
     // Ensure transcript is an array if provided
@@ -346,6 +354,7 @@ export async function POST(request: Request) {
     }
 
     await markInvitationUsed(invitation.invitationId);
+    await clearInvitationSummaries(invitation.invitationId);
     await logInvitationAudit({
       invitationId: invitation.invitationId,
       eventType: "session_saved",
@@ -393,6 +402,8 @@ export async function PUT(request: Request) {
       historySummary,
       historyAssessment,
       historyPlan,
+      historyPhysicalFindings,
+      historyPatientFinalComments,
       pharmacyName,
       pharmacyNumber,
       pharmacyAddress,
@@ -404,6 +415,8 @@ export async function PUT(request: Request) {
       historySummary?: string;
       historyAssessment?: string;
       historyPlan?: string[];
+      historyPhysicalFindings?: string[];
+      historyPatientFinalComments?: string;
       pharmacyName?: string;
       pharmacyNumber?: string;
       pharmacyAddress?: string;
@@ -422,7 +435,9 @@ export async function PUT(request: Request) {
     const wantsHistoryUpdate =
       historySummary !== undefined ||
       historyAssessment !== undefined ||
-      historyPlan !== undefined;
+      historyPlan !== undefined ||
+      historyPhysicalFindings !== undefined ||
+      historyPatientFinalComments !== undefined;
     const wantsPharmacyUpdate =
       pharmacyName !== undefined ||
       pharmacyNumber !== undefined ||
@@ -447,6 +462,8 @@ export async function PUT(request: Request) {
     let trimmedSummary = "";
     let trimmedAssessment = "";
     let trimmedPlan: string[] = [];
+    let trimmedPhysicalFindings: string[] = [];
+    let trimmedPatientFinalComments = "";
 
     if (wantsHistoryUpdate) {
       if (typeof historySummary !== "string") {
@@ -467,12 +484,31 @@ export async function PUT(request: Request) {
         logRequestMeta("/api/sessions", requestId, status, Date.now() - started);
         return res;
       }
+      if (historyPhysicalFindings !== undefined && !Array.isArray(historyPhysicalFindings)) {
+        status = 400;
+        const res = NextResponse.json({ error: "historyPhysicalFindings must be an array of strings" }, { status });
+        logRequestMeta("/api/sessions", requestId, status, Date.now() - started);
+        return res;
+      }
+      if (
+        historyPatientFinalComments !== undefined &&
+        typeof historyPatientFinalComments !== "string"
+      ) {
+        status = 400;
+        const res = NextResponse.json({ error: "historyPatientFinalComments must be a string" }, { status });
+        logRequestMeta("/api/sessions", requestId, status, Date.now() - started);
+        return res;
+      }
 
       trimmedSummary = historySummary.trim();
       trimmedAssessment = historyAssessment.trim();
       trimmedPlan = historyPlan
         .map((item) => (typeof item === "string" ? item.trim() : ""))
         .filter((item) => item.length > 0);
+      trimmedPhysicalFindings = (historyPhysicalFindings ?? [])
+        .map((item) => (typeof item === "string" ? item.trim() : ""))
+        .filter((item) => item.length > 0);
+      trimmedPatientFinalComments = (historyPatientFinalComments ?? "").trim();
       if (trimmedSummary.length < 10 || trimmedSummary.length > 1500) {
         status = 400;
         const res = NextResponse.json(
@@ -491,11 +527,29 @@ export async function PUT(request: Request) {
         logRequestMeta("/api/sessions", requestId, status, Date.now() - started);
         return res;
       }
-      if (trimmedPlan.length < 1 || trimmedPlan.length > 60) {
+      if (trimmedPlan.length > 60) {
         status = 400;
         const res = NextResponse.json(
-          { error: "historyPlan must contain between 1 and 60 items" },
+          { error: "historyPlan must contain at most 60 items" },
           { status }
+        );
+        logRequestMeta("/api/sessions", requestId, status, Date.now() - started);
+        return res;
+      }
+      if (trimmedPhysicalFindings.length > 60) {
+        status = 400;
+        const res = NextResponse.json(
+          { error: "historyPhysicalFindings must contain at most 60 items" },
+          { status },
+        );
+        logRequestMeta("/api/sessions", requestId, status, Date.now() - started);
+        return res;
+      }
+      if (trimmedPatientFinalComments.length > 4000) {
+        status = 400;
+        const res = NextResponse.json(
+          { error: "historyPatientFinalComments must be 4000 characters or less" },
+          { status },
         );
         logRequestMeta("/api/sessions", requestId, status, Date.now() - started);
         return res;
@@ -525,11 +579,15 @@ export async function PUT(request: Request) {
       return res;
     }
 
+    const hpiUpdatedAt = wantsHistoryUpdate ? new Date().toISOString() : "";
     if (wantsHistoryUpdate) {
       const updated = await updateSessionHistoryFields(sessionCode, {
         summary: trimmedSummary,
         assessment: trimmedAssessment,
         plan: trimmedPlan,
+        physicalFindings: trimmedPhysicalFindings,
+        patientFinalQuestionsComments: trimmedPatientFinalComments,
+        hpiUpdatedAt,
       });
       if (!updated) {
         status = 404;
@@ -562,6 +620,9 @@ export async function PUT(request: Request) {
       historySummary: wantsHistoryUpdate ? trimmedSummary : undefined,
       historyAssessment: wantsHistoryUpdate ? trimmedAssessment : undefined,
       historyPlan: wantsHistoryUpdate ? trimmedPlan : undefined,
+      historyPhysicalFindings: wantsHistoryUpdate ? trimmedPhysicalFindings : undefined,
+      historyPatientFinalComments: wantsHistoryUpdate ? trimmedPatientFinalComments : undefined,
+      historyHpiUpdatedAt: wantsHistoryUpdate ? hpiUpdatedAt : undefined,
       pharmacy: wantsPharmacyUpdate ? normalizedPharmacy : undefined,
     });
     try {
