@@ -6,7 +6,7 @@ export const runtime = "nodejs";
 
 type Params = { invitationId: string };
 
-export async function DELETE(_req: NextRequest, context: { params: Params } | { params: Promise<Params> }) {
+export async function DELETE(_req: NextRequest, context: { params: Promise<Params> }) {
   try {
     const session = await getCurrentSession();
     if (!session) {
@@ -18,11 +18,7 @@ export async function DELETE(_req: NextRequest, context: { params: Params } | { 
 
     const physicianId = (session as any).physicianId || session.userId;
 
-    // Next.js may provide params as a Promise in route handlers; unwrap safely
-    const resolvedParams = "then" in (context.params as any)
-      ? await (context.params as Promise<Params>)
-      : (context.params as Params);
-    const invitationId = resolvedParams.invitationId;
+    const { invitationId } = await context.params;
 
     const result = await query(
       `DELETE FROM patient_invitations

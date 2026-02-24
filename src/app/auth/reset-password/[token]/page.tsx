@@ -2,13 +2,11 @@
 "use client";
 
 import { FormEvent, useState } from "react";
+import { useParams } from "next/navigation";
 
-export default function ResetPasswordTokenPage({
-  params,
-}: {
-  params: { token: string };
-}) {
-  const { token } = params;
+export default function ResetPasswordTokenPage() {
+  const params = useParams<{ token: string }>();
+  const token = params?.token || "";
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [loading, setLoading] = useState(false);

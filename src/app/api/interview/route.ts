@@ -20,7 +20,7 @@ import {
   resolveInvitationFromCookie,
 } from "@/lib/invitation-security";
 
-export const systemInstruction = `
+const systemInstruction = `
 You are a Physician Assistant conducting a clinical interview. Your role is to gather a comprehensive history of present illness, perform a virtual physical examination when appropriate, and systematically rule out red flags.
 
 HIGHEST PRIORITY SAFETY RULE:
@@ -674,7 +674,7 @@ const FATIGUE_PHRASES = [
   "enough questions",
 ];
 
-export function classifyComplaint(complaint: string): ComplaintClass {
+function classifyComplaint(complaint: string): ComplaintClass {
   const text = complaint.toLowerCase();
   if (text.match(/\b(mva|motor vehicle|car accident|collision|fall|workplace injury|assault|sports injury|trauma)\b/)) {
     return "Trauma";
@@ -700,7 +700,7 @@ export function classifyComplaint(complaint: string): ComplaintClass {
   return "General";
 }
 
-export function getScopedRedFlags(complaintClass: ComplaintClass): string[] {
+function getScopedRedFlags(complaintClass: ComplaintClass): string[] {
   switch (complaintClass) {
     case "Cardio":
       return [
@@ -760,7 +760,7 @@ export function getScopedRedFlags(complaintClass: ComplaintClass): string[] {
   }
 }
 
-export function detectFatigueSignals(patientAnswers: string[]): { active: boolean; signals: string[] } {
+function detectFatigueSignals(patientAnswers: string[]): { active: boolean; signals: string[] } {
   const lowerAnswers = patientAnswers.map((a) => a.toLowerCase().trim()).filter(Boolean);
   const signals: string[] = [];
 
@@ -776,7 +776,7 @@ export function detectFatigueSignals(patientAnswers: string[]): { active: boolea
   return { active: signals.length > 0, signals };
 }
 
-export function detectEscalationTriggers(params: {
+function detectEscalationTriggers(params: {
   chiefComplaint: string;
   currentComplaint: string;
   patientProfile: PatientProfile;
@@ -832,7 +832,7 @@ export function detectEscalationTriggers(params: {
   };
 }
 
-export function computeQuestionBudget(escalation: EscalationState): { budget: number | null; modifiers: string[] } {
+function computeQuestionBudget(escalation: EscalationState): { budget: number | null; modifiers: string[] } {
   if (escalation.hasStructuredFormUpload) {
     return { budget: null, modifiers: ["unlimited-structured-form"] };
   }
@@ -1039,7 +1039,7 @@ function extractInformationFromAnswers(answers: string[]): {
   };
 }
 
-export function buildPrompt(
+function buildPrompt(
   chiefComplaint: string,
   profile: PatientProfile,
   transcript: InterviewMessage[],
