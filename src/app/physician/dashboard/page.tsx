@@ -83,7 +83,6 @@ type Invitation = {
   patientName: string;
   patientEmail: string;
   sentAt: string | null;
-  invitationLink: string | null;
   openable: boolean;
   invalidReason: "used" | "revoked" | "expired" | null;
   activityStatus: InvitationActivityStatus;
@@ -101,7 +100,6 @@ function mapInvitationFromApi(inv: any): Invitation {
     patientName: inv.patientName,
     patientEmail: inv.patientEmail,
     sentAt: inv.sentAt ?? null,
-    invitationLink: inv.invitationLink ?? null,
     openable: Boolean(inv.openable),
     invalidReason: (inv.invalidReason ?? null) as Invitation["invalidReason"],
     activityStatus: (inv.activityStatus ?? "sent") as Invitation["activityStatus"],
@@ -151,8 +149,6 @@ export default function PhysicianDashboard() {
   const [inviteLoading, setInviteLoading] = useState(false);
   const [inviteError, setInviteError] = useState<string | null>(null);
   const [inviteSuccess, setInviteSuccess] = useState<string | null>(null);
-  const [invitationLink, setInvitationLink] = useState<string | null>(null);
-  const [invitedPatientName, setInvitedPatientName] = useState<string>("");
 
   type PatientSearchResult = {
     id: string;
@@ -317,7 +313,6 @@ export default function PhysicianDashboard() {
     e.preventDefault();
     setInviteError(null);
     setInviteSuccess(null);
-    setInvitationLink(null);
     setLabReportSummary(null);
     if (!invitePatientDob.trim()) {
       setInviteError("Date of birth is required to send an invitation.");
@@ -375,10 +370,6 @@ export default function PhysicianDashboard() {
       }
 
       setInviteSuccess(data.message || "Invitation sent successfully!");
-      if (data.invitationLink) {
-        setInvitationLink(data.invitationLink);
-        setInvitedPatientName(invitePatientName);
-      }
       if (data.labReportSummary) {
         setLabReportSummary(data.labReportSummary);
       }
@@ -589,34 +580,6 @@ export default function PhysicianDashboard() {
       setInvitationsError("Failed to delete invitation");
     } finally {
       setDeletingInvitationId(null);
-    }
-  };
-
-  const handleCopyLink = async () => {
-    if (invitationLink) {
-      try {
-        await navigator.clipboard.writeText(invitationLink);
-        setInviteSuccess("Link copied to clipboard!");
-        setTimeout(() => {
-          setInviteSuccess(null);
-        }, 2000);
-      } catch (err) {
-        setInviteError("Failed to copy link");
-      }
-    }
-  };
-
-  const handleCopyInvitationLink = async (link: string | null) => {
-    const normalized = String(link || "").trim();
-    if (!normalized) return;
-    try {
-      await navigator.clipboard.writeText(normalized);
-      setInviteSuccess("Link copied to clipboard!");
-      setTimeout(() => {
-        setInviteSuccess(null);
-      }, 2000);
-    } catch {
-      setInviteError("Failed to copy link");
     }
   };
 
@@ -946,29 +909,6 @@ export default function PhysicianDashboard() {
                 <p className="text-sm text-green-800">{inviteSuccess}</p>
               </div>
             )}
-            {invitationLink && (
-              <div className="rounded-lg bg-blue-50 border border-blue-200 px-4 py-3">
-                <p className="text-sm font-medium text-blue-900 mb-2">Invitation Link:</p>
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    readOnly
-                    value={invitationLink}
-                    className="flex-1 rounded-lg border border-blue-300 bg-white px-3 py-2 text-sm text-slate-900"
-                  />
-                  <button
-                    type="button"
-                    onClick={handleCopyLink}
-                    className="px-4 py-2 text-sm font-medium text-blue-700 bg-blue-100 rounded-lg hover:bg-blue-200 transition-colors"
-                  >
-                    Copy
-                  </button>
-                </div>
-                <p className="text-xs text-blue-700 mt-2">
-                  Share this link with {invitedPatientName || "the patient"} to complete their intake form.
-                </p>
-              </div>
-            )}
             <button
               type="submit"
               disabled={inviteLoading}
@@ -1193,9 +1133,6 @@ export default function PhysicianDashboard() {
                       Status
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
-                      Invitation Link
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
                       Actions
                     </th>
                   </tr>
@@ -1256,40 +1193,6 @@ export default function PhysicianDashboard() {
                             </div>
                           );
                         })()}
-                      </td>
-                      <td className="px-6 py-4 text-sm">
-                        {invitation.openable && invitation.invitationLink ? (
-                          <div className="flex items-center gap-3 min-w-0">
-                            <a
-                              href={invitation.invitationLink}
-                              target="_blank"
-                              rel="noreferrer noopener"
-                              title={invitation.invitationLink}
-                              className="text-blue-600 hover:text-blue-900 font-medium max-w-[340px] min-w-0 truncate"
-                            >
-                              {invitation.invitationLink}
-                            </a>
-                            <button
-                              type="button"
-                              onClick={() => handleCopyInvitationLink(invitation.invitationLink)}
-                              className="text-slate-700 hover:text-slate-900 font-medium"
-                            >
-                              Copy
-                            </button>
-                          </div>
-                        ) : (
-                          <span className="text-xs text-slate-400">
-                            {!invitation.invitationLink && invitation.openable
-                              ? "Not retained after send"
-                              : invitation.invalidReason === "expired"
-                              ? "Expired"
-                              : invitation.invalidReason === "used"
-                                ? "Used"
-                                : invitation.invalidReason === "revoked"
-                                  ? "Revoked"
-                                  : "—"}
-                          </span>
-                        )}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm">
                         <button
