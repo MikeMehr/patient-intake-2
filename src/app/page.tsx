@@ -2974,9 +2974,16 @@ export default function Home() {
         "which number",
         "mark where",
         "mark the area",
+        "mark the painful area",
         "mark on the diagram",
         "mark on the photo",
         "mark on the image",
+        "click on the diagram",
+        "click on the photo",
+        "click on the image",
+        "tap on the diagram",
+        "tap on the photo",
+        "tap on the image",
         "place an x",
         "place a mark",
         "where exactly",
@@ -2994,9 +3001,35 @@ export default function Home() {
       if (bodyParts.length === 0) {
         bodyParts = detectBodyParts(chiefComplaint);
       }
+      const mskBodyPartSet = new Set([
+        "back",
+        "lower_back",
+        "upper_back",
+        "neck",
+        "shoulder",
+        "elbow",
+        "wrist",
+        "hand",
+        "hip",
+        "knee",
+        "ankle",
+        "foot",
+      ]);
+      const hasMskBodyPart = bodyParts.some((part) => mskBodyPartSet.has(part.part));
+      const hasPainMention = questionLower.includes("pain");
+      const hasLocationIntentFallback = [
+        "where does it hurt",
+        "where on",
+        "where in",
+        "which spot",
+        "painful spot",
+        "pain spot",
+      ].some((phrase) => questionLower.includes(phrase));
+      const shouldForceLocationDiagram =
+        hasMskBodyPart && hasPainMention && hasLocationIntentFallback;
 
       // Only show the diagram when the assistant explicitly asks about location.
-      if (bodyParts.length > 0 && isAskingLocation) {
+      if (bodyParts.length > 0 && (isAskingLocation || shouldForceLocationDiagram)) {
         const partsToShow = bodyParts.map((bp) => ({
           part: bp.part,
           side: bp.side,
