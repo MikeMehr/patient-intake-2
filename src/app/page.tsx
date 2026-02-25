@@ -1859,6 +1859,19 @@ export default function Home() {
     resetDraftTranscript("redo");
   };
 
+  const handlePreInterviewEnterKeyDown = (event: React.KeyboardEvent<HTMLFormElement>) => {
+    if (status !== "idle" || event.key !== "Enter") return;
+
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+
+    // Keep multiline fields usable while blocking accidental form submit from single-line controls.
+    if (target instanceof HTMLTextAreaElement) return;
+    if (target instanceof HTMLInputElement || target instanceof HTMLSelectElement) {
+      event.preventDefault();
+    }
+  };
+
   async function handleStart(
     event: React.FormEvent<HTMLFormElement>,
   ): Promise<void> {
@@ -3178,7 +3191,7 @@ export default function Home() {
                 </div>
               </div>
             )}
-            <form onSubmit={handleStart} className="space-y-4">
+            <form onSubmit={handleStart} onKeyDown={handlePreInterviewEnterKeyDown} className="space-y-4">
               <div className="rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-3 text-sm text-slate-800">
                 <label className="flex items-start gap-3">
                   <input
