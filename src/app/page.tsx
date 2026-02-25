@@ -255,6 +255,10 @@ export default function Home() {
   useEffect(() => {
     messagesRef.current = messages;
   }, [messages]);
+
+  useEffect(() => {
+    selectedDiagramMarkersRef.current = selectedDiagramMarkers;
+  }, [selectedDiagramMarkers]);
   
   // Also update ref when patientResponse is set via setPatientResponse
   const setPatientResponseWithRef = (value: string | ((prev: string) => string)) => {
@@ -268,6 +272,20 @@ export default function Home() {
       patientResponseRef.current = value;
       setPatientResponse(value);
     }
+  };
+  const setSelectedDiagramMarkersWithRef = (
+    value: LeftSoleMarker[] | ((prev: LeftSoleMarker[]) => LeftSoleMarker[]),
+  ) => {
+    if (typeof value === "function") {
+      setSelectedDiagramMarkers((prev) => {
+        const next = value(prev);
+        selectedDiagramMarkersRef.current = next;
+        return next;
+      });
+      return;
+    }
+    selectedDiagramMarkersRef.current = value;
+    setSelectedDiagramMarkers(value);
   };
   const updateSelectionRef = (target: HTMLTextAreaElement | null) => {
     if (!target) {
@@ -526,6 +544,7 @@ export default function Home() {
   const [selectedBodyParts, setSelectedBodyParts] = useState<Array<{ part: string; side?: "left" | "right" | "both" }>>([]);
   const [selectedDiagramArea, setSelectedDiagramArea] = useState<number | null>(null);
   const [selectedDiagramMarkers, setSelectedDiagramMarkers] = useState<LeftSoleMarker[]>([]);
+  const selectedDiagramMarkersRef = useRef<LeftSoleMarker[]>([]);
   const [endedEarly, setEndedEarly] = useState(false);
   const [interviewStartTime, setInterviewStartTime] = useState<number | null>(null);
   const interviewStartTimeRef = useRef<number | null>(null);
@@ -853,6 +872,11 @@ export default function Home() {
       });
     }
 
+    const currentDiagramMarkers =
+      selectedDiagramMarkersRef.current.length > 0
+        ? selectedDiagramMarkersRef.current
+        : selectedDiagramMarkers;
+
     const bodyDiagramNoteParts: string[] = [];
     if (selectedParts.length > 0) {
       bodyDiagramNoteParts.push(
@@ -862,8 +886,8 @@ export default function Home() {
     if (selectedDiagramArea) {
       bodyDiagramNoteParts.push(`Area ${selectedDiagramArea}`);
     }
-    if (selectedDiagramMarkers.length > 0) {
-      const markerSummary = selectedDiagramMarkers
+    if (currentDiagramMarkers.length > 0) {
+      const markerSummary = currentDiagramMarkers
         .map((marker) => `(${Math.round(marker.xPct)},${Math.round(marker.yPct)})`)
         .join(", ");
       bodyDiagramNoteParts.push(`Left sole markers: ${markerSummary}`);
@@ -886,10 +910,10 @@ export default function Home() {
       };
     }
 
-    if (selectedParts.length > 0 || selectedDiagramArea || selectedDiagramMarkers.length > 0) {
+    if (selectedParts.length > 0 || selectedDiagramArea || currentDiagramMarkers.length > 0) {
       uploads.bodyDiagram = {
         selectedArea: selectedDiagramArea || undefined,
-        leftSoleMarkers: selectedDiagramMarkers.length > 0 ? selectedDiagramMarkers : undefined,
+        leftSoleMarkers: currentDiagramMarkers.length > 0 ? currentDiagramMarkers : undefined,
         selectedParts,
         note: bodyDiagramNoteParts.join(" | ") || undefined,
       };
@@ -1035,9 +1059,6 @@ export default function Home() {
   useEffect(() => {
     if (status === "complete") {
       setShowBodyDiagram(false);
-      setSelectedBodyParts([]);
-      setSelectedDiagramArea(null);
-      setSelectedDiagramMarkers([]);
       setEditingMessageIndex(null);
       setEditingContent("");
       setAddingToMessageIndex(null);
@@ -2133,8 +2154,12 @@ export default function Home() {
     const hasLeftFootSelectedPart = selectedBodyParts.some(
       (part) => part.part === "foot" && part.side === "left",
     );
-    if (selectedDiagramMarkers.length > 0 && hasLeftFootSelectedPart) {
-      const markerSummary = selectedDiagramMarkers
+    const currentDiagramMarkers =
+      selectedDiagramMarkersRef.current.length > 0
+        ? selectedDiagramMarkersRef.current
+        : selectedDiagramMarkers;
+    if (currentDiagramMarkers.length > 0 && hasLeftFootSelectedPart) {
+      const markerSummary = currentDiagramMarkers
         .map((marker) => `(${Math.round(marker.xPct)},${Math.round(marker.yPct)})`)
         .join(", ");
       trimmed = trimmed.trim();
@@ -2818,7 +2843,7 @@ export default function Home() {
     setShowBodyDiagram(false);
     setSelectedBodyParts([]);
     setSelectedDiagramArea(null);
-    setSelectedDiagramMarkers([]);
+    setSelectedDiagramMarkersWithRef([]);
   }
 
   async function searchPharmacy(details?: {
@@ -3041,15 +3066,20 @@ export default function Home() {
           part: bp.part,
           side: bp.side,
         }));
+        const hasLeftFootInNextPrompt = partsToShow.some(
+          (part) => part.part === "foot" && (part.side === "left" || part.side === "both"),
+        );
         setSelectedBodyParts(partsToShow);
         setShowBodyDiagram(true);
         setSelectedDiagramArea(null);
-        setSelectedDiagramMarkers([]);
+        // Keep existing left-sole markers across follow-up location prompts.
+        // Only clear when the new prompt is not about left/both foot.
+        if (!hasLeftFootInNextPrompt) {
+          setSelectedDiagramMarkersWithRef([]);
+        }
       } else {
         // Hide diagram unless the assistant is asking location.
         setShowBodyDiagram(false);
-        setSelectedBodyParts([]);
-        setSelectedDiagramMarkers([]);
       }
       
       setStatus("awaitingPatient");
@@ -4475,7 +4505,9 @@ export default function Home() {
                             onMarkerAdd={
                               isLeftFootDiagram
                                 ? (marker) => {
-                                    setSelectedDiagramMarkers((prev) => [...prev, marker].slice(0, 30));
+                                    setSelectedDiagramMarkersWithRef((prev) =>
+                                      [...prev, marker].slice(0, 30),
+                                    );
                                     if (!patientResponseRef.current.trim()) {
                                       const markerResponse = "I marked the painful spot(s) on the left sole diagram.";
                                       setPatientResponse(markerResponse);
@@ -4487,7 +4519,7 @@ export default function Home() {
                             onMarkersClear={
                               isLeftFootDiagram
                                 ? () => {
-                                    setSelectedDiagramMarkers([]);
+                                    setSelectedDiagramMarkersWithRef([]);
                                   }
                                 : undefined
                             }

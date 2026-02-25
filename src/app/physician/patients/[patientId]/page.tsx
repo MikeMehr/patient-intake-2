@@ -25,6 +25,24 @@ type PatientPayload = {
   hinMasked: string | null;
 };
 
+type MarkerPoint = { xPct: number; yPct: number };
+
+function parseMarkerTuples(text: string): MarkerPoint[] {
+  const matches = text.match(/\((\d{1,3})\s*,\s*(\d{1,3})\)/g) || [];
+  const parsed = matches
+    .map((tuple) => {
+      const match = tuple.match(/\((\d{1,3})\s*,\s*(\d{1,3})\)/);
+      if (!match) return null;
+      const x = Number(match[1]);
+      const y = Number(match[2]);
+      if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+      if (x < 0 || x > 100 || y < 0 || y > 100) return null;
+      return { xPct: x, yPct: y };
+    })
+    .filter((marker): marker is MarkerPoint => Boolean(marker));
+  return parsed.slice(0, 30);
+}
+
 function computeAgeFromDob(dob: string | null): number | null {
   if (!dob) return null;
   const trimmed = dob.trim();
@@ -222,6 +240,33 @@ export default function PatientChartPage() {
                 const physicalFindings = Array.isArray(hpi?.physicalFindings) ? (hpi.physicalFindings as string[]) : [];
                 const positives = Array.isArray(hpi?.positives) ? (hpi.positives as string[]) : [];
                 const negatives = Array.isArray(hpi?.negatives) ? (hpi.negatives as string[]) : [];
+                const patientUploads = hpi?.patientUploads || {};
+                const lesionSummary = patientUploads?.lesionImage?.summary || "";
+                const lesionImageUrl = patientUploads?.lesionImage?.imageUrl || "";
+                const lesionImageName = patientUploads?.lesionImage?.imageName || "";
+                const bodyDiagram = patientUploads?.bodyDiagram || {};
+                const bodyDiagramArea = bodyDiagram?.selectedArea;
+                const bodyDiagramParts = Array.isArray(bodyDiagram?.selectedParts)
+                  ? (bodyDiagram.selectedParts as Array<{ part?: string; side?: string }>)
+                  : [];
+                const bodyDiagramNote = bodyDiagram?.note || "";
+                const structuredMarkers = Array.isArray(bodyDiagram?.leftSoleMarkers)
+                  ? (bodyDiagram.leftSoleMarkers as MarkerPoint[])
+                  : [];
+                const fallbackMarkers =
+                  structuredMarkers.length === 0 &&
+                  /left sole markers|marked.*left sole|left sole/i.test(bodyDiagramNote)
+                    ? parseMarkerTuples(bodyDiagramNote)
+                    : [];
+                const displayMarkers = structuredMarkers.length > 0 ? structuredMarkers : fallbackMarkers;
+                const hasLeftSoleSelection = bodyDiagramParts.some(
+                  (part) => part?.part === "foot" && (part?.side === "left" || part?.side === "both"),
+                );
+                const shouldShowLeftSole = displayMarkers.length > 0 || hasLeftSoleSelection;
+                const hasUploadedContext =
+                  Boolean(lesionSummary || lesionImageUrl || bodyDiagramNote || bodyDiagramArea) ||
+                  bodyDiagramParts.length > 0 ||
+                  shouldShowLeftSole;
 
                 return (
                   <details key={enc.id} className="group px-6 py-4">
@@ -312,6 +357,98 @@ export default function PatientChartPage() {
                               </ul>
                             )}
                           </div>
+                        </div>
+                      )}
+
+                      {hasUploadedContext && (
+                        <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                          <div className="text-xs font-semibold text-slate-600 uppercase tracking-wide">
+                            Patient Uploaded Context
+                          </div>
+
+                          {(lesionImageUrl || lesionSummary) && (
+                            <div className="mt-3">
+                              <div className="text-sm font-medium text-slate-700">Body-part photo</div>
+                              {lesionImageUrl && (
+                                <img
+                                  src={lesionImageUrl}
+                                  alt={lesionImageName || "Patient uploaded body-part image"}
+                                  className="mt-2 max-h-64 w-auto rounded-lg border border-slate-200 object-contain bg-white"
+                                />
+                              )}
+                              {lesionImageName && (
+                                <p className="mt-2 text-xs text-slate-500">File: {lesionImageName}</p>
+                              )}
+                              {lesionSummary && (
+                                <p className="mt-1 whitespace-pre-wrap text-sm text-slate-800">{lesionSummary}</p>
+                              )}
+                            </div>
+                          )}
+
+                          {(shouldShowLeftSole || bodyDiagramArea || bodyDiagramParts.length > 0 || bodyDiagramNote) && (
+                            <div className="mt-4">
+                              <div className="text-sm font-medium text-slate-700">Body Diagram Selection</div>
+
+                              {shouldShowLeftSole && (
+                                <div className="mt-2">
+                                  <p className="text-sm text-slate-700">Left sole pain mapping:</p>
+                                  <div className="relative mt-2 h-72 w-56 overflow-hidden rounded-lg border border-slate-200 bg-white">
+                                    <img
+                                      src="/Images/Left_Sole.png"
+                                      alt="Left sole pain diagram with selected markers"
+                                      className="absolute inset-0 h-full w-full object-contain"
+                                    />
+                                    {displayMarkers.map((marker, index) => (
+                                      <div
+                                        key={`${marker.xPct}-${marker.yPct}-${index}`}
+                                        className="pointer-events-none absolute text-base font-bold text-red-600 drop-shadow-sm"
+                                        style={{
+                                          left: `${marker.xPct}%`,
+                                          top: `${marker.yPct}%`,
+                                          transform: "translate(-50%, -50%)",
+                                        }}
+                                      >
+                                        X
+                                      </div>
+                                    ))}
+                                  </div>
+                                  {displayMarkers.length > 0 ? (
+                                    <p className="mt-2 text-xs text-slate-500">
+                                      Coordinates:{" "}
+                                      {displayMarkers
+                                        .map((marker) => `(${Math.round(marker.xPct)}, ${Math.round(marker.yPct)})`)
+                                        .join(", ")}
+                                    </p>
+                                  ) : (
+                                    <p className="mt-2 text-xs text-slate-500">
+                                      No marker coordinates were submitted; showing selected left sole diagram.
+                                    </p>
+                                  )}
+                                </div>
+                              )}
+
+                              {bodyDiagramArea && (
+                                <p className="mt-2 text-sm text-slate-700">Selected area: {bodyDiagramArea}</p>
+                              )}
+                              {bodyDiagramParts.length > 0 && (
+                                <p className="mt-1 text-sm text-slate-700">
+                                  Selected parts:{" "}
+                                  {bodyDiagramParts
+                                    .map((part) => {
+                                      const partName = (part?.part || "").trim();
+                                      if (!partName) return "";
+                                      const side = (part?.side || "").trim();
+                                      return side ? `${side} ${partName}` : partName;
+                                    })
+                                    .filter((value) => value.length > 0)
+                                    .join(", ")}
+                                </p>
+                              )}
+                              {bodyDiagramNote && (
+                                <p className="mt-1 whitespace-pre-wrap text-sm text-slate-800">{bodyDiagramNote}</p>
+                              )}
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>

@@ -1701,6 +1701,48 @@ function PhysicianViewContent() {
   const hpiLeftSoleMarkers = patientUploads?.bodyDiagram?.leftSoleMarkers || [];
   const hpiBodyDiagramParts = patientUploads?.bodyDiagram?.selectedParts || [];
   const hpiBodyDiagramNote = patientUploads?.bodyDiagram?.note || "";
+  const transcriptText = Array.isArray(session.transcript)
+    ? session.transcript.map((message) => message?.content || "").join(" ")
+    : "";
+  const parseLeftSoleMarkersFromText = (text: string) => {
+    const matches = text.match(/\((\d{1,3})\s*,\s*(\d{1,3})\)/g) || [];
+    const parsed = matches
+      .map((tuple) => {
+        const match = tuple.match(/\((\d{1,3})\s*,\s*(\d{1,3})\)/);
+        if (!match) return null;
+        const x = Number(match[1]);
+        const y = Number(match[2]);
+        if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+        if (x < 0 || x > 100 || y < 0 || y > 100) return null;
+        return { xPct: x, yPct: y };
+      })
+      .filter((marker): marker is { xPct: number; yPct: number } => Boolean(marker));
+    return parsed.slice(0, 30);
+  };
+  const fallbackMarkerText = `${hpiBodyDiagramNote} ${transcriptText}`;
+  const fallbackMarkers =
+    hpiLeftSoleMarkers.length === 0 &&
+    /left sole markers|marked.*left sole|left sole/i.test(fallbackMarkerText)
+      ? parseLeftSoleMarkersFromText(fallbackMarkerText)
+      : [];
+  const hpiDisplayLeftSoleMarkers =
+    hpiLeftSoleMarkers.length > 0 ? hpiLeftSoleMarkers : fallbackMarkers;
+  const hasLeftSoleSelection = hpiBodyDiagramParts.some(
+    (part) => part.part === "foot" && (part.side === "left" || part.side === "both"),
+  );
+  const hpiNarrativeText = [
+    hpiBodyDiagramNote,
+    session.history.summary || "",
+    session.history.assessment || "",
+    Array.isArray(session.history.physicalFindings) ? session.history.physicalFindings.join(" ") : "",
+  ]
+    .join(" ")
+    .toLowerCase();
+  const hasLeftSoleNarrative = /(left\s+(sole|heel|plantar|arch|foot)|\bsole\b|\bplantar\b|\bheel\b)/i.test(
+    hpiNarrativeText,
+  );
+  const shouldRenderLeftSoleDiagram =
+    hpiDisplayLeftSoleMarkers.length > 0 || hasLeftSoleSelection || hasLeftSoleNarrative;
 
   const hasPatientUploadedContext = Boolean(
     hpiMedPmhSummary ||
@@ -1708,7 +1750,7 @@ function PhysicianViewContent() {
       hpiLesionImageUrl ||
       hpiBodyDiagramNote ||
       hpiBodyDiagramArea ||
-      hpiLeftSoleMarkers.length > 0 ||
+      shouldRenderLeftSoleDiagram ||
       hpiBodyDiagramParts.length > 0,
   );
   const shouldShowLegacyImageAnalysisCard = Boolean(session.imageSummary && !patientUploads?.lesionImage);
@@ -1895,12 +1937,15 @@ function PhysicianViewContent() {
                         </div>
                       )}
 
-                      {(hpiBodyDiagramParts.length > 0 || hpiBodyDiagramArea || hpiBodyDiagramNote || hpiLeftSoleMarkers.length > 0) && (
+                      {(hpiBodyDiagramParts.length > 0 ||
+                        hpiBodyDiagramArea ||
+                        hpiBodyDiagramNote ||
+                        shouldRenderLeftSoleDiagram) && (
                         <div>
                           <p className="text-sm font-medium text-slate-700">
                             Body Diagram Selection
                           </p>
-                          {hpiLeftSoleMarkers.length > 0 && (
+                          {shouldRenderLeftSoleDiagram && (
                             <div className="mt-3">
                               <p className="text-sm text-slate-700">Left sole pain mapping:</p>
                               <div className="relative mt-2 h-72 w-56 overflow-hidden rounded-lg border border-slate-200 bg-white">
@@ -1909,7 +1954,7 @@ function PhysicianViewContent() {
                                   alt="Left sole pain diagram with selected markers"
                                   className="absolute inset-0 h-full w-full object-contain"
                                 />
-                                {hpiLeftSoleMarkers.map((marker, index) => (
+                                {hpiDisplayLeftSoleMarkers.map((marker, index) => (
                                   <div
                                     key={`${marker.xPct}-${marker.yPct}-${index}`}
                                     className="pointer-events-none absolute text-base font-bold text-red-600 drop-shadow-sm"
@@ -1923,12 +1968,18 @@ function PhysicianViewContent() {
                                   </div>
                                 ))}
                               </div>
-                              <p className="mt-2 text-xs text-slate-500">
-                                Coordinates:{" "}
-                                {hpiLeftSoleMarkers
-                                  .map((marker) => `(${Math.round(marker.xPct)}, ${Math.round(marker.yPct)})`)
-                                  .join(", ")}
-                              </p>
+                              {hpiDisplayLeftSoleMarkers.length > 0 ? (
+                                <p className="mt-2 text-xs text-slate-500">
+                                  Coordinates:{" "}
+                                  {hpiDisplayLeftSoleMarkers
+                                    .map((marker) => `(${Math.round(marker.xPct)}, ${Math.round(marker.yPct)})`)
+                                    .join(", ")}
+                                </p>
+                              ) : (
+                                <p className="mt-2 text-xs text-slate-500">
+                                  No marker coordinates were submitted; showing selected left sole diagram.
+                                </p>
+                              )}
                             </div>
                           )}
                           {hpiBodyDiagramArea && (
