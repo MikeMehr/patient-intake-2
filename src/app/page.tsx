@@ -2616,30 +2616,30 @@ export default function Home() {
       try {
         setStatus("awaitingAi");
         
-        // Create a special request that forces a summary
-        const finalMessages = [...messages, endRequestMessage];
-        
-        // Call the API with a flag to force summary generation
-        const response = await fetch("/api/interview", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            transcript: finalMessages,
-            patientProfile: lockedProfile,
-            chiefComplaint,
-            ...(imageSummary ? { imageSummary } : {}), // Only include if it exists
-            ...(labReportSummary ? { labReportSummary } : {}), // Only include if it exists
-            ...(previousLabReportSummary ? { previousLabReportSummary } : {}), // Only include if it exists
-            ...(formSummary ? { formSummary } : {}), // Only include if it exists
-            forceSummary: true, // Flag to force summary
-          }),
-        });
-
-        if (!response.ok) {
-          throw new Error(`API error: ${response.status}`);
+        const physicianIdToUse =
+          physicianIdValue || (typeof window !== "undefined" ? sessionStorage.getItem("physicianId") : null);
+        if (!physicianIdToUse) {
+          throw new Error("You weren’t invited to complete this form.");
         }
 
-        const turn = await response.json() as InterviewResponse;
+        // Create a special request that forces a summary.
+        const finalMessages = [...messages, endRequestMessage];
+        const turn = await requestTurn(
+          chiefComplaint,
+          lockedProfile,
+          finalMessages,
+          imageSummary,
+          labReportSummary,
+          previousLabReportSummary,
+          formSummary,
+          interviewGuidance,
+          getMedPmhSummary(),
+          invitePatientBackground || null,
+          patientEmail.trim(),
+          physicianIdToUse,
+          language,
+          true,
+        );
         
         if (turn.type === "summary") {
           // Process the summary
@@ -4840,6 +4840,7 @@ async function requestTurn(
   patientEmail: string,
   physicianId: string,
   language: string,
+  forceSummary: boolean = false,
 ): Promise<InterviewResponse> {
   if (process.env.NODE_ENV === "development") {
     console.log("[requestTurn] Sending request with optional summary fields", {
@@ -4869,6 +4870,7 @@ async function requestTurn(
       patientEmail,
       physicianId,
       language,
+      forceSummary,
     }),
   });
 
