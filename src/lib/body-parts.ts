@@ -86,8 +86,8 @@ export function detectBodyParts(text: string): BodyPartInfo[] {
     detected.push({ part: "ankle", name: "ankle", side });
   }
 
-  // Foot
-  if (lowerText.match(/\b(foot|feet)\b/)) {
+  // Foot (include common sole/heel descriptors)
+  if (lowerText.match(/\b(foot|feet|heel|heels|sole|plantar|arch)\b/)) {
     const side = lowerText.includes("right") ? "right" : lowerText.includes("left") ? "left" : undefined;
     detected.push({ part: "foot", name: "foot", side });
   }
