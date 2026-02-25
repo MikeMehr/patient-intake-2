@@ -1015,7 +1015,7 @@ export default function Home() {
           });
     }
   }, [patientEmail]);
-  const statusRef = useRef<"idle" | "awaitingPatient" | "awaitingAi" | "complete" | "paused">("idle");
+  const statusRef = useRef<Status>("idle");
 
   useEffect(() => {
     chatRef.current?.scrollTo({
