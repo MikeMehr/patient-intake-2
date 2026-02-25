@@ -712,6 +712,7 @@ export default function Home() {
     (showReview || hasPendingSubmission) &&
     (draftTranscript.trim().length > 0 || hasPendingSubmission);
   const minPatientBubbleRows = isSmallWidth ? 3 : 2;
+  const isInterviewComplete = status === "complete";
   useEffect(() => {
   }, [showSubmitBanner, showResponseBox, hasPendingSubmission, isSubmittingResponse, showReview, status]);
   useEffect(() => {
@@ -1027,6 +1028,10 @@ export default function Home() {
       setShowBodyDiagram(false);
       setSelectedBodyParts([]);
       setSelectedDiagramArea(null);
+      setEditingMessageIndex(null);
+      setEditingContent("");
+      setAddingToMessageIndex(null);
+      setAddingContent("");
     }
   }, [status]);
 
@@ -3878,7 +3883,7 @@ export default function Home() {
                                   : "",
                               ].join(" ")}
                             >
-                              {addingToMessageIndex === index ? (
+                              {addingToMessageIndex === index && !isInterviewComplete ? (
                                 <div className="space-y-2 w-full">
                                   <p className="text-sm text-emerald-50 mb-2">Original: {message.content}</p>
                                   <textarea
@@ -3952,7 +3957,7 @@ export default function Home() {
                                     </button>
                                   </div>
                                 </div>
-                              ) : editingMessageIndex === index ? (
+                              ) : editingMessageIndex === index && !isInterviewComplete ? (
                                 <div className="space-y-2 w-full">
                                   <div className="flex items-center justify-between gap-2">
                                     <span className="text-xs font-semibold text-red-100 bg-red-600/70 px-2 py-0.5 rounded-full border border-red-200/40">
@@ -4027,17 +4032,20 @@ export default function Home() {
                                   <p className="leading-relaxed whitespace-pre-wrap">
                                     {message.content}
                                   </p>
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setEditingMessageIndex(index);
-                                      setEditingContent(message.content);
-                                    }}
-                                    className="absolute -bottom-2.5 right-3 px-2.5 py-0.5 text-xs font-medium rounded-full bg-emerald-700 hover:bg-emerald-800 text-white shadow-sm border-2 border-white"
-                                    title="Edit this message"
-                                  >
-                                    Edit
-                                  </button>
+                                  {!isInterviewComplete && (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        if (isInterviewComplete) return;
+                                        setEditingMessageIndex(index);
+                                        setEditingContent(message.content);
+                                      }}
+                                      className="absolute -bottom-2.5 right-3 px-2.5 py-0.5 text-xs font-medium rounded-full bg-emerald-700 hover:bg-emerald-800 text-white shadow-sm border-2 border-white"
+                                      title="Edit this message"
+                                    >
+                                      Edit
+                                    </button>
+                                  )}
                                 </>
                               )}
                             </div>
