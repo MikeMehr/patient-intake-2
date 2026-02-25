@@ -28,7 +28,27 @@ jobs:
         run: npm ci
 
       - name: Security audit (runtime dependencies)
-        run: npm run audit:prod
+        shell: bash
+        run: |
+          # Force the public registry explicitly; avoids occasional mirror/proxy mismatches.
+          npm config set registry "https://registry.npmjs.org/"
+
+          # Retry transient npm audit endpoint failures (403/network/timeouts) but still fail
+          # hard if high/critical vulnerabilities persist.
+          attempts=3
+          for attempt in $(seq 1 "$attempts"); do
+            echo "Running runtime security audit (attempt ${attempt}/${attempts})..."
+            if npm run audit:prod; then
+              exit 0
+            fi
+            if [ "$attempt" -lt "$attempts" ]; then
+              echo "Audit failed; retrying in 10s..."
+              sleep 10
+            fi
+          done
+
+          echo "Runtime dependency security audit failed after ${attempts} attempts."
+          exit 1
 
       - name: Build
         run: npx next build --webpack
