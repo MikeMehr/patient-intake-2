@@ -256,10 +256,6 @@ export default function Home() {
     messagesRef.current = messages;
   }, [messages]);
 
-  useEffect(() => {
-    selectedDiagramMarkersRef.current = selectedDiagramMarkers;
-  }, [selectedDiagramMarkers]);
-  
   // Also update ref when patientResponse is set via setPatientResponse
   const setPatientResponseWithRef = (value: string | ((prev: string) => string)) => {
     if (typeof value === "function") {
