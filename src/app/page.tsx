@@ -3197,7 +3197,9 @@ export default function Home() {
                   <span>
                     I understand this AI interview does not provide medical advice and does not replace a physician’s
                     assessment. If this is a medical emergency, I will seek immediate care. I understand my information
-                    will be kept confidential and secure. I agree to the{" "}
+                    will be kept confidential and secure. I will only provide information relevant to my medical care
+                    and will not enter sensitive financial or security information (e.g., credit card numbers, banking
+                    information, passwords). I agree to the{" "}
                     <a
                       href="https://www.health-assist.org/terms"
                       target="_blank"
