@@ -46,15 +46,19 @@ declare global {
   }
 }
 
-type Status = "idle" | "awaitingAi" | "awaitingPatient" | "complete" | "paused";
+type Status = "idle" | "awaitingAi" | "awaitingPatient" | "saving" | "complete" | "paused";
 
 const statusCopy: Record<Status, string> = {
   idle: "Enter the chief complaint and baseline history to begin.",
   awaitingAi: "Aurora is composing the next question...",
   awaitingPatient: "Answer the assistant's latest question below.",
+  saving: "Finalizing and saving your interview...",
   complete: "Interview complete. Review the summary on the right.",
   paused: "Interview paused. Click Resume to continue.",
 };
+
+const LESION_UPLOAD_MAX_BYTES = 6 * 1024 * 1024;
+const LESION_UPLOAD_COMPRESSION_THRESHOLD_BYTES = 1500 * 1024;
 
 const closingMessageEnglish =
   "We have reached the end of this interview. Thank you for taking the time to answer my questions. You will soon be contacted by your physician to discuss the diagnosis and management.";
@@ -423,6 +427,9 @@ export default function Home() {
   const [physicianIdValue, setPhysicianIdValue] = useState<string | null>(null);
   const [sessionCode, setSessionCode] = useState<string | null>(null);
   const [showShareLink, setShowShareLink] = useState(false);
+  const [savingSession, setSavingSession] = useState(false);
+  const [sessionSaveError, setSessionSaveError] = useState<string | null>(null);
+  const [sessionSavePendingHistory, setSessionSavePendingHistory] = useState<HistoryResponse | null>(null);
   const [sex, setSex] = useState<PatientProfile["sex"]>("female");
   const [language, setLanguage] = useState<string>("en");
   const [ageInput, setAgeInput] = useState("");
@@ -729,7 +736,7 @@ export default function Home() {
     (showReview || hasPendingSubmission) &&
     (draftTranscript.trim().length > 0 || hasPendingSubmission);
   const minPatientBubbleRows = isSmallWidth ? 3 : 2;
-  const isInterviewComplete = status === "complete";
+  const isInterviewComplete = status === "complete" || status === "saving";
   useEffect(() => {
   }, [showSubmitBanner, showResponseBox, hasPendingSubmission, isSubmittingResponse, showReview, status]);
   useEffect(() => {
@@ -1051,9 +1058,9 @@ export default function Home() {
     }
   }, [messages, status, isSpeaking, speechRecognition, isListening]);
   
-  // Hide diagram when interview is complete
+  // Hide diagram when interview is complete/saving
   useEffect(() => {
-    if (status === "complete") {
+    if (status === "complete" || status === "saving") {
       setShowBodyDiagram(false);
       setEditingMessageIndex(null);
       setEditingContent("");
@@ -1064,7 +1071,7 @@ export default function Home() {
 
   // Update timer every second when interview is active
   useEffect(() => {
-    if (interviewStartTime && status !== "idle" && status !== "complete") {
+    if (interviewStartTime && status !== "idle" && status !== "complete" && status !== "saving") {
       const interval = setInterval(() => {
         const elapsed = Math.round((Date.now() - interviewStartTime) / 1000);
         setElapsedTime(elapsed);
@@ -2115,6 +2122,7 @@ export default function Home() {
     if (event) {
       event.preventDefault();
     }
+    setSessionSaveError(null);
     setIsSubmittingResponse(true);
     
     // Don't allow submission when paused
@@ -2219,15 +2227,24 @@ export default function Home() {
       setAwaitingFinalComments(false);
       setFinalCommentsChoice(null);
 
-      setStatus("complete");
-      statusRef.current = "complete";
+      setSessionSavePendingHistory(historyWithFinal);
+      setSessionSaveError(null);
+      setSavingSession(true);
+      setStatus("saving");
+      statusRef.current = "saving";
 
       try {
         await saveSession(historyWithFinal);
+        setStatus("complete");
+        statusRef.current = "complete";
+        setSessionSavePendingHistory(null);
       } catch (err) {
         console.error("Failed to save session with final comment:", err);
-        setError("Failed to save your final comment. Please try again.");
+        setSessionSaveError(
+          err instanceof Error ? err.message : "Failed to save your interview. Please retry.",
+        );
       } finally {
+        setSavingSession(false);
         setIsSubmittingResponse(false);
         setShowSubmitToast(false);
       }
@@ -2457,45 +2474,106 @@ export default function Home() {
     statusRef.current = previousStatus as any;
   }
 
+  async function fileToDataUrl(blob: Blob): Promise<string> {
+    return await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const result = reader.result;
+        if (typeof result === "string" && result.length > 0) {
+          resolve(result);
+          return;
+        }
+        reject(new Error("Failed to read uploaded image."));
+      };
+      reader.onerror = () => reject(new Error("Failed to process uploaded image."));
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  async function prepareLesionImageDataUrl(file: File): Promise<string> {
+    if (file.size > LESION_UPLOAD_MAX_BYTES) {
+      throw new Error("Uploaded photo exceeds 6MB. Please upload a smaller image.");
+    }
+    if (file.size <= LESION_UPLOAD_COMPRESSION_THRESHOLD_BYTES) {
+      return await fileToDataUrl(file);
+    }
+
+    const objectUrl = URL.createObjectURL(file);
+    try {
+      const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = () => reject(new Error("Unable to load uploaded image for compression."));
+        img.src = objectUrl;
+      });
+
+      const maxDimension = 1600;
+      const scale = Math.min(1, maxDimension / Math.max(image.width, image.height));
+      const width = Math.max(1, Math.round(image.width * scale));
+      const height = Math.max(1, Math.round(image.height * scale));
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        return await fileToDataUrl(file);
+      }
+      ctx.drawImage(image, 0, 0, width, height);
+
+      const compressedBlob = await new Promise<Blob | null>((resolve) => {
+        canvas.toBlob((blob) => resolve(blob), "image/jpeg", 0.8);
+      });
+      if (!compressedBlob) {
+        return await fileToDataUrl(file);
+      }
+      return await fileToDataUrl(compressedBlob);
+    } finally {
+      URL.revokeObjectURL(objectUrl);
+    }
+  }
+
+  async function persistSessionRequest(requestBody: Record<string, unknown>): Promise<void> {
+    const response = await fetch("/api/sessions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(requestBody),
+    });
+    const responseBody = await response.json().catch(() => ({} as Record<string, unknown>));
+    if (!response.ok) {
+      const message =
+        typeof responseBody?.error === "string" && responseBody.error.length > 0
+          ? responseBody.error
+          : "Failed to save session. Please try again.";
+      throw new Error(message);
+    }
+    if (typeof responseBody?.sessionCode !== "string" || responseBody.sessionCode.trim().length === 0) {
+      throw new Error("Session save response was incomplete. Please try again.");
+    }
+    setSessionCode(responseBody.sessionCode);
+    setShowShareLink(true);
+  }
+
   async function saveSession(historyResult: HistoryResponse) {
     if (!lockedProfile) {
       console.warn("[saveSession] Cannot save session: lockedProfile is missing");
-      return;
+      throw new Error("Profile is missing. Please restart the interview.");
     }
 
     const physicianId = typeof window !== "undefined" ? sessionStorage.getItem("physicianId") || "" : "";
-    
     if (!physicianId) {
-      setError("Physician ID not found. Please access this form through the invitation link provided by your physician.");
-      return;
+      throw new Error(
+        "Physician ID not found. Please access this form through the invitation link provided by your physician.",
+      );
     }
 
-    // Use provided patientName/patientEmail, or fall back to defaults if missing
-    // This ensures sessions are saved even if patient ended early
     const finalPatientName = patientName?.trim() || "Patient";
     const finalPatientEmail = patientEmail?.trim() || `patient-${Date.now()}@unknown.com`;
-    
     if (!patientName || !patientEmail) {
       console.warn("[saveSession] Patient identifiers missing; using fallback placeholders");
     }
 
-    // Calculate interview duration in seconds
-    const duration = interviewStartTimeRef.current ? Math.round((Date.now() - interviewStartTimeRef.current) / 1000) : 0;
-
-    // Use messages state directly as the source of truth
-    // messagesRef.current is synced via useEffect, but messages is the authoritative source
-    // Prefer messagesRef.current if it has more items (includes edits), otherwise use messages
-    const finalTranscript = (messagesRef.current.length >= messages.length && messagesRef.current.length > 0) 
-      ? messagesRef.current 
-      : (messages.length > 0 ? messages : []);
-    
-    // CRITICAL: Use messagesRef.current as the primary source since it's updated synchronously
-    // Fallback to messages state if ref is empty (shouldn't happen, but defensive)
     const sourceMessages = messagesRef.current.length > 0 ? messagesRef.current : messages;
-    
-    // Ensure transcript is always an array (even if empty)
     const transcriptToSave: InterviewMessage[] = Array.isArray(sourceMessages) ? sourceMessages : [];
-    
     if (process.env.NODE_ENV === "development") {
       console.log("[saveSession] Persisting interview transcript", {
         transcriptLength: transcriptToSave.length,
@@ -2503,8 +2581,6 @@ export default function Home() {
         messagesRefLength: messagesRef.current.length,
       });
     }
-    
-    // If transcript is empty, this is a problem - log warning
     if (transcriptToSave.length === 0) {
       console.error("[saveSession] ERROR: Transcript is empty at save time", {
         messagesCount: messages.length,
@@ -2514,130 +2590,72 @@ export default function Home() {
       });
     }
 
-    try {
-      const medPmhSummary = getMedPmhSummary();
-      // Persist durable image data only (base64 data URL), never blob: preview URLs.
-      let imageUrl: string | undefined;
-      if (selectedImage) {
-        // Convert file to base64
-        const reader = new FileReader();
-        reader.onloadend = () => {
-          const base64String = reader.result as string;
-          // Re-read transcript at this point to ensure we have the latest
-          const latestTranscript = messagesRef.current.length > 0 ? messagesRef.current : messages;
-          const finalTranscriptToSave: InterviewMessage[] = Array.isArray(latestTranscript) ? latestTranscript : [];
-          
-          const requestBody = {
-            physicianId,
-            patientName: finalPatientName,
-            patientEmail: finalPatientEmail,
-            chiefComplaint,
-            patientProfile: lockedProfile,
-            history: {
-              ...historyResult,
-              interviewLanguage: language,
-              labReportSummary: labReportSummary || undefined,
-              previousLabReportSummary: previousLabReportSummary || undefined,
-              formSummary: formSummary || undefined,
-              medPmhSummary: medPmhSummary || undefined,
-              patientUploads: buildPatientUploads(base64String),
-            },
-            imageSummary: imageSummary || undefined,
-            imageUrl: base64String,
-            imageName: selectedImage.name,
-            duration,
-            transcript: finalTranscriptToSave,
-          };
-          
-          if (process.env.NODE_ENV === "development") {
-            console.log("[saveSession] Sending POST request (with image)", {
-              hasTranscript: !!requestBody.transcript,
-              transcriptLength: requestBody.transcript?.length || 0,
-              bodyKeys: Object.keys(requestBody),
-            });
-          }
-          
-          fetch("/api/sessions", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(requestBody),
-          }).then((res) => {
-            if (res.ok) {
-              return res.json();
-            } else {
-              return res.json().then(err => {
-                throw new Error(err.error || "Failed to save session");
-              });
-            }
-          }).then((data) => {
-            if (data) {
-              setSessionCode(data.sessionCode);
-              setShowShareLink(true);
-            }
-          }).catch((err) => {
-            console.error("Failed to save session:", err);
-            setError(err.message || "Failed to save session. Please try again.");
-          });
-        };
-        reader.readAsDataURL(selectedImage);
-        return; // Async operation, return early
-      } else if (selectedImagePreview?.startsWith("data:")) {
-        imageUrl = selectedImagePreview;
-      }
+    const duration = interviewStartTimeRef.current
+      ? Math.round((Date.now() - interviewStartTimeRef.current) / 1000)
+      : 0;
+    const medPmhSummary = getMedPmhSummary();
 
-      // Calculate interview duration in seconds
-      const duration = interviewStartTimeRef.current ? Math.round((Date.now() - interviewStartTimeRef.current) / 1000) : 0;
-
-      // No image, save without it
-      const requestBody = {
-        physicianId,
-        patientName: finalPatientName,
-        patientEmail: finalPatientEmail,
-        chiefComplaint,
-        patientProfile: lockedProfile,
-        history: {
-          ...historyResult,
-          interviewLanguage: language,
-          labReportSummary: labReportSummary || undefined,
-          previousLabReportSummary: previousLabReportSummary || undefined,
-          formSummary: formSummary || undefined,
-          medPmhSummary: medPmhSummary || undefined,
-          patientUploads: buildPatientUploads(imageUrl),
-        },
-        imageSummary: imageSummary || undefined,
-        imageUrl: imageUrl,
-        imageName: undefined,
-        duration,
-        transcript: transcriptToSave,
-      };
-      
-      if (process.env.NODE_ENV === "development") {
-        console.log("[saveSession] Sending POST request (no image)", {
-          hasTranscript: !!requestBody.transcript,
-          transcriptLength: requestBody.transcript?.length || 0,
-          bodyKeys: Object.keys(requestBody),
-        });
-      }
-      
-      const response = await fetch("/api/sessions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(requestBody),
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        setSessionCode(data.sessionCode);
-        setShowShareLink(true);
-      } else {
-        const errorData = await response.json();
-        setError(errorData.error || "Failed to save session. Please try again.");
-      }
-    } catch (err) {
-      console.error("Failed to save session:", err);
-      setError(err instanceof Error ? err.message : "Failed to save session. Please try again.");
+    let imageUrl: string | undefined;
+    if (selectedImage) {
+      imageUrl = await prepareLesionImageDataUrl(selectedImage);
+    } else if (selectedImagePreview?.startsWith("data:")) {
+      imageUrl = selectedImagePreview;
     }
+
+    const requestBody = {
+      physicianId,
+      patientName: finalPatientName,
+      patientEmail: finalPatientEmail,
+      chiefComplaint,
+      patientProfile: lockedProfile,
+      history: {
+        ...historyResult,
+        interviewLanguage: language,
+        labReportSummary: labReportSummary || undefined,
+        previousLabReportSummary: previousLabReportSummary || undefined,
+        formSummary: formSummary || undefined,
+        medPmhSummary: medPmhSummary || undefined,
+        patientUploads: buildPatientUploads(imageUrl),
+      },
+      imageSummary: imageSummary || undefined,
+      imageUrl,
+      imageName: selectedImage?.name || undefined,
+      duration,
+      transcript: transcriptToSave,
+    };
+
+    if (process.env.NODE_ENV === "development") {
+      console.log("[saveSession] Sending POST request", {
+        hasImage: !!imageUrl,
+        hasTranscript: !!requestBody.transcript,
+        transcriptLength: requestBody.transcript?.length || 0,
+        bodyKeys: Object.keys(requestBody),
+      });
+    }
+
+    await persistSessionRequest(requestBody as Record<string, unknown>);
   }
+
+  const retrySessionSave = async () => {
+    if (!sessionSavePendingHistory || savingSession) return;
+    setSessionSaveError(null);
+    setSavingSession(true);
+    setStatus("saving");
+    statusRef.current = "saving";
+    try {
+      await saveSession(sessionSavePendingHistory);
+      setStatus("complete");
+      statusRef.current = "complete";
+      setSessionSavePendingHistory(null);
+    } catch (err) {
+      console.error("Retry session save failed:", err);
+      setSessionSaveError(
+        err instanceof Error ? err.message : "Failed to save session. Please try again.",
+      );
+    } finally {
+      setSavingSession(false);
+    }
+  };
 
   async function endInterview() {
     clearPauseTimers();
@@ -2837,6 +2855,9 @@ export default function Home() {
     setPatientResponse("");
     setFinalCommentsChoice(null);
     setError(null);
+    setSavingSession(false);
+    setSessionSaveError(null);
+    setSessionSavePendingHistory(null);
     // Keep chief complaint - don't clear it
     setLockedProfile(null);
     setInterviewStartTime(null);
@@ -4223,8 +4244,26 @@ export default function Home() {
                   You are done. You will soon be contacted by your physician.
                 </p>
               )}
+              {status === "saving" && (
+                <p className="mt-3 text-sm font-medium text-amber-700 animate-pulse">
+                  Finalizing and saving your interview...
+                </p>
+              )}
+              {sessionSaveError && (
+                <div className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                  <p>{sessionSaveError}</p>
+                  <button
+                    type="button"
+                    onClick={() => void retrySessionSave()}
+                    disabled={savingSession}
+                    className="mt-2 inline-flex items-center justify-center rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:bg-red-300"
+                  >
+                    {savingSession ? "Retrying..." : "Retry save"}
+                  </button>
+                </div>
+              )}
 
-              {status !== "complete" && (
+              {status !== "complete" && status !== "saving" && (
               <form
                 onSubmit={handlePatientSubmit}
                 className={`mt-5 flex flex-col gap-3 ${
@@ -4762,6 +4801,14 @@ export default function Home() {
                           URL.revokeObjectURL(selectedImagePreview);
                         }
                         if (file) {
+                          if (file.size > LESION_UPLOAD_MAX_BYTES) {
+                            setError("Uploaded photo exceeds 6MB. Please choose a smaller image.");
+                            setSelectedImage(null);
+                            setSelectedImagePreview(null);
+                            setImageSummary(null);
+                            setAnalyzingImage(false);
+                            return;
+                          }
                           const previewUrl = URL.createObjectURL(file);
                           setSelectedImage(file);
                           setSelectedImagePreview(previewUrl);
