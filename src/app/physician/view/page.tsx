@@ -1698,6 +1698,7 @@ function PhysicianViewContent() {
   const hpiLesionImageName = patientUploads?.lesionImage?.imageName || session.imageName || "";
 
   const hpiBodyDiagramArea = patientUploads?.bodyDiagram?.selectedArea;
+  const hpiLeftSoleMarkers = patientUploads?.bodyDiagram?.leftSoleMarkers || [];
   const hpiBodyDiagramParts = patientUploads?.bodyDiagram?.selectedParts || [];
   const hpiBodyDiagramNote = patientUploads?.bodyDiagram?.note || "";
 
@@ -1707,6 +1708,7 @@ function PhysicianViewContent() {
       hpiLesionImageUrl ||
       hpiBodyDiagramNote ||
       hpiBodyDiagramArea ||
+      hpiLeftSoleMarkers.length > 0 ||
       hpiBodyDiagramParts.length > 0,
   );
   const shouldShowLegacyImageAnalysisCard = Boolean(session.imageSummary && !patientUploads?.lesionImage);
@@ -1893,11 +1895,42 @@ function PhysicianViewContent() {
                         </div>
                       )}
 
-                      {(hpiBodyDiagramParts.length > 0 || hpiBodyDiagramArea || hpiBodyDiagramNote) && (
+                      {(hpiBodyDiagramParts.length > 0 || hpiBodyDiagramArea || hpiBodyDiagramNote || hpiLeftSoleMarkers.length > 0) && (
                         <div>
                           <p className="text-sm font-medium text-slate-700">
                             Body Diagram Selection
                           </p>
+                          {hpiLeftSoleMarkers.length > 0 && (
+                            <div className="mt-3">
+                              <p className="text-sm text-slate-700">Left sole pain mapping:</p>
+                              <div className="relative mt-2 h-72 w-56 overflow-hidden rounded-lg border border-slate-200 bg-white">
+                                <img
+                                  src="/Images/Left_Sole.png"
+                                  alt="Left sole pain diagram with selected markers"
+                                  className="absolute inset-0 h-full w-full object-contain"
+                                />
+                                {hpiLeftSoleMarkers.map((marker, index) => (
+                                  <div
+                                    key={`${marker.xPct}-${marker.yPct}-${index}`}
+                                    className="pointer-events-none absolute text-base font-bold text-red-600 drop-shadow-sm"
+                                    style={{
+                                      left: `${marker.xPct}%`,
+                                      top: `${marker.yPct}%`,
+                                      transform: "translate(-50%, -50%)",
+                                    }}
+                                  >
+                                    X
+                                  </div>
+                                ))}
+                              </div>
+                              <p className="mt-2 text-xs text-slate-500">
+                                Coordinates:{" "}
+                                {hpiLeftSoleMarkers
+                                  .map((marker) => `(${Math.round(marker.xPct)}, ${Math.round(marker.yPct)})`)
+                                  .join(", ")}
+                              </p>
+                            </div>
+                          )}
                           {hpiBodyDiagramArea && (
                             <p className="text-sm text-slate-700 mt-1">Selected area: {hpiBodyDiagramArea}</p>
                           )}

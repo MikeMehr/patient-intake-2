@@ -22,6 +22,15 @@ export const patientUploadsSchema = z.object({
   bodyDiagram: z
     .object({
       selectedArea: z.number().int().positive().optional(),
+      leftSoleMarkers: z
+        .array(
+          z.object({
+            xPct: z.number().min(0).max(100),
+            yPct: z.number().min(0).max(100),
+          }),
+        )
+        .max(30)
+        .optional(),
       selectedParts: z.array(patientUploadBodyPartSchema).max(30).optional(),
       note: z.string().min(1).max(500).optional(),
     })

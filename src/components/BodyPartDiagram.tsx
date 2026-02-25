@@ -1,12 +1,16 @@
 "use client";
 
 import type { BodyPart } from "@/lib/body-parts";
+import type { MouseEvent } from "react";
 
 interface BodyPartDiagramProps {
   bodyPart: BodyPart;
   side?: "left" | "right";
   selectedArea?: number;
   onAreaSelect?: (area: number) => void;
+  markers?: Array<{ xPct: number; yPct: number }>;
+  onMarkerAdd?: (marker: { xPct: number; yPct: number }) => void;
+  onMarkersClear?: () => void;
 }
 
 interface Area {
@@ -125,13 +129,28 @@ export default function BodyPartDiagram({
   side,
   selectedArea,
   onAreaSelect,
+  markers = [],
+  onMarkerAdd,
+  onMarkersClear,
 }: BodyPartDiagramProps) {
   const areas = bodyPartAreas[bodyPart] || [];
+  const isLeftSoleDiagram = bodyPart === "foot" && side === "left";
 
   const handleAreaClick = (areaNumber: number) => {
     if (onAreaSelect) {
       onAreaSelect(areaNumber);
     }
+  };
+
+  const handleLeftSoleClick = (event: MouseEvent<HTMLDivElement>) => {
+    if (!onMarkerAdd) return;
+    const rect = event.currentTarget.getBoundingClientRect();
+    if (!rect.width || !rect.height) return;
+    const x = ((event.clientX - rect.left) / rect.width) * 100;
+    const y = ((event.clientY - rect.top) / rect.height) * 100;
+    const xPct = Math.max(0, Math.min(100, Number(x.toFixed(1))));
+    const yPct = Math.max(0, Math.min(100, Number(y.toFixed(1))));
+    onMarkerAdd({ xPct, yPct });
   };
 
   // Simple SVG representation - in a real app, you'd use more detailed anatomical diagrams
@@ -141,6 +160,79 @@ export default function BodyPartDiagram({
     const viewBox = "0 0 100 100";
 
     switch (bodyPart) {
+      case "foot":
+        if (side === "left") {
+          return (
+            <div
+              role="button"
+              tabIndex={0}
+              aria-label="Left sole pain diagram"
+              onClick={handleLeftSoleClick}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                }
+              }}
+              className="relative h-full w-full overflow-hidden rounded-xl border border-slate-300 bg-white cursor-crosshair"
+            >
+              <img
+                src="/Images/Left_Sole.png"
+                alt="Left sole pain diagram"
+                className="absolute inset-0 h-full w-full object-contain"
+              />
+              {markers.map((marker, index) => (
+                <div
+                  key={`${marker.xPct}-${marker.yPct}-${index}`}
+                  className="pointer-events-none absolute text-base font-bold text-red-600 drop-shadow-sm"
+                  style={{
+                    left: `${marker.xPct}%`,
+                    top: `${marker.yPct}%`,
+                    transform: "translate(-50%, -50%)",
+                  }}
+                >
+                  X
+                </div>
+              ))}
+            </div>
+          );
+        }
+        return (
+          <svg viewBox={viewBox} className="w-full h-full">
+            <path
+              d="M 30 60 Q 50 50 70 60 Q 50 70 30 60"
+              fill="#e5e7eb"
+              stroke="#374151"
+              strokeWidth="2"
+            />
+            <rect x="25" y="15" width="10" height="20" rx="5" fill="#e5e7eb" stroke="#374151" strokeWidth="2" />
+            <rect x="40" y="10" width="8" height="25" rx="4" fill="#e5e7eb" stroke="#374151" strokeWidth="2" />
+            <rect x="55" y="12" width="8" height="23" rx="4" fill="#e5e7eb" stroke="#374151" strokeWidth="2" />
+            <rect x="68" y="15" width="7" height="20" rx="3" fill="#e5e7eb" stroke="#374151" strokeWidth="2" />
+            <rect x="78" y="20" width="6" height="15" rx="3" fill="#e5e7eb" stroke="#374151" strokeWidth="2" />
+            {areas.map((area, idx) => (
+              <g key={idx}>
+                <circle
+                  cx={area.x}
+                  cy={area.y}
+                  r="2.4"
+                  fill={selectedArea === idx + 1 ? "#10b981" : "#fbbf24"}
+                  stroke="#374151"
+                  strokeWidth="0.75"
+                  className="cursor-pointer hover:opacity-80"
+                  onClick={() => handleAreaClick(idx + 1)}
+                />
+                <text
+                  x={area.x}
+                  y={area.y + 1.8}
+                  textAnchor="middle"
+                  className="text-[4px] font-bold fill-slate-900 pointer-events-none"
+                >
+                  {area.label}
+                </text>
+              </g>
+            ))}
+          </svg>
+        );
       case "wrist":
         if (side === "right") {
           return (
@@ -297,8 +389,26 @@ export default function BodyPartDiagram({
         )}
       </div>
       <div className="text-xs text-slate-600 text-center">
-        Click on a numbered area to indicate where you feel pain
+        {isLeftSoleDiagram
+          ? "Click on the sole image to place X marks where you feel pain"
+          : "Click on a numbered area to indicate where you feel pain"}
       </div>
+      {isLeftSoleDiagram && markers.length > 0 && (
+        <div className="flex items-center gap-2">
+          <div className="text-sm font-medium text-emerald-600">
+            Marked: {markers.length} point{markers.length === 1 ? "" : "s"}
+          </div>
+          {onMarkersClear && (
+            <button
+              type="button"
+              onClick={onMarkersClear}
+              className="rounded-md border border-slate-300 px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
+            >
+              Clear marks
+            </button>
+          )}
+        </div>
+      )}
       {selectedArea && (
         <div className="text-sm font-medium text-emerald-600">
           Selected: Area {selectedArea}
