@@ -1705,6 +1705,17 @@ function parseInterviewTurn(payload: string) {
             fixed[field] = fixed[field].slice(0, maxLen);
           }
         }
+
+        // Normalize empty required arrays for strict schema compatibility.
+        if (!Array.isArray(fixed.positives) || fixed.positives.length === 0) {
+          fixed.positives = ["Patient-reported symptoms documented in summary."];
+        }
+        if (!Array.isArray(fixed.negatives) || fixed.negatives.length === 0) {
+          fixed.negatives = ["No additional pertinent negatives documented."];
+        }
+        if (!Array.isArray(fixed.plan) || fixed.plan.length === 0) {
+          fixed.plan = ["Physician review and finalize management plan."];
+        }
       }
       
       // Try parsing again with fixed data

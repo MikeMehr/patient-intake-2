@@ -2017,6 +2017,10 @@ export default function Home() {
     setStatus("awaitingAi");
 
     try {
+      // Start each interview with a clean photo prompt state.
+      setImageSummary(null);
+      setAnalyzingImage(false);
+
       const physicianIdToUse =
         physicianIdValue || (typeof window !== "undefined" ? sessionStorage.getItem("physicianId") : null);
       if (!physicianIdToUse) {
@@ -2956,12 +2960,15 @@ export default function Home() {
         "can you upload",
         "would you like to upload",
       ];
-      const isRequestingPhoto = photoKeywords.some((keyword) =>
-        questionLower.includes(keyword),
-      );
+      const hasPhotoVerbPair =
+        /\b(upload|share|send|take)\b/.test(questionLower) &&
+        /\b(photo|picture|image)\b/.test(questionLower);
+      const isRequestingPhoto =
+        photoKeywords.some((keyword) => questionLower.includes(keyword)) ||
+        hasPhotoVerbPair;
       
       // Show image prompt if AI is requesting a photo and no image has been uploaded yet
-      if (isRequestingPhoto && !selectedImage && !imageSummary) {
+      if (isRequestingPhoto && !selectedImage && !selectedImagePreview) {
         setShowImagePrompt(true);
         setWantsToUploadImage(null);
       }
