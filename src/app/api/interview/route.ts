@@ -131,8 +131,8 @@ VIRTUAL PHYSICAL EXAM GUIDANCE:
 - CRITICAL: ALL patient-reported physical exam findings MUST be documented in the physicalFindings array, even if they are self-reported rather than directly observed.
 - In Physical exam questionaire don't group different body parts into one question. Ask about each body part separately.
 - For MSK cases (e.g., low back pain, joint pain, neck pain, shoulder pain, knee pain):
-  * When asking about pain location, ALWAYS use numbered areas on a body diagram. Say: "Looking at the diagram of your [body part], which numbered area (1, 2, 3, etc.) corresponds to where you feel the pain? Please click on the numbered area on the diagram or tell me the number."
-  * The diagram will automatically appear when you ask about pain location - you don't need to request it, just ask which numbered area.
+  * When asking about pain location, ask the patient to mark the painful spot on the body diagram/photo. Say: "Looking at the diagram/photo of your [body part], please mark where you feel the pain."
+  * The diagram will automatically appear when you ask about pain location - you don't need to request it, just instruct the patient to mark the area.
   * CRITICAL: Always assess range of motion (ROM) for MSK complaints. Ask specific ROM questions:
     - For joints (wrist, elbow, shoulder, knee, ankle): "Can you move your [joint] through its full range of motion? Can you fully straighten and bend it? Does any particular movement cause pain?"
     - For back/neck: "Can you bend forward (flexion)? Can you bend backward (extension)? Can you rotate? Does any of these movements cause pain?"
@@ -1268,7 +1268,7 @@ If the patient asks about a lab value or test result NOT mentioned in these summ
     ? `\n\nLANGUAGE PREFERENCE: Conduct all patient-facing questions and messages in ${languageName}. If you cannot reliably produce ${languageName}, fall back to English. Do NOT mix languages.`
     : "";
 
-  // MSK complaints: ensure pain location is assessed using the numbered body diagram.
+  // MSK complaints: ensure pain location is assessed using the body diagram/photo.
   // Client UI shows the diagram only when the assistant explicitly asks location, so
   // we must reliably generate a location question during the interview.
   const mskBodyPartSet = new Set([
@@ -1297,7 +1297,7 @@ If the patient asks about a lab value or test result NOT mentioned in these summ
     isMskComplaint && !forceSummary && allQuestionsAsked.length >= 1 && !locationAlreadyCovered;
   const mskBodyPartName = detectedForMsk[0]?.name || "affected area";
   const mskLocationDirective = shouldForceMskLocationNext
-    ? `\n\nCRITICAL MSK LOCATION (DIAGRAM REQUIRED):\n- This is a musculoskeletal pain complaint and location has NOT been assessed yet.\n- Your NEXT question MUST ask the patient to identify the pain location using the numbered body diagram.\n- Use this exact style: \"Looking at the diagram of your ${mskBodyPartName}, which numbered area (1, 2, 3, etc.) corresponds to where you feel the pain? Please click the numbered area or tell me the number.\"\n- IMPORTANT: If the patient has already clearly described the location in their own words, do NOT re-ask; proceed to the next highest-yield MSK question instead (ROM, neurologic symptoms, red flags).\n`
+    ? `\n\nCRITICAL MSK LOCATION (DIAGRAM REQUIRED):\n- This is a musculoskeletal pain complaint and location has NOT been assessed yet.\n- Your NEXT question MUST ask the patient to identify the pain location using the body diagram/photo.\n- Use this exact style: \"Looking at the diagram/photo of your ${mskBodyPartName}, please mark where you feel the pain.\"\n- IMPORTANT: If the patient has already clearly described the location in their own words, do NOT re-ask; proceed to the next highest-yield MSK question instead (ROM, neurologic symptoms, red flags).\n`
     : "";
 
   const complaintClass = classifyComplaint(currentComplaint || chiefComplaint);

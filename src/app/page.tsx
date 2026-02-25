@@ -2139,7 +2139,6 @@ export default function Home() {
       } else {
         trimmed = `Left sole markers: ${markerSummary}`;
       }
-      setSelectedDiagramMarkers([]);
     }
 
     const lastMessage = messagesRef.current[messagesRef.current.length - 1];
@@ -2479,11 +2478,9 @@ export default function Home() {
 
     try {
       const medPmhSummary = getMedPmhSummary();
-      // Convert image to base64 if available
+      // Persist durable image data only (base64 data URL), never blob: preview URLs.
       let imageUrl: string | undefined;
-      if (selectedImagePreview) {
-        imageUrl = selectedImagePreview; // Already a data URL
-      } else if (selectedImage) {
+      if (selectedImage) {
         // Convert file to base64
         const reader = new FileReader();
         reader.onloadend = () => {
@@ -2546,6 +2543,8 @@ export default function Home() {
         };
         reader.readAsDataURL(selectedImage);
         return; // Async operation, return early
+      } else if (selectedImagePreview?.startsWith("data:")) {
+        imageUrl = selectedImagePreview;
       }
 
       // Calculate interview duration in seconds
@@ -2569,7 +2568,7 @@ export default function Home() {
         },
         imageSummary: imageSummary || undefined,
         imageUrl: imageUrl,
-        imageName: selectedImage?.name || undefined,
+        imageName: undefined,
         duration,
         transcript: transcriptToSave,
       };
@@ -2967,12 +2966,19 @@ export default function Home() {
         setWantsToUploadImage(null);
       }
       
-      // Check if the AI is asking about pain location with numbered areas
+      // Check if the AI is asking about pain location on a diagram/photo.
       const locationKeywords = [
         "numbered area",
         "which area",
         "diagram",
         "which number",
+        "mark where",
+        "mark the area",
+        "mark on the diagram",
+        "mark on the photo",
+        "mark on the image",
+        "place an x",
+        "place a mark",
         "where exactly",
         "where is the pain",
         "point to",
@@ -4651,7 +4657,7 @@ export default function Home() {
                   </div>
                 )}
 
-                {showImagePrompt && wantsToUploadImage === true && (
+                {showImagePrompt && wantsToUploadImage === true && !selectedImage && !selectedImagePreview && (
                   <div className="mt-2 space-y-2 rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3 text-xs text-slate-700">
                     <label
                       htmlFor="lesion-photo"
@@ -4717,39 +4723,65 @@ export default function Home() {
                       }}
                       className="block w-full text-xs text-slate-700 file:mr-3 file:rounded-2xl file:border-0 file:bg-slate-900 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-white file:hover:bg-slate-800"
                     />
-                    {selectedImage && (
-                      <p className="text-[11px] text-slate-600">
-                        Selected file:{" "}
-                        <span className="font-medium">{selectedImage.name}</span>
-                      </p>
-                    )}
-                    {selectedImagePreview && (
-                      <div className="mt-2">
-                        <p className="text-[11px] text-slate-600">Preview:</p>
-                        <img
-                          src={selectedImagePreview}
-                          alt="Uploaded photo preview"
-                          className="mt-1 max-h-40 w-auto rounded-2xl border border-slate-200 object-contain"
-                        />
-                      </div>
-                    )}
-                    {analyzingImage && (
-                      <p className="mt-1 text-[11px] text-slate-500">
-                        Analyzing photo…
-                      </p>
-                    )}
-                    {imageSummary && !analyzingImage && (
-                      <p className="mt-1 text-[11px] text-slate-600">
-                        AI image summary:{" "}
-                        <span className="font-medium">{imageSummary}</span>
-                      </p>
-                    )}
                     <p className="mt-1 text-[11px] text-slate-500">
                       This photo is optional. A brief description of the visible findings will
                       be shared with the assistant to support its assessment and with your clinician.
                     </p>
                   </div>
                 )}
+                {showImagePrompt &&
+                  wantsToUploadImage === true &&
+                  (selectedImage || selectedImagePreview || analyzingImage || imageSummary) && (
+                    <div className="mt-2 space-y-2 rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3 text-xs text-slate-700">
+                      <p className="text-xs font-medium text-slate-800">
+                        Photo uploaded
+                      </p>
+                      {selectedImage && (
+                        <p className="text-[11px] text-slate-600">
+                          Selected file:{" "}
+                          <span className="font-medium">{selectedImage.name}</span>
+                        </p>
+                      )}
+                      {selectedImagePreview && (
+                        <div className="mt-2">
+                          <p className="text-[11px] text-slate-600">Preview:</p>
+                          <img
+                            src={selectedImagePreview}
+                            alt="Uploaded photo preview"
+                            className="mt-1 max-h-40 w-auto rounded-2xl border border-slate-200 object-contain"
+                          />
+                        </div>
+                      )}
+                      {analyzingImage && (
+                        <p className="mt-1 text-[11px] text-slate-500">
+                          Analyzing photo…
+                        </p>
+                      )}
+                      {imageSummary && !analyzingImage && (
+                        <p className="mt-1 text-[11px] text-slate-600">
+                          AI image summary:{" "}
+                          <span className="font-medium">{imageSummary}</span>
+                        </p>
+                      )}
+                      <div className="pt-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (selectedImagePreview) {
+                              URL.revokeObjectURL(selectedImagePreview);
+                            }
+                            setSelectedImage(null);
+                            setSelectedImagePreview(null);
+                            setImageSummary(null);
+                            setAnalyzingImage(false);
+                          }}
+                          className="inline-flex items-center justify-center rounded-2xl border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
+                        >
+                          Remove photo
+                        </button>
+                      </div>
+                    </div>
+                  )}
               </form>
               )}
             </section>
