@@ -1743,6 +1743,7 @@ function PhysicianViewContent() {
   );
   const shouldRenderLeftSoleDiagram =
     hpiDisplayLeftSoleMarkers.length > 0 || hasLeftSoleSelection || hasLeftSoleNarrative;
+  const interviewEndedEarly = session.history?.interviewEndedEarly === true;
 
   const hasPatientUploadedContext = Boolean(
     hpiMedPmhSummary ||
@@ -1876,6 +1877,11 @@ function PhysicianViewContent() {
               <p className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-[15px] text-amber-900">
                 {CLINICAL_ASSISTIVE_DISCLAIMER}
               </p>
+              {interviewEndedEarly && (
+                <p className="mb-4 rounded-md border border-orange-200 bg-orange-50 px-3 py-2 text-sm font-medium text-orange-900">
+                  Interview ended early by patient request.
+                </p>
+              )}
               <div className="space-y-4">
                 <div>
                   <p className="text-sm font-medium text-slate-700 mb-2">HPI</p>

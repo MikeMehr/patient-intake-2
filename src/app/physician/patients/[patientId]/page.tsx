@@ -240,6 +240,7 @@ export default function PatientChartPage() {
                 const physicalFindings = Array.isArray(hpi?.physicalFindings) ? (hpi.physicalFindings as string[]) : [];
                 const positives = Array.isArray(hpi?.positives) ? (hpi.positives as string[]) : [];
                 const negatives = Array.isArray(hpi?.negatives) ? (hpi.negatives as string[]) : [];
+                const interviewEndedEarly = hpi?.interviewEndedEarly === true;
                 const patientUploads = hpi?.patientUploads || {};
                 const lesionSummary = patientUploads?.lesionImage?.summary || "";
                 const lesionImageUrl = patientUploads?.lesionImage?.imageUrl || "";
@@ -286,6 +287,11 @@ export default function PatientChartPage() {
                     </summary>
 
                     <div className="mt-4 space-y-4 text-sm text-slate-800">
+                      {interviewEndedEarly && (
+                        <div className="rounded-md border border-orange-200 bg-orange-50 px-3 py-2 text-sm font-medium text-orange-900">
+                          Interview ended early by patient request.
+                        </div>
+                      )}
                       <div>
                         <div className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Summary</div>
                         <div className="mt-1 whitespace-pre-wrap">{hpi?.summary || "—"}</div>

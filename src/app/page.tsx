@@ -2676,6 +2676,7 @@ export default function Home() {
             investigations: turn.investigations,
             assessment: turn.assessment,
             plan: turn.plan,
+            interviewEndedEarly: true,
           };
           setResult(historyResult);
           setEndedEarly(true); // Mark that patient ended interview early
@@ -2720,6 +2721,7 @@ export default function Home() {
             investigations: [],
             assessment: "Interview ended early by patient request.",
             plan: [],
+            interviewEndedEarly: true,
           };
           setResult(historyResult);
           setEndedEarly(true); // Mark that patient ended interview early
@@ -2767,6 +2769,7 @@ export default function Home() {
             investigations: [],
             assessment: "Interview ended early. Summary generated from available information.",
             plan: [],
+            interviewEndedEarly: true,
           };
           setResult(historyResult);
           setEndedEarly(true); // Mark that patient ended interview early

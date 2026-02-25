@@ -63,6 +63,8 @@ export const historyResponseSchema = z.object({
   interviewLanguage: z.string().min(2).max(12).optional(),
   // English-only view for clinician; persisted to avoid repeated translation calls.
   patientFinalQuestionsCommentsEnglish: z.string().min(1).max(4000).optional(),
+  // True when the patient explicitly ended the interview before normal completion.
+  interviewEndedEarly: z.boolean().optional(),
   // Optional patient-uploaded clinical context persisted with history.
   patientUploads: patientUploadsSchema.optional(),
 });
