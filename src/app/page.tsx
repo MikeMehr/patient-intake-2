@@ -4204,7 +4204,7 @@ export default function Home() {
                 )}
               </div>
               {status === "complete" && (
-                <p className="mt-3 text-sm font-medium text-red-600">
+                <p className="mt-3 text-sm font-medium text-emerald-600">
                   You are done. You will soon be contacted by your physician.
                 </p>
               )}

@@ -11,6 +11,19 @@ type Encounter = {
   hpi: any;
 };
 
+type LabRequisition = {
+  id: string;
+  sessionCode: string;
+  patientName: string | null;
+  patientEmail: string | null;
+  physicianName: string | null;
+  clinicName: string | null;
+  clinicAddress: string | null;
+  labs: unknown;
+  instructions: string | null;
+  createdAt: string;
+};
+
 type PatientPayload = {
   id: string;
   fullName: string;
@@ -93,6 +106,7 @@ export default function PatientChartPage() {
   const [error, setError] = useState<string | null>(null);
   const [patient, setPatient] = useState<PatientPayload | null>(null);
   const [encounters, setEncounters] = useState<Encounter[]>([]);
+  const [labRequisitions, setLabRequisitions] = useState<LabRequisition[]>([]);
 
   const age = useMemo(() => computeAgeFromDob(patient?.dateOfBirth || null), [patient?.dateOfBirth]);
 
@@ -131,6 +145,21 @@ export default function PatientChartPage() {
             }))
           : [];
         setEncounters(mapped);
+        const mappedLabRequisitions: LabRequisition[] = Array.isArray(data?.labRequisitions)
+          ? data.labRequisitions.map((item: any) => ({
+              id: String(item.id),
+              sessionCode: String(item.sessionCode || ""),
+              patientName: item.patientName ?? null,
+              patientEmail: item.patientEmail ?? null,
+              physicianName: item.physicianName ?? null,
+              clinicName: item.clinicName ?? null,
+              clinicAddress: item.clinicAddress ?? null,
+              labs: item.labs,
+              instructions: item.instructions ?? null,
+              createdAt: String(item.createdAt),
+            }))
+          : [];
+        setLabRequisitions(mappedLabRequisitions);
       } catch (err) {
         if (cancelled) return;
         setError(err instanceof Error ? err.message : "Failed to load patient chart");
@@ -455,6 +484,78 @@ export default function PatientChartPage() {
                               )}
                             </div>
                           )}
+                        </div>
+                      )}
+                    </div>
+                  </details>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        <div className="mt-6 bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden">
+          <div className="px-6 py-4 border-b border-slate-200">
+            <h2 className="text-lg font-semibold text-slate-900">
+              Lab Requisitions ({labRequisitions.length})
+            </h2>
+            <p className="text-sm text-slate-600 mt-1">Saved requisitions from encounter sessions.</p>
+          </div>
+
+          {labRequisitions.length === 0 ? (
+            <div className="px-6 py-6 text-sm text-slate-600">No lab requisitions yet.</div>
+          ) : (
+            <div className="divide-y divide-slate-200">
+              {labRequisitions.map((req) => {
+                const labItems = Array.isArray(req.labs) ? req.labs : [];
+                return (
+                  <details key={req.id} className="group px-6 py-4">
+                    <summary className="cursor-pointer list-none select-none flex items-center justify-between gap-4">
+                      <div className="min-w-0">
+                        <div className="text-sm font-medium text-slate-900 truncate">
+                          {formatDateTime(req.createdAt)}
+                        </div>
+                        <div className="text-xs text-slate-500 truncate">
+                          Session: {req.sessionCode || "—"}
+                          {req.physicianName ? ` • Physician: ${req.physicianName}` : ""}
+                        </div>
+                      </div>
+                      <div className="shrink-0 text-slate-500 transition-transform group-open:rotate-180">
+                        ▼
+                      </div>
+                    </summary>
+
+                    <div className="mt-4 space-y-4 text-sm text-slate-800">
+                      <div>
+                        <div className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Labs</div>
+                        {labItems.length === 0 ? (
+                          <div className="mt-1">—</div>
+                        ) : (
+                          <ul className="mt-1 list-disc pl-5 space-y-1">
+                            {labItems.map((item, idx) => (
+                              <li key={idx} className="whitespace-pre-wrap">
+                                {typeof item === "string" ? item : JSON.stringify(item)}
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+
+                      {req.instructions && req.instructions.trim().length > 0 && (
+                        <div>
+                          <div className="text-xs font-semibold text-slate-600 uppercase tracking-wide">
+                            Instructions
+                          </div>
+                          <div className="mt-1 whitespace-pre-wrap">{req.instructions}</div>
+                        </div>
+                      )}
+
+                      {(req.clinicName || req.clinicAddress) && (
+                        <div>
+                          <div className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Clinic</div>
+                          <div className="mt-1 whitespace-pre-wrap">
+                            {[req.clinicName, req.clinicAddress].filter(Boolean).join(" — ")}
+                          </div>
                         </div>
                       )}
                     </div>

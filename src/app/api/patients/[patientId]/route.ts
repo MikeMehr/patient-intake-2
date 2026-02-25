@@ -162,6 +162,40 @@ export async function GET(
       [id],
     );
 
+    const sessionCodes = Array.from(
+      new Set(
+        encRes.rows
+          .map((row) => (typeof row.source_session_code === "string" ? row.source_session_code.trim() : ""))
+          .filter((value) => value.length > 0),
+      ),
+    );
+
+    const labRes =
+      sessionCodes.length > 0
+        ? await query<{
+            id: string;
+            session_code: string;
+            patient_name: string;
+            patient_email: string;
+            physician_name: string | null;
+            clinic_name: string | null;
+            clinic_address: string | null;
+            labs: any;
+            additional_instructions: string | null;
+            created_at: Date;
+          }>(
+            `
+            SELECT id, session_code, patient_name, patient_email,
+                   physician_name, clinic_name, clinic_address,
+                   labs, additional_instructions, created_at
+            FROM lab_requisitions
+            WHERE session_code = ANY($1::text[])
+            ORDER BY created_at DESC
+            `,
+            [sessionCodes],
+          )
+        : { rows: [] };
+
     let hinMasked: string | null = null;
     if (patient.hin_enc && canDecryptHin()) {
       try {
@@ -216,6 +250,18 @@ export async function GET(
               }
             : e.hpi_json,
         createdAt: toIso(e.created_at),
+      })),
+      labRequisitions: labRes.rows.map((row) => ({
+        id: row.id,
+        sessionCode: row.session_code,
+        patientName: row.patient_name,
+        patientEmail: row.patient_email,
+        physicianName: row.physician_name,
+        clinicName: row.clinic_name,
+        clinicAddress: row.clinic_address,
+        labs: row.labs,
+        instructions: row.additional_instructions,
+        createdAt: toIso(row.created_at),
       })),
     });
     logRequestMeta("/api/patients/[patientId]", requestId, status, Date.now() - started);
