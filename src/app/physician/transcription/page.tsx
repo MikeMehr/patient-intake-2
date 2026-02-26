@@ -489,6 +489,16 @@ export default function PhysicianTranscriptionPage() {
     setTranscript("");
   }
 
+  function handleSelectPatient(patient: PatientSearchResult) {
+    setSelectedPatient(patient);
+    setNewPatientFullName("");
+    setNewPatientDob("");
+    setChiefComplaint("");
+    clearEditorState();
+    setActionError(null);
+    setActionSuccess(null);
+  }
+
   async function deleteSnapshot(item: TranscriptionListItem) {
     if (!window.confirm("Delete this snapshot from Recent snapshots?")) return;
     setDeletingSnapshotId(item.transcriptionSessionId);
@@ -580,18 +590,33 @@ export default function PhysicianTranscriptionPage() {
                   </button>
                 </div>
                 {patientSearchError && <p className="text-sm text-red-700">{patientSearchError}</p>}
-                {patientResults.length > 0 && (
+                {selectedPatient && (
+                  <div className="rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold text-emerald-900">Selected patient</p>
+                      <p className="text-sm text-emerald-900">{selectedPatient.fullName}</p>
+                      <p className="text-xs text-emerald-800">
+                        DOB: {selectedPatient.dateOfBirth || "—"} •{" "}
+                        {selectedPatient.primaryPhone || selectedPatient.email || "No contact"}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedPatient(null)}
+                      className="px-3 py-1.5 text-xs font-medium text-emerald-900 bg-white border border-emerald-300 rounded-lg hover:bg-emerald-100"
+                    >
+                      Change patient
+                    </button>
+                  </div>
+                )}
+                {!selectedPatient && patientResults.length > 0 && (
                   <div className="space-y-2">
                     {patientResults.map((p) => (
                       <button
                         key={p.id}
                         type="button"
-                        onClick={() => setSelectedPatient(p)}
-                        className={`w-full text-left rounded-lg border px-3 py-2 ${
-                          selectedPatient?.id === p.id
-                            ? "border-slate-900 bg-slate-50"
-                            : "border-slate-200 hover:bg-slate-50"
-                        }`}
+                        onClick={() => handleSelectPatient(p)}
+                        className="w-full text-left rounded-lg border border-slate-200 px-3 py-2 hover:bg-slate-50"
                       >
                         <div className="text-sm font-medium text-slate-900">{p.fullName}</div>
                         <div className="text-xs text-slate-500">
