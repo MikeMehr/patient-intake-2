@@ -938,6 +938,13 @@
 						type: "HAA_LAB_REQUISITION_SAVED",
 						requisitionId: result.data.requisitionId || null
 					});
+					if (result.data && result.data.warning) {
+						if (statusNode) {
+							statusNode.textContent = "Saved. Opening browser print dialog for full requisition PDF.";
+						}
+						window.print();
+						return;
+					}
 					if (result.data && result.data.pdfBase64) {
 						if (statusNode) statusNode.textContent = "Saved. Preparing PDF download...";
 						return downloadFromBase64Pdf(

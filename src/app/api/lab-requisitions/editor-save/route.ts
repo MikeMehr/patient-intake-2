@@ -254,9 +254,11 @@ export async function POST(request: NextRequest) {
       success: true,
       requisitionId: created.id,
       createdAt: created.created_at,
-      pdfBase64: pdfBuffer.toString("base64"),
+      pdfBase64: sawDependencyFailure ? null : pdfBuffer.toString("base64"),
       fileName: `lab-requisition-${created.id}.pdf`,
-      downloadUrl: `/api/lab-requisitions?code=${encodeURIComponent(editorSession.session_code)}&id=${created.id}`,
+      downloadUrl: sawDependencyFailure
+        ? null
+        : `/api/lab-requisitions?code=${encodeURIComponent(editorSession.session_code)}&id=${created.id}`,
       warning: sawDependencyFailure
         ? "Saved with fallback PDF because server-side browser rendering is unavailable."
         : null,
