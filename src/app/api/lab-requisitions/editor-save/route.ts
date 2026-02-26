@@ -137,9 +137,13 @@ function isPdfRenderDependencyFailure(error: unknown): boolean {
   const lowered = message.toLowerCase();
   return (
     lowered.includes("libnspr4.so") ||
+    lowered.includes("error while loading shared libraries") ||
+    lowered.includes("exitcode=127") ||
+    lowered.includes("target page, context or browser has been closed") ||
     lowered.includes("browsertype.launch") ||
     lowered.includes("chromium runtime is unavailable") ||
-    lowered.includes("failed to launch browser")
+    lowered.includes("failed to launch browser") ||
+    lowered.includes("no browser launch attempts available")
   );
 }
 
@@ -183,22 +187,24 @@ export async function POST(request: NextRequest) {
     const formUrls = getFormUrlCandidates(origin);
     let pdfBuffer: Buffer | null = null;
     let lastError: unknown = null;
-    let sawDependencyFailure = false;
+    let usedFallbackPdf = false;
     for (const formUrl of formUrls) {
       try {
         pdfBuffer = await renderLabRequisitionPdf({ formUrl, payload });
         break;
       } catch (error) {
         lastError = error;
-        sawDependencyFailure = sawDependencyFailure || isPdfRenderDependencyFailure(error);
+        usedFallbackPdf = usedFallbackPdf || isPdfRenderDependencyFailure(error);
         console.error("[lab-requisitions/editor-save] PDF render failed for URL:", formUrl, error);
       }
     }
     if (!pdfBuffer) {
-      if (!sawDependencyFailure) {
-        throw lastError instanceof Error
-          ? lastError
-          : new Error("Failed to render lab requisition PDF.");
+      usedFallbackPdf = true;
+      if (lastError) {
+        console.error(
+          "[lab-requisitions/editor-save] All PDF render attempts failed, using fallback PDF.",
+          lastError,
+        );
       }
       pdfBuffer = buildFallbackPdf([
         "Lab requisition saved (fallback PDF).",
@@ -254,13 +260,13 @@ export async function POST(request: NextRequest) {
       success: true,
       requisitionId: created.id,
       createdAt: created.created_at,
-      pdfBase64: sawDependencyFailure ? null : pdfBuffer.toString("base64"),
+      pdfBase64: usedFallbackPdf ? null : pdfBuffer.toString("base64"),
       fileName: `lab-requisition-${created.id}.pdf`,
-      downloadUrl: sawDependencyFailure
+      downloadUrl: usedFallbackPdf
         ? null
         : `/api/lab-requisitions?code=${encodeURIComponent(editorSession.session_code)}&id=${created.id}`,
-      warning: sawDependencyFailure
-        ? "Saved with fallback PDF because server-side browser rendering is unavailable."
+      warning: usedFallbackPdf
+        ? "Saved with fallback PDF because server-side rendering is unavailable."
         : null,
     });
   } catch (error) {

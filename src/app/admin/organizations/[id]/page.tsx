@@ -11,6 +11,7 @@ interface Organization {
   businessAddress: string;
   phone: string | null;
   fax: string | null;
+  websiteUrl: string | null;
   isActive: boolean;
   createdAt: string;
 }
@@ -35,6 +36,18 @@ export default function OrganizationDetailPage() {
   const [providers, setProviders] = useState<Provider[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [orgForm, setOrgForm] = useState({
+    name: "",
+    email: "",
+    businessAddress: "",
+    phone: "",
+    fax: "",
+    websiteUrl: "",
+    isActive: true,
+  });
+  const [savingOrg, setSavingOrg] = useState(false);
+  const [orgSaveError, setOrgSaveError] = useState<string | null>(null);
+  const [orgSaveSuccess, setOrgSaveSuccess] = useState<string | null>(null);
 
   const [oscarLoading, setOscarLoading] = useState(false);
   const [oscarError, setOscarError] = useState<string | null>(null);
@@ -194,6 +207,15 @@ export default function OrganizationDetailPage() {
         setError(data.error);
       } else {
         setOrganization(data.organization);
+        setOrgForm({
+          name: data.organization?.name || "",
+          email: data.organization?.email || "",
+          businessAddress: data.organization?.businessAddress || "",
+          phone: data.organization?.phone || "",
+          fax: data.organization?.fax || "",
+          websiteUrl: data.organization?.websiteUrl || "",
+          isActive: Boolean(data.organization?.isActive),
+        });
         setProviders(data.providers || []);
       }
     } catch (err) {
@@ -201,6 +223,40 @@ export default function OrganizationDetailPage() {
       setError("Failed to load organization details");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const saveOrganizationDetails = async () => {
+    if (!organization) return;
+    setOrgSaveError(null);
+    setOrgSaveSuccess(null);
+    setSavingOrg(true);
+    try {
+      const response = await fetch(`/api/admin/organizations/${organizationId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: orgForm.name,
+          email: orgForm.email,
+          businessAddress: orgForm.businessAddress,
+          phone: orgForm.phone.trim() || null,
+          fax: orgForm.fax.trim() || null,
+          isActive: orgForm.isActive,
+          websiteUrl: orgForm.websiteUrl.trim() || null,
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setOrgSaveError(data?.error || "Failed to update organization details.");
+        return;
+      }
+      setOrgSaveSuccess("Organization details updated.");
+      await fetchOrganizationDetails();
+    } catch (err) {
+      console.error("Error updating organization details:", err);
+      setOrgSaveError("Failed to update organization details.");
+    } finally {
+      setSavingOrg(false);
     }
   };
 
@@ -281,42 +337,117 @@ export default function OrganizationDetailPage() {
           <div className="lg:col-span-1">
             <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-6">
               <h2 className="text-lg font-semibold text-slate-900 mb-4">Organization Details</h2>
-              <dl className="space-y-3">
+              <div className="space-y-3">
                 <div>
-                  <dt className="text-sm font-medium text-slate-500">Email</dt>
-                  <dd className="text-sm text-slate-900 mt-1">{organization.email}</dd>
+                  <label className="block text-sm font-medium text-slate-500">Name</label>
+                  <input
+                    type="text"
+                    value={orgForm.name}
+                    onChange={(e) =>
+                      setOrgForm((prev) => ({ ...prev, name: e.target.value }))
+                    }
+                    className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
+                    disabled={savingOrg}
+                  />
                 </div>
                 <div>
-                  <dt className="text-sm font-medium text-slate-500">Address</dt>
-                  <dd className="text-sm text-slate-900 mt-1">{organization.businessAddress}</dd>
+                  <label className="block text-sm font-medium text-slate-500">Email</label>
+                  <input
+                    type="email"
+                    value={orgForm.email}
+                    onChange={(e) =>
+                      setOrgForm((prev) => ({ ...prev, email: e.target.value }))
+                    }
+                    className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
+                    disabled={savingOrg}
+                  />
                 </div>
-                {organization.phone && (
-                  <div>
-                    <dt className="text-sm font-medium text-slate-500">Phone</dt>
-                    <dd className="text-sm text-slate-900 mt-1">{organization.phone}</dd>
-                  </div>
-                )}
-                {organization.fax && (
-                  <div>
-                    <dt className="text-sm font-medium text-slate-500">Fax</dt>
-                    <dd className="text-sm text-slate-900 mt-1">{organization.fax}</dd>
-                  </div>
-                )}
                 <div>
-                  <dt className="text-sm font-medium text-slate-500">Status</dt>
-                  <dd className="mt-1">
-                    <span
-                      className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                        organization.isActive
-                          ? "bg-green-100 text-green-800"
-                          : "bg-red-100 text-red-800"
-                      }`}
-                    >
-                      {organization.isActive ? "Active" : "Inactive"}
-                    </span>
-                  </dd>
+                  <label className="block text-sm font-medium text-slate-500">Address</label>
+                  <textarea
+                    value={orgForm.businessAddress}
+                    onChange={(e) =>
+                      setOrgForm((prev) => ({ ...prev, businessAddress: e.target.value }))
+                    }
+                    rows={3}
+                    className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
+                    disabled={savingOrg}
+                  />
                 </div>
-              </dl>
+                <div>
+                  <label className="block text-sm font-medium text-slate-500">Phone</label>
+                  <input
+                    type="tel"
+                    value={orgForm.phone}
+                    onChange={(e) =>
+                      setOrgForm((prev) => ({ ...prev, phone: e.target.value }))
+                    }
+                    className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
+                    disabled={savingOrg}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                    Fax
+                  </label>
+                  <input
+                    type="text"
+                    value={orgForm.fax}
+                    onChange={(e) =>
+                      setOrgForm((prev) => ({ ...prev, fax: e.target.value }))
+                    }
+                    className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
+                    disabled={savingOrg}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                    Organization Website
+                  </label>
+                  <input
+                    type="url"
+                    value={orgForm.websiteUrl}
+                    onChange={(e) =>
+                      setOrgForm((prev) => ({ ...prev, websiteUrl: e.target.value }))
+                    }
+                    placeholder="https://www.exampleclinic.org"
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
+                    disabled={savingOrg}
+                  />
+                  <p className="mt-1 text-xs text-slate-500">
+                    Patients are redirected here after completing intake. Leave blank to use platform default.
+                  </p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Status</label>
+                  <select
+                    value={orgForm.isActive ? "active" : "inactive"}
+                    onChange={(e) =>
+                      setOrgForm((prev) => ({
+                        ...prev,
+                        isActive: e.target.value === "active",
+                      }))
+                    }
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
+                    disabled={savingOrg}
+                  >
+                    <option value="active">Active</option>
+                    <option value="inactive">Inactive</option>
+                  </select>
+                </div>
+              </div>
+              <div className="mt-5 pt-5 border-t border-slate-200 space-y-3">
+                {orgSaveError && <p className="text-xs text-red-700">{orgSaveError}</p>}
+                {orgSaveSuccess && <p className="text-xs text-emerald-700">{orgSaveSuccess}</p>}
+                <button
+                  type="button"
+                  onClick={saveOrganizationDetails}
+                  disabled={savingOrg}
+                  className="px-3 py-2 rounded-lg bg-slate-900 text-white text-sm font-medium hover:bg-slate-800 disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  {savingOrg ? "Saving..." : "Save Changes"}
+                </button>
+              </div>
             </div>
 
             <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-6 mt-6">

@@ -8,6 +8,31 @@ import { getCurrentSession } from "@/lib/auth";
 import { query } from "@/lib/db";
 import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
 
+function normalizeWebsiteUrl(value: unknown): string | null {
+  const raw = typeof value === "string" ? value.trim() : "";
+  if (!raw) return null;
+  try {
+    const parsed = new URL(raw);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
+    return parsed.toString();
+  } catch {
+    return null;
+  }
+}
+
+async function hasOrganizationWebsiteColumn(): Promise<boolean> {
+  const result = await query<{ exists: boolean }>(
+    `SELECT EXISTS (
+       SELECT 1
+       FROM information_schema.columns
+       WHERE table_schema = 'public'
+         AND table_name = 'organizations'
+         AND column_name = 'website_url'
+     ) AS exists`,
+  );
+  return Boolean(result.rows[0]?.exists);
+}
+
 export async function GET(request: NextRequest) {
   const requestId = getRequestId(request.headers);
   const started = Date.now();
@@ -24,6 +49,11 @@ export async function GET(request: NextRequest) {
       return res;
     }
 
+    const supportsWebsiteUrl = await hasOrganizationWebsiteColumn();
+    const websiteColumnSelect = supportsWebsiteUrl
+      ? "o.website_url"
+      : "NULL::varchar AS website_url";
+
     // Get all organizations with provider count
     const result = await query<{
       id: string;
@@ -32,6 +62,7 @@ export async function GET(request: NextRequest) {
       business_address: string;
       phone: string | null;
       fax: string | null;
+      website_url: string | null;
       is_active: boolean;
       created_at: Date;
       provider_count: string;
@@ -43,6 +74,7 @@ export async function GET(request: NextRequest) {
         o.business_address,
         o.phone,
         o.fax,
+        ${websiteColumnSelect},
         o.is_active,
         o.created_at,
         COUNT(p.id)::text as provider_count
@@ -60,6 +92,7 @@ export async function GET(request: NextRequest) {
         businessAddress: org.business_address,
         phone: org.phone,
         fax: org.fax,
+        websiteUrl: org.website_url,
         isActive: org.is_active,
         createdAt: org.created_at,
         providerCount: parseInt(org.provider_count) || 0,
@@ -97,6 +130,8 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json();
     const { name, email, businessAddress, phone, fax } = body;
+    const supportsWebsiteUrl = await hasOrganizationWebsiteColumn();
+    const websiteUrl = normalizeWebsiteUrl(body?.websiteUrl);
 
     if (!name || !email || !businessAddress) {
       status = 400;
@@ -115,6 +150,24 @@ export async function POST(request: NextRequest) {
       const res = NextResponse.json(
         { error: "Invalid email address" },
         { status }
+      );
+      logRequestMeta("/api/admin/organizations", requestId, status, Date.now() - started);
+      return res;
+    }
+    if (body?.websiteUrl && !websiteUrl) {
+      status = 400;
+      const res = NextResponse.json(
+        { error: "Invalid website URL. Use a valid http(s) URL." },
+        { status },
+      );
+      logRequestMeta("/api/admin/organizations", requestId, status, Date.now() - started);
+      return res;
+    }
+    if (!supportsWebsiteUrl && body?.websiteUrl) {
+      status = 503;
+      const res = NextResponse.json(
+        { error: "Organization website requires DB migration 024_add_organization_website.sql." },
+        { status },
       );
       logRequestMeta("/api/admin/organizations", requestId, status, Date.now() - started);
       return res;
@@ -138,16 +191,29 @@ export async function POST(request: NextRequest) {
 
     // Create organization
     const result = await query<{ id: string }>(
-      `INSERT INTO organizations (name, email, business_address, phone, fax)
-       VALUES ($1, $2, $3, $4, $5)
-       RETURNING id`,
-      [
-        name.trim(),
-        email.toLowerCase().trim(),
-        businessAddress.trim(),
-        phone ? phone.trim() : null,
-        fax ? fax.trim() : null,
-      ]
+      supportsWebsiteUrl
+        ? `INSERT INTO organizations (name, email, business_address, phone, fax, website_url)
+           VALUES ($1, $2, $3, $4, $5, $6)
+           RETURNING id`
+        : `INSERT INTO organizations (name, email, business_address, phone, fax)
+           VALUES ($1, $2, $3, $4, $5)
+           RETURNING id`,
+      supportsWebsiteUrl
+        ? [
+            name.trim(),
+            email.toLowerCase().trim(),
+            businessAddress.trim(),
+            phone ? phone.trim() : null,
+            fax ? fax.trim() : null,
+            websiteUrl,
+          ]
+        : [
+            name.trim(),
+            email.toLowerCase().trim(),
+            businessAddress.trim(),
+            phone ? phone.trim() : null,
+            fax ? fax.trim() : null,
+          ]
     );
 
     const res = NextResponse.json({
@@ -159,6 +225,7 @@ export async function POST(request: NextRequest) {
         businessAddress: businessAddress.trim(),
         phone: phone ? phone.trim() : null,
         fax: fax ? fax.trim() : null,
+        websiteUrl: supportsWebsiteUrl ? websiteUrl : null,
       },
     });
     logRequestMeta("/api/admin/organizations", requestId, status, Date.now() - started);

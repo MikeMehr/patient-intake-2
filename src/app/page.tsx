@@ -61,6 +61,7 @@ const statusCopy: Record<Status, string> = {
 const LESION_UPLOAD_MAX_BYTES = 6 * 1024 * 1024;
 const LESION_UPLOAD_COMPRESSION_THRESHOLD_BYTES = 1500 * 1024;
 const PRIVACY_COMPLETION_ROUTE = "/intake/completed";
+const COMPLETION_REDIRECT_FALLBACK = "https://www.health-assist.org/";
 
 const closingMessageEnglish =
   "We have reached the end of this interview. Thank you for taking the time to answer my questions. You will soon be contacted by your physician to discuss the diagnosis and management.";
@@ -2544,6 +2545,7 @@ export default function Home() {
       "invitePatientName",
       "invitePatientEmail",
       "invitePatientDob",
+      "organizationWebsiteUrl",
     ];
     inviteKeys.forEach((key) => sessionStorage.removeItem(key));
     for (let idx = sessionStorage.length - 1; idx >= 0; idx -= 1) {
@@ -2555,6 +2557,22 @@ export default function Home() {
   }
 
   async function finalizePrivacyAndExit() {
+    const configuredRedirect =
+      typeof window !== "undefined"
+        ? (sessionStorage.getItem("organizationWebsiteUrl") || "").trim()
+        : "";
+    let completionRedirectUrl = COMPLETION_REDIRECT_FALLBACK;
+    if (configuredRedirect) {
+      try {
+        const parsed = new URL(configuredRedirect);
+        if (parsed.protocol === "http:" || parsed.protocol === "https:") {
+          completionRedirectUrl = parsed.toString();
+        }
+      } catch {
+        completionRedirectUrl = COMPLETION_REDIRECT_FALLBACK;
+      }
+    }
+
     clearPauseTimers();
     stopListening();
     stopSpeaking();
@@ -2635,7 +2653,9 @@ export default function Home() {
     } catch {
       // Best effort: continue to redirect even if cookie clear fails.
     }
-    router.replace(PRIVACY_COMPLETION_ROUTE);
+    router.replace(
+      `${PRIVACY_COMPLETION_ROUTE}?redirect=${encodeURIComponent(completionRedirectUrl)}`,
+    );
   }
 
   async function persistSessionRequest(requestBody: Record<string, unknown>): Promise<string> {

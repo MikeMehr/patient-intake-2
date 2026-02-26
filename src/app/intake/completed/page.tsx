@@ -1,14 +1,33 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
 const AUTO_REDIRECT_MS = 30000;
+const DEFAULT_REDIRECT_URL = "https://www.health-assist.org/";
+
+function resolveRedirectUrl(raw: string | null): string {
+  const value = (raw || "").trim();
+  if (!value) return DEFAULT_REDIRECT_URL;
+  try {
+    const parsed = new URL(value);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      return DEFAULT_REDIRECT_URL;
+    }
+    return parsed.toString();
+  } catch {
+    return DEFAULT_REDIRECT_URL;
+  }
+}
 
 export default function IntakeCompletedPage() {
-  const router = useRouter();
+  const searchParams = useSearchParams();
   const [secondsRemaining, setSecondsRemaining] = useState(
     Math.ceil(AUTO_REDIRECT_MS / 1000),
+  );
+  const redirectUrl = useMemo(
+    () => resolveRedirectUrl(searchParams.get("redirect")),
+    [searchParams],
   );
 
   const redirectSeconds = useMemo(
@@ -25,14 +44,14 @@ export default function IntakeCompletedPage() {
     }, 1000);
 
     const timeout = window.setTimeout(() => {
-      router.replace("/");
+      window.location.assign(redirectUrl);
     }, AUTO_REDIRECT_MS);
 
     return () => {
       window.clearInterval(interval);
       window.clearTimeout(timeout);
     };
-  }, [router]);
+  }, [redirectUrl]);
 
   return (
     <div className="min-h-screen bg-slate-100 flex items-center justify-center px-4">
@@ -49,10 +68,10 @@ export default function IntakeCompletedPage() {
         </p>
         <button
           type="button"
-          onClick={() => router.replace("/")}
+          onClick={() => window.location.assign(redirectUrl)}
           className="mt-6 inline-flex items-center justify-center rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
         >
-          Return to home
+          Continue
         </button>
       </main>
     </div>

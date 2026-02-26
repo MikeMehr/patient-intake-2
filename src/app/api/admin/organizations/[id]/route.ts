@@ -9,6 +9,34 @@ import { getCurrentSession } from "@/lib/auth";
 import { query } from "@/lib/db";
 import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
 
+function normalizeWebsiteUrl(value: unknown): string | null | undefined {
+  if (value === undefined) return undefined;
+  const raw = typeof value === "string" ? value.trim() : "";
+  if (!raw) return null;
+  try {
+    const parsed = new URL(raw);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return undefined;
+    return parsed.toString();
+  } catch {
+    return undefined;
+  }
+}
+
+const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+async function hasOrganizationWebsiteColumn(): Promise<boolean> {
+  const result = await query<{ exists: boolean }>(
+    `SELECT EXISTS (
+       SELECT 1
+       FROM information_schema.columns
+       WHERE table_schema = 'public'
+         AND table_name = 'organizations'
+         AND column_name = 'website_url'
+     ) AS exists`,
+  );
+  return Boolean(result.rows[0]?.exists);
+}
+
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -30,6 +58,11 @@ export async function GET(
 
     const { id } = await params;
 
+    const supportsWebsiteUrl = await hasOrganizationWebsiteColumn();
+    const websiteColumnSelect = supportsWebsiteUrl
+      ? "website_url"
+      : "NULL::varchar AS website_url";
+
     // Get organization details
     const orgResult = await query<{
       id: string;
@@ -38,10 +71,11 @@ export async function GET(
       business_address: string;
       phone: string | null;
       fax: string | null;
+      website_url: string | null;
       is_active: boolean;
       created_at: Date;
     }>(
-      `SELECT id, name, email, business_address, phone, fax, is_active, created_at
+      `SELECT id, name, email, business_address, phone, fax, ${websiteColumnSelect}, is_active, created_at
        FROM organizations
        WHERE id = $1`,
       [id]
@@ -85,6 +119,7 @@ export async function GET(
         businessAddress: org.business_address,
         phone: org.phone,
         fax: org.fax,
+        websiteUrl: org.website_url,
         isActive: org.is_active,
         createdAt: org.created_at,
       },
@@ -135,6 +170,60 @@ export async function PUT(
     const { id } = await params;
     const body = await request.json();
     const { name, email, businessAddress, phone, fax, isActive } = body;
+    const normalizedName = typeof name === "string" ? name.trim() : "";
+    const normalizedEmail = typeof email === "string" ? email.toLowerCase().trim() : "";
+    const normalizedBusinessAddress =
+      typeof businessAddress === "string" ? businessAddress.trim() : "";
+    const normalizedPhone = typeof phone === "string" ? phone.trim() : "";
+    const normalizedFax = typeof fax === "string" ? fax.trim() : "";
+    const normalizedIsActive = typeof isActive === "boolean" ? isActive : undefined;
+    const supportsWebsiteUrl = await hasOrganizationWebsiteColumn();
+    const websiteUrl = normalizeWebsiteUrl(body?.websiteUrl);
+    if (body?.websiteUrl !== undefined && websiteUrl === undefined) {
+      status = 400;
+      const res = NextResponse.json(
+        { error: "Invalid website URL. Use a valid http(s) URL." },
+        { status },
+      );
+      logRequestMeta("/api/admin/organizations/[id]", requestId, status, Date.now() - started);
+      return res;
+    }
+    if (!supportsWebsiteUrl && body?.websiteUrl) {
+      status = 503;
+      const res = NextResponse.json(
+        { error: "Organization website requires DB migration 024_add_organization_website.sql." },
+        { status },
+      );
+      logRequestMeta("/api/admin/organizations/[id]", requestId, status, Date.now() - started);
+      return res;
+    }
+    if (!normalizedName || !normalizedEmail || !normalizedBusinessAddress) {
+      status = 400;
+      const res = NextResponse.json(
+        { error: "Name, email, and business address are required" },
+        { status }
+      );
+      logRequestMeta("/api/admin/organizations/[id]", requestId, status, Date.now() - started);
+      return res;
+    }
+    if (!emailRegex.test(normalizedEmail)) {
+      status = 400;
+      const res = NextResponse.json(
+        { error: "Invalid email address" },
+        { status }
+      );
+      logRequestMeta("/api/admin/organizations/[id]", requestId, status, Date.now() - started);
+      return res;
+    }
+    if (normalizedIsActive === undefined) {
+      status = 400;
+      const res = NextResponse.json(
+        { error: "Invalid organization status" },
+        { status }
+      );
+      logRequestMeta("/api/admin/organizations/[id]", requestId, status, Date.now() - started);
+      return res;
+    }
 
     // Check if organization exists
     const existingOrg = await query<{ id: string }>(
@@ -151,21 +240,49 @@ export async function PUT(
       logRequestMeta("/api/admin/organizations/[id]", requestId, status, Date.now() - started);
       return res;
     }
+    const duplicateEmail = await query<{ id: string }>(
+      `SELECT id FROM organizations WHERE email = $1 AND id <> $2 LIMIT 1`,
+      [normalizedEmail, id]
+    );
+    if (duplicateEmail.rows.length > 0) {
+      status = 409;
+      const res = NextResponse.json(
+        { error: "An organization with this email already exists" },
+        { status }
+      );
+      logRequestMeta("/api/admin/organizations/[id]", requestId, status, Date.now() - started);
+      return res;
+    }
 
     // Update organization
     await query(
-      `UPDATE organizations
-       SET name = $1, email = $2, business_address = $3, phone = $4, fax = $5, is_active = $6
-       WHERE id = $7`,
-      [
-        name?.trim() || undefined,
-        email ? email.toLowerCase().trim() : undefined,
-        businessAddress?.trim() || undefined,
-        phone ? phone.trim() : null,
-        fax ? fax.trim() : null,
-        isActive !== undefined ? isActive : undefined,
-        id,
-      ]
+      supportsWebsiteUrl
+        ? `UPDATE organizations
+           SET name = $1, email = $2, business_address = $3, phone = $4, fax = $5, is_active = $6, website_url = $7
+           WHERE id = $8`
+        : `UPDATE organizations
+           SET name = $1, email = $2, business_address = $3, phone = $4, fax = $5, is_active = $6
+           WHERE id = $7`,
+      supportsWebsiteUrl
+        ? [
+            normalizedName,
+            normalizedEmail,
+            normalizedBusinessAddress,
+            normalizedPhone || null,
+            normalizedFax || null,
+            normalizedIsActive,
+            websiteUrl,
+            id,
+          ]
+        : [
+            normalizedName,
+            normalizedEmail,
+            normalizedBusinessAddress,
+            normalizedPhone || null,
+            normalizedFax || null,
+            normalizedIsActive,
+            id,
+          ]
     );
 
     const res = NextResponse.json({ success: true });

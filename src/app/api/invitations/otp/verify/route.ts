@@ -97,6 +97,7 @@ export async function POST(request: NextRequest) {
       physicianId: invitation.physicianId,
       physicianName: invitation.physicianName,
       clinicName: invitation.clinicName,
+      organizationWebsiteUrl: invitation.organizationWebsiteUrl || null,
     });
     res.cookies.set(INVITATION_SESSION_COOKIE, session.cookieValue, {
       httpOnly: true,

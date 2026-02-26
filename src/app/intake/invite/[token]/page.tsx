@@ -22,6 +22,7 @@ type VerifyOtpResponse = {
   physicianId: string;
   physicianName: string;
   clinicName: string;
+  organizationWebsiteUrl: string | null;
 };
 
 export default function InvitationTokenIntakePage() {
@@ -55,6 +56,7 @@ export default function InvitationTokenIntakePage() {
     physicianId: string;
     physicianName: string;
     clinicName: string;
+    organizationWebsiteUrl?: string | null;
     patientName: string;
     patientEmail: string;
     patientDob: string | null;
@@ -67,6 +69,7 @@ export default function InvitationTokenIntakePage() {
     sessionStorage.setItem("invitePatientName", data.patientName);
     sessionStorage.setItem("invitePatientEmail", data.patientEmail);
     sessionStorage.setItem("invitePatientDob", data.patientDob || "");
+    sessionStorage.setItem("organizationWebsiteUrl", data.organizationWebsiteUrl || "");
   };
 
   const requestOtp = async (opts: { source: "auto" | "manual" }) => {
@@ -154,6 +157,7 @@ export default function InvitationTokenIntakePage() {
             physicianId: string;
             physicianName: string;
             clinicName: string;
+            organizationWebsiteUrl: string | null;
             patientName: string;
             patientEmail: string;
             patientDob: string | null;
@@ -164,6 +168,7 @@ export default function InvitationTokenIntakePage() {
               physicianId: ctxData.physicianId,
               physicianName: ctxData.physicianName,
               clinicName: ctxData.clinicName,
+              organizationWebsiteUrl: ctxData.organizationWebsiteUrl,
               patientName: ctxData.patientName,
               patientEmail: ctxData.patientEmail,
               patientDob: ctxData.patientDob,
@@ -189,6 +194,7 @@ export default function InvitationTokenIntakePage() {
             sessionStorage.removeItem("invitedFlow");
             sessionStorage.removeItem("invitePatientName");
             sessionStorage.removeItem("invitePatientEmail");
+            sessionStorage.removeItem("organizationWebsiteUrl");
           } catch {
             // Ignore storage failures.
           }

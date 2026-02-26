@@ -326,26 +326,6 @@ export default function PatientChartPage() {
                         <div className="mt-1 whitespace-pre-wrap">{hpi?.summary || "—"}</div>
                       </div>
 
-                      <div>
-                        <div className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Assessment</div>
-                        <div className="mt-1 whitespace-pre-wrap">{hpi?.assessment || "—"}</div>
-                      </div>
-
-                      <div>
-                        <div className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Plan</div>
-                        {plan.length === 0 ? (
-                          <div className="mt-1">—</div>
-                        ) : (
-                          <ul className="mt-1 list-disc pl-5 space-y-1">
-                            {plan.map((item, idx) => (
-                              <li key={idx} className="whitespace-pre-wrap">
-                                {item}
-                              </li>
-                            ))}
-                          </ul>
-                        )}
-                      </div>
-
                       {(physicalFindings.length > 0 || positives.length > 0 || negatives.length > 0) && (
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                           <div>
@@ -394,6 +374,26 @@ export default function PatientChartPage() {
                           </div>
                         </div>
                       )}
+
+                      <div>
+                        <div className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Assessment</div>
+                        <div className="mt-1 whitespace-pre-wrap">{hpi?.assessment || "—"}</div>
+                      </div>
+
+                      <div>
+                        <div className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Plan</div>
+                        {plan.length === 0 ? (
+                          <div className="mt-1">—</div>
+                        ) : (
+                          <ul className="mt-1 list-disc pl-5 space-y-1">
+                            {plan.map((item, idx) => (
+                              <li key={idx} className="whitespace-pre-wrap">
+                                {item}
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
 
                       {hasUploadedContext && (
                         <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">

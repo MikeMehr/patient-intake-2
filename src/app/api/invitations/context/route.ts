@@ -20,6 +20,7 @@ export async function GET(request: Request) {
       physicianId: invitation.physicianId,
       physicianName: invitation.physicianName,
       clinicName: invitation.clinicName,
+      organizationWebsiteUrl: invitation.organizationWebsiteUrl || null,
       patientName: invitation.patientName,
       patientEmail: invitation.patientEmail,
       patientDob: invitation.patientDob,

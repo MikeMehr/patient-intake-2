@@ -89,14 +89,24 @@ async function launchRequisitionBrowser(): Promise<import("playwright-core").Bro
     });
   }
 
-  const chromium = getChromiumCompat();
-  const sparticuzExecutable = await resolveExecutablePath(chromium);
-  attempts.push({
-    executablePath: sparticuzExecutable,
-    args: chromium.args,
-    headless: chromium.headless === false ? false : true,
-    label: "sparticuz-chromium",
-  });
+  try {
+    const chromium = getChromiumCompat();
+    const sparticuzExecutable = await resolveExecutablePath(chromium);
+    attempts.push({
+      executablePath: sparticuzExecutable,
+      args: chromium.args,
+      headless: chromium.headless === false ? false : true,
+      label: "sparticuz-chromium",
+    });
+  } catch (error) {
+    console.error("[lab-requisition-renderer] Sparticuz chromium setup failed:", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+
+  if (attempts.length === 0) {
+    throw new Error("No browser launch attempts available for lab requisition rendering.");
+  }
 
   let lastError: unknown = null;
   for (const attempt of attempts) {

@@ -14,6 +14,7 @@ export default function NewOrganizationPage() {
     businessAddress: "",
     phone: "",
     fax: "",
+    websiteUrl: "",
   });
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -164,6 +165,24 @@ export default function NewOrganizationPage() {
                   placeholder="(555) 123-4568"
                 />
               </div>
+            </div>
+
+            <div>
+              <label
+                htmlFor="websiteUrl"
+                className="block text-sm font-medium text-slate-700 mb-1"
+              >
+                Organization Website
+              </label>
+              <input
+                id="websiteUrl"
+                type="url"
+                value={formData.websiteUrl}
+                onChange={(e) => setFormData({ ...formData, websiteUrl: e.target.value })}
+                disabled={loading}
+                className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200 disabled:cursor-not-allowed disabled:opacity-70"
+                placeholder="https://www.exampleclinic.org"
+              />
             </div>
 
             <div className="flex items-center justify-end gap-4 pt-4">

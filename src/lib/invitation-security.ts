@@ -29,6 +29,7 @@ type InvitationRow = {
   summary_deleted_at: Date | null;
   patient_background: string | null;
   interview_guidance: string | null;
+  organization_website_url: string | null;
   first_name: string;
   last_name: string;
   clinic_name: string;
@@ -43,6 +44,7 @@ export type InvitationContext = {
   oscarDemographicNo: string | null;
   physicianName: string;
   clinicName: string;
+  organizationWebsiteUrl: string | null;
   tokenExpiresAt: string | null;
   usedAt: string | null;
   revokedAt: string | null;
@@ -55,6 +57,19 @@ export type InvitationContext = {
   patientBackground: string | null;
   interviewGuidance: string | null;
 };
+
+async function hasOrganizationWebsiteColumn(): Promise<boolean> {
+  const result = await query<{ exists: boolean }>(
+    `SELECT EXISTS (
+       SELECT 1
+       FROM information_schema.columns
+       WHERE table_schema = 'public'
+         AND table_name = 'organizations'
+         AND column_name = 'website_url'
+     ) AS exists`,
+  );
+  return Boolean(result.rows[0]?.exists);
+}
 
 type RateLimitResult = {
   allowed: boolean;
@@ -126,6 +141,7 @@ function toInvitationContext(row: InvitationRow): InvitationContext {
     oscarDemographicNo: row.oscar_demographic_no,
     physicianName: `Dr. ${row.first_name} ${row.last_name}`,
     clinicName: row.clinic_name,
+    organizationWebsiteUrl: row.organization_website_url,
     tokenExpiresAt: row.token_expires_at ? new Date(row.token_expires_at).toISOString() : null,
     usedAt: row.used_at ? new Date(row.used_at).toISOString() : null,
     revokedAt: row.revoked_at ? new Date(row.revoked_at).toISOString() : null,
@@ -212,12 +228,17 @@ export async function logInvitationAudit(params: {
 
 export async function getInvitationByRawToken(rawToken: string): Promise<InvitationContext | null> {
   const tokenHash = hashValue(rawToken);
+  const supportsWebsiteUrl = await hasOrganizationWebsiteColumn();
+  const websiteSelect = supportsWebsiteUrl
+    ? "o.website_url AS organization_website_url"
+    : "NULL::varchar AS organization_website_url";
   const result = await query<InvitationRow>(
     `SELECT pi.id, pi.physician_id, pi.patient_email, pi.patient_name, pi.patient_dob, pi.oscar_demographic_no, pi.token_expires_at, pi.used_at, pi.revoked_at,
             pi.expires_at, pi.lab_report_summary, pi.previous_lab_report_summary, pi.form_summary, pi.summary_expires_at, pi.summary_deleted_at, pi.patient_background,
-            pi.interview_guidance, p.first_name, p.last_name, p.clinic_name
+            pi.interview_guidance, ${websiteSelect}, p.first_name, p.last_name, p.clinic_name
      FROM patient_invitations pi
      JOIN physicians p ON p.id = pi.physician_id
+     LEFT JOIN organizations o ON o.id = p.organization_id
      WHERE pi.token_hash = $1
      ORDER BY pi.sent_at DESC NULLS LAST, pi.created_at DESC NULLS LAST
      LIMIT 1`,
@@ -309,6 +330,10 @@ export async function resolveInvitationFromCookie(): Promise<InvitationContext |
   if (candidates.length === 0) return null;
 
   // Prefer the last cookie in the header (most recently set).
+  const supportsWebsiteUrl = await hasOrganizationWebsiteColumn();
+  const websiteSelect = supportsWebsiteUrl
+    ? "o.website_url AS organization_website_url"
+    : "NULL::varchar AS organization_website_url";
   for (let idx = candidates.length - 1; idx >= 0; idx -= 1) {
     const parsed = parseInvitationSessionCookie(candidates[idx]);
     if (!parsed) continue;
@@ -317,10 +342,11 @@ export async function resolveInvitationFromCookie(): Promise<InvitationContext |
     const result = await query<InvitationRow>(
       `SELECT pi.id, pi.physician_id, pi.patient_email, pi.patient_name, pi.patient_dob, pi.oscar_demographic_no, pi.token_expires_at, pi.used_at, pi.revoked_at,
               pi.expires_at, pi.lab_report_summary, pi.previous_lab_report_summary, pi.form_summary, pi.summary_expires_at, pi.summary_deleted_at, pi.patient_background,
-              pi.interview_guidance, p.first_name, p.last_name, p.clinic_name
+              pi.interview_guidance, ${websiteSelect}, p.first_name, p.last_name, p.clinic_name
        FROM invitation_sessions isess
        JOIN patient_invitations pi ON pi.id = isess.invitation_id
        JOIN physicians p ON p.id = pi.physician_id
+       LEFT JOIN organizations o ON o.id = p.organization_id
        WHERE isess.invitation_id = $1
          AND isess.session_token_hash = $2
          AND isess.expires_at > NOW()

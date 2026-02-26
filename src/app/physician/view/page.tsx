@@ -131,11 +131,11 @@ const composeUnifiedHpiText = (history: PatientSession["history"]): string => {
     "Subjective:",
     subjective || "None",
     "",
-    "Assessment:",
-    assessment || "None",
-    "",
     "Physical Findings:",
     formatListSection(physicalFindings),
+    "",
+    "Assessment:",
+    assessment || "None",
     "",
     "Plan:",
     formatListSection(plan),
@@ -155,17 +155,30 @@ type ParsedUnifiedHpi = {
 
 const parseUnifiedHpiText = (value: string): ParsedUnifiedHpi | null => {
   const normalized = value.replace(/\r\n/g, "\n").trim();
-  const pattern =
+  const currentOrderPattern =
+    /Subjective:\s*([\s\S]*?)\n\s*Physical Findings:\s*([\s\S]*?)\n\s*Assessment:\s*([\s\S]*?)\n\s*Plan:\s*([\s\S]*?)\n\s*Patient Final Comments:\s*([\s\S]*)$/i;
+  const legacyOrderPattern =
     /Subjective:\s*([\s\S]*?)\n\s*Assessment:\s*([\s\S]*?)\n\s*Physical Findings:\s*([\s\S]*?)\n\s*Plan:\s*([\s\S]*?)\n\s*Patient Final Comments:\s*([\s\S]*)$/i;
-  const match = normalized.match(pattern);
-  if (!match) return null;
 
+  const currentMatch = normalized.match(currentOrderPattern);
+  if (currentMatch) {
+    return {
+      subjective: stripOptionalNone(currentMatch[1] || ""),
+      physicalFindings: normalizeListBlock(currentMatch[2] || ""),
+      assessment: stripOptionalNone(currentMatch[3] || ""),
+      plan: normalizeListBlock(currentMatch[4] || ""),
+      patientFinalComments: stripOptionalNone(currentMatch[5] || ""),
+    };
+  }
+
+  const legacyMatch = normalized.match(legacyOrderPattern);
+  if (!legacyMatch) return null;
   return {
-    subjective: stripOptionalNone(match[1] || ""),
-    assessment: stripOptionalNone(match[2] || ""),
-    physicalFindings: normalizeListBlock(match[3] || ""),
-    plan: normalizeListBlock(match[4] || ""),
-    patientFinalComments: stripOptionalNone(match[5] || ""),
+    subjective: stripOptionalNone(legacyMatch[1] || ""),
+    assessment: stripOptionalNone(legacyMatch[2] || ""),
+    physicalFindings: normalizeListBlock(legacyMatch[3] || ""),
+    plan: normalizeListBlock(legacyMatch[4] || ""),
+    patientFinalComments: stripOptionalNone(legacyMatch[5] || ""),
   };
 };
 
@@ -648,7 +661,7 @@ function PhysicianViewContent() {
     const parsed = parseUnifiedHpiText(hpiCombinedDraft);
     if (!parsed) {
       setHpiSaveError(
-        "Invalid HPI format. Keep the section headers: Subjective, Assessment, Physical Findings, Plan, Patient Final Comments.",
+        "Invalid HPI format. Keep the section headers: Subjective, Physical Findings, Assessment, Plan, Patient Final Comments.",
       );
       return;
     }
@@ -1892,7 +1905,7 @@ function PhysicianViewContent() {
                       rows={16}
                       className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-base text-slate-900 shadow-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
                       disabled={hpiSaving}
-                      placeholder={"Subjective:\n\nAssessment:\n\nPhysical Findings:\n\nPlan:\n\nPatient Final Comments:"}
+                      placeholder={"Subjective:\n\nPhysical Findings:\n\nAssessment:\n\nPlan:\n\nPatient Final Comments:"}
                     />
                   ) : (
                     <p className="text-base text-slate-900 whitespace-pre-wrap">
