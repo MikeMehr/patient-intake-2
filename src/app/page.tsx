@@ -15,6 +15,7 @@ import {
 import BodyPartDiagram from "@/components/BodyPartDiagram";
 import CollapsibleSection from "@/components/CollapsibleSection";
 import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { z } from "zod";
 
 // Type definitions for Web Speech API
@@ -59,6 +60,7 @@ const statusCopy: Record<Status, string> = {
 
 const LESION_UPLOAD_MAX_BYTES = 6 * 1024 * 1024;
 const LESION_UPLOAD_COMPRESSION_THRESHOLD_BYTES = 1500 * 1024;
+const PRIVACY_COMPLETION_ROUTE = "/intake/completed";
 
 const closingMessageEnglish =
   "We have reached the end of this interview. Thank you for taking the time to answer my questions. You will soon be contacted by your physician to discuss the diagnosis and management.";
@@ -98,6 +100,7 @@ type ChatMessage = InterviewMessage;
 type LeftSoleMarker = { xPct: number; yPct: number };
 
 export default function Home() {
+  const router = useRouter();
   // Default from build-time env, then refresh from runtime config endpoint.
   // This prevents stale client bundles when toggling flags in Azure App Service.
   const [useAzureStt, setUseAzureStt] = useState(
@@ -2235,9 +2238,8 @@ export default function Home() {
 
       try {
         await saveSession(historyWithFinal);
-        setStatus("complete");
-        statusRef.current = "complete";
         setSessionSavePendingHistory(null);
+        await finalizePrivacyAndExit();
       } catch (err) {
         console.error("Failed to save session with final comment:", err);
         setSessionSaveError(
@@ -2532,7 +2534,111 @@ export default function Home() {
     }
   }
 
-  async function persistSessionRequest(requestBody: Record<string, unknown>): Promise<void> {
+  function clearInviteSessionStorage() {
+    if (typeof window === "undefined") return;
+    const inviteKeys = [
+      "physicianId",
+      "physicianName",
+      "clinicName",
+      "invitedFlow",
+      "invitePatientName",
+      "invitePatientEmail",
+      "invitePatientDob",
+    ];
+    inviteKeys.forEach((key) => sessionStorage.removeItem(key));
+    for (let idx = sessionStorage.length - 1; idx >= 0; idx -= 1) {
+      const key = sessionStorage.key(idx);
+      if (key && key.startsWith("inviteAutoOtpRequested:")) {
+        sessionStorage.removeItem(key);
+      }
+    }
+  }
+
+  async function finalizePrivacyAndExit() {
+    clearPauseTimers();
+    stopListening();
+    stopSpeaking();
+    lastSpokenMessageRef.current = "";
+
+    if (selectedImagePreview) URL.revokeObjectURL(selectedImagePreview);
+    if (pmhPreview) URL.revokeObjectURL(pmhPreview);
+    if (medListPreview) URL.revokeObjectURL(medListPreview);
+
+    setMessages([]);
+    messagesRef.current = [];
+    setResult(null);
+    setTranslatedSummary(null);
+    setPendingHistoryResult(null);
+    pendingHistoryResultRef.current = null;
+    setAwaitingFinalComments(false);
+    setFinalCommentsChoice(null);
+    setPatientResponse("");
+    patientResponseRef.current = "";
+    setInterimTranscript("");
+    interimTranscriptRef.current = "";
+    setDraftTranscript("");
+    draftTranscriptRef.current = "";
+    setDraftTranscriptRaw("");
+    draftTranscriptRawRef.current = "";
+    setLastSubmittedDraft(null);
+    setHasPendingSubmission(false);
+    setShowSubmitToast(false);
+    setIsSubmittingResponse(false);
+    setSavingSession(false);
+    setSessionSaveError(null);
+    setSessionSavePendingHistory(null);
+    setSessionCode(null);
+    setShowShareLink(false);
+
+    setChiefComplaint("");
+    setPatientName("");
+    setPatientEmail("");
+    setInvitePatientDob(null);
+    setLockedProfile(null);
+    setHasConsented(false);
+    setIsInvitedFlow(false);
+    setPhysicianIdValue(null);
+    setHasPhysicianId(false);
+    setError(null);
+    setEndedEarly(false);
+    setInterviewStartTime(null);
+    interviewStartTimeRef.current = null;
+    setElapsedTime(0);
+
+    setSelectedImage(null);
+    setSelectedImagePreview(null);
+    setImageSummary(null);
+    setShowImagePrompt(false);
+    setWantsToUploadImage(null);
+    setShowBodyDiagram(false);
+    setSelectedBodyParts([]);
+    setSelectedDiagramArea(null);
+    setSelectedDiagramMarkersWithRef([]);
+    setPmhPhoto(null);
+    setPmhPreview(null);
+    setPmhExtracted("");
+    setMedListPhoto(null);
+    setMedListPreview(null);
+    setMedListExtracted("");
+    setLabReportSummary(null);
+    setPreviousLabReportSummary(null);
+    setFormSummary(null);
+    setInvitePatientBackground(null);
+    setInterviewGuidance(null);
+
+    clearInviteSessionStorage();
+    try {
+      await fetch("/api/invitations/session/clear", {
+        method: "POST",
+        credentials: "include",
+      });
+    } catch {
+      // Best effort: continue to redirect even if cookie clear fails.
+    }
+    router.replace(PRIVACY_COMPLETION_ROUTE);
+  }
+
+  async function persistSessionRequest(requestBody: Record<string, unknown>): Promise<string> {
     const response = await fetch("/api/sessions", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -2549,11 +2655,10 @@ export default function Home() {
     if (typeof responseBody?.sessionCode !== "string" || responseBody.sessionCode.trim().length === 0) {
       throw new Error("Session save response was incomplete. Please try again.");
     }
-    setSessionCode(responseBody.sessionCode);
-    setShowShareLink(true);
+    return responseBody.sessionCode;
   }
 
-  async function saveSession(historyResult: HistoryResponse) {
+  async function saveSession(historyResult: HistoryResponse): Promise<string> {
     if (!lockedProfile) {
       console.warn("[saveSession] Cannot save session: lockedProfile is missing");
       throw new Error("Profile is missing. Please restart the interview.");
@@ -2633,7 +2738,7 @@ export default function Home() {
       });
     }
 
-    await persistSessionRequest(requestBody as Record<string, unknown>);
+    return await persistSessionRequest(requestBody as Record<string, unknown>);
   }
 
   const retrySessionSave = async () => {
@@ -2644,9 +2749,8 @@ export default function Home() {
     statusRef.current = "saving";
     try {
       await saveSession(sessionSavePendingHistory);
-      setStatus("complete");
-      statusRef.current = "complete";
       setSessionSavePendingHistory(null);
+      await finalizePrivacyAndExit();
     } catch (err) {
       console.error("Retry session save failed:", err);
       setSessionSaveError(
