@@ -980,59 +980,6 @@
 				});
 		}
 
-		function initHaaEditorControls() {
-			if (document.getElementById("haaEditorControls")) return;
-			var container = document.createElement("div");
-			container.id = "haaEditorControls";
-			container.className = "DoNotPrint";
-			container.style.position = "fixed";
-			container.style.top = "16px";
-			container.style.right = "16px";
-			container.style.zIndex = "9999";
-			container.style.background = "rgba(255,255,255,0.98)";
-			container.style.border = "1px solid #cbd5e1";
-			container.style.borderRadius = "8px";
-			container.style.padding = "10px";
-			container.style.display = "flex";
-			container.style.flexDirection = "column";
-			container.style.gap = "8px";
-
-			var saveBtn = document.createElement("button");
-			saveBtn.type = "button";
-			saveBtn.textContent = "Save as new requisition";
-			saveBtn.style.padding = "6px 10px";
-			saveBtn.style.background = "#0f172a";
-			saveBtn.style.color = "#fff";
-			saveBtn.style.border = "none";
-			saveBtn.style.borderRadius = "6px";
-			saveBtn.style.cursor = "pointer";
-			saveBtn.onclick = saveEditorAsNew;
-
-			var printBtn = document.createElement("button");
-			printBtn.type = "button";
-			printBtn.textContent = "Print";
-			printBtn.style.padding = "6px 10px";
-			printBtn.style.background = "#f8fafc";
-			printBtn.style.color = "#0f172a";
-			printBtn.style.border = "1px solid #94a3b8";
-			printBtn.style.borderRadius = "6px";
-			printBtn.style.cursor = "pointer";
-			printBtn.onclick = function () {
-				window.print();
-			};
-
-			var statusNode = document.createElement("div");
-			statusNode.id = "haaEditorStatus";
-			statusNode.style.fontSize = "12px";
-			statusNode.style.color = "#334155";
-			statusNode.textContent = "Ready to edit.";
-
-			container.appendChild(saveBtn);
-			container.appendChild(printBtn);
-			container.appendChild(statusNode);
-			document.body.appendChild(container);
-		}
-
 		function bootHaaEditor() {
 			var token = getEditorTokenFromUrl();
 			if (!token) {
@@ -1045,7 +992,7 @@
 					event.preventDefault();
 					var statusNode = document.getElementById("haaEditorStatus");
 					if (statusNode) {
-						statusNode.textContent = "Use 'Save as new requisition' to save in editor mode.";
+						statusNode.textContent = "Use the requisition form controls to save in editor mode.";
 					}
 					return false;
 				});
@@ -1056,7 +1003,6 @@
 					event.preventDefault();
 				});
 			}
-			initHaaEditorControls();
 			initHaaAiPanel();
 			fetch("/api/lab-requisitions/editor-session?token=" + encodeURIComponent(token), {
 				method: "GET",
