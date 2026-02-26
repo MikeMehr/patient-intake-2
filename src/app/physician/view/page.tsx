@@ -2157,7 +2157,15 @@ function PhysicianViewContent() {
                         className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
                       />
                       {labPrefillStatus && (
-                        <p className="mt-1 text-xs text-slate-500">{labPrefillStatus}</p>
+                        <p
+                          className={`mt-1 text-xs ${
+                            labPrefillStatus.startsWith("Fetching AI lab suggestions")
+                              ? "animate-pulse font-medium text-amber-700"
+                              : "text-slate-500"
+                          }`}
+                        >
+                          {labPrefillStatus}
+                        </p>
                       )}
                       <p className="mt-1 text-xs text-slate-500">
                         Similar labs are grouped/deduplicated in the PDF.
