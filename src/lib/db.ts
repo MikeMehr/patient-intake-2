@@ -69,18 +69,44 @@ export async function query<T extends QueryResultRow = any>(
 ): Promise<QueryResult<T>> {
   const pool = getPool();
 
-  const start = Date.now();
-  try {
-    const res = await pool.query<T>(text, params);
-    const duration = Date.now() - start;
-    if (process.env.NODE_ENV === "development") {
-      console.log("Executed query", { text, duration, rows: res.rowCount });
+  const isTransientConnectionError = (error: unknown): boolean => {
+    const message = error instanceof Error ? error.message : String(error || "");
+    const code = typeof error === "object" && error && "code" in error ? String((error as any).code) : "";
+    const lowered = message.toLowerCase();
+    return (
+      lowered.includes("connection terminated unexpectedly") ||
+      lowered.includes("connection terminated due to connection timeout") ||
+      lowered.includes("read etimedout") ||
+      lowered.includes("econnreset") ||
+      code === "ETIMEDOUT" ||
+      code === "ECONNRESET" ||
+      code === "57P01"
+    );
+  };
+
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    const start = Date.now();
+    try {
+      const res = await pool.query<T>(text, params);
+      const duration = Date.now() - start;
+      if (process.env.NODE_ENV === "development") {
+        console.log("Executed query", { text, duration, rows: res.rowCount, attempt });
+      }
+      return res;
+    } catch (error) {
+      const shouldRetry = attempt === 1 && isTransientConnectionError(error);
+      console.error("Database query error:", {
+        attempt,
+        shouldRetry,
+        error,
+      });
+      if (!shouldRetry) {
+        throw error;
+      }
     }
-    return res;
-  } catch (error) {
-    console.error("Database query error:", error);
-    throw error;
   }
+
+  throw new Error("Database query failed after retry.");
 }
 
 /**
