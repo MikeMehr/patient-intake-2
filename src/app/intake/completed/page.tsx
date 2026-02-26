@@ -1,7 +1,7 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 
 const AUTO_REDIRECT_MS = 30000;
 const DEFAULT_REDIRECT_URL = "https://www.health-assist.org/";
@@ -20,7 +20,7 @@ function resolveRedirectUrl(raw: string | null): string {
   }
 }
 
-export default function IntakeCompletedPage() {
+function IntakeCompletedContent() {
   const searchParams = useSearchParams();
   const [secondsRemaining, setSecondsRemaining] = useState(
     Math.ceil(AUTO_REDIRECT_MS / 1000),
@@ -75,5 +75,27 @@ export default function IntakeCompletedPage() {
         </button>
       </main>
     </div>
+  );
+}
+
+export default function IntakeCompletedPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-slate-100 flex items-center justify-center px-4">
+          <main className="w-full max-w-xl rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
+            <h1 className="text-2xl font-semibold text-slate-900">Submission received</h1>
+            <p className="mt-3 text-sm text-slate-700">
+              Thank you. Your intake has been submitted to your physician.
+            </p>
+            <p className="mt-2 text-sm text-slate-700">
+              For your privacy, please close this browser tab now.
+            </p>
+          </main>
+        </div>
+      }
+    >
+      <IntakeCompletedContent />
+    </Suspense>
   );
 }
