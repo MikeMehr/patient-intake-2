@@ -11,6 +11,7 @@ import {
   getOrgAdminByUsername,
   getProviderByUsername,
 } from "@/lib/auth-helpers";
+import { issueMfaChallenge } from "@/lib/auth-mfa";
 import { logDebug } from "@/lib/secure-logger";
 import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
 import { getRequestIp } from "@/lib/invitation-security";
@@ -123,6 +124,32 @@ export async function POST(request: NextRequest) {
       const res = NextResponse.json(
         { error: "Invalid username or password" },
         { status }
+      );
+      logRequestMeta("/api/auth/login", requestId, status, Date.now() - started);
+      return res;
+    }
+
+    // Create session based on user type
+    if ((user as any).mfa_enabled) {
+      const challenge = await issueMfaChallenge({
+        user: {
+          userType,
+          userId: user.id,
+          email: (user as any).email ?? null,
+        },
+        purpose: "login",
+        ipAddress: ip,
+        userAgent: request.headers.get("user-agent"),
+      });
+      status = 202;
+      const res = NextResponse.json(
+        {
+          success: true,
+          mfaRequired: true,
+          challengeToken: challenge.challengeToken,
+          message: "Verification code required to complete sign in.",
+        },
+        { status },
       );
       logRequestMeta("/api/auth/login", requestId, status, Date.now() - started);
       return res;

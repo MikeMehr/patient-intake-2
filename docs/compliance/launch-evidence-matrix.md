@@ -52,6 +52,14 @@ This matrix links launch controls to objective evidence, owner, and closure crit
   - Last review: 2026-02-22
   - Closure criteria: CI gate enforced and passing
 
+- Control ID: T-07
+  - Control: Password reset does not bypass enabled MFA (ASVS V6.4.3)
+  - Evidence: `src/lib/auth-mfa.ts`, `src/app/api/auth/login/route.ts`, `src/app/api/auth/login/mfa/verify/route.ts`, `src/app/api/auth/reset-password/[token]/route.ts`, `src/lib/migrations/025_add_auth_mfa_primitives.sql`, auth MFA route tests
+  - Owner: Engineering/Security
+  - Status: implemented
+  - Last review: 2026-02-26
+  - Closure criteria: MFA-enabled reset requires OTP verification in regression tests
+
 ## Operational Controls
 
 - Control ID: O-01

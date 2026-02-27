@@ -71,6 +71,16 @@ export async function POST(request: NextRequest) {
 
     const physician = result.rows[0];
 
+    // Keep one active reset token per account.
+    await query(
+      `UPDATE password_reset_tokens
+       SET used = TRUE
+       WHERE physician_id = $1
+         AND used = FALSE
+         AND expires_at > NOW()`,
+      [physician.id],
+    );
+
     // Generate reset token
     const token = randomBytes(32).toString("hex");
     const tokenHash = hashResetToken(token);
@@ -85,7 +95,7 @@ export async function POST(request: NextRequest) {
     );
 
     // In production, send email here (never log or return the token)
-    const resetUrl = `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/auth/reset-password/${token}`;
+    const _resetUrl = `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/auth/reset-password/${token}`;
     // TODO: Send email with reset link (ensure HIPAA-compliant provider/BAA)
     // await sendPasswordResetEmail(physician.email, resetUrl);
 

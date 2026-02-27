@@ -20,6 +20,13 @@ vi.mock("@/lib/password-breach", () => ({
     "Password security check is temporarily unavailable. Please try again in a few minutes.",
 }));
 
+vi.mock("@/lib/auth-mfa", () => ({
+  verifyMfaChallenge: vi.fn(async () => ({ ok: true })),
+  consumeVerifiedMfaChallenge: vi.fn(async () => ({ ok: true, user: { userType: "provider", userId: "11111111-1111-4111-8111-111111111111" } })),
+  issueMfaChallenge: vi.fn(async () => ({ challengeToken: "challenge", expiresInSeconds: 600, emailDeliveryEnabled: true })),
+  hashMfaContextToken: vi.fn(() => "ctx-hash"),
+}));
+
 describe("POST /api/auth/reset-password/[token]", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -48,6 +55,9 @@ describe("POST /api/auth/reset-password/[token]", () => {
           },
         ],
       })
+      .mockResolvedValueOnce({
+        rows: [{ id: "11111111-1111-4111-8111-111111111111", email: "doc@example.com", mfa_enabled: false }],
+      })
       .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [] });
@@ -65,10 +75,10 @@ describe("POST /api/auth/reset-password/[token]", () => {
     );
 
     expect(response.status).toBe(200);
-    expect(queryMock).toHaveBeenCalledTimes(5);
+    expect(queryMock).toHaveBeenCalledTimes(6);
     expect(queryMock.mock.calls[1][1][0]).toMatch(/^[a-f0-9]{64}$/);
     expect(queryMock.mock.calls[1][1][1]).toBe(rawToken);
-    expect(queryMock.mock.calls[3][1]).toEqual(["reset-token-id"]);
+    expect(queryMock.mock.calls[4][1]).toEqual(["reset-token-id"]);
   });
 
   it("rejects replay/unknown tokens", async () => {
@@ -91,10 +101,58 @@ describe("POST /api/auth/reset-password/[token]", () => {
     expect(response.status).toBe(400);
   });
 
+  it("requires MFA consumption for mfa-enabled accounts", async () => {
+    const { consumeVerifiedMfaChallenge } = await import("@/lib/auth-mfa");
+    (consumeVerifiedMfaChallenge as any).mockResolvedValueOnce({ ok: false });
+    queryMock
+      .mockResolvedValueOnce({
+        rows: [{ attempt_count: 1, expires_at: new Date(Date.now() + 60_000) }],
+      })
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            id: "reset-token-id",
+            physician_id: "11111111-1111-4111-8111-111111111111",
+            expires_at: new Date(Date.now() + 60_000),
+            used: false,
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        rows: [{ id: "11111111-1111-4111-8111-111111111111", email: "doc@example.com", mfa_enabled: true }],
+      });
+
+    const { POST } = await import("./route");
+    const response = await POST(
+      new Request("http://localhost/api/auth/reset-password/replay", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ newPassword: "ValidPass123!", challengeToken: "challenge-token" }),
+      }) as any,
+      { params: Promise.resolve({ token: "replay" }) } as any,
+    );
+
+    expect(response.status).toBe(400);
+  });
+
   it("rejects breached passwords", async () => {
-    queryMock.mockResolvedValueOnce({
-      rows: [{ attempt_count: 1, expires_at: new Date(Date.now() + 60_000) }],
-    });
+    queryMock
+      .mockResolvedValueOnce({
+        rows: [{ attempt_count: 1, expires_at: new Date(Date.now() + 60_000) }],
+      })
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            id: "reset-token-id",
+            physician_id: "11111111-1111-4111-8111-111111111111",
+            expires_at: new Date(Date.now() + 60_000),
+            used: false,
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        rows: [{ id: "11111111-1111-4111-8111-111111111111", email: "doc@example.com", mfa_enabled: false }],
+      });
     assessPasswordAgainstBreachesMock.mockResolvedValueOnce({
       breached: true,
       count: 12345,
@@ -114,13 +172,27 @@ describe("POST /api/auth/reset-password/[token]", () => {
     );
 
     expect(response.status).toBe(400);
-    expect(queryMock).toHaveBeenCalledTimes(1);
+    expect(queryMock).toHaveBeenCalledTimes(3);
   });
 
   it("returns 503 when breach provider is unavailable in fail-closed mode", async () => {
-    queryMock.mockResolvedValueOnce({
-      rows: [{ attempt_count: 1, expires_at: new Date(Date.now() + 60_000) }],
-    });
+    queryMock
+      .mockResolvedValueOnce({
+        rows: [{ attempt_count: 1, expires_at: new Date(Date.now() + 60_000) }],
+      })
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            id: "reset-token-id",
+            physician_id: "11111111-1111-4111-8111-111111111111",
+            expires_at: new Date(Date.now() + 60_000),
+            used: false,
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        rows: [{ id: "11111111-1111-4111-8111-111111111111", email: "doc@example.com", mfa_enabled: false }],
+      });
     assessPasswordAgainstBreachesMock.mockResolvedValueOnce({
       breached: false,
       count: 0,
@@ -140,7 +212,7 @@ describe("POST /api/auth/reset-password/[token]", () => {
     );
 
     expect(response.status).toBe(503);
-    expect(queryMock).toHaveBeenCalledTimes(1);
+    expect(queryMock).toHaveBeenCalledTimes(3);
   });
 
   it("rejects expired tokens", async () => {

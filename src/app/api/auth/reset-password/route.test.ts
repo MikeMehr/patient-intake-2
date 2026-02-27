@@ -25,6 +25,7 @@ describe("POST /api/auth/reset-password", () => {
       .mockResolvedValueOnce({
         rows: [{ id: "11111111-1111-4111-8111-111111111111", email: "doctor@example.com" }],
       })
+      .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [] });
 
     const { POST } = await import("./route");
@@ -38,9 +39,9 @@ describe("POST /api/auth/reset-password", () => {
     );
 
     expect(response.status).toBe(200);
-    expect(queryMock).toHaveBeenCalledTimes(3);
+    expect(queryMock).toHaveBeenCalledTimes(4);
 
-    const [, insertParams] = queryMock.mock.calls[2];
+    const [, insertParams] = queryMock.mock.calls[3];
     expect(insertParams[0]).toBe("11111111-1111-4111-8111-111111111111");
     expect(insertParams[1]).toMatch(/^[a-f0-9]{64}$/);
     expect(insertParams[2]).toBeInstanceOf(Date);

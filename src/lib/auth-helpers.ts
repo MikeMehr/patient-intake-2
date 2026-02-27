@@ -17,8 +17,9 @@ export async function getSuperAdminByUsername(username: string) {
     email: string;
     first_name: string;
     last_name: string;
+    mfa_enabled: boolean;
   }>(
-    `SELECT id, username, password_hash, email, first_name, last_name
+    `SELECT id, username, password_hash, email, first_name, last_name, mfa_enabled
      FROM super_admin_users
      WHERE username = $1`,
     [username.toLowerCase().trim()]
@@ -44,8 +45,9 @@ export async function getOrgAdminByUsername(username: string) {
     first_name: string;
     last_name: string;
     role: string;
+    mfa_enabled: boolean;
   }>(
-    `SELECT id, organization_id, username, password_hash, email, first_name, last_name, role
+    `SELECT id, organization_id, username, password_hash, email, first_name, last_name, role, mfa_enabled
      FROM organization_users
      WHERE username = $1`,
     [username.toLowerCase().trim()]
@@ -74,8 +76,9 @@ export async function getProviderByUsername(username: string) {
     clinic_address: string | null;
     unique_slug: string;
     phone: string | null;
+    mfa_enabled: boolean;
   }>(
-    `SELECT id, organization_id, username, password_hash, email, first_name, last_name, clinic_name, clinic_address, unique_slug, phone
+    `SELECT id, organization_id, username, password_hash, email, first_name, last_name, clinic_name, clinic_address, unique_slug, phone, mfa_enabled
      FROM physicians
      WHERE username = $1`,
     [username.toLowerCase().trim()]
@@ -86,6 +89,62 @@ export async function getProviderByUsername(username: string) {
   }
 
   return result.rows[0];
+}
+
+export async function getAuthUserByTypeAndId(userType: UserType, userId: string) {
+  if (userType === "super_admin") {
+    const result = await query<{
+      id: string;
+      username: string;
+      first_name: string;
+      last_name: string;
+      email: string;
+      mfa_enabled: boolean;
+    }>(
+      `SELECT id, username, first_name, last_name, email, mfa_enabled
+       FROM super_admin_users
+       WHERE id = $1`,
+      [userId],
+    );
+    return result.rows[0] || null;
+  }
+
+  if (userType === "org_admin") {
+    const result = await query<{
+      id: string;
+      username: string;
+      first_name: string;
+      last_name: string;
+      email: string;
+      organization_id: string;
+      mfa_enabled: boolean;
+    }>(
+      `SELECT id, username, first_name, last_name, email, organization_id, mfa_enabled
+       FROM organization_users
+       WHERE id = $1`,
+      [userId],
+    );
+    return result.rows[0] || null;
+  }
+
+  const result = await query<{
+    id: string;
+    username: string;
+    first_name: string;
+    last_name: string;
+    email: string | null;
+    organization_id: string | null;
+    clinic_name: string;
+    clinic_address: string | null;
+    unique_slug: string;
+    mfa_enabled: boolean;
+  }>(
+    `SELECT id, username, first_name, last_name, email, organization_id, clinic_name, clinic_address, unique_slug, mfa_enabled
+     FROM physicians
+     WHERE id = $1`,
+    [userId],
+  );
+  return result.rows[0] || null;
 }
 
 /**

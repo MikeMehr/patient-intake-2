@@ -7,12 +7,17 @@ export default function LoginPage() {
   const router = useRouter();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [otpCode, setOtpCode] = useState("");
+  const [challengeToken, setChallengeToken] = useState("");
+  const [mfaRequired, setMfaRequired] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleLoginSubmit = async (e?: React.FormEvent) => {
+    e?.preventDefault();
     setError(null);
+    setMessage(null);
     setLoading(true);
 
     try {
@@ -30,6 +35,14 @@ export default function LoginPage() {
         return;
       }
 
+      if (data.mfaRequired && data.challengeToken) {
+        setMfaRequired(true);
+        setChallengeToken(data.challengeToken);
+        setMessage(data.message || "Enter the verification code sent to your email.");
+        setLoading(false);
+        return;
+      }
+
       // Redirect based on user type
       if (data.userType === "super_admin") {
         router.push("/admin/dashboard");
@@ -40,6 +53,42 @@ export default function LoginPage() {
       }
       router.refresh();
     } catch (err) {
+      setError("An error occurred. Please try again.");
+      setLoading(false);
+    }
+  };
+
+  const handleMfaVerify = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setMessage(null);
+    setLoading(true);
+
+    try {
+      const response = await fetch("/api/auth/login/mfa/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          challengeToken,
+          otpCode,
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setError(data.error || "Verification failed");
+        setLoading(false);
+        return;
+      }
+
+      if (data.userType === "super_admin") {
+        router.push("/admin/dashboard");
+      } else if (data.userType === "org_admin") {
+        router.push("/org/dashboard");
+      } else {
+        router.push("/physician/dashboard");
+      }
+      router.refresh();
+    } catch {
       setError("An error occurred. Please try again.");
       setLoading(false);
     }
@@ -60,8 +109,14 @@ export default function LoginPage() {
             <p className="text-sm text-red-800">{error}</p>
           </div>
         )}
+        {message && (
+          <div className="mb-4 rounded-lg bg-emerald-50 border border-emerald-200 px-4 py-3">
+            <p className="text-sm text-emerald-800">{message}</p>
+          </div>
+        )}
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        {!mfaRequired ? (
+        <form onSubmit={handleLoginSubmit} className="space-y-4">
           <div>
             <label
               htmlFor="username"
@@ -108,6 +163,46 @@ export default function LoginPage() {
             {loading ? "Signing in..." : "Sign In"}
           </button>
         </form>
+        ) : (
+          <form onSubmit={handleMfaVerify} className="space-y-4">
+            <div>
+              <label
+                htmlFor="otp-code"
+                className="block text-sm font-medium text-slate-700 mb-1"
+              >
+                Verification code
+              </label>
+              <input
+                id="otp-code"
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]{6}"
+                maxLength={6}
+                value={otpCode}
+                onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ""))}
+                required
+                disabled={loading}
+                className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200 disabled:cursor-not-allowed disabled:opacity-70"
+                placeholder="Enter 6-digit code"
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full rounded-lg bg-slate-900 px-4 py-3 text-base font-semibold text-white transition hover:bg-slate-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900 disabled:cursor-not-allowed disabled:bg-slate-400"
+            >
+              {loading ? "Verifying..." : "Verify and sign in"}
+            </button>
+            <button
+              type="button"
+              disabled={loading}
+              onClick={handleLoginSubmit}
+              className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-base font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-70"
+            >
+              Resend code
+            </button>
+          </form>
+        )}
 
         <div className="mt-6 text-center">
           <a
