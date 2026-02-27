@@ -9,6 +9,11 @@ import { hashPassword, validatePassword } from "@/lib/auth";
 import { hashResetToken } from "@/lib/reset-token-security";
 import { getRequestIp } from "@/lib/invitation-security";
 import { consumeDbRateLimit } from "@/lib/rate-limit";
+import {
+  assessPasswordAgainstBreaches,
+  BREACHED_PASSWORD_ERROR,
+  BREACH_CHECK_UNAVAILABLE_ERROR,
+} from "@/lib/password-breach";
 
 const RESET_CONSUME_MAX_ATTEMPTS = 10;
 const RESET_CONSUME_WINDOW_SECONDS = 15 * 60;
@@ -51,6 +56,20 @@ export async function POST(
       return NextResponse.json(
         { error: passwordValidation.error },
         { status: 400 }
+      );
+    }
+
+    const breachAssessment = await assessPasswordAgainstBreaches(newPassword);
+    if (breachAssessment.unavailable && !breachAssessment.failOpen) {
+      return NextResponse.json(
+        { error: BREACH_CHECK_UNAVAILABLE_ERROR },
+        { status: 503 },
+      );
+    }
+    if (breachAssessment.breached) {
+      return NextResponse.json(
+        { error: BREACHED_PASSWORD_ERROR },
+        { status: 400 },
       );
     }
 
