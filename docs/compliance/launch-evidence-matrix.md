@@ -60,6 +60,22 @@ This matrix links launch controls to objective evidence, owner, and closure crit
   - Last review: 2026-02-26
   - Closure criteria: MFA-enabled reset requires OTP verification in regression tests
 
+- Control ID: T-08
+  - Control: Provider MFA enrollment is admin-enforced (ASVS V6.4.4 enrollment)
+  - Evidence: `src/app/api/admin/providers/[id]/route.ts`, `src/app/api/org/providers/[id]/route.ts`, provider edit pages under `src/app/admin/organizations/[id]/providers/[providerId]/edit/page.tsx` and `src/app/org/providers/[id]/edit/page.tsx`, provider route tests
+  - Owner: Engineering/Security
+  - Status: implemented
+  - Last review: 2026-02-27
+  - Closure criteria: provider MFA toggle persists via API and is visible in admin/org edit flows
+
+- Control ID: T-09
+  - Control: Provider MFA challenge + recovery supports backup codes (ASVS V6.4.4 recovery)
+  - Evidence: `src/lib/migrations/026_add_mfa_backup_recovery_codes.sql`, `src/lib/auth-mfa.ts`, `src/app/api/auth/login/mfa/recovery/route.ts`, backup-code admin/org routes, MFA verify/recovery tests, `src/lib/auth-mfa.test.ts`
+  - Owner: Engineering/Security
+  - Status: implemented
+  - Last review: 2026-02-27
+  - Closure criteria: backup codes generate/rotate/status and one-time recovery login behavior validated in tests
+
 ## Operational Controls
 
 - Control ID: O-01

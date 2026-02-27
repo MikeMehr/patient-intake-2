@@ -25,6 +25,7 @@
   1. `src/lib/migrations/020_harden_reset_tokens.sql`
   2. `src/lib/migrations/021_remove_raw_invitation_link_storage.sql`
   3. `src/lib/migrations/025_add_auth_mfa_primitives.sql`
+  4. `src/lib/migrations/026_add_mfa_backup_recovery_codes.sql`
 - Validate:
   - reset token flow for existing and new records
   - invitation send/list behavior

@@ -87,4 +87,42 @@ describe("POST /api/auth/login/mfa/verify", () => {
     expect(response.status).toBe(400);
     expect(createSessionMock).not.toHaveBeenCalled();
   });
+
+  it("returns 429 when verification is rate limited", async () => {
+    consumeDbRateLimitMock.mockResolvedValueOnce({
+      allowed: false,
+      retryAfterSeconds: 120,
+    });
+    const { POST } = await import("./route");
+    const response = await POST(
+      new Request("http://localhost/api/auth/login/mfa/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          challengeToken: "challenge-token",
+          otpCode: "123456",
+        }),
+      }) as any,
+    );
+
+    expect(response.status).toBe(429);
+    expect(verifyMfaChallengeMock).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 when required fields are missing", async () => {
+    const { POST } = await import("./route");
+    const response = await POST(
+      new Request("http://localhost/api/auth/login/mfa/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          challengeToken: "",
+          otpCode: "",
+        }),
+      }) as any,
+    );
+
+    expect(response.status).toBe(400);
+    expect(verifyMfaChallengeMock).not.toHaveBeenCalled();
+  });
 });

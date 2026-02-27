@@ -46,8 +46,9 @@ export async function GET(
       phone: string | null;
       unique_slug: string;
       organization_id: string | null;
+      mfa_enabled: boolean;
     }>(
-      `SELECT id, first_name, last_name, clinic_name, username, email, phone, unique_slug, organization_id
+      `SELECT id, first_name, last_name, clinic_name, username, email, phone, unique_slug, organization_id, mfa_enabled
        FROM physicians
        WHERE id = $1`,
       [id]
@@ -76,6 +77,7 @@ export async function GET(
         phone: provider.phone,
         uniqueSlug: provider.unique_slug,
         organizationId: provider.organization_id,
+        mfaEnabled: provider.mfa_enabled,
       },
     });
     logRequestMeta("/api/admin/providers/[id]", requestId, status, Date.now() - started);
@@ -113,7 +115,7 @@ export async function PUT(
 
     const { id } = await params;
     const body = await request.json();
-    const { firstName, lastName, clinicName, email, phone, organizationId, password } = body;
+    const { firstName, lastName, clinicName, email, phone, organizationId, password, mfaEnabled } = body;
 
     // Check if provider exists
     const existingProvider = await query<{ id: string }>(
@@ -198,6 +200,10 @@ export async function PUT(
     if (passwordHash) {
       updates.push(`password_hash = $${paramIndex++}`);
       values.push(passwordHash);
+    }
+    if (mfaEnabled !== undefined) {
+      updates.push(`mfa_enabled = $${paramIndex++}`);
+      values.push(Boolean(mfaEnabled));
     }
 
     if (updates.length === 0) {

@@ -7,6 +7,7 @@ const OTP_TTL_MINUTES = 10;
 const OTP_COOLDOWN_MINUTES = 5;
 const OTP_MAX_ATTEMPTS = 5;
 const OTP_DIGITS = 6;
+const BACKUP_CODE_COUNT = 10;
 
 const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
 
@@ -46,9 +47,20 @@ function createChallengeToken(): string {
   return randomBytes(32).toString("hex");
 }
 
+function createBackupCode(): string {
+  return randomBytes(5).toString("hex").toUpperCase();
+}
+
 function auditMfaEvent(event: {
   purpose: MfaPurpose;
-  action: "challenge_issued" | "challenge_verified" | "challenge_failed" | "challenge_consumed";
+  action:
+    | "challenge_issued"
+    | "challenge_verified"
+    | "challenge_failed"
+    | "challenge_consumed"
+    | "backup_codes_generated"
+    | "backup_codes_rotated"
+    | "backup_code_consumed";
   outcome: "success" | "failure";
   userType?: UserType;
   userId?: string;
@@ -337,4 +349,159 @@ export async function consumeVerifiedMfaChallenge(params: {
 
 export function hashMfaContextToken(token: string): string {
   return hashValue(token);
+}
+
+export async function getBackupCodeStatus(params: {
+  userType: UserType;
+  userId: string;
+}): Promise<{ activeCodes: number; lastGeneratedAt: string | null }> {
+  const result = await query<{ active_codes: number; last_generated_at: Date | null }>(
+    `SELECT
+       COUNT(*) FILTER (WHERE used_at IS NULL AND invalidated_at IS NULL)::int AS active_codes,
+       MAX(created_at) AS last_generated_at
+     FROM auth_mfa_backup_codes
+     WHERE user_type = $1
+       AND user_id = $2`,
+    [params.userType, params.userId],
+  );
+  const row = result.rows[0];
+  return {
+    activeCodes: Number(row?.active_codes || 0),
+    lastGeneratedAt: row?.last_generated_at ? new Date(row.last_generated_at).toISOString() : null,
+  };
+}
+
+export async function generateBackupCodes(params: {
+  userType: UserType;
+  userId: string;
+  rotateExisting: boolean;
+  count?: number;
+}): Promise<{ codes: string[]; activeCodes: number; lastGeneratedAt: string | null }> {
+  const existing = await getBackupCodeStatus({
+    userType: params.userType,
+    userId: params.userId,
+  });
+  if (existing.activeCodes > 0 && !params.rotateExisting) {
+    throw new Error("ACTIVE_CODES_EXIST");
+  }
+
+  if (params.rotateExisting) {
+    await query(
+      `UPDATE auth_mfa_backup_codes
+       SET invalidated_at = NOW()
+       WHERE user_type = $1
+         AND user_id = $2
+         AND used_at IS NULL
+         AND invalidated_at IS NULL`,
+      [params.userType, params.userId],
+    );
+  }
+
+  const count = Math.max(1, params.count || BACKUP_CODE_COUNT);
+  const codes: string[] = [];
+  for (let i = 0; i < count; i += 1) {
+    const code = createBackupCode();
+    codes.push(code);
+    await query(
+      `INSERT INTO auth_mfa_backup_codes (user_type, user_id, code_hash)
+       VALUES ($1, $2, $3)`,
+      [params.userType, params.userId, hashValue(code)],
+    );
+  }
+
+  auditMfaEvent({
+    purpose: "login",
+    action: params.rotateExisting ? "backup_codes_rotated" : "backup_codes_generated",
+    outcome: "success",
+    userType: params.userType,
+    userId: params.userId,
+    metadata: { count: codes.length },
+  });
+
+  const updated = await getBackupCodeStatus({
+    userType: params.userType,
+    userId: params.userId,
+  });
+  return {
+    codes,
+    activeCodes: updated.activeCodes,
+    lastGeneratedAt: updated.lastGeneratedAt,
+  };
+}
+
+export async function consumeBackupCodeForChallenge(params: {
+  challengeToken: string;
+  backupCode: string;
+  purpose: MfaPurpose;
+}): Promise<{ ok: boolean; reason?: "missing" | "expired" | "invalid"; user?: { userType: UserType; userId: string } }> {
+  const challengeTokenHash = hashValue(params.challengeToken);
+  const challengeResult = await query<{
+    id: string;
+    user_type: UserType;
+    user_id: string;
+    expires_at: Date;
+    consumed_at: Date | null;
+  }>(
+    `SELECT id, user_type, user_id, expires_at, consumed_at
+     FROM auth_mfa_challenges
+     WHERE challenge_token_hash = $1
+       AND purpose = $2
+       AND consumed_at IS NULL
+     ORDER BY created_at DESC
+     LIMIT 1`,
+    [challengeTokenHash, params.purpose],
+  );
+  if (challengeResult.rows.length === 0) {
+    return { ok: false, reason: "missing" };
+  }
+
+  const challenge = challengeResult.rows[0];
+  if (challenge.expires_at.getTime() <= Date.now()) {
+    return { ok: false, reason: "expired" };
+  }
+
+  const normalized = params.backupCode.trim().toUpperCase();
+  const codeHash = hashValue(normalized);
+  const codeResult = await query<{ id: string }>(
+    `SELECT id
+     FROM auth_mfa_backup_codes
+     WHERE user_type = $1
+       AND user_id = $2
+       AND code_hash = $3
+       AND used_at IS NULL
+       AND invalidated_at IS NULL
+     LIMIT 1`,
+    [challenge.user_type, challenge.user_id, codeHash],
+  );
+  if (codeResult.rows.length === 0) {
+    return { ok: false, reason: "invalid" };
+  }
+
+  await query(
+    `UPDATE auth_mfa_backup_codes
+     SET used_at = NOW()
+     WHERE id = $1`,
+    [codeResult.rows[0].id],
+  );
+  await query(
+    `UPDATE auth_mfa_challenges
+     SET verified_at = NOW(),
+         consumed_at = NOW(),
+         updated_at = NOW()
+     WHERE id = $1`,
+    [challenge.id],
+  );
+
+  auditMfaEvent({
+    purpose: params.purpose,
+    action: "backup_code_consumed",
+    outcome: "success",
+    userType: challenge.user_type,
+    userId: challenge.user_id,
+  });
+
+  return {
+    ok: true,
+    user: { userType: challenge.user_type, userId: challenge.user_id },
+  };
 }

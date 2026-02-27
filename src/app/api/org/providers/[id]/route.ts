@@ -8,7 +8,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { getCurrentSession } from "@/lib/auth";
 import { query } from "@/lib/db";
 import { hashPassword, validatePassword } from "@/lib/auth";
-import { verifyOrganizationOwnership } from "@/lib/auth-helpers";
 import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
 import {
   assessPasswordAgainstBreaches,
@@ -48,8 +47,9 @@ export async function GET(
       phone: string | null;
       unique_slug: string;
       organization_id: string | null;
+      mfa_enabled: boolean;
     }>(
-      `SELECT id, first_name, last_name, clinic_name, username, email, phone, unique_slug, organization_id
+      `SELECT id, first_name, last_name, clinic_name, username, email, phone, unique_slug, organization_id, mfa_enabled
        FROM physicians
        WHERE id = $1 AND organization_id = $2`,
       [id, session.organizationId]
@@ -78,6 +78,7 @@ export async function GET(
         phone: provider.phone,
         uniqueSlug: provider.unique_slug,
         organizationId: provider.organization_id,
+        mfaEnabled: provider.mfa_enabled,
       },
     });
     logRequestMeta("/api/org/providers/[id]", requestId, status, Date.now() - started);
@@ -115,7 +116,7 @@ export async function PUT(
 
     const { id } = await params;
     const body = await request.json();
-    const { firstName, lastName, clinicName, email, phone, password } = body;
+    const { firstName, lastName, clinicName, email, phone, password, mfaEnabled } = body;
 
     // Verify provider belongs to organization
     const existingProvider = await query<{ id: string; organization_id: string | null }>(
@@ -196,6 +197,10 @@ export async function PUT(
     if (passwordHash) {
       updates.push(`password_hash = $${paramIndex++}`);
       values.push(passwordHash);
+    }
+    if (mfaEnabled !== undefined) {
+      updates.push(`mfa_enabled = $${paramIndex++}`);
+      values.push(Boolean(mfaEnabled));
     }
 
     if (updates.length === 0) {
