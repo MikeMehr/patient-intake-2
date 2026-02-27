@@ -23,7 +23,7 @@ const SESSION_COOKIE_NAME = "physician_session";
 // Session semantics:
 // - idle timeout: extended only via explicit refresh (see getCurrentSession({ refresh: true }))
 // - absolute max: fixed since DB `created_at` (cannot be extended)
-const IDLE_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
+const IDLE_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
 const ABSOLUTE_MAX_MS = 4 * 60 * 60 * 1000; // 4 hours
 
 function getSessionCookieBaseOptions() {

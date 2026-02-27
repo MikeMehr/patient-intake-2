@@ -45,6 +45,12 @@ function safeCompare(a: string, b: string): boolean {
   return timingSafeEqual(aBuf, bBuf);
 }
 
+function isMissingColumnError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const pgError = error as { code?: string };
+  return pgError.code === "42703";
+}
+
 function createOtpCode(): string {
   const code = randomBytes(4).readUInt32BE(0) % 10 ** OTP_DIGITS;
   return code.toString().padStart(OTP_DIGITS, "0");
@@ -369,28 +375,48 @@ export async function getWorkforceRecoveryState(params: {
   userId: string;
 }): Promise<WorkforceRecoveryState | null> {
   const table = getWorkforceTable(params.userType);
-  const result = await query<{
-    mfa_enabled: boolean;
-    mfa_recovery_version: number;
-    backup_codes_required: boolean;
-    mfa_recovery_reset_at: Date | null;
-  }>(
-    `SELECT mfa_enabled, mfa_recovery_version, backup_codes_required, mfa_recovery_reset_at
-     FROM ${table}
-     WHERE id = $1
-     LIMIT 1`,
-    [params.userId],
-  );
-  const row = result.rows[0];
-  if (!row) return null;
-  return {
-    mfaEnabled: Boolean(row.mfa_enabled),
-    recoveryVersion: Number(row.mfa_recovery_version || 1),
-    backupCodesRequired: Boolean(row.backup_codes_required),
-    recoveryResetAt: row.mfa_recovery_reset_at
-      ? new Date(row.mfa_recovery_reset_at).toISOString()
-      : null,
-  };
+  try {
+    const result = await query<{
+      mfa_enabled: boolean;
+      mfa_recovery_version: number;
+      backup_codes_required: boolean;
+      mfa_recovery_reset_at: Date | null;
+    }>(
+      `SELECT mfa_enabled, mfa_recovery_version, backup_codes_required, mfa_recovery_reset_at
+       FROM ${table}
+       WHERE id = $1
+       LIMIT 1`,
+      [params.userId],
+    );
+    const row = result.rows[0];
+    if (!row) return null;
+    return {
+      mfaEnabled: Boolean(row.mfa_enabled),
+      recoveryVersion: Number(row.mfa_recovery_version || 1),
+      backupCodesRequired: Boolean(row.backup_codes_required),
+      recoveryResetAt: row.mfa_recovery_reset_at
+        ? new Date(row.mfa_recovery_reset_at).toISOString()
+        : null,
+    };
+  } catch (error) {
+    if (!isMissingColumnError(error)) throw error;
+    // Compatibility fallback when migration 027 has not been applied yet.
+    const fallback = await query<{ mfa_enabled: boolean }>(
+      `SELECT mfa_enabled
+       FROM ${table}
+       WHERE id = $1
+       LIMIT 1`,
+      [params.userId],
+    );
+    const row = fallback.rows[0];
+    if (!row) return null;
+    return {
+      mfaEnabled: Boolean(row.mfa_enabled),
+      recoveryVersion: 1,
+      backupCodesRequired: false,
+      recoveryResetAt: null,
+    };
+  }
 }
 
 export async function adminResetMfaRecovery(params: {
@@ -398,15 +424,25 @@ export async function adminResetMfaRecovery(params: {
   userId: string;
 }): Promise<WorkforceRecoveryState | null> {
   const table = getWorkforceTable(params.userType);
-  await query(
-    `UPDATE ${table}
-     SET mfa_enabled = TRUE,
-         mfa_recovery_version = mfa_recovery_version + 1,
-         mfa_recovery_reset_at = NOW(),
-         backup_codes_required = TRUE
-     WHERE id = $1`,
-    [params.userId],
-  );
+  try {
+    await query(
+      `UPDATE ${table}
+       SET mfa_enabled = TRUE,
+           mfa_recovery_version = mfa_recovery_version + 1,
+           mfa_recovery_reset_at = NOW(),
+           backup_codes_required = TRUE
+       WHERE id = $1`,
+      [params.userId],
+    );
+  } catch (error) {
+    if (!isMissingColumnError(error)) throw error;
+    await query(
+      `UPDATE ${table}
+       SET mfa_enabled = TRUE
+       WHERE id = $1`,
+      [params.userId],
+    );
+  }
   await query(
     `UPDATE auth_mfa_backup_codes
      SET invalidated_at = NOW()
@@ -451,16 +487,30 @@ export async function getBackupCodeStatus(params: {
       recoveryResetAt: null,
     };
   }
-  const result = await query<{ active_codes: number; last_generated_at: Date | null }>(
-    `SELECT
-       COUNT(*) FILTER (WHERE used_at IS NULL AND invalidated_at IS NULL)::int AS active_codes,
-       MAX(created_at) AS last_generated_at
-     FROM auth_mfa_backup_codes
-     WHERE user_type = $1
-       AND user_id = $2
-       AND recovery_version = $3`,
-    [params.userType, params.userId, state.recoveryVersion],
-  );
+  let result;
+  try {
+    result = await query<{ active_codes: number; last_generated_at: Date | null }>(
+      `SELECT
+         COUNT(*) FILTER (WHERE used_at IS NULL AND invalidated_at IS NULL)::int AS active_codes,
+         MAX(created_at) AS last_generated_at
+       FROM auth_mfa_backup_codes
+       WHERE user_type = $1
+         AND user_id = $2
+         AND recovery_version = $3`,
+      [params.userType, params.userId, state.recoveryVersion],
+    );
+  } catch (error) {
+    if (!isMissingColumnError(error)) throw error;
+    result = await query<{ active_codes: number; last_generated_at: Date | null }>(
+      `SELECT
+         COUNT(*) FILTER (WHERE used_at IS NULL AND invalidated_at IS NULL)::int AS active_codes,
+         MAX(created_at) AS last_generated_at
+       FROM auth_mfa_backup_codes
+       WHERE user_type = $1
+         AND user_id = $2`,
+      [params.userType, params.userId],
+    );
+  }
   const row = result.rows[0];
   return {
     activeCodes: Number(row?.active_codes || 0),
@@ -512,14 +562,33 @@ export async function generateBackupCodes(params: {
 
   const count = Math.max(1, params.count || BACKUP_CODE_COUNT);
   const codes: string[] = [];
+  let supportsRecoveryVersion = true;
   for (let i = 0; i < count; i += 1) {
     const code = createBackupCode();
     codes.push(code);
-    await query(
-      `INSERT INTO auth_mfa_backup_codes (user_type, user_id, code_hash, recovery_version)
-       VALUES ($1, $2, $3, $4)`,
-      [params.userType, params.userId, hashValue(code), recoveryVersion],
-    );
+    if (supportsRecoveryVersion) {
+      try {
+        await query(
+          `INSERT INTO auth_mfa_backup_codes (user_type, user_id, code_hash, recovery_version)
+           VALUES ($1, $2, $3, $4)`,
+          [params.userType, params.userId, hashValue(code), recoveryVersion],
+        );
+      } catch (error) {
+        if (!isMissingColumnError(error)) throw error;
+        supportsRecoveryVersion = false;
+        await query(
+          `INSERT INTO auth_mfa_backup_codes (user_type, user_id, code_hash)
+           VALUES ($1, $2, $3)`,
+          [params.userType, params.userId, hashValue(code)],
+        );
+      }
+    } else {
+      await query(
+        `INSERT INTO auth_mfa_backup_codes (user_type, user_id, code_hash)
+         VALUES ($1, $2, $3)`,
+        [params.userType, params.userId, hashValue(code)],
+      );
+    }
   }
 
   const table = getWorkforceTable(params.userType);
@@ -597,18 +666,34 @@ export async function consumeBackupCodeForChallenge(params: {
 
   const normalized = params.backupCode.trim().toUpperCase();
   const codeHash = hashValue(normalized);
-  const codeResult = await query<{ id: string }>(
-    `SELECT id
-     FROM auth_mfa_backup_codes
-     WHERE user_type = $1
-       AND user_id = $2
-       AND code_hash = $3
-       AND used_at IS NULL
-       AND invalidated_at IS NULL
-       AND recovery_version = $4
-     LIMIT 1`,
-    [challenge.user_type, challenge.user_id, codeHash, state.recoveryVersion],
-  );
+  let codeResult;
+  try {
+    codeResult = await query<{ id: string }>(
+      `SELECT id
+       FROM auth_mfa_backup_codes
+       WHERE user_type = $1
+         AND user_id = $2
+         AND code_hash = $3
+         AND used_at IS NULL
+         AND invalidated_at IS NULL
+         AND recovery_version = $4
+       LIMIT 1`,
+      [challenge.user_type, challenge.user_id, codeHash, state.recoveryVersion],
+    );
+  } catch (error) {
+    if (!isMissingColumnError(error)) throw error;
+    codeResult = await query<{ id: string }>(
+      `SELECT id
+       FROM auth_mfa_backup_codes
+       WHERE user_type = $1
+         AND user_id = $2
+         AND code_hash = $3
+         AND used_at IS NULL
+         AND invalidated_at IS NULL
+       LIMIT 1`,
+      [challenge.user_type, challenge.user_id, codeHash],
+    );
+  }
   if (codeResult.rows.length === 0) {
     return { ok: false, reason: "invalid" };
   }

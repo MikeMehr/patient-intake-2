@@ -4,6 +4,12 @@ import { query } from "@/lib/db";
 import { generateBackupCodes, getBackupCodeStatus } from "@/lib/auth-mfa";
 import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
 
+function isMfaRecoverySchemaMissing(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const pgError = error as { code?: string };
+  return pgError.code === "42P01" || pgError.code === "42703";
+}
+
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
@@ -43,6 +49,15 @@ export async function GET(
     logRequestMeta("/api/admin/providers/[id]/mfa/backup-codes", requestId, status, Date.now() - started);
     return res;
   } catch (error) {
+    if (isMfaRecoverySchemaMissing(error)) {
+      status = 503;
+      const res = NextResponse.json(
+        { error: "MFA recovery requires DB migrations 026 and 027 to be applied." },
+        { status },
+      );
+      logRequestMeta("/api/admin/providers/[id]/mfa/backup-codes", requestId, status, Date.now() - started);
+      return res;
+    }
     status = 500;
     console.error("[admin/providers/[id]/mfa/backup-codes] GET Error", error);
     const res = NextResponse.json({ error: "Internal server error" }, { status });
@@ -112,9 +127,27 @@ export async function POST(
         logRequestMeta("/api/admin/providers/[id]/mfa/backup-codes", requestId, status, Date.now() - started);
         return res;
       }
+      if (isMfaRecoverySchemaMissing(error)) {
+        status = 503;
+        const res = NextResponse.json(
+          { error: "MFA recovery requires DB migrations 026 and 027 to be applied." },
+          { status },
+        );
+        logRequestMeta("/api/admin/providers/[id]/mfa/backup-codes", requestId, status, Date.now() - started);
+        return res;
+      }
       throw error;
     }
   } catch (error) {
+    if (isMfaRecoverySchemaMissing(error)) {
+      status = 503;
+      const res = NextResponse.json(
+        { error: "MFA recovery requires DB migrations 026 and 027 to be applied." },
+        { status },
+      );
+      logRequestMeta("/api/admin/providers/[id]/mfa/backup-codes", requestId, status, Date.now() - started);
+      return res;
+    }
     status = 500;
     console.error("[admin/providers/[id]/mfa/backup-codes] POST Error", error);
     const res = NextResponse.json({ error: "Internal server error" }, { status });

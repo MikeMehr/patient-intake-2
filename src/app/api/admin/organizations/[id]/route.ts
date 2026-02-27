@@ -37,6 +37,19 @@ async function hasOrganizationWebsiteColumn(): Promise<boolean> {
   return Boolean(result.rows[0]?.exists);
 }
 
+async function hasOrganizationUserRecoveryColumns(): Promise<boolean> {
+  const result = await query<{ exists: boolean }>(
+    `SELECT EXISTS (
+       SELECT 1
+       FROM information_schema.columns
+       WHERE table_schema = 'public'
+         AND table_name = 'organization_users'
+         AND column_name = 'backup_codes_required'
+     ) AS exists`,
+  );
+  return Boolean(result.rows[0]?.exists);
+}
+
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -111,6 +124,7 @@ export async function GET(
       [id]
     );
 
+    const hasOrgAdminRecoveryColumns = await hasOrganizationUserRecoveryColumns();
     const orgAdminsResult = await query<{
       id: string;
       username: string;
@@ -121,7 +135,12 @@ export async function GET(
       backup_codes_required: boolean;
       mfa_recovery_reset_at: Date | null;
     }>(
-      `SELECT id, username, email, first_name, last_name, mfa_enabled, backup_codes_required, mfa_recovery_reset_at
+      `SELECT id, username, email, first_name, last_name, mfa_enabled,
+              ${
+                hasOrgAdminRecoveryColumns
+                  ? "backup_codes_required, mfa_recovery_reset_at"
+                  : "FALSE AS backup_codes_required, NULL::timestamptz AS mfa_recovery_reset_at"
+              }
        FROM organization_users
        WHERE organization_id = $1
        ORDER BY created_at DESC`,

@@ -24,6 +24,8 @@ describe("/api/admin/workforce", () => {
 
   it("returns super-admin and org-admin workforce records", async () => {
     queryMock
+      .mockResolvedValueOnce({ rows: [{ exists: true }] })
+      .mockResolvedValueOnce({ rows: [{ exists: true }] })
       .mockResolvedValueOnce({
         rows: [
           {

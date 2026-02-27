@@ -3,6 +3,20 @@ import { getCurrentSession } from "@/lib/auth";
 import { query } from "@/lib/db";
 import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
 
+async function hasRecoveryColumns(tableName: "organization_users" | "super_admin_users"): Promise<boolean> {
+  const result = await query<{ exists: boolean }>(
+    `SELECT EXISTS (
+       SELECT 1
+       FROM information_schema.columns
+       WHERE table_schema = 'public'
+         AND table_name = $1
+         AND column_name = 'backup_codes_required'
+     ) AS exists`,
+    [tableName],
+  );
+  return Boolean(result.rows[0]?.exists);
+}
+
 export async function GET(request: NextRequest) {
   const requestId = getRequestId(request.headers);
   const started = Date.now();
@@ -19,6 +33,9 @@ export async function GET(request: NextRequest) {
       return res;
     }
 
+    const superAdminHasRecoveryColumns = await hasRecoveryColumns("super_admin_users");
+    const orgAdminHasRecoveryColumns = await hasRecoveryColumns("organization_users");
+
     const superAdminsResult = await query<{
       id: string;
       username: string;
@@ -29,7 +46,12 @@ export async function GET(request: NextRequest) {
       backup_codes_required: boolean;
       mfa_recovery_reset_at: Date | null;
     }>(
-      `SELECT id, username, email, first_name, last_name, mfa_enabled, backup_codes_required, mfa_recovery_reset_at
+      `SELECT id, username, email, first_name, last_name, mfa_enabled,
+              ${
+                superAdminHasRecoveryColumns
+                  ? "backup_codes_required, mfa_recovery_reset_at"
+                  : "FALSE AS backup_codes_required, NULL::timestamptz AS mfa_recovery_reset_at"
+              }
        FROM super_admin_users
        ORDER BY created_at ASC`,
     );
@@ -46,7 +68,12 @@ export async function GET(request: NextRequest) {
       mfa_recovery_reset_at: Date | null;
     }>(
       `SELECT ou.id, ou.organization_id, o.name AS organization_name, ou.username, ou.email, ou.first_name, ou.last_name,
-              ou.mfa_enabled, ou.backup_codes_required, ou.mfa_recovery_reset_at
+              ou.mfa_enabled,
+              ${
+                orgAdminHasRecoveryColumns
+                  ? "ou.backup_codes_required, ou.mfa_recovery_reset_at"
+                  : "FALSE AS backup_codes_required, NULL::timestamptz AS mfa_recovery_reset_at"
+              }
        FROM organization_users ou
        JOIN organizations o ON o.id = ou.organization_id
        ORDER BY o.name ASC, ou.created_at ASC`,
