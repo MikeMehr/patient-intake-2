@@ -33,6 +33,8 @@ type TranscriptionListItem = {
   finalizedForExportAt: string | null;
 };
 
+const MAX_STT_AUDIO_BYTES = 100 * 1024 * 1024;
+
 const initialDraft: SoapDraft = {
   subjective: "",
   objective: "",
@@ -259,6 +261,9 @@ export default function PhysicianTranscriptionPage() {
 
   async function transcribeAudio(audioBlob: Blob): Promise<string> {
     const wavBlob = await convertToWav(audioBlob);
+    if (wavBlob.size > MAX_STT_AUDIO_BYTES) {
+      throw new Error("Recording is too long. Keep each clip under 100MB and try again.");
+    }
     const formData = new FormData();
     formData.append("audio", new File([wavBlob], "recording.wav", { type: "audio/wav" }));
     formData.append("language", "en");

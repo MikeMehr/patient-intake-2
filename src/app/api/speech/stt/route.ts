@@ -11,6 +11,8 @@ type AzureSpeechResponse = {
   Duration?: number;
 };
 
+const MAX_AUDIO_SIZE_BYTES = 100 * 1024 * 1024;
+
 export async function POST(request: NextRequest) {
   const requestId = getRequestId(request.headers);
   const started = Date.now();
@@ -29,9 +31,19 @@ export async function POST(request: NextRequest) {
   let formData: FormData;
   try {
     formData = await request.formData();
-  } catch {
+  } catch (error) {
     status = 400;
-    const res = NextResponse.json({ error: "Invalid form data." }, { status });
+    const message = error instanceof Error ? error.message : "";
+    const isLikelyTooLarge = /\btoo large\b|\blimit\b|\bentity\b|\bpayload\b|\bsize\b/i.test(message);
+    const res = NextResponse.json(
+      {
+        error: isLikelyTooLarge
+          ? "Audio upload is too large. Keep each clip under 100MB."
+          : "Invalid form data.",
+        details: process.env.NODE_ENV === "development" ? message || undefined : undefined,
+      },
+      { status },
+    );
     logRequestMeta("/api/speech/stt", requestId, status, Date.now() - started);
     return res;
   }
@@ -52,11 +64,10 @@ export async function POST(request: NextRequest) {
     return res;
   }
 
-  const maxAudioSize = 8 * 1024 * 1024;
-  if (audio.size <= 0 || audio.size > maxAudioSize) {
+  if (audio.size <= 0 || audio.size > MAX_AUDIO_SIZE_BYTES) {
     status = 400;
     const res = NextResponse.json(
-      { error: "Audio file is empty or exceeds the 8MB limit." },
+      { error: "Audio file is empty or exceeds the 100MB limit." },
       { status },
     );
     logRequestMeta("/api/speech/stt", requestId, status, Date.now() - started);
