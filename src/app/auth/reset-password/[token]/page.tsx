@@ -2,10 +2,11 @@
 "use client";
 
 import { FormEvent, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 
 export default function ResetPasswordTokenPage() {
   const params = useParams<{ token: string }>();
+  const router = useRouter();
   const token = params?.token || "";
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -107,6 +108,9 @@ export default function ResetPasswordTokenPage() {
       }
 
       setMessage(data?.message || "Password has been reset. You can sign in.");
+      setTimeout(() => {
+        router.push("/auth/login");
+      }, 2000);
     } catch (err: any) {
       setError(err.message || "Something went wrong");
     } finally {
