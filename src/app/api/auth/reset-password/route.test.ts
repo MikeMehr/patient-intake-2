@@ -15,6 +15,8 @@ describe("POST /api/auth/reset-password", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     process.env.SESSION_SECRET = "test-session-secret";
+    process.env.TOKEN_ISSUER = "issuer-test";
+    process.env.TOKEN_AUDIENCE = "audience-test";
   });
 
   it("stores token hash (not raw token) for new reset requests", async () => {
@@ -45,5 +47,9 @@ describe("POST /api/auth/reset-password", () => {
     expect(insertParams[0]).toBe("11111111-1111-4111-8111-111111111111");
     expect(insertParams[1]).toMatch(/^[a-f0-9]{64}$/);
     expect(insertParams[2]).toBeInstanceOf(Date);
+    expect(insertParams[3]).toBe("issuer-test");
+    expect(insertParams[4]).toBe("audience-test");
+    expect(insertParams[5]).toBe("password_reset");
+    expect(insertParams[6]).toBe("auth_password_reset");
   });
 });

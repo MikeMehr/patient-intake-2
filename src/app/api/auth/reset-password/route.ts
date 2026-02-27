@@ -4,6 +4,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
+import { Resend } from "resend";
 import { query } from "@/lib/db";
 import { randomBytes } from "crypto";
 import { logDebug } from "@/lib/secure-logger";
@@ -11,10 +12,12 @@ import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
 import { hashResetToken } from "@/lib/reset-token-security";
 import { consumeDbRateLimit } from "@/lib/rate-limit";
 import { getRequestIp } from "@/lib/invitation-security";
+import { getExpectedTokenClaims } from "@/lib/token-claims";
 
 const RESET_TOKEN_EXPIRY_HOURS = 24;
 const RESET_REQUEST_MAX_ATTEMPTS = 5;
 const RESET_REQUEST_WINDOW_SECONDS = 15 * 60;
+const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
 
 export async function POST(request: NextRequest) {
   const requestId = getRequestId(request.headers);
@@ -84,20 +87,41 @@ export async function POST(request: NextRequest) {
     // Generate reset token
     const token = randomBytes(32).toString("hex");
     const tokenHash = hashResetToken(token);
+    const tokenClaims = getExpectedTokenClaims("password_reset", "auth_password_reset");
     const expiresAt = new Date();
     expiresAt.setHours(expiresAt.getHours() + RESET_TOKEN_EXPIRY_HOURS);
 
     // Store reset token hash (raw token is only delivered to the user)
     await query(
-      `INSERT INTO password_reset_tokens (physician_id, token_hash, expires_at)
-       VALUES ($1, $2, $3)`,
-      [physician.id, tokenHash, expiresAt]
+      `INSERT INTO password_reset_tokens (physician_id, token_hash, expires_at, token_iss, token_aud, token_type, token_context)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [
+        physician.id,
+        tokenHash,
+        expiresAt,
+        tokenClaims.iss,
+        tokenClaims.aud,
+        tokenClaims.type,
+        tokenClaims.context,
+      ]
     );
 
-    // In production, send email here (never log or return the token)
-    const _resetUrl = `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/auth/reset-password/${token}`;
-    // TODO: Send email with reset link (ensure HIPAA-compliant provider/BAA)
-    // await sendPasswordResetEmail(physician.email, resetUrl);
+    // Send reset link via configured email provider.
+    const resetUrl = `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/auth/reset-password/${token}`;
+    if (resend && process.env.HIPAA_MODE !== "true") {
+      await resend.emails.send({
+        from: process.env.RESEND_FROM_EMAIL || "onboarding@resend.dev",
+        to: physician.email,
+        subject: "Reset your Health Assist AI password",
+        html: `<p>We received a request to reset your password.</p><p><a href="${resetUrl}">Reset password</a></p><p>This link expires in ${RESET_TOKEN_EXPIRY_HOURS} hours.</p>`,
+        text: `We received a request to reset your password.\n\nReset password: ${resetUrl}\n\nThis link expires in ${RESET_TOKEN_EXPIRY_HOURS} hours.`,
+      });
+    } else {
+      logDebug("[auth/reset-password] Reset email not sent (email provider disabled or HIPAA mode enabled)", {
+        hasResend: Boolean(resend),
+        hipaaMode: process.env.HIPAA_MODE === "true",
+      });
+    }
 
     const res = NextResponse.json({
       success: true,

@@ -1,15 +1,27 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const queryMock = vi.fn();
+const cookiesMock = vi.fn();
+const headersMock = vi.fn();
 
 vi.mock("@/lib/db", () => ({
   query: (...args: unknown[]) => queryMock(...args),
 }));
 
+vi.mock("next/headers", () => ({
+  cookies: (...args: unknown[]) => cookiesMock(...args),
+  headers: (...args: unknown[]) => headersMock(...args),
+}));
+
 describe("invitation-security helpers", () => {
   beforeEach(() => {
     queryMock.mockReset();
+    cookiesMock.mockReset();
+    headersMock.mockReset();
     process.env.SESSION_SECRET = "test-session-secret";
+    process.env.TOKEN_AUDIENCE = "health-assist-app";
+    headersMock.mockResolvedValue({ get: () => "" });
+    cookiesMock.mockResolvedValue({ get: () => undefined });
   });
 
   it("generates token and OTP in expected formats", async () => {
@@ -104,33 +116,99 @@ describe("invitation-security helpers", () => {
     expect(parts[1].length).toBeGreaterThan(10);
   });
 
+  it("accepts invitation session cookie with expected token claims", async () => {
+    const mod = await import("@/lib/invitation-security");
+    const sessionToken = "session-token-claims";
+    const cookieValue = mod.createInvitationSessionCookie({
+      invitationId: "invite-claims-ok",
+      sessionToken,
+      expiresAtEpochMs: Date.now() + 60_000,
+    });
+
+    cookiesMock.mockResolvedValue({ get: () => ({ value: cookieValue }) });
+    queryMock
+      .mockResolvedValueOnce({ rows: [{ exists: false }] })
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            id: "invite-claims-ok",
+            physician_id: "phys-1",
+            patient_email: "patient@example.com",
+            patient_name: "Pat Ient",
+            patient_dob: null,
+            oscar_demographic_no: null,
+            token_expires_at: null,
+            used_at: null,
+            revoked_at: null,
+            expires_at: new Date(Date.now() + 60_000),
+            lab_report_summary: null,
+            previous_lab_report_summary: null,
+            form_summary: null,
+            summary_expires_at: null,
+            summary_deleted_at: null,
+            patient_background: null,
+            interview_guidance: null,
+            organization_website_url: null,
+            first_name: "A",
+            last_name: "Doctor",
+            clinic_name: "Clinic",
+          },
+        ],
+      })
+      .mockResolvedValueOnce({ rows: [] });
+
+    const resolved = await mod.resolveInvitationFromCookie();
+    expect(resolved?.invitationId).toBe("invite-claims-ok");
+    expect(queryMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("rejects invitation session cookie when token claims mismatch", async () => {
+    const mod = await import("@/lib/invitation-security");
+    process.env.TOKEN_AUDIENCE = "audience-a";
+    const cookieValue = mod.createInvitationSessionCookie({
+      invitationId: "invite-claims-bad",
+      sessionToken: "session-token-bad",
+      expiresAtEpochMs: Date.now() + 60_000,
+    });
+    process.env.TOKEN_AUDIENCE = "audience-b";
+
+    cookiesMock.mockResolvedValue({ get: () => ({ value: cookieValue }) });
+    queryMock.mockResolvedValueOnce({ rows: [{ exists: false }] });
+
+    const resolved = await mod.resolveInvitationFromCookie();
+    expect(resolved).toBeNull();
+    expect(queryMock).toHaveBeenCalledTimes(1);
+  });
+
   it("hides summaries when summary TTL is expired", async () => {
     const mod = await import("@/lib/invitation-security");
-    queryMock.mockResolvedValueOnce({
-      rows: [
-        {
-          id: "invite-ttl",
-          physician_id: "physician-1",
-          patient_email: "patient@example.com",
-          patient_name: "Pat Ient",
-          oscar_demographic_no: null,
-          token_expires_at: new Date(Date.now() + 60_000),
-          used_at: null,
-          revoked_at: null,
-          expires_at: new Date(Date.now() + 60_000),
-          lab_report_summary: "Current lab summary",
-          previous_lab_report_summary: "Previous lab summary",
-          form_summary: "Form summary",
-          summary_expires_at: new Date(Date.now() - 60_000),
-          summary_deleted_at: null,
-          patient_background: null,
-          interview_guidance: null,
-          first_name: "Test",
-          last_name: "Doctor",
-          clinic_name: "Clinic",
-        },
-      ],
-    });
+    queryMock
+      .mockResolvedValueOnce({ rows: [{ exists: false }] })
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            id: "invite-ttl",
+            physician_id: "physician-1",
+            patient_email: "patient@example.com",
+            patient_name: "Pat Ient",
+            oscar_demographic_no: null,
+            token_expires_at: new Date(Date.now() + 60_000),
+            used_at: null,
+            revoked_at: null,
+            expires_at: new Date(Date.now() + 60_000),
+            lab_report_summary: "Current lab summary",
+            previous_lab_report_summary: "Previous lab summary",
+            form_summary: "Form summary",
+            summary_expires_at: new Date(Date.now() - 60_000),
+            summary_deleted_at: null,
+            patient_background: null,
+            interview_guidance: null,
+            first_name: "Test",
+            last_name: "Doctor",
+            clinic_name: "Clinic",
+          },
+        ],
+      });
 
     const invite = await mod.getInvitationByRawToken("raw-token");
     expect(invite).not.toBeNull();

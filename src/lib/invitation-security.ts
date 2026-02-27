@@ -1,6 +1,7 @@
 import { createHmac, randomBytes, timingSafeEqual } from "crypto";
 import { cookies, headers } from "next/headers";
 import { query } from "@/lib/db";
+import { getExpectedTokenClaims, hasExpectedTokenClaims } from "@/lib/token-claims";
 
 export const INVITATION_SESSION_COOKIE = "invitation_session";
 const INVITE_TOKEN_BYTES = 32;
@@ -262,10 +263,15 @@ export function createInvitationSessionCookie(params: {
   sessionToken: string;
   expiresAtEpochMs: number;
 }): string {
+  const claims = getExpectedTokenClaims("invitation_session", "invitation_verified_session");
   const payload = JSON.stringify({
     invitationId: params.invitationId,
     sessionToken: params.sessionToken,
     exp: params.expiresAtEpochMs,
+    iss: claims.iss,
+    aud: claims.aud,
+    type: claims.type,
+    context: claims.context,
   });
   const payloadB64 = toBase64Url(payload);
   const sig = signPayload(payloadB64);
@@ -283,12 +289,21 @@ function parseInvitationSessionCookie(cookieValue: string): {
   if (!safeCompare(expected, sig)) return null;
 
   try {
+    const expectedClaims = getExpectedTokenClaims(
+      "invitation_session",
+      "invitation_verified_session",
+    );
     const parsed = JSON.parse(fromBase64Url(payloadB64)) as {
       invitationId?: string;
       sessionToken?: string;
       exp?: number;
+      iss?: string;
+      aud?: string;
+      type?: string;
+      context?: string;
     };
     if (!parsed.invitationId || !parsed.sessionToken || !parsed.exp) return null;
+    if (!hasExpectedTokenClaims(parsed, expectedClaims)) return null;
     if (parsed.exp < Date.now()) return null;
     return {
       invitationId: parsed.invitationId,

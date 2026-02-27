@@ -2,6 +2,7 @@ import { createHmac, randomBytes, timingSafeEqual } from "crypto";
 import { Resend } from "resend";
 import { query } from "@/lib/db";
 import type { UserType } from "@/lib/auth";
+import { getExpectedTokenClaims, hasExpectedTokenClaims } from "@/lib/token-claims";
 
 const OTP_TTL_MINUTES = 10;
 const OTP_COOLDOWN_MINUTES = 5;
@@ -64,6 +65,10 @@ function createBackupCode(): string {
   return randomBytes(5).toString("hex").toUpperCase();
 }
 
+function getMfaTokenContext(purpose: MfaPurpose): "auth_login_mfa" | "auth_password_reset_mfa" {
+  return purpose === "login" ? "auth_login_mfa" : "auth_password_reset_mfa";
+}
+
 function auditMfaEvent(event: {
   purpose: MfaPurpose;
   action:
@@ -121,6 +126,10 @@ export async function issueMfaChallenge(params: {
   userAgent?: string | null;
   contextTokenHash?: string | null;
 }): Promise<{ challengeToken: string; expiresInSeconds: number; emailDeliveryEnabled: boolean }> {
+  const tokenClaims = getExpectedTokenClaims(
+    "mfa_challenge",
+    getMfaTokenContext(params.purpose),
+  );
   const challengeToken = createChallengeToken();
   const challengeTokenHash = hashValue(challengeToken);
   const otpCode = createOtpCode();
@@ -143,11 +152,12 @@ export async function issueMfaChallenge(params: {
   await query(
     `INSERT INTO auth_mfa_challenges (
       user_type, user_id, purpose, challenge_token_hash, otp_hash, context_token_hash,
-      expires_at, attempt_count, max_attempts, cooldown_until, ip_address, user_agent
+      expires_at, attempt_count, max_attempts, cooldown_until, ip_address, user_agent,
+      token_iss, token_aud, token_type, token_context
     )
     VALUES (
       $1, $2, $3, $4, $5, $6,
-      NOW() + ($7 * INTERVAL '1 minute'), 0, $8, NULL, $9, $10
+      NOW() + ($7 * INTERVAL '1 minute'), 0, $8, NULL, $9, $10, $11, $12, $13, $14
     )`,
     [
       params.user.userType,
@@ -160,6 +170,10 @@ export async function issueMfaChallenge(params: {
       OTP_MAX_ATTEMPTS,
       params.ipAddress || null,
       params.userAgent || null,
+      tokenClaims.iss,
+      tokenClaims.aud,
+      tokenClaims.type,
+      tokenClaims.context,
     ],
   );
 
@@ -195,8 +209,19 @@ export async function verifyMfaChallenge(params: {
   contextTokenHash?: string | null;
 }): Promise<{
   ok: boolean;
-  reason?: "missing" | "expired" | "cooldown" | "max_attempts" | "invalid" | "context_mismatch";
+  reason?:
+    | "missing"
+    | "expired"
+    | "cooldown"
+    | "max_attempts"
+    | "invalid"
+    | "context_mismatch"
+    | "claim_mismatch";
 }> {
+  const expectedClaims = getExpectedTokenClaims(
+    "mfa_challenge",
+    getMfaTokenContext(params.purpose),
+  );
   const challengeTokenHash = hashValue(params.challengeToken);
   const result = await query<{
     id: string;
@@ -208,8 +233,13 @@ export async function verifyMfaChallenge(params: {
     max_attempts: number;
     cooldown_until: Date | null;
     context_token_hash: string | null;
+    token_iss: string;
+    token_aud: string;
+    token_type: string;
+    token_context: string;
   }>(
-    `SELECT id, user_type, user_id, otp_hash, expires_at, attempt_count, max_attempts, cooldown_until, context_token_hash
+    `SELECT id, user_type, user_id, otp_hash, expires_at, attempt_count, max_attempts, cooldown_until, context_token_hash,
+            token_iss, token_aud, token_type, token_context
      FROM auth_mfa_challenges
      WHERE challenge_token_hash = $1
        AND purpose = $2
@@ -230,6 +260,25 @@ export async function verifyMfaChallenge(params: {
   }
 
   const challenge = result.rows[0];
+  if (!hasExpectedTokenClaims(
+    {
+      iss: challenge.token_iss,
+      aud: challenge.token_aud,
+      type: challenge.token_type,
+      context: challenge.token_context,
+    },
+    expectedClaims,
+  )) {
+    auditMfaEvent({
+      purpose: params.purpose,
+      action: "challenge_failed",
+      outcome: "failure",
+      userType: challenge.user_type,
+      userId: challenge.user_id,
+      reason: "claim_mismatch",
+    });
+    return { ok: false, reason: "claim_mismatch" };
+  }
   if (challenge.expires_at.getTime() <= Date.now()) {
     auditMfaEvent({
       purpose: params.purpose,
@@ -312,6 +361,10 @@ export async function consumeVerifiedMfaChallenge(params: {
   ok: boolean;
   user?: { userType: UserType; userId: string };
 }> {
+  const expectedClaims = getExpectedTokenClaims(
+    "mfa_challenge",
+    getMfaTokenContext(params.purpose),
+  );
   const challengeTokenHash = hashValue(params.challengeToken);
   const result = await query<{
     id: string;
@@ -321,8 +374,13 @@ export async function consumeVerifiedMfaChallenge(params: {
     consumed_at: Date | null;
     expires_at: Date;
     context_token_hash: string | null;
+    token_iss: string;
+    token_aud: string;
+    token_type: string;
+    token_context: string;
   }>(
-    `SELECT id, user_type, user_id, verified_at, consumed_at, expires_at, context_token_hash
+    `SELECT id, user_type, user_id, verified_at, consumed_at, expires_at, context_token_hash,
+            token_iss, token_aud, token_type, token_context
      FROM auth_mfa_challenges
      WHERE challenge_token_hash = $1
        AND purpose = $2
@@ -335,6 +393,15 @@ export async function consumeVerifiedMfaChallenge(params: {
   const challenge = result.rows[0];
   if (challenge.consumed_at || !challenge.verified_at) return { ok: false };
   if (challenge.expires_at.getTime() <= Date.now()) return { ok: false };
+  if (!hasExpectedTokenClaims(
+    {
+      iss: challenge.token_iss,
+      aud: challenge.token_aud,
+      type: challenge.token_type,
+      context: challenge.token_context,
+    },
+    expectedClaims,
+  )) return { ok: false };
   if ((params.contextTokenHash || null) !== (challenge.context_token_hash || null)) return { ok: false };
 
   await query(
@@ -631,14 +698,23 @@ export async function consumeBackupCodeForChallenge(params: {
   user?: { userType: UserType; userId: string };
 }> {
   const challengeTokenHash = hashValue(params.challengeToken);
+  const expectedClaims = getExpectedTokenClaims(
+    "mfa_challenge",
+    getMfaTokenContext(params.purpose),
+  );
   const challengeResult = await query<{
     id: string;
     user_type: UserType;
     user_id: string;
     expires_at: Date;
     consumed_at: Date | null;
+    token_iss: string;
+    token_aud: string;
+    token_type: string;
+    token_context: string;
   }>(
-    `SELECT id, user_type, user_id, expires_at, consumed_at
+    `SELECT id, user_type, user_id, expires_at, consumed_at,
+            token_iss, token_aud, token_type, token_context
      FROM auth_mfa_challenges
      WHERE challenge_token_hash = $1
        AND purpose = $2
@@ -652,6 +728,17 @@ export async function consumeBackupCodeForChallenge(params: {
   }
 
   const challenge = challengeResult.rows[0];
+  if (!hasExpectedTokenClaims(
+    {
+      iss: challenge.token_iss,
+      aud: challenge.token_aud,
+      type: challenge.token_type,
+      context: challenge.token_context,
+    },
+    expectedClaims,
+  )) {
+    return { ok: false, reason: "missing" };
+  }
   if (challenge.expires_at.getTime() <= Date.now()) {
     return { ok: false, reason: "expired" };
   }

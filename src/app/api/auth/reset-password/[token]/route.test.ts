@@ -31,6 +31,8 @@ describe("POST /api/auth/reset-password/[token]", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     process.env.SESSION_SECRET = "test-session-secret";
+    process.env.TOKEN_ISSUER = "issuer-test";
+    process.env.TOKEN_AUDIENCE = "audience-test";
     assessPasswordAgainstBreachesMock.mockResolvedValue({
       breached: false,
       count: 0,
@@ -76,8 +78,14 @@ describe("POST /api/auth/reset-password/[token]", () => {
 
     expect(response.status).toBe(200);
     expect(queryMock).toHaveBeenCalledTimes(6);
+    expect(String(queryMock.mock.calls[1][0])).toContain("token_iss = $3");
+    expect(String(queryMock.mock.calls[1][0])).toContain("token_context = $6");
     expect(queryMock.mock.calls[1][1][0]).toMatch(/^[a-f0-9]{64}$/);
     expect(queryMock.mock.calls[1][1][1]).toBe(rawToken);
+    expect(queryMock.mock.calls[1][1][2]).toBe("issuer-test");
+    expect(queryMock.mock.calls[1][1][3]).toBe("audience-test");
+    expect(queryMock.mock.calls[1][1][4]).toBe("password_reset");
+    expect(queryMock.mock.calls[1][1][5]).toBe("auth_password_reset");
     expect(queryMock.mock.calls[4][1]).toEqual(["reset-token-id"]);
   });
 

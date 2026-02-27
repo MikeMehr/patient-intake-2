@@ -20,6 +20,7 @@ import {
   BREACHED_PASSWORD_ERROR,
   BREACH_CHECK_UNAVAILABLE_ERROR,
 } from "@/lib/password-breach";
+import { getExpectedTokenClaims } from "@/lib/token-claims";
 
 const RESET_CONSUME_MAX_ATTEMPTS = 10;
 const RESET_CONSUME_WINDOW_SECONDS = 15 * 60;
@@ -27,6 +28,7 @@ const RESET_CONSUME_WINDOW_SECONDS = 15 * 60;
 type ResetAction = "request_mfa" | "verify_mfa" | "reset_password";
 
 async function getValidResetToken(token: string, tokenHash: string) {
+  const expectedClaims = getExpectedTokenClaims("password_reset", "auth_password_reset");
   const tokenResult = await query<{
     id: string;
     physician_id: string;
@@ -38,9 +40,20 @@ async function getValidResetToken(token: string, tokenHash: string) {
      WHERE (token_hash = $1 OR token = $2)
        AND expires_at > NOW()
        AND used = FALSE
+       AND token_iss = $3
+       AND token_aud = $4
+       AND token_type = $5
+       AND token_context = $6
      ORDER BY created_at DESC
      LIMIT 1`,
-    [tokenHash, token],
+    [
+      tokenHash,
+      token,
+      expectedClaims.iss,
+      expectedClaims.aud,
+      expectedClaims.type,
+      expectedClaims.context,
+    ],
   );
   return tokenResult.rows[0] || null;
 }
