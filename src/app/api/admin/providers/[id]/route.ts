@@ -9,6 +9,11 @@ import { getCurrentSession } from "@/lib/auth";
 import { query } from "@/lib/db";
 import { hashPassword, validatePassword } from "@/lib/auth";
 import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
+import {
+  assessPasswordAgainstBreaches,
+  BREACHED_PASSWORD_ERROR,
+  BREACH_CHECK_UNAVAILABLE_ERROR,
+} from "@/lib/password-breach";
 
 export async function GET(
   request: NextRequest,
@@ -135,6 +140,25 @@ export async function PUT(
         const res = NextResponse.json(
           { error: passwordValidation.error },
           { status }
+        );
+        logRequestMeta("/api/admin/providers/[id]", requestId, status, Date.now() - started);
+        return res;
+      }
+      const breachAssessment = await assessPasswordAgainstBreaches(password);
+      if (breachAssessment.unavailable && !breachAssessment.failOpen) {
+        status = 503;
+        const res = NextResponse.json(
+          { error: BREACH_CHECK_UNAVAILABLE_ERROR },
+          { status },
+        );
+        logRequestMeta("/api/admin/providers/[id]", requestId, status, Date.now() - started);
+        return res;
+      }
+      if (breachAssessment.breached) {
+        status = 400;
+        const res = NextResponse.json(
+          { error: BREACHED_PASSWORD_ERROR },
+          { status },
         );
         logRequestMeta("/api/admin/providers/[id]", requestId, status, Date.now() - started);
         return res;
