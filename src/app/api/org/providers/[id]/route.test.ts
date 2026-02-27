@@ -64,4 +64,26 @@ describe("PUT /api/org/providers/[id]", () => {
     expect(updateParams[1]).toBe("provider-1");
     expect(updateParams[2]).toBe("org-1");
   });
+
+  it("revokes all provider sessions when password changes", async () => {
+    queryMock
+      .mockResolvedValueOnce({ rows: [{ id: "provider-1", organization_id: "org-1" }] }) // existing provider check
+      .mockResolvedValueOnce({ rows: [] }) // update
+      .mockResolvedValueOnce({ rows: [] }); // revoke sessions
+
+    const { PUT } = await import("./route");
+    const response = await PUT(
+      new Request("http://localhost/api/org/providers/provider-1", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: "ValidPass123!" }),
+      }) as any,
+      { params: Promise.resolve({ id: "provider-1" }) } as any,
+    );
+
+    expect(response.status).toBe(200);
+    expect(queryMock).toHaveBeenCalledTimes(3);
+    expect(String(queryMock.mock.calls[2][0])).toContain("DELETE FROM physician_sessions");
+    expect(queryMock.mock.calls[2][1]).toEqual(["provider-1"]);
+  });
 });

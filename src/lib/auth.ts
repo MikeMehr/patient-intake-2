@@ -291,28 +291,27 @@ export async function getCurrentSession(options?: { refresh?: boolean }): Promis
     }
 
     // Only extend idle expiry when explicitly requested (e.g. /api/auth/ping from UI activity).
+    // V10.1.2 policy: rotate the session token whenever refresh is successful.
     if (options?.refresh === true) {
+      const rotatedToken = generateSessionToken();
       const newExpiresAtMs = Math.min(nowMs + IDLE_TIMEOUT_MS, absoluteExpiresAtMs);
-      const shouldUpdate = newExpiresAtMs > row.expires_at.getTime() + 1000;
+      const { query } = await import("./db");
+      await query(
+        `UPDATE physician_sessions
+         SET token = $1,
+             expires_at = $2,
+             session_data = jsonb_set(COALESCE(session_data, '{}'::jsonb), '{expiresAt}', to_jsonb($3::bigint), true)
+         WHERE token = $4`,
+        [rotatedToken, new Date(newExpiresAtMs), newExpiresAtMs, token],
+      );
 
-      if (shouldUpdate) {
-        const { query } = await import("./db");
-        await query(
-          `UPDATE physician_sessions
-           SET expires_at = $1,
-               session_data = jsonb_set(COALESCE(session_data, '{}'::jsonb), '{expiresAt}', to_jsonb($2::bigint), true)
-           WHERE token = $3`,
-          [new Date(newExpiresAtMs), newExpiresAtMs, token],
-        );
+      cookieStore.set(SESSION_COOKIE_NAME, rotatedToken, {
+        ...getSessionCookieBaseOptions(),
+        maxAge: Math.max(1, Math.floor((newExpiresAtMs - nowMs) / 1000)),
+      });
 
-        cookieStore.set(SESSION_COOKIE_NAME, token, {
-          ...getSessionCookieBaseOptions(),
-          maxAge: Math.max(1, Math.floor((newExpiresAtMs - nowMs) / 1000)),
-        });
-
-        // Keep the in-memory row expiry consistent for parsing below.
-        row.expires_at = new Date(newExpiresAtMs);
-      }
+      // Keep the in-memory row expiry consistent for parsing below.
+      row.expires_at = new Date(newExpiresAtMs);
     }
 
     const session = parseSessionFromRow(row);

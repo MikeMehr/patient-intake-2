@@ -218,6 +218,9 @@ export async function PUT(
       `UPDATE physicians SET ${updates.join(", ")} WHERE id = $${paramIndex} AND organization_id = $${paramIndex + 1}`,
       values
     );
+    if (passwordHash) {
+      await query(`DELETE FROM physician_sessions WHERE physician_id = $1`, [id]);
+    }
 
     const res = NextResponse.json({ success: true });
     logRequestMeta("/api/org/providers/[id]", requestId, status, Date.now() - started);
