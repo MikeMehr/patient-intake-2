@@ -111,6 +111,23 @@ export async function GET(
       [id]
     );
 
+    const orgAdminsResult = await query<{
+      id: string;
+      username: string;
+      email: string;
+      first_name: string;
+      last_name: string;
+      mfa_enabled: boolean;
+      backup_codes_required: boolean;
+      mfa_recovery_reset_at: Date | null;
+    }>(
+      `SELECT id, username, email, first_name, last_name, mfa_enabled, backup_codes_required, mfa_recovery_reset_at
+       FROM organization_users
+       WHERE organization_id = $1
+       ORDER BY created_at DESC`,
+      [id],
+    );
+
     const res = NextResponse.json({
       organization: {
         id: org.id,
@@ -132,6 +149,16 @@ export async function GET(
         phone: p.phone,
         uniqueSlug: p.unique_slug,
         createdAt: p.created_at,
+      })),
+      orgAdmins: orgAdminsResult.rows.map((u) => ({
+        id: u.id,
+        username: u.username,
+        email: u.email,
+        firstName: u.first_name,
+        lastName: u.last_name,
+        mfaEnabled: u.mfa_enabled,
+        backupCodesRequired: u.backup_codes_required,
+        recoveryResetAt: u.mfa_recovery_reset_at ? new Date(u.mfa_recovery_reset_at).toISOString() : null,
       })),
     });
     logRequestMeta("/api/admin/organizations/[id]", requestId, status, Date.now() - started);

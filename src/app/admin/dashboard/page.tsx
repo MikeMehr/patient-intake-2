@@ -17,15 +17,32 @@ interface Organization {
   providerCount: number;
 }
 
+interface WorkforceUser {
+  id: string;
+  username: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+  mfaEnabled: boolean;
+  backupCodesRequired: boolean;
+  recoveryResetAt: string | null;
+  organizationName?: string;
+}
+
 export default function SuperAdminDashboard() {
   const router = useRouter();
   const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [loading, setLoading] = useState(true);
+  const [workforceLoading, setWorkforceLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [workforceError, setWorkforceError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [superAdmins, setSuperAdmins] = useState<WorkforceUser[]>([]);
+  const [orgAdmins, setOrgAdmins] = useState<WorkforceUser[]>([]);
 
   useEffect(() => {
     fetchOrganizations();
+    fetchWorkforce();
   }, []);
 
   const fetchOrganizations = async () => {
@@ -46,6 +63,50 @@ export default function SuperAdminDashboard() {
       setError("Failed to load organizations");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchWorkforce = async () => {
+    try {
+      const response = await fetch("/api/admin/workforce");
+      if (response.status === 401) {
+        router.push("/admin/login");
+        return;
+      }
+      const data = await response.json();
+      if (data.error) {
+        setWorkforceError(data.error);
+      } else {
+        setSuperAdmins(data.superAdmins || []);
+        setOrgAdmins(data.orgAdmins || []);
+      }
+    } catch (err) {
+      console.error("Error fetching workforce:", err);
+      setWorkforceError("Failed to load workforce MFA controls");
+    } finally {
+      setWorkforceLoading(false);
+    }
+  };
+
+  const runRecoveryAction = async (path: string, body?: Record<string, unknown>) => {
+    try {
+      const response = await fetch(path, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: body ? JSON.stringify(body) : undefined,
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        alert(data.error || "Action failed");
+        return;
+      }
+      if (Array.isArray(data.backupCodes) && data.backupCodes.length > 0) {
+        alert(`Save these codes now (shown once):\n${data.backupCodes.join("\n")}`);
+      }
+      await fetchWorkforce();
+    } catch (err) {
+      console.error("Recovery action failed:", err);
+      alert("Action failed");
     }
   };
 
@@ -104,6 +165,11 @@ export default function SuperAdminDashboard() {
         {error && (
           <div className="mb-6 rounded-lg bg-red-50 border border-red-200 px-4 py-3">
             <p className="text-sm text-red-800">{error}</p>
+          </div>
+        )}
+        {workforceError && (
+          <div className="mb-6 rounded-lg bg-red-50 border border-red-200 px-4 py-3">
+            <p className="text-sm text-red-800">{workforceError}</p>
           </div>
         )}
 
@@ -192,6 +258,121 @@ export default function SuperAdminDashboard() {
               )}
             </tbody>
           </table>
+        </div>
+
+        <div className="mt-8 bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
+          <div className="px-6 py-4 border-b border-slate-200">
+            <h2 className="text-lg font-semibold text-slate-900">Workforce MFA Recovery Controls</h2>
+            <p className="text-xs text-slate-500 mt-1">
+              Admin reset keeps MFA enabled and invalidates old backup codes until regeneration.
+            </p>
+          </div>
+          {workforceLoading ? (
+            <div className="px-6 py-6 text-sm text-slate-500">Loading workforce controls...</div>
+          ) : (
+            <div className="p-6 space-y-6">
+              <div>
+                <h3 className="text-sm font-semibold text-slate-900 mb-2">Super Admin Accounts</h3>
+                <div className="space-y-2">
+                  {superAdmins.map((user) => (
+                    <div key={user.id} className="rounded-lg border border-slate-200 p-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-medium text-slate-900">
+                            {user.firstName} {user.lastName} ({user.username})
+                          </p>
+                          <p className="text-xs text-slate-500">
+                            {user.email} • Backup codes required: {user.backupCodesRequired ? "Yes" : "No"}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() =>
+                              runRecoveryAction(`/api/admin/super-admin-users/${user.id}/mfa/backup-codes`, {
+                                action: "generate",
+                              })
+                            }
+                            className="px-2 py-1 text-xs rounded border border-slate-300 hover:bg-slate-50"
+                          >
+                            Generate codes
+                          </button>
+                          <button
+                            onClick={() =>
+                              runRecoveryAction(`/api/admin/super-admin-users/${user.id}/mfa/backup-codes`, {
+                                action: "rotate",
+                              })
+                            }
+                            className="px-2 py-1 text-xs rounded border border-slate-300 hover:bg-slate-50"
+                          >
+                            Rotate codes
+                          </button>
+                          <button
+                            onClick={() =>
+                              runRecoveryAction(`/api/admin/super-admin-users/${user.id}/mfa/reset-recovery`)
+                            }
+                            className="px-2 py-1 text-xs rounded border border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100"
+                          >
+                            Admin reset MFA recovery
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <h3 className="text-sm font-semibold text-slate-900 mb-2">Organization Admin Accounts</h3>
+                <div className="space-y-2">
+                  {orgAdmins.map((user) => (
+                    <div key={user.id} className="rounded-lg border border-slate-200 p-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-medium text-slate-900">
+                            {user.firstName} {user.lastName} ({user.username})
+                          </p>
+                          <p className="text-xs text-slate-500">
+                            {user.organizationName} • {user.email} • Backup codes required:{" "}
+                            {user.backupCodesRequired ? "Yes" : "No"}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() =>
+                              runRecoveryAction(`/api/admin/organization-users/${user.id}/mfa/backup-codes`, {
+                                action: "generate",
+                              })
+                            }
+                            className="px-2 py-1 text-xs rounded border border-slate-300 hover:bg-slate-50"
+                          >
+                            Generate codes
+                          </button>
+                          <button
+                            onClick={() =>
+                              runRecoveryAction(`/api/admin/organization-users/${user.id}/mfa/backup-codes`, {
+                                action: "rotate",
+                              })
+                            }
+                            className="px-2 py-1 text-xs rounded border border-slate-300 hover:bg-slate-50"
+                          >
+                            Rotate codes
+                          </button>
+                          <button
+                            onClick={() =>
+                              runRecoveryAction(`/api/admin/organization-users/${user.id}/mfa/reset-recovery`)
+                            }
+                            className="px-2 py-1 text-xs rounded border border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100"
+                          >
+                            Admin reset MFA recovery
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
       </div>

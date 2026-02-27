@@ -19,6 +19,13 @@ export type MfaUser = {
   email: string | null;
 };
 
+type WorkforceRecoveryState = {
+  mfaEnabled: boolean;
+  recoveryVersion: number;
+  backupCodesRequired: boolean;
+  recoveryResetAt: string | null;
+};
+
 function getMfaSecret(): string {
   const secret = process.env.AUTH_MFA_SECRET || process.env.SESSION_SECRET;
   if (!secret) {
@@ -351,23 +358,117 @@ export function hashMfaContextToken(token: string): string {
   return hashValue(token);
 }
 
+function getWorkforceTable(userType: UserType): "physicians" | "organization_users" | "super_admin_users" {
+  if (userType === "provider") return "physicians";
+  if (userType === "org_admin") return "organization_users";
+  return "super_admin_users";
+}
+
+export async function getWorkforceRecoveryState(params: {
+  userType: UserType;
+  userId: string;
+}): Promise<WorkforceRecoveryState | null> {
+  const table = getWorkforceTable(params.userType);
+  const result = await query<{
+    mfa_enabled: boolean;
+    mfa_recovery_version: number;
+    backup_codes_required: boolean;
+    mfa_recovery_reset_at: Date | null;
+  }>(
+    `SELECT mfa_enabled, mfa_recovery_version, backup_codes_required, mfa_recovery_reset_at
+     FROM ${table}
+     WHERE id = $1
+     LIMIT 1`,
+    [params.userId],
+  );
+  const row = result.rows[0];
+  if (!row) return null;
+  return {
+    mfaEnabled: Boolean(row.mfa_enabled),
+    recoveryVersion: Number(row.mfa_recovery_version || 1),
+    backupCodesRequired: Boolean(row.backup_codes_required),
+    recoveryResetAt: row.mfa_recovery_reset_at
+      ? new Date(row.mfa_recovery_reset_at).toISOString()
+      : null,
+  };
+}
+
+export async function adminResetMfaRecovery(params: {
+  userType: UserType;
+  userId: string;
+}): Promise<WorkforceRecoveryState | null> {
+  const table = getWorkforceTable(params.userType);
+  await query(
+    `UPDATE ${table}
+     SET mfa_enabled = TRUE,
+         mfa_recovery_version = mfa_recovery_version + 1,
+         mfa_recovery_reset_at = NOW(),
+         backup_codes_required = TRUE
+     WHERE id = $1`,
+    [params.userId],
+  );
+  await query(
+    `UPDATE auth_mfa_backup_codes
+     SET invalidated_at = NOW()
+     WHERE user_type = $1
+       AND user_id = $2
+       AND used_at IS NULL
+       AND invalidated_at IS NULL`,
+    [params.userType, params.userId],
+  );
+
+  auditMfaEvent({
+    purpose: "login",
+    action: "backup_codes_rotated",
+    outcome: "success",
+    userType: params.userType,
+    userId: params.userId,
+    metadata: { adminReset: true },
+  });
+
+  return getWorkforceRecoveryState(params);
+}
+
 export async function getBackupCodeStatus(params: {
   userType: UserType;
   userId: string;
-}): Promise<{ activeCodes: number; lastGeneratedAt: string | null }> {
+}): Promise<{
+  activeCodes: number;
+  lastGeneratedAt: string | null;
+  recoveryVersion: number;
+  backupCodesRequired: boolean;
+  mfaEnabled: boolean;
+  recoveryResetAt: string | null;
+}> {
+  const state = await getWorkforceRecoveryState(params);
+  if (!state) {
+    return {
+      activeCodes: 0,
+      lastGeneratedAt: null,
+      recoveryVersion: 1,
+      backupCodesRequired: false,
+      mfaEnabled: false,
+      recoveryResetAt: null,
+    };
+  }
   const result = await query<{ active_codes: number; last_generated_at: Date | null }>(
     `SELECT
        COUNT(*) FILTER (WHERE used_at IS NULL AND invalidated_at IS NULL)::int AS active_codes,
        MAX(created_at) AS last_generated_at
      FROM auth_mfa_backup_codes
      WHERE user_type = $1
-       AND user_id = $2`,
-    [params.userType, params.userId],
+       AND user_id = $2
+       AND recovery_version = $3`,
+    [params.userType, params.userId, state.recoveryVersion],
   );
   const row = result.rows[0];
   return {
     activeCodes: Number(row?.active_codes || 0),
     lastGeneratedAt: row?.last_generated_at ? new Date(row.last_generated_at).toISOString() : null,
+    recoveryVersion: state.recoveryVersion,
+    backupCodesRequired: state.backupCodesRequired,
+    mfaEnabled: state.mfaEnabled,
+    recoveryResetAt: state.recoveryResetAt,
   };
 }
 
@@ -376,7 +477,13 @@ export async function generateBackupCodes(params: {
   userId: string;
   rotateExisting: boolean;
   count?: number;
-}): Promise<{ codes: string[]; activeCodes: number; lastGeneratedAt: string | null }> {
+}): Promise<{
+  codes: string[];
+  activeCodes: number;
+  lastGeneratedAt: string | null;
+  recoveryVersion: number;
+  backupCodesRequired: boolean;
+}> {
   const existing = await getBackupCodeStatus({
     userType: params.userType,
     userId: params.userId,
@@ -397,17 +504,31 @@ export async function generateBackupCodes(params: {
     );
   }
 
+  const state = await getWorkforceRecoveryState({
+    userType: params.userType,
+    userId: params.userId,
+  });
+  const recoveryVersion = state?.recoveryVersion || 1;
+
   const count = Math.max(1, params.count || BACKUP_CODE_COUNT);
   const codes: string[] = [];
   for (let i = 0; i < count; i += 1) {
     const code = createBackupCode();
     codes.push(code);
     await query(
-      `INSERT INTO auth_mfa_backup_codes (user_type, user_id, code_hash)
-       VALUES ($1, $2, $3)`,
-      [params.userType, params.userId, hashValue(code)],
+      `INSERT INTO auth_mfa_backup_codes (user_type, user_id, code_hash, recovery_version)
+       VALUES ($1, $2, $3, $4)`,
+      [params.userType, params.userId, hashValue(code), recoveryVersion],
     );
   }
+
+  const table = getWorkforceTable(params.userType);
+  await query(
+    `UPDATE ${table}
+     SET backup_codes_required = FALSE
+     WHERE id = $1`,
+    [params.userId],
+  );
 
   auditMfaEvent({
     purpose: "login",
@@ -426,6 +547,8 @@ export async function generateBackupCodes(params: {
     codes,
     activeCodes: updated.activeCodes,
     lastGeneratedAt: updated.lastGeneratedAt,
+    recoveryVersion: updated.recoveryVersion,
+    backupCodesRequired: updated.backupCodesRequired,
   };
 }
 
@@ -433,7 +556,11 @@ export async function consumeBackupCodeForChallenge(params: {
   challengeToken: string;
   backupCode: string;
   purpose: MfaPurpose;
-}): Promise<{ ok: boolean; reason?: "missing" | "expired" | "invalid"; user?: { userType: UserType; userId: string } }> {
+}): Promise<{
+  ok: boolean;
+  reason?: "missing" | "expired" | "invalid" | "codes_required";
+  user?: { userType: UserType; userId: string };
+}> {
   const challengeTokenHash = hashValue(params.challengeToken);
   const challengeResult = await query<{
     id: string;
@@ -460,6 +587,14 @@ export async function consumeBackupCodeForChallenge(params: {
     return { ok: false, reason: "expired" };
   }
 
+  const state = await getWorkforceRecoveryState({
+    userType: challenge.user_type,
+    userId: challenge.user_id,
+  });
+  if (!state || state.backupCodesRequired) {
+    return { ok: false, reason: "codes_required" };
+  }
+
   const normalized = params.backupCode.trim().toUpperCase();
   const codeHash = hashValue(normalized);
   const codeResult = await query<{ id: string }>(
@@ -470,8 +605,9 @@ export async function consumeBackupCodeForChallenge(params: {
        AND code_hash = $3
        AND used_at IS NULL
        AND invalidated_at IS NULL
+       AND recovery_version = $4
      LIMIT 1`,
-    [challenge.user_type, challenge.user_id, codeHash],
+    [challenge.user_type, challenge.user_id, codeHash, state.recoveryVersion],
   );
   if (codeResult.rows.length === 0) {
     return { ok: false, reason: "invalid" };

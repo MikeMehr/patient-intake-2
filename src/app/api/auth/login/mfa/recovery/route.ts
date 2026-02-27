@@ -94,6 +94,12 @@ export async function POST(request: NextRequest) {
       purpose: "login",
     });
     if (!recovery.ok || !recovery.user) {
+      if (recovery.reason === "codes_required") {
+        return NextResponse.json(
+          { error: "Backup codes were reset by an administrator. Generate a new set before using recovery codes." },
+          { status: 400 },
+        );
+      }
       return NextResponse.json(
         { error: "Invalid or expired backup recovery code" },
         { status: 400 },

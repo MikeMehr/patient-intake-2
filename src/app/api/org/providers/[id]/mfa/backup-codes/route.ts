@@ -102,6 +102,8 @@ export async function POST(
         status: {
           activeCodes: generated.activeCodes,
           lastGeneratedAt: generated.lastGeneratedAt,
+          recoveryVersion: generated.recoveryVersion,
+          backupCodesRequired: generated.backupCodesRequired,
         },
       });
       logRequestMeta("/api/org/providers/[id]/mfa/backup-codes", requestId, status, Date.now() - started);

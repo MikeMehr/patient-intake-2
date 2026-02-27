@@ -69,12 +69,20 @@ This matrix links launch controls to objective evidence, owner, and closure crit
   - Closure criteria: provider MFA toggle persists via API and is visible in admin/org edit flows
 
 - Control ID: T-09
-  - Control: Provider MFA challenge + recovery supports backup codes (ASVS V6.4.4 recovery)
-  - Evidence: `src/lib/migrations/026_add_mfa_backup_recovery_codes.sql`, `src/lib/auth-mfa.ts`, `src/app/api/auth/login/mfa/recovery/route.ts`, backup-code admin/org routes, MFA verify/recovery tests, `src/lib/auth-mfa.test.ts`
+  - Control: Workforce MFA challenge + backup-code recovery supports provider/org-admin/super-admin users (ASVS V6.4.4 recovery)
+  - Evidence: `src/lib/migrations/026_add_mfa_backup_recovery_codes.sql`, `src/lib/migrations/027_add_mfa_recovery_versioning.sql`, `src/lib/auth-mfa.ts`, `src/app/api/auth/login/mfa/recovery/route.ts`, `src/app/api/admin/providers/[id]/mfa/backup-codes/route.ts`, `src/app/api/org/providers/[id]/mfa/backup-codes/route.ts`, `src/app/api/admin/organization-users/[id]/mfa/backup-codes/route.ts`, `src/app/api/admin/super-admin-users/[id]/mfa/backup-codes/route.ts`, MFA verify/recovery tests, `src/lib/auth-mfa.test.ts`
   - Owner: Engineering/Security
   - Status: implemented
   - Last review: 2026-02-27
-  - Closure criteria: backup codes generate/rotate/status and one-time recovery login behavior validated in tests
+  - Closure criteria: backup codes generate/rotate/status for all workforce types and one-time recovery login behavior validated in tests
+
+- Control ID: T-10
+  - Control: Admin-assisted MFA recovery reset invalidates old recovery artifacts and keeps MFA enabled (ASVS V6.4.4 admin reset)
+  - Evidence: `src/lib/migrations/027_add_mfa_recovery_versioning.sql`, `src/lib/auth-mfa.ts`, `src/app/api/admin/providers/[id]/mfa/reset-recovery/route.ts`, `src/app/api/org/providers/[id]/mfa/reset-recovery/route.ts`, `src/app/api/admin/organization-users/[id]/mfa/reset-recovery/route.ts`, `src/app/api/admin/super-admin-users/[id]/mfa/reset-recovery/route.ts`, `src/app/admin/dashboard/page.tsx`, `src/app/admin/organizations/[id]/page.tsx`, reset/recovery tests
+  - Owner: Engineering/Security
+  - Status: implemented
+  - Last review: 2026-02-27
+  - Closure criteria: admin reset leaves `mfa_enabled=true`, invalidates prior backup-code recovery, and forces fresh backup code generation
 
 ## Operational Controls
 

@@ -27,6 +27,7 @@ export default function EditOrgProviderPage() {
   const [backupCodeStatus, setBackupCodeStatus] = useState<{
     activeCodes: number;
     lastGeneratedAt: string | null;
+    backupCodesRequired?: boolean;
   } | null>(null);
   const [generatedBackupCodes, setGeneratedBackupCodes] = useState<string[]>([]);
 
@@ -104,6 +105,33 @@ export default function EditOrgProviderPage() {
       );
     } catch {
       setError("An error occurred while managing backup codes.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleResetRecovery = async () => {
+    setError(null);
+    setSuccess(null);
+    setSaving(true);
+    try {
+      const response = await fetch(`/api/org/providers/${providerId}/mfa/reset-recovery`, {
+        method: "POST",
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setError(data.error || "Failed to reset MFA recovery");
+        return;
+      }
+      setGeneratedBackupCodes([]);
+      setBackupCodeStatus((prev) => ({
+        activeCodes: 0,
+        lastGeneratedAt: prev?.lastGeneratedAt || null,
+        backupCodesRequired: true,
+      }));
+      setSuccess("MFA recovery was reset. Existing backup codes are invalid; generate a new set.");
+    } catch {
+      setError("An error occurred while resetting MFA recovery.");
     } finally {
       setSaving(false);
     }
@@ -210,6 +238,11 @@ export default function EditOrgProviderPage() {
               <p className="mt-2 text-xs text-slate-700">
                 Active codes: <span className="font-semibold">{backupCodeStatus?.activeCodes ?? 0}</span>
               </p>
+              {backupCodeStatus?.backupCodesRequired && (
+                <p className="mt-1 text-xs text-amber-700">
+                  Backup codes regeneration is required before recovery login can be used.
+                </p>
+              )}
               {backupCodeStatus?.lastGeneratedAt && (
                 <p className="mt-1 text-xs text-slate-600">
                   Last generated: {new Date(backupCodeStatus.lastGeneratedAt).toLocaleString()}
@@ -231,6 +264,14 @@ export default function EditOrgProviderPage() {
                   className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-70"
                 >
                   Rotate codes
+                </button>
+                <button
+                  type="button"
+                  disabled={saving}
+                  onClick={handleResetRecovery}
+                  className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-70"
+                >
+                  Admin reset MFA recovery
                 </button>
               </div>
               {generatedBackupCodes.length > 0 && (

@@ -27,6 +27,17 @@ interface Provider {
   createdAt: string;
 }
 
+interface OrgAdminUser {
+  id: string;
+  username: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+  mfaEnabled: boolean;
+  backupCodesRequired: boolean;
+  recoveryResetAt: string | null;
+}
+
 export default function OrganizationDetailPage() {
   const router = useRouter();
   const params = useParams();
@@ -34,6 +45,7 @@ export default function OrganizationDetailPage() {
 
   const [organization, setOrganization] = useState<Organization | null>(null);
   const [providers, setProviders] = useState<Provider[]>([]);
+  const [orgAdmins, setOrgAdmins] = useState<OrgAdminUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [orgForm, setOrgForm] = useState({
@@ -217,12 +229,42 @@ export default function OrganizationDetailPage() {
           isActive: Boolean(data.organization?.isActive),
         });
         setProviders(data.providers || []);
+        setOrgAdmins(data.orgAdmins || []);
       }
     } catch (err) {
       console.error("Error fetching organization:", err);
       setError("Failed to load organization details");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const runOrgAdminRecoveryAction = async (
+    orgAdminId: string,
+    action: "generate" | "rotate" | "reset",
+  ) => {
+    try {
+      const path =
+        action === "reset"
+          ? `/api/admin/organization-users/${orgAdminId}/mfa/reset-recovery`
+          : `/api/admin/organization-users/${orgAdminId}/mfa/backup-codes`;
+      const response = await fetch(path, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: action === "reset" ? undefined : JSON.stringify({ action }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        alert(data.error || "Failed to update MFA recovery state");
+        return;
+      }
+      if (Array.isArray(data.backupCodes) && data.backupCodes.length > 0) {
+        alert(`Save these codes now (shown once):\n${data.backupCodes.join("\n")}`);
+      }
+      await fetchOrganizationDetails();
+    } catch (err) {
+      console.error("Error running org admin recovery action:", err);
+      alert("Failed to update MFA recovery state");
     }
   };
 
@@ -608,6 +650,57 @@ export default function OrganizationDetailPage() {
                             className="text-sm text-red-600 hover:text-red-900"
                           >
                             Delete
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden mt-6">
+              <div className="px-6 py-4 border-b border-slate-200">
+                <h2 className="text-lg font-semibold text-slate-900">
+                  Organization Admin Accounts ({orgAdmins.length})
+                </h2>
+              </div>
+              {orgAdmins.length === 0 ? (
+                <div className="px-6 py-8 text-center text-sm text-slate-500">
+                  No organization admin users found.
+                </div>
+              ) : (
+                <div className="divide-y divide-slate-200">
+                  {orgAdmins.map((admin) => (
+                    <div key={admin.id} className="px-6 py-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-medium text-slate-900">
+                            {admin.firstName} {admin.lastName} ({admin.username})
+                          </p>
+                          <p className="text-xs text-slate-500">
+                            {admin.email} • MFA: {admin.mfaEnabled ? "Enabled" : "Disabled"} • Backup codes required:{" "}
+                            {admin.backupCodesRequired ? "Yes" : "No"}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => runOrgAdminRecoveryAction(admin.id, "generate")}
+                            className="px-2 py-1 text-xs rounded border border-slate-300 hover:bg-slate-50"
+                          >
+                            Generate codes
+                          </button>
+                          <button
+                            onClick={() => runOrgAdminRecoveryAction(admin.id, "rotate")}
+                            className="px-2 py-1 text-xs rounded border border-slate-300 hover:bg-slate-50"
+                          >
+                            Rotate codes
+                          </button>
+                          <button
+                            onClick={() => runOrgAdminRecoveryAction(admin.id, "reset")}
+                            className="px-2 py-1 text-xs rounded border border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100"
+                          >
+                            Admin reset MFA recovery
                           </button>
                         </div>
                       </div>

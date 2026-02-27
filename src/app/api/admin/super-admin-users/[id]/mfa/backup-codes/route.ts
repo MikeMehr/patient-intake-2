@@ -19,34 +19,30 @@ export async function GET(
         { error: "Unauthorized - Super admin access required" },
         { status },
       );
-      logRequestMeta("/api/admin/providers/[id]/mfa/backup-codes", requestId, status, Date.now() - started);
+      logRequestMeta("/api/admin/super-admin-users/[id]/mfa/backup-codes", requestId, status, Date.now() - started);
       return res;
     }
-
     const { id } = await params;
-    const providerResult = await query<{ id: string }>(
-      `SELECT id FROM physicians WHERE id = $1`,
+    const existing = await query<{ id: string }>(
+      `SELECT id FROM super_admin_users WHERE id = $1`,
       [id],
     );
-    if (providerResult.rows.length === 0) {
+    if (existing.rows.length === 0) {
       status = 404;
-      const res = NextResponse.json({ error: "Provider not found" }, { status });
-      logRequestMeta("/api/admin/providers/[id]/mfa/backup-codes", requestId, status, Date.now() - started);
+      const res = NextResponse.json({ error: "Super admin not found" }, { status });
+      logRequestMeta("/api/admin/super-admin-users/[id]/mfa/backup-codes", requestId, status, Date.now() - started);
       return res;
     }
 
-    const backupCodes = await getBackupCodeStatus({
-      userType: "provider",
-      userId: id,
-    });
+    const backupCodes = await getBackupCodeStatus({ userType: "super_admin", userId: id });
     const res = NextResponse.json({ backupCodes });
-    logRequestMeta("/api/admin/providers/[id]/mfa/backup-codes", requestId, status, Date.now() - started);
+    logRequestMeta("/api/admin/super-admin-users/[id]/mfa/backup-codes", requestId, status, Date.now() - started);
     return res;
   } catch (error) {
     status = 500;
-    console.error("[admin/providers/[id]/mfa/backup-codes] GET Error", error);
+    console.error("[admin/super-admin-users/[id]/mfa/backup-codes] GET Error", error);
     const res = NextResponse.json({ error: "Internal server error" }, { status });
-    logRequestMeta("/api/admin/providers/[id]/mfa/backup-codes", requestId, status, Date.now() - started);
+    logRequestMeta("/api/admin/super-admin-users/[id]/mfa/backup-codes", requestId, status, Date.now() - started);
     return res;
   }
 }
@@ -66,28 +62,26 @@ export async function POST(
         { error: "Unauthorized - Super admin access required" },
         { status },
       );
-      logRequestMeta("/api/admin/providers/[id]/mfa/backup-codes", requestId, status, Date.now() - started);
+      logRequestMeta("/api/admin/super-admin-users/[id]/mfa/backup-codes", requestId, status, Date.now() - started);
       return res;
     }
-
     const { id } = await params;
-    const providerResult = await query<{ id: string }>(
-      `SELECT id FROM physicians WHERE id = $1`,
+    const existing = await query<{ id: string }>(
+      `SELECT id FROM super_admin_users WHERE id = $1`,
       [id],
     );
-    if (providerResult.rows.length === 0) {
+    if (existing.rows.length === 0) {
       status = 404;
-      const res = NextResponse.json({ error: "Provider not found" }, { status });
-      logRequestMeta("/api/admin/providers/[id]/mfa/backup-codes", requestId, status, Date.now() - started);
+      const res = NextResponse.json({ error: "Super admin not found" }, { status });
+      logRequestMeta("/api/admin/super-admin-users/[id]/mfa/backup-codes", requestId, status, Date.now() - started);
       return res;
     }
-
     const body = (await request.json().catch(() => ({}))) as { action?: "generate" | "rotate" };
     const action = body.action || "generate";
 
     try {
       const generated = await generateBackupCodes({
-        userType: "provider",
+        userType: "super_admin",
         userId: id,
         rotateExisting: action === "rotate",
       });
@@ -100,7 +94,7 @@ export async function POST(
           backupCodesRequired: generated.backupCodesRequired,
         },
       });
-      logRequestMeta("/api/admin/providers/[id]/mfa/backup-codes", requestId, status, Date.now() - started);
+      logRequestMeta("/api/admin/super-admin-users/[id]/mfa/backup-codes", requestId, status, Date.now() - started);
       return res;
     } catch (error) {
       if (error instanceof Error && error.message === "ACTIVE_CODES_EXIST") {
@@ -109,16 +103,16 @@ export async function POST(
           { error: "Active backup codes already exist. Rotate codes to replace them." },
           { status },
         );
-        logRequestMeta("/api/admin/providers/[id]/mfa/backup-codes", requestId, status, Date.now() - started);
+        logRequestMeta("/api/admin/super-admin-users/[id]/mfa/backup-codes", requestId, status, Date.now() - started);
         return res;
       }
       throw error;
     }
   } catch (error) {
     status = 500;
-    console.error("[admin/providers/[id]/mfa/backup-codes] POST Error", error);
+    console.error("[admin/super-admin-users/[id]/mfa/backup-codes] POST Error", error);
     const res = NextResponse.json({ error: "Internal server error" }, { status });
-    logRequestMeta("/api/admin/providers/[id]/mfa/backup-codes", requestId, status, Date.now() - started);
+    logRequestMeta("/api/admin/super-admin-users/[id]/mfa/backup-codes", requestId, status, Date.now() - started);
     return res;
   }
 }
