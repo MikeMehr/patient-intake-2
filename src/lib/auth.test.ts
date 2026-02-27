@@ -44,7 +44,7 @@ describe("auth session lifecycle", () => {
           },
         }],
       })
-      .mockResolvedValueOnce({ rows: [] });
+      .mockResolvedValueOnce({ rows: [], rowCount: 1 });
 
     const { getCurrentSession } = await import("./auth");
     const session = await getCurrentSession({ refresh: true });
@@ -58,6 +58,37 @@ describe("auth session lifecycle", () => {
     expect(cookieName).toBe("physician_session");
     expect(rotatedToken).toMatch(/^[a-f0-9]{64}$/);
     expect(rotatedToken).not.toBe("old-token");
+  });
+
+  it("does not set a new cookie when refresh rotation update matches no rows", async () => {
+    cookieGetMock.mockReturnValue({ value: "stale-token" });
+    queryMock
+      .mockResolvedValueOnce({
+        rows: [{
+          user_id: "provider-1",
+          user_type: "provider",
+          organization_id: "org-1",
+          physician_id: "provider-1",
+          expires_at: new Date(Date.now() + 5 * 60 * 1000),
+          created_at: new Date(Date.now() - 5 * 60 * 1000),
+          session_data: {
+            userId: "provider-1",
+            userType: "provider",
+            username: "doctor1",
+            firstName: "Doc",
+            lastName: "Tor",
+            expiresAt: Date.now() + 5 * 60 * 1000,
+          },
+        }],
+      })
+      .mockResolvedValueOnce({ rows: [], rowCount: 0 });
+
+    const { getCurrentSession } = await import("./auth");
+    const session = await getCurrentSession({ refresh: true });
+
+    expect(session?.userId).toBe("provider-1");
+    expect(queryMock).toHaveBeenCalledTimes(2);
+    expect(cookieSetMock).toHaveBeenCalledTimes(0);
   });
 
   it("invalidates expired sessions in verifySession", async () => {

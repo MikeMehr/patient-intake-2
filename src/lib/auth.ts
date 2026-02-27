@@ -296,7 +296,7 @@ export async function getCurrentSession(options?: { refresh?: boolean }): Promis
       const rotatedToken = generateSessionToken();
       const newExpiresAtMs = Math.min(nowMs + IDLE_TIMEOUT_MS, absoluteExpiresAtMs);
       const { query } = await import("./db");
-      await query(
+      const rotationResult = await query(
         `UPDATE physician_sessions
          SET token = $1,
              expires_at = $2,
@@ -304,14 +304,23 @@ export async function getCurrentSession(options?: { refresh?: boolean }): Promis
          WHERE token = $4`,
         [rotatedToken, new Date(newExpiresAtMs), newExpiresAtMs, token],
       );
+      const updatedRows =
+        typeof (rotationResult as { rowCount?: unknown })?.rowCount === "number"
+          ? ((rotationResult as { rowCount: number }).rowCount ?? 0)
+          : 0;
+      if (updatedRows > 0) {
+        cookieStore.set(SESSION_COOKIE_NAME, rotatedToken, {
+          ...getSessionCookieBaseOptions(),
+          maxAge: Math.max(1, Math.floor((newExpiresAtMs - nowMs) / 1000)),
+        });
 
-      cookieStore.set(SESSION_COOKIE_NAME, rotatedToken, {
-        ...getSessionCookieBaseOptions(),
-        maxAge: Math.max(1, Math.floor((newExpiresAtMs - nowMs) / 1000)),
-      });
-
-      // Keep the in-memory row expiry consistent for parsing below.
-      row.expires_at = new Date(newExpiresAtMs);
+        // Keep the in-memory row expiry consistent for parsing below.
+        row.expires_at = new Date(newExpiresAtMs);
+      } else {
+        // Another concurrent refresh may have already rotated this token.
+        // Do not overwrite the browser cookie with a token that doesn't exist in DB.
+        logDebug("[auth/getCurrentSession] Session rotation skipped; token no longer current");
+      }
     }
 
     const session = parseSessionFromRow(row);
