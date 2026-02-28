@@ -145,7 +145,9 @@ describe("auth session lifecycle", () => {
 
   it("clears cookie when token has no backing session row", async () => {
     cookieGetMock.mockReturnValue({ value: "missing-token" });
-    queryMock.mockResolvedValueOnce({ rows: [] });
+    queryMock
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] });
 
     const { getCurrentSession } = await import("./auth");
     const session = await getCurrentSession();
@@ -156,5 +158,37 @@ describe("auth session lifecycle", () => {
       "",
       expect.objectContaining({ maxAge: 0 }),
     );
+  });
+
+  it("accepts previous token during short rotation grace window", async () => {
+    cookieGetMock.mockReturnValue({ value: "old-token" });
+    queryMock
+      .mockResolvedValueOnce({ rows: [] }) // direct token lookup miss
+      .mockResolvedValueOnce({
+        rows: [{
+          user_id: "provider-1",
+          user_type: "provider",
+          organization_id: "org-1",
+          physician_id: "provider-1",
+          expires_at: new Date(Date.now() + 5 * 60 * 1000),
+          created_at: new Date(Date.now() - 5 * 60 * 1000),
+          session_data: {
+            userId: "provider-1",
+            userType: "provider",
+            username: "doctor1",
+            firstName: "Doc",
+            lastName: "Tor",
+            expiresAt: Date.now() + 5 * 60 * 1000,
+            previousToken: "old-token",
+            previousTokenGraceUntil: Date.now() + 10_000,
+          },
+        }],
+      });
+
+    const { getCurrentSession } = await import("./auth");
+    const session = await getCurrentSession();
+
+    expect(session?.userId).toBe("provider-1");
+    expect(cookieSetMock).toHaveBeenCalledTimes(0);
   });
 });

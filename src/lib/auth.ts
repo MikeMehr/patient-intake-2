@@ -75,7 +75,21 @@ async function loadSessionRow(token: string): Promise<PhysicianSessionRow | null
      LIMIT 1`,
     [token],
   );
-  return result.rows[0] || null;
+  if (result.rows[0]) {
+    return result.rows[0];
+  }
+
+  // Rotation grace lookup: accept the previous token briefly so in-flight
+  // requests don't fail while the browser applies a freshly rotated cookie.
+  const graceLookup = await query<PhysicianSessionRow>(
+    `SELECT user_id, user_type, organization_id, physician_id, expires_at, created_at, session_data
+     FROM physician_sessions
+     WHERE session_data->>'previousToken' = $1
+       AND COALESCE((session_data->>'previousTokenGraceUntil')::bigint, 0) > $2
+     LIMIT 1`,
+    [token, Date.now()],
+  );
+  return graceLookup.rows[0] || null;
 }
 
 function parseSessionFromRow(row: PhysicianSessionRow): UserSession {
@@ -295,14 +309,32 @@ export async function getCurrentSession(options?: { refresh?: boolean }): Promis
     if (options?.refresh === true) {
       const rotatedToken = generateSessionToken();
       const newExpiresAtMs = Math.min(nowMs + IDLE_TIMEOUT_MS, absoluteExpiresAtMs);
+      const previousTokenGraceUntilMs = nowMs + 15_000;
       const { query } = await import("./db");
       const rotationResult = await query(
         `UPDATE physician_sessions
          SET token = $1,
              expires_at = $2,
-             session_data = jsonb_set(COALESCE(session_data, '{}'::jsonb), '{expiresAt}', to_jsonb($3::bigint), true)
-         WHERE token = $4`,
-        [rotatedToken, new Date(newExpiresAtMs), newExpiresAtMs, token],
+             session_data = jsonb_set(
+               jsonb_set(
+                 jsonb_set(COALESCE(session_data, '{}'::jsonb), '{expiresAt}', to_jsonb($3::bigint), true),
+                 '{previousToken}',
+                 to_jsonb($4::text),
+                 true
+               ),
+               '{previousTokenGraceUntil}',
+               to_jsonb($5::bigint),
+               true
+             )
+         WHERE token = $6`,
+        [
+          rotatedToken,
+          new Date(newExpiresAtMs),
+          newExpiresAtMs,
+          token,
+          previousTokenGraceUntilMs,
+          token,
+        ],
       );
       const updatedRows =
         typeof (rotationResult as { rowCount?: unknown })?.rowCount === "number"
