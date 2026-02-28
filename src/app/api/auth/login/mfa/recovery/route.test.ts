@@ -83,6 +83,24 @@ describe("POST /api/auth/login/mfa/recovery", () => {
     expect(createSessionMock).not.toHaveBeenCalled();
   });
 
+  it("rejects recovery when challenge token claims mismatch", async () => {
+    consumeBackupCodeForChallengeMock.mockResolvedValueOnce({ ok: false, reason: "missing" });
+    const { POST } = await import("./route");
+    const response = await POST(
+      new Request("http://localhost/api/auth/login/mfa/recovery", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          challengeToken: "challenge-token",
+          backupCode: "ABCD1234",
+        }),
+      }) as any,
+    );
+
+    expect(response.status).toBe(400);
+    expect(createSessionMock).not.toHaveBeenCalled();
+  });
+
   it("rejects recovery when admin reset requires regeneration", async () => {
     consumeBackupCodeForChallengeMock.mockResolvedValueOnce({ ok: false, reason: "codes_required" });
     const { POST } = await import("./route");

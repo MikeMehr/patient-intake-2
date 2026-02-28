@@ -343,6 +343,10 @@ export async function resolveInvitationFromCookie(): Promise<InvitationContext |
   }
 
   if (candidates.length === 0) return null;
+  const expectedClaims = getExpectedTokenClaims(
+    "invitation_session",
+    "invitation_verified_session",
+  );
 
   // Prefer the last cookie in the header (most recently set).
   const supportsWebsiteUrl = await hasOrganizationWebsiteColumn();
@@ -365,8 +369,19 @@ export async function resolveInvitationFromCookie(): Promise<InvitationContext |
        WHERE isess.invitation_id = $1
          AND isess.session_token_hash = $2
          AND isess.expires_at > NOW()
+         AND isess.token_iss = $3
+         AND isess.token_aud = $4
+         AND isess.token_type = $5
+         AND isess.token_context = $6
        LIMIT 1`,
-      [parsed.invitationId, sessionHash],
+      [
+        parsed.invitationId,
+        sessionHash,
+        expectedClaims.iss,
+        expectedClaims.aud,
+        expectedClaims.type,
+        expectedClaims.context,
+      ],
     );
     if (result.rows.length === 0) continue;
 
@@ -470,11 +485,32 @@ export async function createInvitationSession(params: {
   const sessionHash = hashValue(sessionToken);
   const expiresAtMs = Date.now() + INVITATION_SESSION_TTL_HOURS * 60 * 60 * 1000;
   const expiresAt = new Date(expiresAtMs);
+  const claims = getExpectedTokenClaims("invitation_session", "invitation_verified_session");
 
   await query(
-    `INSERT INTO invitation_sessions (invitation_id, session_token_hash, expires_at, ip_address, user_agent)
-     VALUES ($1, $2, $3, $4, $5)`,
-    [params.invitationId, sessionHash, expiresAt, params.ipAddress || null, params.userAgent || null],
+    `INSERT INTO invitation_sessions (
+       invitation_id,
+       session_token_hash,
+       expires_at,
+       ip_address,
+       user_agent,
+       token_iss,
+       token_aud,
+       token_type,
+       token_context
+     )
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+    [
+      params.invitationId,
+      sessionHash,
+      expiresAt,
+      params.ipAddress || null,
+      params.userAgent || null,
+      claims.iss,
+      claims.aud,
+      claims.type,
+      claims.context,
+    ],
   );
 
   const cookieValue = createInvitationSessionCookie({

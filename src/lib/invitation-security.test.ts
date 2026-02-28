@@ -19,6 +19,7 @@ describe("invitation-security helpers", () => {
     cookiesMock.mockReset();
     headersMock.mockReset();
     process.env.SESSION_SECRET = "test-session-secret";
+    process.env.TOKEN_ISSUER = "issuer-test";
     process.env.TOKEN_AUDIENCE = "health-assist-app";
     headersMock.mockResolvedValue({ get: () => "" });
     cookiesMock.mockResolvedValue({ get: () => undefined });
@@ -116,6 +117,26 @@ describe("invitation-security helpers", () => {
     expect(parts[1].length).toBeGreaterThan(10);
   });
 
+  it("stores expected token claims when creating invitation session", async () => {
+    const mod = await import("@/lib/invitation-security");
+    queryMock.mockResolvedValueOnce({ rows: [] });
+
+    await mod.createInvitationSession({
+      invitationId: "invite-session-claims",
+      ipAddress: "127.0.0.1",
+      userAgent: "vitest",
+    });
+
+    expect(queryMock).toHaveBeenCalledTimes(1);
+    expect(String(queryMock.mock.calls[0]?.[0])).toContain("token_iss");
+    expect(queryMock.mock.calls[0]?.[1]?.slice(5)).toEqual([
+      "issuer-test",
+      "health-assist-app",
+      "invitation_session",
+      "invitation_verified_session",
+    ]);
+  });
+
   it("accepts invitation session cookie with expected token claims", async () => {
     const mod = await import("@/lib/invitation-security");
     const sessionToken = "session-token-claims";
@@ -160,6 +181,14 @@ describe("invitation-security helpers", () => {
     const resolved = await mod.resolveInvitationFromCookie();
     expect(resolved?.invitationId).toBe("invite-claims-ok");
     expect(queryMock).toHaveBeenCalledTimes(3);
+    expect(queryMock.mock.calls[1]?.[1]).toEqual([
+      "invite-claims-ok",
+      mod.hashValue(sessionToken),
+      "issuer-test",
+      "health-assist-app",
+      "invitation_session",
+      "invitation_verified_session",
+    ]);
   });
 
   it("rejects invitation session cookie when token claims mismatch", async () => {
@@ -178,6 +207,32 @@ describe("invitation-security helpers", () => {
     const resolved = await mod.resolveInvitationFromCookie();
     expect(resolved).toBeNull();
     expect(queryMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects invitation session when DB claim match fails", async () => {
+    const mod = await import("@/lib/invitation-security");
+    const sessionToken = "session-token-db-claim-miss";
+    const cookieValue = mod.createInvitationSessionCookie({
+      invitationId: "invite-db-claim-miss",
+      sessionToken,
+      expiresAtEpochMs: Date.now() + 60_000,
+    });
+
+    cookiesMock.mockResolvedValue({ get: () => ({ value: cookieValue }) });
+    queryMock
+      .mockResolvedValueOnce({ rows: [{ exists: false }] })
+      .mockResolvedValueOnce({ rows: [] });
+
+    const resolved = await mod.resolveInvitationFromCookie();
+    expect(resolved).toBeNull();
+    expect(queryMock.mock.calls[1]?.[1]).toEqual([
+      "invite-db-claim-miss",
+      mod.hashValue(sessionToken),
+      "issuer-test",
+      "health-assist-app",
+      "invitation_session",
+      "invitation_verified_session",
+    ]);
   });
 
   it("hides summaries when summary TTL is expired", async () => {

@@ -88,6 +88,43 @@ describe("POST /api/auth/login/mfa/verify", () => {
     expect(createSessionMock).not.toHaveBeenCalled();
   });
 
+  it("rejects MFA verify when challenge token claims mismatch", async () => {
+    verifyMfaChallengeMock.mockResolvedValueOnce({ ok: false, reason: "claim_mismatch" });
+    const { POST } = await import("./route");
+    const response = await POST(
+      new Request("http://localhost/api/auth/login/mfa/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          challengeToken: "challenge-token",
+          otpCode: "123456",
+        }),
+      }) as any,
+    );
+
+    expect(response.status).toBe(400);
+    expect(consumeVerifiedMfaChallengeMock).not.toHaveBeenCalled();
+    expect(createSessionMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects MFA verify when consume fails after claim validation", async () => {
+    consumeVerifiedMfaChallengeMock.mockResolvedValueOnce({ ok: false });
+    const { POST } = await import("./route");
+    const response = await POST(
+      new Request("http://localhost/api/auth/login/mfa/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          challengeToken: "challenge-token",
+          otpCode: "123456",
+        }),
+      }) as any,
+    );
+
+    expect(response.status).toBe(400);
+    expect(createSessionMock).not.toHaveBeenCalled();
+  });
+
   it("returns 429 when verification is rate limited", async () => {
     consumeDbRateLimitMock.mockResolvedValueOnce({
       allowed: false,
