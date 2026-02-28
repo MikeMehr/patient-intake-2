@@ -61,8 +61,10 @@ export default function SessionKeepAlive({ redirectTo, throttleMs = 60_000 }: Pr
     }
     document.addEventListener("visibilitychange", onVisibilityChange);
 
-    // Prime the session shortly after mount (so the idle timer starts with the page open).
-    void ping();
+    // Do not ping immediately on mount.
+    // With token rotation enabled, initial parallel dashboard requests can race and
+    // momentarily use the pre-rotation cookie, causing false 401/logouts.
+    // We refresh on real user activity and when tab visibility changes.
 
     return () => {
       disposed = true;
