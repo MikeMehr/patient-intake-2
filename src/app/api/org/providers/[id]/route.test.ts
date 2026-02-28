@@ -65,6 +65,44 @@ describe("PUT /api/org/providers/[id]", () => {
     expect(updateParams[2]).toBe("org-1");
   });
 
+  it("rejects non-org-admin users (role boundary)", async () => {
+    getCurrentSessionMock.mockResolvedValueOnce({
+      userId: "provider-1",
+      userType: "provider",
+      organizationId: "org-1",
+    });
+
+    const { PUT } = await import("./route");
+    const response = await PUT(
+      new Request("http://localhost/api/org/providers/provider-1", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mfaEnabled: true }),
+      }) as any,
+      { params: Promise.resolve({ id: "provider-1" }) } as any,
+    );
+
+    expect(response.status).toBe(401);
+    expect(queryMock).toHaveBeenCalledTimes(0);
+  });
+
+  it("returns 404 when provider is outside caller organization (tenant boundary)", async () => {
+    queryMock.mockResolvedValueOnce({ rows: [] }); // existing provider check constrained by org_id
+
+    const { PUT } = await import("./route");
+    const response = await PUT(
+      new Request("http://localhost/api/org/providers/provider-outside-org", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mfaEnabled: true }),
+      }) as any,
+      { params: Promise.resolve({ id: "provider-outside-org" }) } as any,
+    );
+
+    expect(response.status).toBe(404);
+    expect(queryMock).toHaveBeenCalledTimes(1);
+  });
+
   it("revokes all provider sessions when password changes", async () => {
     queryMock
       .mockResolvedValueOnce({ rows: [{ id: "provider-1", organization_id: "org-1" }] }) // existing provider check
