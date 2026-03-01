@@ -4451,7 +4451,7 @@ export default function Home() {
                       <div className="group flex flex-col items-center">
                         <div
                           className={[
-                            "w-full rounded-2xl border bg-white px-4 py-3 text-sm text-slate-800 transition",
+                            "relative w-full rounded-2xl border bg-white px-4 py-3 text-sm text-slate-800 transition",
                             isEditingDraft
                               ? "border-red-400 ring-2 ring-red-200"
                               : "border-slate-200",
@@ -4487,8 +4487,74 @@ export default function Home() {
                             }
                             setDraftTranscript(nextValue);
                           }}
-                          className="mt-1 w-full resize-none rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
+                          className={[
+                            "mt-1 w-full resize-none rounded-lg border border-slate-200 bg-white px-3 pt-2 text-sm text-slate-800 outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100",
+                            showReviewActions ? "pb-8 pr-40" : "pb-2",
+                          ].join(" ")}
                         />
+                        {showReviewActions && (
+                          <div className="pointer-events-none absolute bottom-5 right-7 flex items-center gap-2 whitespace-nowrap">
+                            <button
+                              type="button"
+                              disabled={
+                                isSubmittingResponse ||
+                                hasPendingSubmission ||
+                                (awaitingFinalComments && finalCommentsChoice !== "yes")
+                              }
+                              onPointerDown={(event) => {
+                                event.preventDefault();
+                                if (!isSubmittingResponse && !hasPendingSubmission) {
+                                  commitDraftToResponse("use", true);
+                                }
+                              }}
+                              onPointerUp={() => {
+                              }}
+                              onClick={() => {
+                                if (!isSubmittingResponse && !hasPendingSubmission) {
+                                  commitDraftToResponse("use", true);
+                                }
+                              }}
+                              className="pointer-events-auto inline-flex items-center justify-center rounded-full bg-emerald-700 px-2.5 py-0.5 text-xs font-medium text-white shadow-sm transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-300"
+                            >
+                              Use this
+                            </button>
+                            <button
+                              type="button"
+                              disabled={
+                                isSubmittingResponse ||
+                                hasPendingSubmission ||
+                                (awaitingFinalComments && finalCommentsChoice !== "yes")
+                              }
+                              onClick={() => {
+                                toggleDraftEditing();
+                              }}
+                              className={[
+                                "pointer-events-auto inline-flex items-center justify-center rounded-full px-2.5 py-0.5 text-xs font-medium shadow-sm transition",
+                                "select-none active:scale-[0.98] active:opacity-90",
+                                isEditingDraft
+                                  ? "bg-red-600 text-white border border-red-600"
+                                  : "border border-slate-200 text-slate-700 hover:bg-slate-100",
+                                "disabled:cursor-not-allowed disabled:opacity-60",
+                              ].join(" ")}
+                            >
+                              {isEditingDraft ? "Done editing" : "Edit"}
+                            </button>
+                            <button
+                              type="button"
+                              disabled={
+                                isSubmittingResponse ||
+                                hasPendingSubmission ||
+                                (awaitingFinalComments && finalCommentsChoice !== "yes")
+                              }
+                              onClick={() => {
+                                redoDraftTranscript();
+                              }}
+                              className="pointer-events-auto inline-flex items-center justify-center rounded-full border border-slate-200 px-2.5 py-0.5 text-xs font-medium text-slate-700 shadow-sm transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              Redo
+                            </button>
+                          </div>
+                        )}
                         </div>
                         <button
                           type="button"
@@ -4527,69 +4593,6 @@ export default function Home() {
                             <span className="text-slate-500 animate-pulse">Thinking...</span>
                           )}
                         </div>
-                      </div>
-                    )}
-                    {showReviewActions && (
-                      <div className="mt-6 flex flex-wrap gap-3">
-                        <button
-                          type="button"
-                          disabled={
-                            isSubmittingResponse ||
-                            hasPendingSubmission ||
-                            (awaitingFinalComments && finalCommentsChoice !== "yes")
-                          }
-                          onPointerDown={(event) => {
-                            event.preventDefault();
-                            if (!isSubmittingResponse && !hasPendingSubmission) {
-                              commitDraftToResponse("use", true);
-                            }
-                          }}
-                          onPointerUp={() => {
-                          }}
-                          onClick={() => {
-                            if (!isSubmittingResponse && !hasPendingSubmission) {
-                              commitDraftToResponse("use", true);
-                            }
-                          }}
-                          className="inline-flex min-h-[44px] items-center justify-center rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-emerald-300"
-                        >
-                          Use this
-                        </button>
-                        <button
-                          type="button"
-                          disabled={
-                            isSubmittingResponse ||
-                            hasPendingSubmission ||
-                            (awaitingFinalComments && finalCommentsChoice !== "yes")
-                          }
-                          onClick={() => {
-                            toggleDraftEditing();
-                          }}
-                          className={[
-                            "inline-flex min-h-[44px] items-center justify-center rounded-xl px-4 py-2 text-sm font-semibold transition",
-                            "select-none active:scale-[0.98] active:opacity-90",
-                            isEditingDraft
-                              ? "bg-red-600 text-white border border-red-600"
-                              : "border border-slate-200 text-slate-700 hover:bg-slate-100",
-                            "disabled:cursor-not-allowed disabled:opacity-60",
-                          ].join(" ")}
-                        >
-                          {isEditingDraft ? "Done editing" : "Edit"}
-                        </button>
-                        <button
-                          type="button"
-                          disabled={
-                            isSubmittingResponse ||
-                            hasPendingSubmission ||
-                            (awaitingFinalComments && finalCommentsChoice !== "yes")
-                          }
-                          onClick={() => {
-                            redoDraftTranscript();
-                          }}
-                          className="inline-flex min-h-[44px] items-center justify-center rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
-                        >
-                          Redo
-                        </button>
                       </div>
                     )}
                     {/* Pause/Resume, End buttons and Thinking indicator - moved below Listening box */}

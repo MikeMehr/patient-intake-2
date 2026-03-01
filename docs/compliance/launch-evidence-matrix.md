@@ -84,6 +84,24 @@ This matrix links launch controls to objective evidence, owner, and closure crit
   - Last review: 2026-02-27
   - Closure criteria: admin reset leaves `mfa_enabled=true`, invalidates prior backup-code recovery, and forces fresh backup code generation
 
+- Control ID: T-11
+  - Control: Context-specific password words are documented and mapped to enforcement evidence (ASVS V6.1.2)
+  - Evidence: `docs/compliance/runbooks/password-context-word-policy.md`, `src/lib/password-breach.ts`, `src/app/api/auth/register/route.ts`, `src/app/api/auth/reset-password/[token]/route.ts`, `src/app/api/admin/providers/[id]/route.ts`, `src/app/api/org/providers/[id]/route.ts`
+  - Owner: Engineering/Security
+  - Status: documented_pending_enforcement_evidence
+  - Last review: 2026-02-27
+  - Next review: 2026-03-27
+  - Closure criteria: context-word list is reviewed on schedule and automated tests demonstrate context-word rejection across registration and password change/reset flows
+
+- Control ID: T-12
+  - Control: Credential recovery tokens are single-use, context-bound, and replay-resistant (ASVS V6.3.4)
+  - Evidence: `docs/compliance/runbooks/credential-recovery-token-policy.md`, `src/app/api/auth/reset-password/route.ts`, `src/app/api/auth/reset-password/[token]/route.ts`, `src/lib/token-claims.ts`, `src/lib/migrations/028_add_token_claim_columns.sql`, `src/app/api/auth/reset-password/route.test.ts`, `src/app/api/auth/reset-password/[token]/route.test.ts`
+  - Owner: Engineering/Security
+  - Status: implemented
+  - Last review: 2026-02-27
+  - Next review: 2026-03-27
+  - Closure criteria: tests continue to prove token claim matching, single-use consumption, expiry rejection, and active-session invalidation after successful password reset
+
 ## Operational Controls
 
 - Control ID: O-01

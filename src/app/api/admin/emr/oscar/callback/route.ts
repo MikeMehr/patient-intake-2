@@ -3,6 +3,7 @@ import { query } from "@/lib/db";
 import { decryptString, encryptString } from "@/lib/encrypted-field";
 import { oscarExchangeAccessToken } from "@/lib/oscar/client";
 import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
+import { getExpectedTokenClaims } from "@/lib/token-claims";
 
 export const runtime = "nodejs";
 
@@ -22,6 +23,8 @@ export async function GET(request: NextRequest) {
       return res;
     }
 
+    const expectedClaims = getExpectedTokenClaims("oauth_request", "emr_oscar_oauth_request");
+
     const pendingRes = await query<{
       organization_id: string;
       request_token: string;
@@ -30,9 +33,21 @@ export async function GET(request: NextRequest) {
     }>(
       `SELECT organization_id, request_token, request_token_secret_enc, expires_at
        FROM emr_oauth_requests
-       WHERE vendor = 'OSCAR' AND request_token = $1
+       WHERE vendor = 'OSCAR'
+         AND request_token = $1
+         AND expires_at > NOW()
+         AND token_iss = $2
+         AND token_aud = $3
+         AND token_type = $4
+         AND token_context = $5
        LIMIT 1`,
-      [oauthToken],
+      [
+        oauthToken,
+        expectedClaims.iss,
+        expectedClaims.aud,
+        expectedClaims.type,
+        expectedClaims.context,
+      ],
     );
     if (pendingRes.rows.length === 0) {
       status = 400;
@@ -41,13 +56,6 @@ export async function GET(request: NextRequest) {
       return res;
     }
     const pending = pendingRes.rows[0];
-    if (pending.expires_at.getTime() <= Date.now()) {
-      status = 400;
-      const res = NextResponse.json({ error: "OAuth request expired; please reconnect" }, { status });
-      logRequestMeta("/api/admin/emr/oscar/callback", requestId, status, Date.now() - started);
-      return res;
-    }
-
     const orgId = pending.organization_id;
     const connectionRes = await query<{
       base_url: string;

@@ -109,14 +109,17 @@ describe("POST /api/auth/reset-password/[token]", () => {
     expect(response.status).toBe(400);
   });
 
-  it("rejects reset token when explicit claims do not match", async () => {
-    process.env.TOKEN_ISSUER = "issuer-a";
+  it.each([
+    { key: "TOKEN_ISSUER", issuedAs: "issuer-a", expectedAtVerify: "issuer-b", index: 2 },
+    { key: "TOKEN_AUDIENCE", issuedAs: "audience-a", expectedAtVerify: "audience-b", index: 3 },
+  ])("rejects reset token when $key claim mismatches", async ({ key, issuedAs, expectedAtVerify, index }) => {
+    process.env[key] = issuedAs;
     queryMock
       .mockResolvedValueOnce({
         rows: [{ attempt_count: 1, expires_at: new Date(Date.now() + 60_000) }],
       })
       .mockResolvedValueOnce({ rows: [] });
-    process.env.TOKEN_ISSUER = "issuer-b";
+    process.env[key] = expectedAtVerify;
 
     const { POST } = await import("./route");
     const rawToken = "claim-mismatch";
@@ -131,7 +134,8 @@ describe("POST /api/auth/reset-password/[token]", () => {
 
     expect(response.status).toBe(400);
     expect(String(queryMock.mock.calls[1][0])).toContain("token_iss = $3");
-    expect(queryMock.mock.calls[1][1][2]).toBe("issuer-b");
+    expect(String(queryMock.mock.calls[1][0])).toContain("token_context = $6");
+    expect(queryMock.mock.calls[1][1][index]).toBe(expectedAtVerify);
   });
 
   it("requires MFA consumption for mfa-enabled accounts", async () => {

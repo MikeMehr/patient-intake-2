@@ -158,6 +158,42 @@ describe("auth-mfa backup recovery helpers", () => {
     expect(result).toEqual({ ok: false, reason: "claim_mismatch" });
   });
 
+  it.each([
+    { field: "token_iss", value: "wrong-issuer" },
+    { field: "token_aud", value: "wrong-audience" },
+    { field: "token_type", value: "wrong-type" },
+    { field: "token_context", value: "wrong-context" },
+  ])("rejects MFA verify when $field mismatches", async ({ field, value }) => {
+    queryMock.mockResolvedValueOnce({
+      rows: [
+        {
+          id: "challenge-claims-field",
+          user_type: "provider",
+          user_id: "provider-1",
+          otp_hash: "abc",
+          expires_at: new Date(Date.now() + 60_000),
+          attempt_count: 0,
+          max_attempts: 5,
+          cooldown_until: null,
+          context_token_hash: null,
+          token_iss: "issuer-test",
+          token_aud: "audience-test",
+          token_type: "mfa_challenge",
+          token_context: "auth_login_mfa",
+          [field]: value,
+        },
+      ],
+    });
+
+    const { verifyMfaChallenge } = await import("./auth-mfa");
+    const result = await verifyMfaChallenge({
+      challengeToken: "challenge-token",
+      otpCode: "123456",
+      purpose: "login",
+    });
+    expect(result).toEqual({ ok: false, reason: "claim_mismatch" });
+  });
+
   it("rejects MFA consume when token claims mismatch", async () => {
     queryMock.mockResolvedValueOnce({
       rows: [
@@ -183,5 +219,59 @@ describe("auth-mfa backup recovery helpers", () => {
       purpose: "login",
     });
     expect(result).toEqual({ ok: false });
+  });
+
+  it.each([
+    { field: "token_iss", value: "wrong-issuer" },
+    { field: "token_aud", value: "wrong-audience" },
+    { field: "token_type", value: "wrong-type" },
+    { field: "token_context", value: "wrong-context" },
+  ])("rejects MFA consume when $field mismatches", async ({ field, value }) => {
+    queryMock.mockResolvedValueOnce({
+      rows: [
+        {
+          id: "challenge-claims-consume-field",
+          user_type: "provider",
+          user_id: "provider-1",
+          verified_at: new Date(Date.now() - 1_000),
+          consumed_at: null,
+          expires_at: new Date(Date.now() + 60_000),
+          context_token_hash: null,
+          token_iss: "issuer-test",
+          token_aud: "audience-test",
+          token_type: "mfa_challenge",
+          token_context: "auth_login_mfa",
+          [field]: value,
+        },
+      ],
+    });
+
+    const { consumeVerifiedMfaChallenge } = await import("./auth-mfa");
+    const result = await consumeVerifiedMfaChallenge({
+      challengeToken: "challenge-token",
+      purpose: "login",
+    });
+    expect(result).toEqual({ ok: false });
+  });
+
+  it("stores expected claims when issuing MFA challenge", async () => {
+    queryMock.mockResolvedValue({ rows: [] });
+    const { issueMfaChallenge } = await import("./auth-mfa");
+
+    await issueMfaChallenge({
+      user: { userType: "provider", userId: "provider-1", email: null },
+      purpose: "login",
+      ipAddress: "127.0.0.1",
+      userAgent: "vitest",
+    });
+
+    expect(queryMock).toHaveBeenCalledTimes(2);
+    expect(String(queryMock.mock.calls[1]?.[0] || "")).toContain("token_iss");
+    expect(queryMock.mock.calls[1]?.[1]?.slice(10, 14)).toEqual([
+      "issuer-test",
+      "audience-test",
+      "mfa_challenge",
+      "auth_login_mfa",
+    ]);
   });
 });

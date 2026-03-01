@@ -191,15 +191,18 @@ describe("invitation-security helpers", () => {
     ]);
   });
 
-  it("rejects invitation session cookie when token claims mismatch", async () => {
+  it.each([
+    { key: "TOKEN_ISSUER", issuedAs: "issuer-a", expectedAtVerify: "issuer-b" },
+    { key: "TOKEN_AUDIENCE", issuedAs: "audience-a", expectedAtVerify: "audience-b" },
+  ])("rejects invitation session cookie when $key claim mismatches", async ({ key, issuedAs, expectedAtVerify }) => {
     const mod = await import("@/lib/invitation-security");
-    process.env.TOKEN_AUDIENCE = "audience-a";
+    process.env[key] = issuedAs;
     const cookieValue = mod.createInvitationSessionCookie({
       invitationId: "invite-claims-bad",
       sessionToken: "session-token-bad",
       expiresAtEpochMs: Date.now() + 60_000,
     });
-    process.env.TOKEN_AUDIENCE = "audience-b";
+    process.env[key] = expectedAtVerify;
 
     cookiesMock.mockResolvedValue({ get: () => ({ value: cookieValue }) });
     queryMock.mockResolvedValueOnce({ rows: [{ exists: false }] });

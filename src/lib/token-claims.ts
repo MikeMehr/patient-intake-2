@@ -1,10 +1,15 @@
-export type TokenType = "invitation_session" | "password_reset" | "mfa_challenge";
+export type TokenType =
+  | "invitation_session"
+  | "password_reset"
+  | "mfa_challenge"
+  | "oauth_request";
 
 export type TokenContext =
   | "invitation_verified_session"
   | "auth_password_reset"
   | "auth_login_mfa"
-  | "auth_password_reset_mfa";
+  | "auth_password_reset_mfa"
+  | "emr_oscar_oauth_request";
 
 export type ExpectedTokenClaims = {
   iss: string;

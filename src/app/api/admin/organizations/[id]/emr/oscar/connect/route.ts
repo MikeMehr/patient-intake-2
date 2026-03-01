@@ -4,6 +4,7 @@ import { query } from "@/lib/db";
 import { decryptString, encryptString } from "@/lib/encrypted-field";
 import { oscarAuthorizeUrl, oscarInitiate } from "@/lib/oscar/client";
 import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
+import { getExpectedTokenClaims } from "@/lib/token-claims";
 
 export const runtime = "nodejs";
 
@@ -64,17 +65,33 @@ export async function POST(
       callbackUrl,
     });
 
+    const claims = getExpectedTokenClaims("oauth_request", "emr_oscar_oauth_request");
+
     await query(
       `INSERT INTO emr_oauth_requests (
-         organization_id, vendor, state, request_token, request_token_secret_enc, expires_at
-       ) VALUES ($1, 'OSCAR', $2, $3, $4, NOW() + INTERVAL '15 minutes')
+         organization_id, vendor, state, request_token, request_token_secret_enc, expires_at,
+         token_iss, token_aud, token_type, token_context
+       ) VALUES ($1, 'OSCAR', $2, $3, $4, NOW() + INTERVAL '15 minutes', $5, $6, $7, $8)
        ON CONFLICT (vendor, state)
        DO UPDATE SET
          request_token = EXCLUDED.request_token,
          request_token_secret_enc = EXCLUDED.request_token_secret_enc,
-         expires_at = EXCLUDED.expires_at`,
+         expires_at = EXCLUDED.expires_at,
+         token_iss = EXCLUDED.token_iss,
+         token_aud = EXCLUDED.token_aud,
+         token_type = EXCLUDED.token_type,
+         token_context = EXCLUDED.token_context`,
       // state is stored for troubleshooting/audit, but is not required in callback.
-      [orgId, `rt:${temp.requestToken}`, temp.requestToken, encryptString(temp.requestTokenSecret)],
+      [
+        orgId,
+        `rt:${temp.requestToken}`,
+        temp.requestToken,
+        encryptString(temp.requestTokenSecret),
+        claims.iss,
+        claims.aud,
+        claims.type,
+        claims.context,
+      ],
     );
 
     const authorizeUrl = oscarAuthorizeUrl({
