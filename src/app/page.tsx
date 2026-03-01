@@ -4488,13 +4488,13 @@ export default function Home() {
                             setDraftTranscript(nextValue);
                           }}
                           className={[
-                            "mt-1 w-full resize-none rounded-lg border border-slate-200 bg-white px-3 pt-2 text-sm text-slate-800 outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100",
-                            showReviewActions ? "pb-8 pr-40" : "pb-2",
-                            showReviewActions && !isEditingDraft ? "text-right" : "text-left",
+                            "mt-1 w-full resize-none rounded-lg border border-slate-200 bg-white px-2 pt-2 text-sm text-slate-800 outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100",
+                            "pb-2",
+                            "text-left",
                           ].join(" ")}
                         />
                         {showReviewActions && (
-                          <div className="pointer-events-none absolute bottom-5 right-7 flex items-center gap-2 whitespace-nowrap">
+                          <div className="mt-2 flex items-center justify-end gap-2 whitespace-nowrap">
                             <button
                               type="button"
                               disabled={
@@ -4515,7 +4515,7 @@ export default function Home() {
                                   commitDraftToResponse("use", true);
                                 }
                               }}
-                              className="pointer-events-auto inline-flex items-center justify-center rounded-full bg-emerald-700 px-2.5 py-0.5 text-xs font-medium text-white shadow-sm transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-300"
+                              className="inline-flex items-center justify-center rounded-full bg-emerald-700 px-2.5 py-0.5 text-xs font-medium text-white shadow-sm transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-300"
                             >
                               Use this
                             </button>
@@ -4530,7 +4530,7 @@ export default function Home() {
                                 toggleDraftEditing();
                               }}
                               className={[
-                                "pointer-events-auto inline-flex items-center justify-center rounded-full px-2.5 py-0.5 text-xs font-medium shadow-sm transition",
+                                "inline-flex items-center justify-center rounded-full px-2.5 py-0.5 text-xs font-medium shadow-sm transition",
                                 "select-none active:scale-[0.98] active:opacity-90",
                                 isEditingDraft
                                   ? "bg-red-600 text-white border border-red-600"
@@ -4550,7 +4550,7 @@ export default function Home() {
                               onClick={() => {
                                 redoDraftTranscript();
                               }}
-                              className="pointer-events-auto inline-flex items-center justify-center rounded-full border border-slate-200 px-2.5 py-0.5 text-xs font-medium text-slate-700 shadow-sm transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+                              className="inline-flex items-center justify-center rounded-full border border-slate-200 px-2.5 py-0.5 text-xs font-medium text-slate-700 shadow-sm transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
                             >
                               Redo
                             </button>

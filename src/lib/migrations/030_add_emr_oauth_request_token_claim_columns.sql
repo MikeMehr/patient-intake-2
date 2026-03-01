@@ -6,12 +6,18 @@ ALTER TABLE IF EXISTS emr_oauth_requests
   ADD COLUMN IF NOT EXISTS token_type VARCHAR(64),
   ADD COLUMN IF NOT EXISTS token_context VARCHAR(128);
 
-CREATE INDEX IF NOT EXISTS idx_emr_oauth_requests_claims_lookup
-  ON emr_oauth_requests(
-    request_token,
-    token_iss,
-    token_aud,
-    token_type,
-    token_context,
-    expires_at
-  );
+DO $$
+BEGIN
+  IF to_regclass('public.emr_oauth_requests') IS NOT NULL THEN
+    CREATE INDEX IF NOT EXISTS idx_emr_oauth_requests_claims_lookup
+      ON emr_oauth_requests(
+        request_token,
+        token_iss,
+        token_aud,
+        token_type,
+        token_context,
+        expires_at
+      );
+  END IF;
+END
+$$;

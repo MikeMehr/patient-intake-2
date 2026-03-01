@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { createHmac } from "crypto";
 
 const queryMock = vi.fn();
 const cookiesMock = vi.fn();
@@ -117,6 +118,40 @@ describe("invitation-security helpers", () => {
     expect(parts[1].length).toBeGreaterThan(10);
   });
 
+  it("rejects invitation session cookie when signature is tampered", async () => {
+    const mod = await import("@/lib/invitation-security");
+    const cookieValue = mod.createInvitationSessionCookie({
+      invitationId: "invite-tamper-sig",
+      sessionToken: "session-token-tamper-sig",
+      expiresAtEpochMs: Date.now() + 60_000,
+    });
+    const [payload, signature] = cookieValue.split(".");
+    const tampered = `${payload}.${signature.slice(0, -1)}x`;
+
+    cookiesMock.mockResolvedValue({ get: () => ({ value: tampered }) });
+    queryMock.mockResolvedValueOnce({ rows: [{ exists: false }] });
+
+    const resolved = await mod.resolveInvitationFromCookie();
+    expect(resolved).toBeNull();
+    expect(queryMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects invitation session cookie when payload is expired", async () => {
+    const mod = await import("@/lib/invitation-security");
+    const cookieValue = mod.createInvitationSessionCookie({
+      invitationId: "invite-expired-payload",
+      sessionToken: "session-token-expired-payload",
+      expiresAtEpochMs: Date.now() - 10_000,
+    });
+
+    cookiesMock.mockResolvedValue({ get: () => ({ value: cookieValue }) });
+    queryMock.mockResolvedValueOnce({ rows: [{ exists: false }] });
+
+    const resolved = await mod.resolveInvitationFromCookie();
+    expect(resolved).toBeNull();
+    expect(queryMock).toHaveBeenCalledTimes(1);
+  });
+
   it("stores expected token claims when creating invitation session", async () => {
     const mod = await import("@/lib/invitation-security");
     queryMock.mockResolvedValueOnce({ rows: [] });
@@ -210,6 +245,35 @@ describe("invitation-security helpers", () => {
     const resolved = await mod.resolveInvitationFromCookie();
     expect(resolved).toBeNull();
     expect(queryMock).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    { claim: "type", issuedAs: "wrong_type", expectedAtVerify: "invitation_session" },
+    { claim: "context", issuedAs: "wrong_context", expectedAtVerify: "invitation_verified_session" },
+  ])("rejects invitation session cookie when $claim claim mismatches", async ({ claim, issuedAs, expectedAtVerify }) => {
+    const mod = await import("@/lib/invitation-security");
+    const original = mod.createInvitationSessionCookie({
+      invitationId: "invite-claims-type-context-bad",
+      sessionToken: "session-token-type-context-bad",
+      expiresAtEpochMs: Date.now() + 60_000,
+    });
+    const [payloadB64] = original.split(".");
+    const parsed = JSON.parse(Buffer.from(payloadB64, "base64url").toString("utf8")) as Record<string, unknown>;
+    parsed[claim] = issuedAs;
+    const mutatedPayloadB64 = Buffer.from(JSON.stringify(parsed), "utf8").toString("base64url");
+    const signature = createHmac("sha256", process.env.SESSION_SECRET || "dev-only-invitation-secret-change-me")
+      .update(mutatedPayloadB64)
+      .digest("base64url");
+    const mutatedCookie = `${mutatedPayloadB64}.${signature}`;
+
+    cookiesMock.mockResolvedValue({ get: () => ({ value: mutatedCookie }) });
+    queryMock.mockResolvedValueOnce({ rows: [{ exists: false }] });
+
+    const resolved = await mod.resolveInvitationFromCookie();
+    expect(resolved).toBeNull();
+    expect(queryMock).toHaveBeenCalledTimes(1);
+    expect(parsed[claim]).toBe(issuedAs);
+    expect(expectedAtVerify.length).toBeGreaterThan(0);
   });
 
   it("rejects invitation session when DB claim match fails", async () => {

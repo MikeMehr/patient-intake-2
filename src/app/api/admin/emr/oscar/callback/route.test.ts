@@ -88,4 +88,32 @@ describe("GET /api/admin/emr/oscar/callback", () => {
     expect(queryMock).toHaveBeenCalledTimes(4);
     expect(String(queryMock.mock.calls[3]?.[0] || "")).toContain("DELETE FROM emr_oauth_requests");
   });
+
+  it("uses expected token type/context claims for callback lookup", async () => {
+    vi.resetModules();
+    vi.doMock("@/lib/token-claims", () => ({
+      getExpectedTokenClaims: () => ({
+        iss: "issuer-test",
+        aud: "audience-test",
+        type: "oauth_request_custom",
+        context: "emr_oscar_oauth_request_custom",
+      }),
+    }));
+    queryMock.mockResolvedValueOnce({ rows: [] });
+
+    const { GET } = await import("./route");
+    const response = await GET(
+      new Request("http://localhost/api/admin/emr/oscar/callback?oauth_token=rt-1&oauth_verifier=v-1") as any,
+    );
+
+    expect(response.status).toBe(400);
+    expect(queryMock.mock.calls[0]?.[1]).toEqual([
+      "rt-1",
+      "issuer-test",
+      "audience-test",
+      "oauth_request_custom",
+      "emr_oscar_oauth_request_custom",
+    ]);
+    vi.doUnmock("@/lib/token-claims");
+  });
 });

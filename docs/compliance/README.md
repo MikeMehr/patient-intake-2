@@ -25,6 +25,8 @@ This directory contains the detailed HIPAA launch compliance documentation for `
 - `runbooks/oob-pstn-auth-policy.md`
 - `runbooks/v6-authenticator-applicability-l2.md`
 - `runbooks/v7-session-management-l2.md`
+- `runbooks/v8-authorization-l2.md`
+- `runbooks/v9-self-contained-token-policy-l2.md`
 
 ## Canonical References
 

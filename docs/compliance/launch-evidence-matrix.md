@@ -138,6 +138,33 @@ This matrix links launch controls to objective evidence, owner, and closure crit
   - Next review: 2026-04-01
   - Closure criteria: applicability rationale remains current with deployed auth/session architecture and is re-reviewed on auth model changes
 
+- Control ID: T-17
+  - Control: ASVS V8 L2 applicable authorization controls are enforced and evidenced (role, object, and tenant boundaries)
+  - Evidence: `docs/compliance/runbooks/v8-authorization-l2.md`, `docs/compliance/authorization-matrix-v10.2.2.md`, `docs/compliance/authorization-matrix-v10.3.2.md`, `src/lib/session-access.ts`, `src/app/api/patients/[patientId]/route.ts`, `src/app/api/org/providers/[id]/route.ts`, `src/app/api/sessions/list/route.ts`, `src/app/api/prescriptions/fax/route.ts`, `src/app/api/lab-requisitions/generate/route.ts`, `src/app/api/lab-requisitions/editor-session/route.ts`, `src/app/api/physician/translate-final-comments/route.ts`, `src/app/api/prescriptions/fax/route.test.ts`, `src/app/api/lab-requisitions/generate/route.test.ts`, `src/app/api/lab-requisitions/editor-session/route.test.ts`, `src/app/api/physician/translate-final-comments/route.test.ts`
+  - Owner: Engineering/Security
+  - Status: implemented
+  - Last review: 2026-03-01
+  - Next review: 2026-04-01
+  - Closure criteria: role/object/tenant deny-path tests remain green for mapped high-risk routes and authorization matrices remain aligned to endpoint behavior
+
+- Control ID: T-18
+  - Control: ASVS V9 L2 applicable self-contained token controls are enforced and evidenced (issuer/audience/type/context + tamper/replay resistance)
+  - Evidence: `docs/compliance/runbooks/v9-self-contained-token-policy-l2.md`, `src/lib/token-claims.ts`, `src/app/api/auth/reset-password/route.ts`, `src/app/api/auth/reset-password/[token]/route.ts`, `src/lib/auth-mfa.ts`, `src/lib/invitation-security.ts`, `src/app/api/admin/organizations/[id]/emr/oscar/connect/route.ts`, `src/app/api/admin/emr/oscar/callback/route.ts`, `src/lib/migrations/028_add_token_claim_columns.sql`, `src/lib/migrations/029_add_invitation_session_token_claim_columns.sql`, `src/lib/migrations/030_add_emr_oauth_request_token_claim_columns.sql`, `src/lib/migrations/031_create_emr_oauth_requests_table.sql`, `src/app/api/auth/reset-password/[token]/route.test.ts`, `src/lib/auth-mfa.test.ts`, `src/lib/invitation-security.test.ts`, `src/app/api/admin/emr/oscar/callback/route.test.ts`
+  - Owner: Engineering/Security
+  - Status: implemented
+  - Last review: 2026-03-01
+  - Next review: 2026-04-01
+  - Closure criteria: token claim mismatch/tamper/replay tests continue to fail closed and claim-bound token issuance/consumption paths remain mapped in runbook evidence
+
+- Control ID: T-19
+  - Control: ASVS V8/V9 L2 non-applicable controls are explicitly documented for this scoped assessment set
+  - Evidence: `docs/compliance/runbooks/v8-authorization-l2.md`, `docs/compliance/runbooks/v9-self-contained-token-policy-l2.md`
+  - Owner: Security/Compliance
+  - Status: n/a_by_scope
+  - Last review: 2026-03-01
+  - Next review: 2026-04-01
+  - Closure criteria: when assessment scope introduces additional V8/V9 rows, runbooks and matrix are updated with explicit applicability rationale before status attestation
+
 ## Operational Controls
 
 - Control ID: O-01
