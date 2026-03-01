@@ -5,6 +5,9 @@
 - Session cookies use secure attributes (`httpOnly`, `sameSite`, TLS-aware `secure`).
 - Server-side sessions are invalidated on logout and credential reset.
 - Idle timeout and absolute session lifetime are enforced.
+- Session token rotates on successful idle-refresh keepalive.
+- Concurrent workforce sessions are capped per account with oldest-first eviction.
+- Admin session termination APIs support per-user and scoped/global revocation workflows.
 - Auth endpoint abuse controls use durable rate limiting:
   - login
   - registration

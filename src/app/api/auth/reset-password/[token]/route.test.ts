@@ -95,6 +95,8 @@ describe("POST /api/auth/reset-password/[token]", () => {
     expect(queryMock.mock.calls[1][1][4]).toBe("password_reset");
     expect(queryMock.mock.calls[1][1][5]).toBe("auth_password_reset");
     expect(queryMock.mock.calls[4][1]).toEqual(["reset-token-id"]);
+    expect(String(queryMock.mock.calls[5][0])).toContain("DELETE FROM physician_sessions");
+    expect(queryMock.mock.calls[5][1]).toEqual(["11111111-1111-4111-8111-111111111111"]);
   });
 
   it("rejects replay/unknown tokens", async () => {

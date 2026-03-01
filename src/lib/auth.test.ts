@@ -60,6 +60,34 @@ describe("auth session lifecycle", () => {
     expect(rotatedToken).not.toBe("old-token");
   });
 
+  it("caps concurrent sessions per account when creating a new session", async () => {
+    queryMock
+      .mockResolvedValueOnce({ rows: [] }) // prune older sessions
+      .mockResolvedValueOnce({ rows: [] }); // insert new session
+
+    const { createSession } = await import("./auth");
+    await createSession(
+      "provider-1",
+      "provider",
+      "doctor1",
+      "Doc",
+      "Tor",
+      "org-1",
+      "Clinic",
+      null,
+    );
+
+    expect(queryMock).toHaveBeenCalledTimes(2);
+    expect(String(queryMock.mock.calls[0][0])).toContain("OFFSET $2");
+    expect(queryMock.mock.calls[0][1]).toEqual(["provider-1", 2]);
+    expect(String(queryMock.mock.calls[1][0])).toContain("INSERT INTO physician_sessions");
+    expect(cookieSetMock).toHaveBeenCalledWith(
+      "physician_session",
+      expect.stringMatching(/^[a-f0-9]{64}$/),
+      expect.objectContaining({ httpOnly: true }),
+    );
+  });
+
   it("does not set a new cookie when refresh rotation update matches no rows", async () => {
     cookieGetMock.mockReturnValue({ value: "stale-token" });
     queryMock

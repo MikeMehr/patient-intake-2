@@ -25,6 +25,7 @@ const SESSION_COOKIE_NAME = "physician_session";
 // - absolute max: fixed since DB `created_at` (cannot be extended)
 const IDLE_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
 const ABSOLUTE_MAX_MS = 4 * 60 * 60 * 1000; // 4 hours
+const MAX_CONCURRENT_SESSIONS = 3;
 
 function getSessionCookieBaseOptions() {
   return {
@@ -177,6 +178,18 @@ export async function createSession(
   // Store session data in database
   try {
     const { query } = await import("./db");
+    // Enforce bounded parallel sessions per workforce account and evict oldest first.
+    await query(
+      `DELETE FROM physician_sessions
+       WHERE token IN (
+         SELECT token
+         FROM physician_sessions
+         WHERE user_id = $1
+         ORDER BY created_at DESC
+         OFFSET $2
+       )`,
+      [userId, Math.max(1, MAX_CONCURRENT_SESSIONS - 1)],
+    );
     await query(
       `INSERT INTO physician_sessions (token, user_id, user_type, organization_id, physician_id, expires_at, session_data)
        VALUES ($1, $2, $3, $4, $5, $6, $7)

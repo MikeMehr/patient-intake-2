@@ -120,6 +120,24 @@ This matrix links launch controls to objective evidence, owner, and closure crit
   - Next review: 2026-03-27
   - Closure criteria: OTP request/verify routes continue to enforce 400/404/429 controls and successful verify creates scoped invitation session cookie
 
+- Control ID: T-15
+  - Control: ASVS V7 L2 applicable session controls are enforced and evidenced (timeouts, rotation, termination, and admin revocation)
+  - Evidence: `docs/compliance/runbooks/v7-session-management-l2.md`, `src/lib/auth.ts`, `src/app/api/auth/ping/route.ts`, `src/app/api/auth/logout/route.ts`, `src/app/api/auth/reset-password/[token]/route.ts`, `src/app/api/admin/providers/[id]/route.ts`, `src/app/api/org/providers/[id]/route.ts`, `src/app/api/admin/sessions/terminate/route.ts`, `src/app/api/org/sessions/terminate/route.ts`, `src/lib/auth.test.ts`, `src/app/api/auth/ping/route.test.ts`, `src/app/api/auth/logout/route.test.ts`, `src/app/api/auth/reset-password/[token]/route.test.ts`, `src/app/api/admin/providers/[id]/route.test.ts`, `src/app/api/org/providers/[id]/route.test.ts`, `src/app/api/admin/sessions/terminate/route.test.ts`, `src/app/api/org/sessions/terminate/route.test.ts`
+  - Owner: Engineering/Security
+  - Status: implemented
+  - Last review: 2026-03-01
+  - Next review: 2026-04-01
+  - Closure criteria: tests continue to prove idle timeout + absolute lifetime enforcement, refresh-time token rotation, logout/session revocation on factor changes, and admin session termination APIs for scoped/global workflows
+
+- Control ID: T-16
+  - Control: ASVS V7 L2 non-applicable controls are explicitly documented with rationale for current auth model (`V7.1.3`, `V7.5.1`, `V7.5.2`, `V7.6.1`)
+  - Evidence: `docs/compliance/runbooks/v7-session-management-l2.md`
+  - Owner: Security/Compliance
+  - Status: n/a_by_design
+  - Last review: 2026-03-01
+  - Next review: 2026-04-01
+  - Closure criteria: applicability rationale remains current with deployed auth/session architecture and is re-reviewed on auth model changes
+
 ## Operational Controls
 
 - Control ID: O-01
