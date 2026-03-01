@@ -119,4 +119,42 @@ describe("POST /api/auth/login/mfa/recovery", () => {
     expect(String(data.error || "")).toContain("reset");
     expect(createSessionMock).not.toHaveBeenCalled();
   });
+
+  it("returns 429 when recovery is rate limited", async () => {
+    consumeDbRateLimitMock.mockResolvedValueOnce({
+      allowed: false,
+      retryAfterSeconds: 120,
+    });
+    const { POST } = await import("./route");
+    const response = await POST(
+      new Request("http://localhost/api/auth/login/mfa/recovery", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          challengeToken: "challenge-token",
+          backupCode: "ABCD1234",
+        }),
+      }) as any,
+    );
+
+    expect(response.status).toBe(429);
+    expect(consumeBackupCodeForChallengeMock).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 when required fields are missing", async () => {
+    const { POST } = await import("./route");
+    const response = await POST(
+      new Request("http://localhost/api/auth/login/mfa/recovery", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          challengeToken: "",
+          backupCode: "",
+        }),
+      }) as any,
+    );
+
+    expect(response.status).toBe(400);
+    expect(consumeBackupCodeForChallengeMock).not.toHaveBeenCalled();
+  });
 });

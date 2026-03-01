@@ -14,6 +14,7 @@ Define and maintain the context-specific words that must not be allowed in workf
 
 - ASVS control: `V6.1.2`
 - Related enforcement control: `V6.2.11`
+- Applicability at ASVS L2: applicable
 
 ## Context-Word Categories
 
@@ -76,3 +77,28 @@ For active threat intelligence or incident response:
 - Linked implementation references for password checks
 - Test evidence showing blocked context-word patterns
 - Reviewer verification notes and closure record in the launch evidence matrix
+
+## Objective Implementation Evidence
+
+- Shared context-word enforcement helper:
+  - `src/lib/password-context.ts`
+- Registration and reset-password enforcement paths:
+  - `src/app/api/auth/register/route.ts`
+  - `src/app/api/auth/reset-password/[token]/route.ts`
+- Admin/org provider password update enforcement:
+  - `src/app/api/admin/providers/[id]/route.ts`
+  - `src/app/api/org/providers/[id]/route.ts`
+
+## Objective Verification Evidence
+
+- Context-word normalization and deny checks:
+  - `src/lib/password-context.test.ts`
+- Route-level rejection tests:
+  - `src/app/api/auth/register/route.test.ts`
+  - `src/app/api/auth/reset-password/[token]/route.test.ts`
+  - `src/app/api/admin/providers/[id]/route.test.ts`
+  - `src/app/api/org/providers/[id]/route.test.ts`
+
+## Reviewer Replay Command
+
+- `npx vitest run --exclude ".next/**" "src/lib/password-context.test.ts" "src/app/api/auth/register/route.test.ts" "src/app/api/auth/reset-password/[token]/route.test.ts" "src/app/api/admin/providers/[id]/route.test.ts" "src/app/api/org/providers/[id]/route.test.ts"`

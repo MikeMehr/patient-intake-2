@@ -12,6 +12,7 @@ import {
   getProviderByUsername,
 } from "@/lib/auth-helpers";
 import { issueMfaChallenge } from "@/lib/auth-mfa";
+import { AUTH_MFA_POLICY } from "@/lib/auth-policy";
 import { logDebug } from "@/lib/secure-logger";
 import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
 import { getRequestIp } from "@/lib/invitation-security";
@@ -147,6 +148,11 @@ export async function POST(request: NextRequest) {
           success: true,
           mfaRequired: true,
           challengeToken: challenge.challengeToken,
+          mfaPolicy: {
+            allowPstnOtp: AUTH_MFA_POLICY.allowPstnOtp,
+            primaryOtpChannels: [...AUTH_MFA_POLICY.primaryOtpChannels],
+            recoveryChannels: [...AUTH_MFA_POLICY.recoveryChannels],
+          },
           message: "Verification code required to complete sign in.",
         },
         { status },

@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const getCurrentSessionMock = vi.hoisted(() => vi.fn());
 const queryMock = vi.hoisted(() => vi.fn());
+const isPasswordContextWordSafeMock = vi.hoisted(() => vi.fn());
 
 vi.mock("@/lib/auth", () => ({
   getCurrentSession: (...args: unknown[]) => getCurrentSessionMock(...args),
@@ -32,9 +33,16 @@ vi.mock("@/lib/password-breach", () => ({
     "Password security check is temporarily unavailable. Please try again in a few minutes.",
 }));
 
+vi.mock("@/lib/password-context", () => ({
+  CONTEXT_PASSWORD_ERROR:
+    "Password contains organization or system words and is too easy to guess.",
+  isPasswordContextWordSafe: (...args: unknown[]) => isPasswordContextWordSafeMock(...args),
+}));
+
 describe("PUT /api/admin/providers/[id]", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    isPasswordContextWordSafeMock.mockReturnValue(true);
     getCurrentSessionMock.mockResolvedValue({
       userId: "sa-1",
       userType: "super_admin",
@@ -83,5 +91,22 @@ describe("PUT /api/admin/providers/[id]", () => {
     expect(queryMock).toHaveBeenCalledTimes(3);
     expect(String(queryMock.mock.calls[2][0])).toContain("DELETE FROM physician_sessions");
     expect(queryMock.mock.calls[2][1]).toEqual(["provider-1"]);
+  });
+
+  it("rejects provider password updates with context words", async () => {
+    isPasswordContextWordSafeMock.mockReturnValueOnce(false);
+    queryMock.mockResolvedValueOnce({ rows: [{ id: "provider-1" }] }); // existing provider check
+    const { PUT } = await import("./route");
+    const response = await PUT(
+      new Request("http://localhost/api/admin/providers/provider-1", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: "HealthAssist123!" }),
+      }) as any,
+      { params: Promise.resolve({ id: "provider-1" }) } as any,
+    );
+
+    expect(response.status).toBe(400);
+    expect(queryMock).toHaveBeenCalledTimes(1);
   });
 });

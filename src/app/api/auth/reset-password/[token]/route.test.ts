@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const queryMock = vi.hoisted(() => vi.fn());
 const assessPasswordAgainstBreachesMock = vi.hoisted(() => vi.fn());
+const isPasswordContextWordSafeMock = vi.hoisted(() => vi.fn());
 
 vi.mock("@/lib/db", () => ({
   query: (...args: unknown[]) => queryMock(...args),
@@ -18,6 +19,12 @@ vi.mock("@/lib/password-breach", () => ({
     "This password has been exposed in known data breaches. Please choose a different password.",
   BREACH_CHECK_UNAVAILABLE_ERROR:
     "Password security check is temporarily unavailable. Please try again in a few minutes.",
+}));
+
+vi.mock("@/lib/password-context", () => ({
+  CONTEXT_PASSWORD_ERROR:
+    "Password contains organization or system words and is too easy to guess.",
+  isPasswordContextWordSafe: (...args: unknown[]) => isPasswordContextWordSafeMock(...args),
 }));
 
 vi.mock("@/lib/auth-mfa", () => ({
@@ -40,6 +47,7 @@ describe("POST /api/auth/reset-password/[token]", () => {
       failOpen: false,
       unavailable: false,
     });
+    isPasswordContextWordSafeMock.mockReturnValue(true);
   });
 
   it("accepts a valid token once and marks it used", async () => {
@@ -270,5 +278,182 @@ describe("POST /api/auth/reset-password/[token]", () => {
     );
 
     expect(response.status).toBe(400);
+  });
+
+  it("returns 429 when reset consume is rate limited", async () => {
+    queryMock.mockResolvedValueOnce({
+      rows: [{ attempt_count: 999, expires_at: new Date(Date.now() + 60_000) }],
+    });
+    const { POST } = await import("./route");
+    const response = await POST(
+      new Request("http://localhost/api/auth/reset-password/rate-limited", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ newPassword: "ValidPass123!" }),
+      }) as any,
+      { params: Promise.resolve({ token: "rate-limited" }) } as any,
+    );
+    expect(response.status).toBe(429);
+    expect(queryMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("supports request_mfa action for non-MFA users", async () => {
+    queryMock
+      .mockResolvedValueOnce({
+        rows: [{ attempt_count: 1, expires_at: new Date(Date.now() + 60_000) }],
+      })
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            id: "reset-token-id",
+            physician_id: "11111111-1111-4111-8111-111111111111",
+            expires_at: new Date(Date.now() + 60_000),
+            used: false,
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        rows: [{ id: "11111111-1111-4111-8111-111111111111", email: "doc@example.com", mfa_enabled: false }],
+      });
+    const { POST } = await import("./route");
+    const response = await POST(
+      new Request("http://localhost/api/auth/reset-password/token", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "request_mfa" }),
+      }) as any,
+      { params: Promise.resolve({ token: "token" }) } as any,
+    );
+    const data = await response.json();
+    expect(response.status).toBe(200);
+    expect(data).toEqual({ success: true, mfaRequired: false });
+  });
+
+  it("supports request_mfa action for MFA-enabled users", async () => {
+    queryMock
+      .mockResolvedValueOnce({
+        rows: [{ attempt_count: 1, expires_at: new Date(Date.now() + 60_000) }],
+      })
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            id: "reset-token-id",
+            physician_id: "11111111-1111-4111-8111-111111111111",
+            expires_at: new Date(Date.now() + 60_000),
+            used: false,
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        rows: [{ id: "11111111-1111-4111-8111-111111111111", email: "doc@example.com", mfa_enabled: true }],
+      });
+    const { POST } = await import("./route");
+    const response = await POST(
+      new Request("http://localhost/api/auth/reset-password/token", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "request_mfa" }),
+      }) as any,
+      { params: Promise.resolve({ token: "token" }) } as any,
+    );
+    const data = await response.json();
+    expect(response.status).toBe(200);
+    expect(data.success).toBe(true);
+    expect(data.mfaRequired).toBe(true);
+    expect(data.challengeToken).toBe("challenge");
+  });
+
+  it("rejects verify_mfa action without required fields", async () => {
+    queryMock
+      .mockResolvedValueOnce({
+        rows: [{ attempt_count: 1, expires_at: new Date(Date.now() + 60_000) }],
+      })
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            id: "reset-token-id",
+            physician_id: "11111111-1111-4111-8111-111111111111",
+            expires_at: new Date(Date.now() + 60_000),
+            used: false,
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        rows: [{ id: "11111111-1111-4111-8111-111111111111", email: "doc@example.com", mfa_enabled: true }],
+      });
+    const { POST } = await import("./route");
+    const response = await POST(
+      new Request("http://localhost/api/auth/reset-password/token", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "verify_mfa", challengeToken: "", otpCode: "" }),
+      }) as any,
+      { params: Promise.resolve({ token: "token" }) } as any,
+    );
+    expect(response.status).toBe(400);
+  });
+
+  it("returns mfaVerified on successful verify_mfa action", async () => {
+    queryMock
+      .mockResolvedValueOnce({
+        rows: [{ attempt_count: 1, expires_at: new Date(Date.now() + 60_000) }],
+      })
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            id: "reset-token-id",
+            physician_id: "11111111-1111-4111-8111-111111111111",
+            expires_at: new Date(Date.now() + 60_000),
+            used: false,
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        rows: [{ id: "11111111-1111-4111-8111-111111111111", email: "doc@example.com", mfa_enabled: true }],
+      });
+    const { POST } = await import("./route");
+    const response = await POST(
+      new Request("http://localhost/api/auth/reset-password/token", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "verify_mfa", challengeToken: "challenge", otpCode: "123456" }),
+      }) as any,
+      { params: Promise.resolve({ token: "token" }) } as any,
+    );
+    const data = await response.json();
+    expect(response.status).toBe(200);
+    expect(data).toEqual({ success: true, mfaVerified: true });
+  });
+
+  it("rejects reset passwords containing context words", async () => {
+    isPasswordContextWordSafeMock.mockReturnValueOnce(false);
+    queryMock
+      .mockResolvedValueOnce({
+        rows: [{ attempt_count: 1, expires_at: new Date(Date.now() + 60_000) }],
+      })
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            id: "reset-token-id",
+            physician_id: "11111111-1111-4111-8111-111111111111",
+            expires_at: new Date(Date.now() + 60_000),
+            used: false,
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        rows: [{ id: "11111111-1111-4111-8111-111111111111", email: "doc@example.com", mfa_enabled: false }],
+      });
+    const { POST } = await import("./route");
+    const response = await POST(
+      new Request("http://localhost/api/auth/reset-password/token", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ newPassword: "HealthAssist123!" }),
+      }) as any,
+      { params: Promise.resolve({ token: "token" }) } as any,
+    );
+    expect(response.status).toBe(400);
+    expect(assessPasswordAgainstBreachesMock).not.toHaveBeenCalled();
   });
 });

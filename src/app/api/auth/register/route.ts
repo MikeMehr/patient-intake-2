@@ -16,6 +16,7 @@ import {
   BREACHED_PASSWORD_ERROR,
   BREACH_CHECK_UNAVAILABLE_ERROR,
 } from "@/lib/password-breach";
+import { CONTEXT_PASSWORD_ERROR, isPasswordContextWordSafe } from "@/lib/password-context";
 
 const REGISTER_MAX_ATTEMPTS = 10;
 const REGISTER_WINDOW_SECONDS = 60 * 60;
@@ -91,6 +92,15 @@ export async function POST(request: NextRequest) {
       const res = NextResponse.json(
         { error: passwordValidation.error },
         { status }
+      );
+      logRequestMeta("/api/auth/register", requestId, status, Date.now() - started);
+      return res;
+    }
+    if (!isPasswordContextWordSafe(password)) {
+      status = 400;
+      const res = NextResponse.json(
+        { error: CONTEXT_PASSWORD_ERROR },
+        { status },
       );
       logRequestMeta("/api/auth/register", requestId, status, Date.now() - started);
       return res;

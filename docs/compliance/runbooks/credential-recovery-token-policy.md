@@ -13,6 +13,7 @@ Define required controls for credential recovery token issuance and consumption 
 ## Control Mapping
 
 - ASVS control: `V6.3.4`
+- Applicability at ASVS L2: applicable
 - Related controls:
   - `V6.4.3` (MFA continuity during password reset)
   - `V10.1.1` (token claim integrity at rest and verification)
@@ -84,3 +85,7 @@ Credential recovery tokens must be implemented with all of the following:
 - Linked implementation references for issuance, validation, and invalidation paths
 - Automated tests proving claim enforcement, expiry handling, and replay rejection
 - Evidence matrix entry showing closure criteria and current control status
+
+## Reviewer Replay Command
+
+- `npx vitest run --exclude ".next/**" "src/app/api/auth/reset-password/route.test.ts" "src/app/api/auth/reset-password/[token]/route.test.ts" "src/app/api/auth/login/mfa/verify/route.test.ts"`

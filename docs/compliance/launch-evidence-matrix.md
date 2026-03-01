@@ -70,7 +70,7 @@ This matrix links launch controls to objective evidence, owner, and closure crit
 
 - Control ID: T-09
   - Control: Workforce MFA challenge + backup-code recovery supports provider/org-admin/super-admin users (ASVS V6.4.4 recovery)
-  - Evidence: `src/lib/migrations/026_add_mfa_backup_recovery_codes.sql`, `src/lib/migrations/027_add_mfa_recovery_versioning.sql`, `src/lib/auth-mfa.ts`, `src/app/api/auth/login/mfa/recovery/route.ts`, `src/app/api/admin/providers/[id]/mfa/backup-codes/route.ts`, `src/app/api/org/providers/[id]/mfa/backup-codes/route.ts`, `src/app/api/admin/organization-users/[id]/mfa/backup-codes/route.ts`, `src/app/api/admin/super-admin-users/[id]/mfa/backup-codes/route.ts`, MFA verify/recovery tests, `src/lib/auth-mfa.test.ts`
+  - Evidence: `src/lib/migrations/026_add_mfa_backup_recovery_codes.sql`, `src/lib/migrations/027_add_mfa_recovery_versioning.sql`, `src/lib/auth-mfa.ts`, `src/app/api/auth/login/mfa/recovery/route.ts`, `src/app/api/admin/providers/[id]/mfa/backup-codes/route.ts`, `src/app/api/org/providers/[id]/mfa/backup-codes/route.ts`, `src/app/api/admin/organization-users/[id]/mfa/backup-codes/route.ts`, `src/app/api/admin/super-admin-users/[id]/mfa/backup-codes/route.ts`, `src/app/api/admin/super-admin-users/[id]/mfa/backup-codes/route.test.ts`, MFA verify/recovery tests, `src/lib/auth-mfa.test.ts`
   - Owner: Engineering/Security
   - Status: implemented
   - Last review: 2026-02-27
@@ -86,21 +86,39 @@ This matrix links launch controls to objective evidence, owner, and closure crit
 
 - Control ID: T-11
   - Control: Context-specific password words are documented and mapped to enforcement evidence (ASVS V6.1.2)
-  - Evidence: `docs/compliance/runbooks/password-context-word-policy.md`, `src/lib/password-breach.ts`, `src/app/api/auth/register/route.ts`, `src/app/api/auth/reset-password/[token]/route.ts`, `src/app/api/admin/providers/[id]/route.ts`, `src/app/api/org/providers/[id]/route.ts`
+  - Evidence: `docs/compliance/runbooks/password-context-word-policy.md`, `src/lib/password-context.ts`, `src/lib/password-context.test.ts`, `src/app/api/auth/register/route.ts`, `src/app/api/auth/register/route.test.ts`, `src/app/api/auth/reset-password/[token]/route.ts`, `src/app/api/auth/reset-password/[token]/route.test.ts`, `src/app/api/admin/providers/[id]/route.ts`, `src/app/api/admin/providers/[id]/route.test.ts`, `src/app/api/org/providers/[id]/route.ts`, `src/app/api/org/providers/[id]/route.test.ts`
   - Owner: Engineering/Security
-  - Status: documented_pending_enforcement_evidence
+  - Status: implemented
   - Last review: 2026-02-27
   - Next review: 2026-03-27
-  - Closure criteria: context-word list is reviewed on schedule and automated tests demonstrate context-word rejection across registration and password change/reset flows
+  - Closure criteria: context-word list is reviewed on schedule and automated tests demonstrate context-word rejection across registration, reset, and admin/org password update flows
 
 - Control ID: T-12
   - Control: Credential recovery tokens are single-use, context-bound, and replay-resistant (ASVS V6.3.4)
-  - Evidence: `docs/compliance/runbooks/credential-recovery-token-policy.md`, `src/app/api/auth/reset-password/route.ts`, `src/app/api/auth/reset-password/[token]/route.ts`, `src/lib/token-claims.ts`, `src/lib/migrations/028_add_token_claim_columns.sql`, `src/app/api/auth/reset-password/route.test.ts`, `src/app/api/auth/reset-password/[token]/route.test.ts`
+  - Evidence: `docs/compliance/runbooks/credential-recovery-token-policy.md`, `src/app/api/auth/reset-password/route.ts`, `src/app/api/auth/reset-password/[token]/route.ts`, `src/lib/token-claims.ts`, `src/lib/migrations/028_add_token_claim_columns.sql`, `src/app/api/auth/reset-password/route.test.ts`, `src/app/api/auth/reset-password/[token]/route.test.ts`, `src/app/api/auth/login/mfa/verify/route.test.ts`
   - Owner: Engineering/Security
   - Status: implemented
   - Last review: 2026-02-27
   - Next review: 2026-03-27
   - Closure criteria: tests continue to prove token claim matching, single-use consumption, expiry rejection, and active-session invalidation after successful password reset
+
+- Control ID: T-13
+  - Control: PSTN OTP (SMS/voice) is not offered as an out-of-band authentication pathway; non-PSTN channels are explicitly documented and evidenced (ASVS V6.6.1)
+  - Evidence: `docs/compliance/runbooks/oob-pstn-auth-policy.md`, `docs/compliance/runbooks/v6-authenticator-applicability-l2.md`, `src/lib/auth-policy.ts`, `src/lib/auth-policy.test.ts`, `src/app/api/auth/login/route.ts`, `src/app/api/auth/login/route.test.ts`, `src/lib/auth-mfa.ts`, `src/app/api/auth/login/mfa/verify/route.ts`, `src/app/api/auth/login/mfa/recovery/route.ts`
+  - Owner: Engineering/Security
+  - Status: implemented
+  - Last review: 2026-02-27
+  - Next review: 2026-03-27
+  - Closure criteria: published auth policy keeps `allowPstnOtp=false`, login MFA responses expose only supported non-PSTN channels, and regression tests remain green proving no PSTN OTP pathway is available
+
+- Control ID: T-14
+  - Control: Invitation email OTP request/verify flow enforces abuse controls and verified-session issuance boundaries (ASVS V6 L2 applicable control for deployed email OTP path)
+  - Evidence: `src/app/api/invitations/otp/request/route.ts`, `src/app/api/invitations/otp/verify/route.ts`, `src/lib/invitation-security.ts`, `src/app/api/invitations/otp/request/route.test.ts`, `src/app/api/invitations/otp/verify/route.test.ts`
+  - Owner: Engineering/Security
+  - Status: implemented
+  - Last review: 2026-02-27
+  - Next review: 2026-03-27
+  - Closure criteria: OTP request/verify routes continue to enforce 400/404/429 controls and successful verify creates scoped invitation session cookie
 
 ## Operational Controls
 

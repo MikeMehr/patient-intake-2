@@ -120,7 +120,99 @@ describe("POST /api/auth/login", () => {
 
     expect(response.status).toBe(202);
     expect(data.mfaRequired).toBe(true);
+    expect(data.mfaPolicy).toEqual({
+      allowPstnOtp: false,
+      primaryOtpChannels: ["email"],
+      recoveryChannels: ["backup_code"],
+    });
     expect(issueMfaChallengeMock).toHaveBeenCalledTimes(1);
     expect(createSessionMock).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 when username/password are missing", async () => {
+    const { POST } = await import("./route");
+    const response = await POST(
+      new Request("http://localhost/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: "", password: "" }),
+      }) as any,
+    );
+
+    expect(response.status).toBe(400);
+    expect(getSuperAdminByUsernameMock).not.toHaveBeenCalled();
+  });
+
+  it("returns 401 for invalid credentials", async () => {
+    getProviderByUsernameMock.mockResolvedValue({
+      id: "provider-id",
+      username: "provider",
+      first_name: "Test",
+      last_name: "Provider",
+      password_hash: "hash",
+      mfa_enabled: false,
+    });
+    verifyPasswordMock.mockResolvedValue(false);
+    const { POST } = await import("./route");
+    const response = await POST(
+      new Request("http://localhost/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: "provider", password: "bad-password" }),
+      }) as any,
+    );
+
+    expect(response.status).toBe(401);
+    expect(createSessionMock).not.toHaveBeenCalled();
+    expect(clearDbRateLimitMock).not.toHaveBeenCalled();
+  });
+
+  it("returns 429 when login is rate limited", async () => {
+    consumeDbRateLimitMock.mockResolvedValueOnce({
+      allowed: false,
+      retryAfterSeconds: 90,
+    });
+    const { POST } = await import("./route");
+    const response = await POST(
+      new Request("http://localhost/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: "provider", password: "password" }),
+      }) as any,
+    );
+    const data = await response.json();
+
+    expect(response.status).toBe(429);
+    expect(data.retryAfterSeconds).toBe(90);
+    expect(getSuperAdminByUsernameMock).not.toHaveBeenCalled();
+  });
+
+  it("clears login rate-limit bucket after successful auth", async () => {
+    getProviderByUsernameMock.mockResolvedValue({
+      id: "provider-id",
+      username: "provider",
+      first_name: "Test",
+      last_name: "Provider",
+      organization_id: "org-id",
+      clinic_name: "Clinic",
+      clinic_address: null,
+      unique_slug: "test-provider",
+      password_hash: "hash",
+      mfa_enabled: false,
+    });
+    verifyPasswordMock.mockResolvedValue(true);
+    queryMock.mockResolvedValue({ rows: [] });
+
+    const { POST } = await import("./route");
+    const response = await POST(
+      new Request("http://localhost/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: "provider", password: "password" }),
+      }) as any,
+    );
+
+    expect(response.status).toBe(200);
+    expect(clearDbRateLimitMock).toHaveBeenCalledTimes(1);
   });
 });

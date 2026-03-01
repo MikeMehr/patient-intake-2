@@ -4490,6 +4490,7 @@ export default function Home() {
                           className={[
                             "mt-1 w-full resize-none rounded-lg border border-slate-200 bg-white px-3 pt-2 text-sm text-slate-800 outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100",
                             showReviewActions ? "pb-8 pr-40" : "pb-2",
+                            showReviewActions && !isEditingDraft ? "text-right" : "text-left",
                           ].join(" ")}
                         />
                         {showReviewActions && (

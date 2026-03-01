@@ -14,6 +14,7 @@ import {
   BREACHED_PASSWORD_ERROR,
   BREACH_CHECK_UNAVAILABLE_ERROR,
 } from "@/lib/password-breach";
+import { CONTEXT_PASSWORD_ERROR, isPasswordContextWordSafe } from "@/lib/password-context";
 
 export async function GET(
   request: NextRequest,
@@ -143,6 +144,15 @@ export async function PUT(
         const res = NextResponse.json(
           { error: passwordValidation.error },
           { status }
+        );
+        logRequestMeta("/api/org/providers/[id]", requestId, status, Date.now() - started);
+        return res;
+      }
+      if (!isPasswordContextWordSafe(password)) {
+        status = 400;
+        const res = NextResponse.json(
+          { error: CONTEXT_PASSWORD_ERROR },
+          { status },
         );
         logRequestMeta("/api/org/providers/[id]", requestId, status, Date.now() - started);
         return res;

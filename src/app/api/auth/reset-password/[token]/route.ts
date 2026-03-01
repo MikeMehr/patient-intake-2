@@ -20,6 +20,7 @@ import {
   BREACHED_PASSWORD_ERROR,
   BREACH_CHECK_UNAVAILABLE_ERROR,
 } from "@/lib/password-breach";
+import { CONTEXT_PASSWORD_ERROR, isPasswordContextWordSafe } from "@/lib/password-context";
 import { getExpectedTokenClaims } from "@/lib/token-claims";
 
 const RESET_CONSUME_MAX_ATTEMPTS = 10;
@@ -179,6 +180,12 @@ export async function POST(
       return NextResponse.json(
         { error: passwordValidation.error },
         { status: 400 }
+      );
+    }
+    if (!isPasswordContextWordSafe(newPassword)) {
+      return NextResponse.json(
+        { error: CONTEXT_PASSWORD_ERROR },
+        { status: 400 },
       );
     }
 

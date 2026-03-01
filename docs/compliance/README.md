@@ -22,6 +22,8 @@ This directory contains the detailed HIPAA launch compliance documentation for `
 - `runbooks/key-management-and-rotation-sop.md`
 - `runbooks/password-context-word-policy.md`
 - `runbooks/credential-recovery-token-policy.md`
+- `runbooks/oob-pstn-auth-policy.md`
+- `runbooks/v6-authenticator-applicability-l2.md`
 
 ## Canonical References
 
