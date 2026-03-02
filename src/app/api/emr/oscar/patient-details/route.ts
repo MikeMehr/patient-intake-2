@@ -184,20 +184,32 @@ export async function POST(request: NextRequest) {
       return res;
     }
 
+    if (!isRecord(json)) {
+      status = 502;
+      const res = NextResponse.json(
+        { error: "OSCAR details returned an unexpected JSON shape", details: rawText.slice(0, 500) },
+        { status },
+      );
+      logRequestMeta("/api/emr/oscar/patient-details", requestId, status, Date.now() - started);
+      return res;
+    }
+
     // Try to normalize common demographic fields across deployments.
+    const details = json;
     const primaryPhone =
-      String(json.phone ?? json.phoneNumber ?? json.primaryPhone ?? json.phone1 ?? "").trim() || null;
+      String(details.phone ?? details.phoneNumber ?? details.primaryPhone ?? details.phone1 ?? "").trim() || null;
     const secondaryPhone =
-      String(json.phone2 ?? json.secondaryPhone ?? json.alternatePhone ?? "").trim() || null;
+      String(details.phone2 ?? details.secondaryPhone ?? details.alternatePhone ?? "").trim() || null;
     const insuranceNumber =
-      String(json.hin ?? json.healthInsuranceNumber ?? json.insuranceNumber ?? json.hcNumber ?? "").trim() || null;
+      String(details.hin ?? details.healthInsuranceNumber ?? details.insuranceNumber ?? details.hcNumber ?? "").trim() ||
+      null;
 
-    const patientAddress = normalizeAddressFromOscar(json);
-    const patientEmail = normalizeEmailFromOscar(json);
+    const patientAddress = normalizeAddressFromOscar(details);
+    const patientEmail = normalizeEmailFromOscar(details);
 
-    const dateOfBirth = String(json.dob ?? json.dateOfBirth ?? json.birthDate ?? "").trim() || null;
-    const firstName = String(json.firstName ?? json.first_name ?? json.givenName ?? "").trim() || null;
-    const lastName = String(json.lastName ?? json.last_name ?? json.surname ?? "").trim() || null;
+    const dateOfBirth = String(details.dob ?? details.dateOfBirth ?? details.birthDate ?? "").trim() || null;
+    const firstName = String(details.firstName ?? details.first_name ?? details.givenName ?? "").trim() || null;
+    const lastName = String(details.lastName ?? details.last_name ?? details.surname ?? "").trim() || null;
 
     const res = NextResponse.json({
       demographicNo,

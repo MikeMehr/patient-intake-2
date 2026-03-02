@@ -99,12 +99,12 @@ function parseSessionFromRow(row: PhysicianSessionRow): UserSession {
   let session: UserSession = {} as UserSession;
   if (typeof row.session_data === "string") {
     try {
-      session = parseJsonObject(row.session_data, "Session data") as UserSession;
+      session = parseJsonObject(row.session_data, "Session data") as unknown as UserSession;
     } catch {
       session = {} as UserSession;
     }
   } else if (row.session_data && typeof row.session_data === "object") {
-    session = asRecord(row.session_data) as UserSession;
+    session = asRecord(row.session_data) as unknown as UserSession;
   }
 
   // Migrate old sessions to new format if needed.
