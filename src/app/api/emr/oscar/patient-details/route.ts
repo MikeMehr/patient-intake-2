@@ -4,6 +4,8 @@ import { query } from "@/lib/db";
 import { decryptString } from "@/lib/encrypted-field";
 import { getOscarRestBase, oscarSignedFetch } from "@/lib/oscar/client";
 import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
+import { parseJsonValue } from "@/lib/safe-json";
+import { canonicalizeEmail } from "@/lib/canonicalization";
 
 export const runtime = "nodejs";
 
@@ -78,7 +80,7 @@ function normalizeEmailFromOscar(json: any): string | null {
       : null);
 
   if (!candidate) return null;
-  const normalized = candidate.trim();
+  const normalized = canonicalizeEmail(candidate);
   // Very lightweight validation: avoid returning junk strings.
   if (!normalized.includes("@") || normalized.length > 254) return null;
   return normalized;
@@ -172,9 +174,9 @@ export async function POST(request: NextRequest) {
       return res;
     }
 
-    let json: any = null;
+    let json: unknown = null;
     try {
-      json = JSON.parse(rawText);
+      json = parseJsonValue(rawText, "OSCAR patient details response");
     } catch {
       status = 502;
       const res = NextResponse.json({ error: "OSCAR details returned non-JSON", details: rawText.slice(0, 500) }, { status });

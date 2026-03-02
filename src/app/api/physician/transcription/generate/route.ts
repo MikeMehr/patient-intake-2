@@ -12,7 +12,8 @@ import {
   upsertPatientFromQuickEntry,
   upsertTranscriptionSessionPointer,
 } from "@/lib/transcription-store";
-import { generateSoapFromTranscriptRequestSchema } from "@/lib/transcription-schema";
+import { generateSoapFromTranscriptRequestSchema, soapDraftSchema } from "@/lib/transcription-schema";
+import { parseJsonObject } from "@/lib/safe-json";
 import { HEALTHASSIST_SNAPSHOT_LABEL } from "@/lib/transcription-policy";
 
 const systemPrompt = `You are a clinical documentation assistant.
@@ -131,7 +132,12 @@ export async function POST(request: NextRequest) {
     const payload = completion.choices?.[0]?.message?.content?.trim() || "";
     let soap: { subjective: string; objective: string; assessment: string; plan: string };
     try {
-      soap = JSON.parse(payload);
+      const parsedSoap = parseJsonObject(payload, "SOAP model output");
+      const soapResult = soapDraftSchema.safeParse(parsedSoap);
+      if (!soapResult.success) {
+        throw new Error("Model returned invalid SOAP schema.");
+      }
+      soap = soapResult.data;
     } catch {
       throw new Error("Model returned invalid SOAP JSON.");
     }

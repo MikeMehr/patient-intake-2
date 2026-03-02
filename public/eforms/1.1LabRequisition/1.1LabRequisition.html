@@ -1124,7 +1124,7 @@
 
 			setFlag();
 			releaseDirtyFlag();
-			setTimeout('document.FormName.submit()', 2000);
+			setTimeout(function () { document.FormName.submit(); }, 2000);
 		}
 
 		function CheckComplete() {
@@ -1357,7 +1357,7 @@
 			The12Time += ((Cur12Mins < 10) ? ':0' : ':') + Cur12Mins;
 			The12Time += (Cur12Hour > 11) ? ' PM' : ' AM';
 			window.status = The12Time;
-			setTimeout('StartClock12()', 1000);
+			setTimeout(function () { StartClock12(); }, 1000);
 		}
 
 		/****************************

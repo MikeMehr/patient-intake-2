@@ -8,6 +8,7 @@ import { mapLabTestsToEformFields } from "@/lib/lab-requisition-mapping";
 import { buildLabRequisitionPrefillPayload } from "@/lib/lab-requisition-payload";
 import { createLabEditorSession } from "@/lib/lab-requisition-editor-session";
 import { sanitizeAssistiveClinicalText } from "@/lib/clinical-safety";
+import { parseJsonObject } from "@/lib/safe-json";
 
 export const runtime = "nodejs";
 
@@ -20,7 +21,7 @@ type StructuredLabOrder = {
 function parseStructuredLabOrder(raw: string): StructuredLabOrder {
   const fromCodeFence = raw.match(/```(?:json)?\s*([\s\S]*?)\s*```/i)?.[1] ?? raw;
   const jsonBody = fromCodeFence.match(/\{[\s\S]*\}/)?.[0] ?? fromCodeFence;
-  const parsed = JSON.parse(jsonBody);
+  const parsed = parseJsonObject(jsonBody, "AI structured lab order");
   const tests = Array.isArray(parsed?.tests)
     ? parsed.tests.map((item: unknown) => String(item).trim()).filter(Boolean)
     : [];

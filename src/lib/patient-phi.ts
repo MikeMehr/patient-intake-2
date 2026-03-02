@@ -1,5 +1,7 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from "crypto";
 import { ensureProdEnv } from "@/lib/required-env";
+import { canonicalizeIdentifier, canonicalizeUnicode } from "@/lib/canonicalization";
+import { parseJsonObject } from "@/lib/safe-json";
 
 type EncryptedPayloadV1 = {
   v: 1;
@@ -53,19 +55,14 @@ export function encryptPatientPhiString(plaintext: string): string {
 
 export function decryptPatientPhiString(payload: string): string {
   const key = getPatientPhiEncryptionKey();
-  let parsed: EncryptedPayloadV1;
-  try {
-    parsed = JSON.parse(payload) as EncryptedPayloadV1;
-  } catch {
-    throw new Error("Invalid encrypted payload");
-  }
+  const parsed = parseJsonObject(payload, "Encrypted payload") as Partial<EncryptedPayloadV1>;
   if (!parsed || parsed.v !== 1 || parsed.alg !== "aes-256-gcm") {
     throw new Error("Unsupported encrypted payload");
   }
 
-  const iv = Buffer.from(parsed.iv, "base64");
-  const tag = Buffer.from(parsed.tag, "base64");
-  const data = Buffer.from(parsed.data, "base64");
+  const iv = Buffer.from(canonicalizeUnicode(parsed.iv || ""), "base64");
+  const tag = Buffer.from(canonicalizeUnicode(parsed.tag || ""), "base64");
+  const data = Buffer.from(canonicalizeUnicode(parsed.data || ""), "base64");
   const decipher = createDecipheriv("aes-256-gcm", key, iv);
   decipher.setAuthTag(tag);
   const plaintext = Buffer.concat([decipher.update(data), decipher.final()]);
@@ -77,8 +74,7 @@ export function normalizeHin(raw: string): string {
   // - trim
   // - remove whitespace and hyphens
   // - uppercase
-  return String(raw || "")
-    .trim()
+  return canonicalizeIdentifier(raw)
     .replace(/[\s-]+/g, "")
     .toUpperCase();
 }

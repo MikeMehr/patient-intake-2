@@ -165,6 +165,15 @@ This matrix links launch controls to objective evidence, owner, and closure crit
   - Next review: 2026-04-01
   - Closure criteria: when assessment scope introduces additional V8/V9 rows, runbooks and matrix are updated with explicit applicability rationale before status attestation
 
+- Control ID: T-20
+  - Control: ASVS V1 L2 partial controls are closed with centralized canonicalization, safe deserialization, outbound URL guardrails, and sink hardening
+  - Evidence: `docs/compliance/runbooks/v1-encoding-sanitization-l2.md`, `src/lib/canonicalization.ts`, `src/lib/safe-json.ts`, `src/lib/outbound-url.ts`, `src/lib/patient-phi.ts`, `src/lib/lab-requisition-mapping.ts`, `src/lib/auth.ts`, `src/lib/oscar/client.ts`, `src/lib/invitation-pdf-summary.ts`, `src/app/api/admin/organizations/[id]/emr/oscar/route.ts`, `src/app/api/speech/stt/route.ts`, `src/app/api/speech/tts/route.ts`, `src/app/physician/view/page.tsx`, `public/eforms/1.1LabRequisition/LabDecisionSupport4_Feb2019.js`, `public/eforms/1.1LabRequisition/1.1LabRequisition.html`, `src/lib/outbound-url.test.ts`, `src/lib/safe-json.test.ts`, `src/lib/security-regressions.test.ts`, `src/lib/patient-phi.test.ts`, `src/lib/auth.test.ts`, `src/lib/invitation-pdf-summary.test.ts`, `src/app/api/admin/organizations/[id]/emr/oscar/route.test.ts`, `src/app/api/lab-requisitions/generate/route.test.ts`, `src/app/api/speech/stt/route.test.ts`, `src/app/api/speech/tts/route.test.ts`
+  - Owner: Engineering/Security
+  - Status: implemented
+  - Last review: 2026-02-26
+  - Next review: 2026-03-26
+  - Closure criteria: V1 security regression and route-level negative tests remain green in CI and ASVS V1 CSV rows stay synchronized with code/test evidence
+
 ## Operational Controls
 
 - Control ID: O-01

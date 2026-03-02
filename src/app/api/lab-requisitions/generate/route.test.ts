@@ -98,4 +98,47 @@ describe("POST /api/lab-requisitions/generate", () => {
     expect(getAzureOpenAIClientMock).not.toHaveBeenCalled();
     expect(createLabEditorSessionMock).not.toHaveBeenCalled();
   });
+
+  it("rejects malformed AI JSON lab payloads", async () => {
+    getCurrentSessionMock.mockResolvedValueOnce({
+      userId: "provider-1",
+      userType: "provider",
+      organizationId: "org-1",
+    });
+    getSessionMock.mockResolvedValueOnce({
+      physicianId: "provider-1",
+      patientName: "Pat",
+      patientEmail: "pat@example.com",
+      chiefComplaint: "headache",
+      history: {},
+      patientProfile: {},
+    });
+    queryMock.mockResolvedValueOnce({
+      rows: [{ first_name: "Test", last_name: "Doctor", clinic_name: "Clinic", clinic_address: "Address" }],
+    });
+    getAzureOpenAIClientMock.mockReturnValueOnce({
+      deployment: "test",
+      client: {
+        chat: {
+          completions: {
+            create: vi.fn().mockResolvedValue({
+              choices: [{ message: { content: "not-json" } }],
+            }),
+          },
+        },
+      },
+    });
+
+    const { POST } = await import("./route");
+    const response = await POST(
+      new Request("http://localhost/api/lab-requisitions/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionCode: "session-1" }),
+      }) as any,
+    );
+
+    expect(response.status).toBe(500);
+    expect(createLabEditorSessionMock).not.toHaveBeenCalled();
+  });
 });

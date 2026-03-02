@@ -1,5 +1,6 @@
 import { getAzureOpenAIClient } from "@/lib/azure-openai";
 import { ensureProdEnv } from "@/lib/required-env";
+import { assertSafeOperationLocation, assertSafeOutboundUrl } from "@/lib/outbound-url";
 
 export type InvitationUploadDocumentKey = "labReport" | "previousLabReport" | "form";
 
@@ -72,7 +73,9 @@ function getDocumentIntelligenceConfig() {
     );
   }
   return {
-    endpoint: endpoint.replace(/\/$/, ""),
+    endpoint: assertSafeOutboundUrl(endpoint.replace(/\/$/, ""), { label: "Document intelligence endpoint" })
+      .toString()
+      .replace(/\/$/, ""),
     apiKey,
     apiVersion,
     modelId,
@@ -141,7 +144,8 @@ export async function extractPdfTextWithAzureDocumentIntelligence(file: File): P
     throw new Error("Azure Document Intelligence did not return operation location.");
   }
 
-  return pollDocumentIntelligenceResult(operationLocation, apiKey);
+  const safeOperationLocation = assertSafeOperationLocation(operationLocation, endpoint);
+  return pollDocumentIntelligenceResult(safeOperationLocation.toString(), apiKey);
 }
 
 export async function summarizeExtractedPdfTextWithAzureOpenAI(

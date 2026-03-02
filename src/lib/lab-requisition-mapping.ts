@@ -1,3 +1,5 @@
+import { canonicalizeForLookup } from "@/lib/canonicalization";
+
 export type LabOrderMappingResult = {
   mappedFieldIds: string[];
   mappedTests: string[];
@@ -31,11 +33,7 @@ const LAB_FIELD_MAP: Array<{ id: string; terms: string[] }> = [
 ];
 
 const normalize = (value: string) =>
-  value
-    .toLowerCase()
-    .replace(/[^a-z0-9+]+/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
+  canonicalizeForLookup(value);
 
 function matchesCandidate(candidate: string, term: string): boolean {
   if (!candidate || !term) return false;

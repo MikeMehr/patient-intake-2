@@ -25,6 +25,7 @@ describe("patient-phi", () => {
   it("normalizes HIN consistently", () => {
     expect(normalizeHin("  ab-12 34 ")).toBe("AB1234");
     expect(normalizeHin("AB1234")).toBe("AB1234");
+    expect(normalizeHin("ＡＢ-１２ ３４")).toBe("AB1234");
   });
 
   it("hashes normalized HIN with pepper", () => {
@@ -39,6 +40,10 @@ describe("patient-phi", () => {
     const enc = encryptPatientPhiString(plaintext);
     const dec = decryptPatientPhiString(enc);
     expect(dec).toBe(plaintext);
+  });
+
+  it("rejects malformed encrypted payloads", () => {
+    expect(() => decryptPatientPhiString("not-json")).toThrow(/not valid json/i);
   });
 
   it("masks HIN for display", () => {

@@ -1,4 +1,5 @@
 import { signOAuth1Request, parseFormEncoded } from "./oauth1";
+import { assertSafeOutboundUrl } from "@/lib/outbound-url";
 
 export type OscarOAuthEndpoints = {
   initiateUrl: string; // /ws/oauth/initiate
@@ -7,7 +8,7 @@ export type OscarOAuthEndpoints = {
 };
 
 export function getOscarOAuthEndpoints(oscarBaseUrl: string): OscarOAuthEndpoints {
-  const base = oscarBaseUrl.replace(/\/+$/, "");
+  const base = assertSafeOutboundUrl(oscarBaseUrl, { label: "OSCAR base URL" }).toString().replace(/\/+$/, "");
   return {
     initiateUrl: `${base}/ws/oauth/initiate`,
     authorizeUrl: `${base}/ws/oauth/authorize`,
@@ -18,7 +19,8 @@ export function getOscarOAuthEndpoints(oscarBaseUrl: string): OscarOAuthEndpoint
 export function getOscarRestBase(oscarBaseUrl: string): string {
   // OSCAR documentation/examples typically use /ws/services for REST resources.
   // Some deployments expose WADL under /ws/rs, but require OAuth on /ws/services.
-  return `${oscarBaseUrl.replace(/\/+$/, "")}/ws/services`;
+  const base = assertSafeOutboundUrl(oscarBaseUrl, { label: "OSCAR base URL" }).toString().replace(/\/+$/, "");
+  return `${base}/ws/services`;
 }
 
 export async function oscarInitiate(args: {
@@ -168,6 +170,7 @@ export async function oscarSignedFetch(args: {
   headers?: Record<string, string>;
   body?: string;
 }): Promise<Response> {
+  assertSafeOutboundUrl(args.url, { label: "OSCAR request URL" });
   const signed = signOAuth1Request({
     method: args.method,
     url: args.url,

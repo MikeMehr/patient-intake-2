@@ -1920,8 +1920,10 @@ function AddIfMissingStyle(x,content){
 }
 
 function AddIfMissingHTML(x,content, test){
-    if (document.getElementById(x).innerHTML.indexOf(test)==-1){
-            document.getElementById(x).innerHTML += content
+    var target = document.getElementById(x);
+    if (!target) return;
+    if (target.textContent.indexOf(test)==-1){
+            target.appendChild(document.createTextNode(content));
     }
 }
 

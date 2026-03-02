@@ -7,6 +7,7 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import { NextResponse } from "next/server";
 import { logDebug } from "@/lib/secure-logger";
 import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
+import { parseJsonValue } from "@/lib/safe-json";
 
 const model = process.env.GEMINI_MODEL ?? "gemini-2.5-flash";
 
@@ -107,7 +108,7 @@ function parseHistory(payload: string) {
   let parsedJson: unknown;
 
   try {
-    parsedJson = JSON.parse(payload);
+    parsedJson = parseJsonValue(payload, "History model output");
   } catch {
     throw new Error("Google Gemini returned malformed JSON.");
   }

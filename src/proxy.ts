@@ -1,6 +1,10 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-function buildCspHeader() {
+function buildCspHeader(pathname: string) {
+  const isLegacyEformPath = pathname.startsWith("/eforms/");
+  const scriptSrc = isLegacyEformPath
+    ? "script-src 'self' 'unsafe-inline' 'unsafe-eval'"
+    : "script-src 'self' 'unsafe-inline'";
   return [
     "default-src 'self'",
     "base-uri 'self'",
@@ -11,7 +15,7 @@ function buildCspHeader() {
     "img-src 'self' data: blob:",
     "font-src 'self' data:",
     "style-src 'self' 'unsafe-inline'",
-    "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+    scriptSrc,
     "connect-src 'self' https: wss:",
   ].join("; ");
 }
@@ -35,7 +39,7 @@ export function proxy(req: NextRequest) {
   });
 
   res.headers.set("x-request-id", incomingId);
-  res.headers.set("Content-Security-Policy", buildCspHeader());
+  res.headers.set("Content-Security-Policy", buildCspHeader(req.nextUrl.pathname));
   res.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
   res.headers.set("X-Content-Type-Options", "nosniff");
   res.headers.set("X-Frame-Options", "DENY");

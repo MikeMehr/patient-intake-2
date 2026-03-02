@@ -219,4 +219,25 @@ describe("auth session lifecycle", () => {
     expect(session?.userId).toBe("provider-1");
     expect(cookieSetMock).toHaveBeenCalledTimes(0);
   });
+
+  it("gracefully handles malformed JSON session_data rows", async () => {
+    cookieGetMock.mockReturnValue({ value: "bad-json-token" });
+    queryMock.mockResolvedValueOnce({
+      rows: [{
+        user_id: "provider-1",
+        user_type: "provider",
+        organization_id: "org-1",
+        physician_id: "provider-1",
+        expires_at: new Date(Date.now() + 5 * 60 * 1000),
+        created_at: new Date(Date.now() - 5 * 60 * 1000),
+        session_data: "{bad json",
+      }],
+    });
+
+    const { getCurrentSession } = await import("./auth");
+    const session = await getCurrentSession();
+
+    expect(session?.userId).toBe("provider-1");
+    expect(session?.userType).toBe("provider");
+  });
 });

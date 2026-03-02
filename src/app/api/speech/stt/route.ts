@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
 import { getAzureSpeechConfig } from "@/lib/azure-speech";
 import { getSpeechLocale, normalizeLanguageCode } from "@/lib/speech-language";
+import { assertSafeOutboundUrl } from "@/lib/outbound-url";
 
 type AzureSpeechResponse = {
   RecognitionStatus?: string;
@@ -93,8 +94,9 @@ export async function POST(request: NextRequest) {
     const url =
       `${speechConfig.endpoint}/speech/recognition/conversation/cognitiveservices/v1` +
       `?language=${encodeURIComponent(locale)}&format=detailed`;
+    const safeUrl = assertSafeOutboundUrl(url, { label: "Speech STT endpoint URL" });
 
-    const response = await fetch(url, {
+    const response = await fetch(safeUrl.toString(), {
       method: "POST",
       headers: {
         "Ocp-Apim-Subscription-Key": speechConfig.key,

@@ -3,11 +3,13 @@ import { getCurrentSession } from "@/lib/auth";
 import { query } from "@/lib/db";
 import { decryptString, encryptString, maskSecret } from "@/lib/encrypted-field";
 import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
+import { assertSafeOutboundUrl } from "@/lib/outbound-url";
 
 export const runtime = "nodejs";
 
 function normalizeBaseUrl(input: string): string {
-  return input.trim().replace(/\/+$/, "");
+  const normalized = input.trim().replace(/\/+$/, "");
+  return assertSafeOutboundUrl(normalized, { label: "OSCAR base URL" }).toString().replace(/\/+$/, "");
 }
 
 export async function GET(
@@ -101,7 +103,16 @@ export async function PUT(
       clientSecret?: string;
     };
 
-    const baseUrl = body.baseUrl ? normalizeBaseUrl(body.baseUrl) : "";
+    let baseUrl = "";
+    try {
+      baseUrl = body.baseUrl ? normalizeBaseUrl(body.baseUrl) : "";
+    } catch (error) {
+      status = 400;
+      const message = error instanceof Error ? error.message : "Invalid baseUrl";
+      const res = NextResponse.json({ error: message }, { status });
+      logRequestMeta("/api/admin/organizations/[id]/emr/oscar", requestId, status, Date.now() - started);
+      return res;
+    }
     const clientKey = (body.clientKey || "").trim();
     const clientSecret = (body.clientSecret || "").trim();
 

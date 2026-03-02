@@ -2895,7 +2895,10 @@ function PhysicianViewContent() {
                     // Show error message instead of hiding
                     const errorDiv = document.createElement("div");
                     errorDiv.className = "p-4 bg-red-50 rounded-lg border border-red-200";
-                    errorDiv.innerHTML = `<p className="text-sm text-red-600">Failed to load image. Image URL may be invalid.</p>`;
+                    const message = document.createElement("p");
+                    message.className = "text-sm text-red-600";
+                    message.textContent = "Failed to load image. Image URL may be invalid.";
+                    errorDiv.appendChild(message);
                     (e.target as HTMLImageElement).parentElement?.replaceChild(errorDiv, e.target as HTMLImageElement);
                   }}
                 />

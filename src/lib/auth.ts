@@ -7,6 +7,7 @@ import bcrypt from "bcrypt";
 import { randomBytes } from "crypto";
 import { cookies } from "next/headers";
 import { logDebug } from "@/lib/secure-logger";
+import { asRecord, parseJsonObject } from "@/lib/safe-json";
 
 const SALT_ROUNDS = 12;
 
@@ -97,9 +98,13 @@ function parseSessionFromRow(row: PhysicianSessionRow): UserSession {
   // PostgreSQL JSONB columns return objects directly, not strings.
   let session: UserSession = {} as UserSession;
   if (typeof row.session_data === "string") {
-    session = JSON.parse(row.session_data) as UserSession;
+    try {
+      session = parseJsonObject(row.session_data, "Session data") as UserSession;
+    } catch {
+      session = {} as UserSession;
+    }
   } else if (row.session_data && typeof row.session_data === "object") {
-    session = row.session_data as UserSession;
+    session = asRecord(row.session_data) as UserSession;
   }
 
   // Migrate old sessions to new format if needed.

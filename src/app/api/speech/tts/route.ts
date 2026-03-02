@@ -6,6 +6,7 @@ import {
   getSpeechLocale,
   normalizeLanguageCode,
 } from "@/lib/speech-language";
+import { assertSafeOutboundUrl } from "@/lib/outbound-url";
 
 function xmlEscape(value: string): string {
   return value
@@ -95,7 +96,8 @@ export async function POST(request: NextRequest) {
   )}</voice></speak>`;
 
   try {
-    const response = await fetch(`${endpoint}/cognitiveservices/v1`, {
+    const safeEndpoint = assertSafeOutboundUrl(endpoint, { label: "Speech TTS endpoint" }).toString();
+    const response = await fetch(`${safeEndpoint}/cognitiveservices/v1`, {
       method: "POST",
       headers: {
         "Ocp-Apim-Subscription-Key": speechConfig.key,
