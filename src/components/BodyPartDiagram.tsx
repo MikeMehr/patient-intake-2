@@ -136,8 +136,15 @@ export default function BodyPartDiagram({
   const areas = bodyPartAreas[bodyPart] || [];
   const isLeftSoleDiagram = bodyPart === "foot" && side === "left";
   const isHeadNeckDiagram = bodyPart === "head" || bodyPart === "neck";
+  const isShoulderDiagram = bodyPart === "shoulder";
+  const isAnkleDiagram = bodyPart === "ankle";
+  const isFootDiagram = bodyPart === "foot";
   const isHipUpperLegDiagram = bodyPart === "hip";
   const isTrunkFrontDiagram = bodyPart === "chest" || bodyPart === "abdomen";
+  const isHandWristDiagram = bodyPart === "hand" || bodyPart === "wrist";
+  const isForearmElbowDiagram = bodyPart === "elbow";
+  const isThoracicLumbarSpineDiagram =
+    bodyPart === "back" || bodyPart === "upper_back" || bodyPart === "lower_back";
 
   const handleAreaClick = (areaNumber: number) => {
     if (onAreaSelect) {
@@ -200,141 +207,174 @@ export default function BodyPartDiagram({
           );
         }
         return (
-          <svg viewBox={viewBox} className="w-full h-full">
-            <path
-              d="M 30 60 Q 50 50 70 60 Q 50 70 30 60"
-              fill="#e5e7eb"
-              stroke="#374151"
-              strokeWidth="2"
+          <div className="relative h-full w-full overflow-hidden rounded-xl border border-slate-300 bg-white">
+            <img
+              src="/Images/foot.png"
+              alt="Foot pain diagram"
+              className="absolute inset-0 h-full w-full object-contain"
             />
-            <rect x="25" y="15" width="10" height="20" rx="5" fill="#e5e7eb" stroke="#374151" strokeWidth="2" />
-            <rect x="40" y="10" width="8" height="25" rx="4" fill="#e5e7eb" stroke="#374151" strokeWidth="2" />
-            <rect x="55" y="12" width="8" height="23" rx="4" fill="#e5e7eb" stroke="#374151" strokeWidth="2" />
-            <rect x="68" y="15" width="7" height="20" rx="3" fill="#e5e7eb" stroke="#374151" strokeWidth="2" />
-            <rect x="78" y="20" width="6" height="15" rx="3" fill="#e5e7eb" stroke="#374151" strokeWidth="2" />
-            {areas.map((area, idx) => (
-              <g key={idx}>
-                <circle
-                  cx={area.x}
-                  cy={area.y}
-                  r="2.4"
-                  fill={selectedArea === idx + 1 ? "#10b981" : "#fbbf24"}
-                  stroke="#374151"
-                  strokeWidth="0.75"
-                  className="cursor-pointer hover:opacity-80"
-                  onClick={() => handleAreaClick(idx + 1)}
-                />
-                <text
-                  x={area.x}
-                  y={area.y + 1.8}
-                  textAnchor="middle"
-                  className="text-[4px] font-bold fill-slate-900 pointer-events-none"
-                >
-                  {area.label}
-                </text>
-              </g>
-            ))}
-          </svg>
+            <svg viewBox={viewBox} className="absolute inset-0 h-full w-full">
+              {areas.map((area, idx) => (
+                <g key={idx}>
+                  <circle
+                    cx={area.x}
+                    cy={area.y}
+                    r="3"
+                    fill={selectedArea === idx + 1 ? "#10b981" : "#fbbf24"}
+                    stroke="#374151"
+                    strokeWidth="0.75"
+                    className="cursor-pointer hover:opacity-80"
+                    onClick={() => handleAreaClick(idx + 1)}
+                  />
+                  <text
+                    x={area.x}
+                    y={area.y + 2.2}
+                    textAnchor="middle"
+                    className="text-[4px] font-bold fill-slate-900 pointer-events-none"
+                  >
+                    {area.label}
+                  </text>
+                </g>
+              ))}
+            </svg>
+          </div>
         );
       case "wrist":
-        if (side === "right") {
-          return (
-            <div className="relative w-full h-full">
-              <img
-                src="/RightWristBack.svg"
-                alt="Right wrist diagram (back)"
-                className="absolute inset-0 h-full w-full object-contain"
-              />
-            </div>
-          );
-        }
-        return (
-          <svg viewBox="0 0 100 100" className="w-full h-full">
-            {/* Forearm (top) - clearly labeled */}
-            <ellipse cx="50" cy="12" rx="16" ry="12" fill="#d1d5db" stroke="#374151" strokeWidth="2" />
-            <text x="50" y="7" textAnchor="middle" className="text-[10px] font-medium fill-slate-700 pointer-events-none">Forearm</text>
-
-            {/* Wrist joint area - the main focus, larger */}
-            <rect x="32" y="22" width="36" height="16" rx="8" fill="#e5e7eb" stroke="#374151" strokeWidth="2.5" />
-            <text x="50" y="32" textAnchor="middle" className="text-[10px] font-medium fill-slate-700 pointer-events-none">Wrist</text>
-
-            {/* Hand/Palm (bottom) - clearly labeled */}
-            <ellipse cx="50" cy="55" rx="26" ry="20" fill="#d1d5db" stroke="#374151" strokeWidth="2" />
-            <text x="50" y="78" textAnchor="middle" className="text-[10px] font-medium fill-slate-700 pointer-events-none">Hand</text>
-
-            {/* Fingers outline - make it clear these are fingers */}
-            <rect x="38" y="42" width="5" height="24" rx="2.5" fill="#cbd5e1" stroke="#64748b" strokeWidth="1.5" />
-            <rect x="46" y="40" width="5" height="26" rx="2.5" fill="#cbd5e1" stroke="#64748b" strokeWidth="1.5" />
-            <rect x="54" y="40" width="5" height="26" rx="2.5" fill="#cbd5e1" stroke="#64748b" strokeWidth="1.5" />
-            <rect x="62" y="42" width="5" height="24" rx="2.5" fill="#cbd5e1" stroke="#64748b" strokeWidth="1.5" />
-            <text x="50" y="70" textAnchor="middle" className="text-[9px] fill-slate-600 pointer-events-none">Fingers</text>
-
-            {/* Thumb outline - clearly visible */}
-            <ellipse cx="18" cy="58" rx="8" ry="12" fill="#cbd5e1" stroke="#64748b" strokeWidth="1.5" />
-            <text x="18" y="63" textAnchor="middle" className="text-[9px] fill-slate-600 pointer-events-none">Thumb</text>
-
-            {/* Numbered areas - spread out to avoid overlap */}
-            {areas.map((area, idx) => (
-              <g key={idx}>
-                <circle
-                  cx={area.x}
-                  cy={area.y}
-                  r="3"
-                  fill={selectedArea === idx + 1 ? "#10b981" : "#fbbf24"}
-                  stroke="#374151"
-                  strokeWidth="0.75"
-                  className="cursor-pointer hover:opacity-80"
-                  onClick={() => handleAreaClick(idx + 1)}
-                />
-                <text
-                  x={area.x}
-                  y={area.y + 2.2}
-                  textAnchor="middle"
-                  className="text-[4px] font-bold fill-slate-900 pointer-events-none"
-                >
-                  {area.label}
-                </text>
-              </g>
-            ))}
-          </svg>
-        );
       case "hand":
         return (
-          <svg viewBox={viewBox} className="w-full h-full">
-            <path
-              d="M 30 60 Q 50 50 70 60 Q 50 70 30 60"
-              fill="#e5e7eb"
-              stroke="#374151"
-              strokeWidth="2"
+          <div className="relative h-full w-full overflow-hidden rounded-xl border border-slate-300 bg-white">
+            <img
+              src="/Images/Hand Wrist.png"
+              alt="Hand, fingers, and wrist pain diagram"
+              className="absolute inset-0 h-full w-full object-contain"
             />
-            <rect x="25" y="15" width="10" height="20" rx="5" fill="#e5e7eb" stroke="#374151" strokeWidth="2" />
-            <rect x="40" y="10" width="8" height="25" rx="4" fill="#e5e7eb" stroke="#374151" strokeWidth="2" />
-            <rect x="55" y="12" width="8" height="23" rx="4" fill="#e5e7eb" stroke="#374151" strokeWidth="2" />
-            <rect x="68" y="15" width="7" height="20" rx="3" fill="#e5e7eb" stroke="#374151" strokeWidth="2" />
-            <rect x="78" y="20" width="6" height="15" rx="3" fill="#e5e7eb" stroke="#374151" strokeWidth="2" />
-            {areas.map((area, idx) => (
-              <g key={idx}>
-                <circle
-                  cx={area.x}
-                  cy={area.y}
-                  r="2.4"
-                  fill={selectedArea === idx + 1 ? "#10b981" : "#fbbf24"}
-                  stroke="#374151"
-                  strokeWidth="0.75"
-                  className="cursor-pointer hover:opacity-80"
-                  onClick={() => handleAreaClick(idx + 1)}
-                />
-                <text
-                  x={area.x}
-                  y={area.y + 1.8}
-                  textAnchor="middle"
-                  className="text-[4px] font-bold fill-slate-900 pointer-events-none"
-                >
-                  {area.label}
-                </text>
-              </g>
-            ))}
-          </svg>
+            <svg viewBox={viewBox} className="absolute inset-0 h-full w-full">
+              {areas.map((area, idx) => (
+                <g key={idx}>
+                  <circle
+                    cx={area.x}
+                    cy={area.y}
+                    r="3"
+                    fill={selectedArea === idx + 1 ? "#10b981" : "#fbbf24"}
+                    stroke="#374151"
+                    strokeWidth="0.75"
+                    className="cursor-pointer hover:opacity-80"
+                    onClick={() => handleAreaClick(idx + 1)}
+                  />
+                  <text
+                    x={area.x}
+                    y={area.y + 2.2}
+                    textAnchor="middle"
+                    className="text-[4px] font-bold fill-slate-900 pointer-events-none"
+                  >
+                    {area.label}
+                  </text>
+                </g>
+              ))}
+            </svg>
+          </div>
+        );
+      case "elbow":
+        return (
+          <div className="relative h-full w-full overflow-hidden rounded-xl border border-slate-300 bg-white">
+            <img
+              src="/Images/Forearm Elbow.png"
+              alt="Forearm and elbow pain diagram"
+              className="absolute inset-0 h-full w-full object-contain"
+            />
+            <svg viewBox={viewBox} className="absolute inset-0 h-full w-full">
+              {areas.map((area, idx) => (
+                <g key={idx}>
+                  <circle
+                    cx={area.x}
+                    cy={area.y}
+                    r="3"
+                    fill={selectedArea === idx + 1 ? "#10b981" : "#fbbf24"}
+                    stroke="#374151"
+                    strokeWidth="0.75"
+                    className="cursor-pointer hover:opacity-80"
+                    onClick={() => handleAreaClick(idx + 1)}
+                  />
+                  <text
+                    x={area.x}
+                    y={area.y + 2.2}
+                    textAnchor="middle"
+                    className="text-[4px] font-bold fill-slate-900 pointer-events-none"
+                  >
+                    {area.label}
+                  </text>
+                </g>
+              ))}
+            </svg>
+          </div>
+        );
+      case "ankle":
+        return (
+          <div className="relative h-full w-full overflow-hidden rounded-xl border border-slate-300 bg-white">
+            <img
+              src="/Images/ankle.png"
+              alt="Ankle pain diagram"
+              className="absolute inset-0 h-full w-full object-contain"
+            />
+            <svg viewBox={viewBox} className="absolute inset-0 h-full w-full">
+              {areas.map((area, idx) => (
+                <g key={idx}>
+                  <circle
+                    cx={area.x}
+                    cy={area.y}
+                    r="3"
+                    fill={selectedArea === idx + 1 ? "#10b981" : "#fbbf24"}
+                    stroke="#374151"
+                    strokeWidth="0.75"
+                    className="cursor-pointer hover:opacity-80"
+                    onClick={() => handleAreaClick(idx + 1)}
+                  />
+                  <text
+                    x={area.x}
+                    y={area.y + 2.2}
+                    textAnchor="middle"
+                    className="text-[4px] font-bold fill-slate-900 pointer-events-none"
+                  >
+                    {area.label}
+                  </text>
+                </g>
+              ))}
+            </svg>
+          </div>
+        );
+      case "shoulder":
+        return (
+          <div className="relative h-full w-full overflow-hidden rounded-xl border border-slate-300 bg-white">
+            <img
+              src="/Images/Shoulder.png"
+              alt="Shoulder pain diagram"
+              className="absolute inset-0 h-full w-full object-contain"
+            />
+            <svg viewBox={viewBox} className="absolute inset-0 h-full w-full">
+              {areas.map((area, idx) => (
+                <g key={idx}>
+                  <circle
+                    cx={area.x}
+                    cy={area.y}
+                    r="3"
+                    fill={selectedArea === idx + 1 ? "#10b981" : "#fbbf24"}
+                    stroke="#374151"
+                    strokeWidth="0.75"
+                    className="cursor-pointer hover:opacity-80"
+                    onClick={() => handleAreaClick(idx + 1)}
+                  />
+                  <text
+                    x={area.x}
+                    y={area.y + 2.2}
+                    textAnchor="middle"
+                    className="text-[4px] font-bold fill-slate-900 pointer-events-none"
+                  >
+                    {area.label}
+                  </text>
+                </g>
+              ))}
+            </svg>
+          </div>
         );
       case "head":
       case "neck":
@@ -377,6 +417,42 @@ export default function BodyPartDiagram({
             <img
               src="/Images/Hip Upper Leg.png"
               alt="Hip and upper leg pain diagram"
+              className="absolute inset-0 h-full w-full object-contain"
+            />
+            <svg viewBox={viewBox} className="absolute inset-0 h-full w-full">
+              {areas.map((area, idx) => (
+                <g key={idx}>
+                  <circle
+                    cx={area.x}
+                    cy={area.y}
+                    r="3"
+                    fill={selectedArea === idx + 1 ? "#10b981" : "#fbbf24"}
+                    stroke="#374151"
+                    strokeWidth="0.75"
+                    className="cursor-pointer hover:opacity-80"
+                    onClick={() => handleAreaClick(idx + 1)}
+                  />
+                  <text
+                    x={area.x}
+                    y={area.y + 2.2}
+                    textAnchor="middle"
+                    className="text-[4px] font-bold fill-slate-900 pointer-events-none"
+                  >
+                    {area.label}
+                  </text>
+                </g>
+              ))}
+            </svg>
+          </div>
+        );
+      case "back":
+      case "upper_back":
+      case "lower_back":
+        return (
+          <div className="relative h-full w-full overflow-hidden rounded-xl border border-slate-300 bg-white">
+            <img
+              src="/Images/Thoracic Lumbar Spine.png"
+              alt="Thoracic and lumbar spine pain diagram"
               className="absolute inset-0 h-full w-full object-contain"
             />
             <svg viewBox={viewBox} className="absolute inset-0 h-full w-full">
@@ -498,7 +574,15 @@ export default function BodyPartDiagram({
       <div className="text-xs text-slate-600 text-center">
         {isLeftSoleDiagram
           ? "Click on the sole image to place X marks where you feel pain"
-          : isHeadNeckDiagram || isHipUpperLegDiagram || isTrunkFrontDiagram
+          : isHeadNeckDiagram ||
+              isShoulderDiagram ||
+              isAnkleDiagram ||
+              isFootDiagram ||
+              isHipUpperLegDiagram ||
+              isTrunkFrontDiagram ||
+              isHandWristDiagram ||
+              isForearmElbowDiagram ||
+              isThoracicLumbarSpineDiagram
             ? "Click on a numbered area on the image to indicate where you feel pain"
           : "Click on a numbered area to indicate where you feel pain"}
       </div>
