@@ -6,153 +6,97 @@ import type { MouseEvent } from "react";
 interface BodyPartDiagramProps {
   bodyPart: BodyPart;
   side?: "left" | "right";
-  selectedArea?: number;
-  onAreaSelect?: (area: number) => void;
   markers?: Array<{ xPct: number; yPct: number }>;
-  onMarkerAdd?: (marker: { xPct: number; yPct: number }) => void;
+  onMarkerAdd?: (payload: {
+    part: BodyPart;
+    side?: "left" | "right";
+    marker: { xPct: number; yPct: number };
+  }) => void;
   onMarkersClear?: () => void;
 }
 
-interface Area {
-  x: number;
-  y: number;
-  label: string;
-}
+const getDiagramImage = (bodyPart: BodyPart, side?: "left" | "right") => {
+  if (bodyPart === "foot" && side === "left") {
+    return {
+      src: "/Images/Sole.png",
+      alt: "Left sole pain diagram",
+    };
+  }
 
-// Define numbered areas for each body part
-const bodyPartAreas: Record<BodyPart, Area[]> = {
-  wrist: [
-    { x: 50, y: 15, label: "1" }, // Dorsal (back of wrist)
-    { x: 50, y: 35, label: "2" }, // Palmar (palm side of wrist)
-    { x: 25, y: 25, label: "3" }, // Radial (thumb side)
-    { x: 75, y: 25, label: "4" }, // Ulnar (pinky side)
-    { x: 50, y: 25, label: "5" }, // Center of wrist
-  ],
-  hand: [
-    { x: 25, y: 25, label: "1" }, // Thumb
-    { x: 50, y: 15, label: "2" }, // Index finger
-    { x: 70, y: 20, label: "3" }, // Middle finger
-    { x: 80, y: 35, label: "4" }, // Ring finger
-    { x: 85, y: 50, label: "5" }, // Pinky
-    { x: 50, y: 65, label: "6" }, // Palm
-  ],
-  elbow: [
-    { x: 50, y: 15, label: "1" }, // Outer (lateral)
-    { x: 50, y: 85, label: "2" }, // Inner (medial)
-    { x: 25, y: 50, label: "3" }, // Front
-    { x: 75, y: 50, label: "4" }, // Back
-    { x: 50, y: 50, label: "5" }, // Center
-  ],
-  shoulder: [
-    { x: 50, y: 12, label: "1" }, // Top
-    { x: 25, y: 50, label: "2" }, // Front
-    { x: 75, y: 50, label: "3" }, // Back
-    { x: 50, y: 88, label: "4" }, // Bottom
-    { x: 50, y: 50, label: "5" }, // Center
-  ],
-  neck: [
-    { x: 50, y: 15, label: "1" }, // Front
-    { x: 70, y: 50, label: "2" }, // Right side
-    { x: 30, y: 50, label: "3" }, // Left side
-    { x: 50, y: 85, label: "4" }, // Back
-  ],
-  back: [
-    { x: 50, y: 12, label: "1" }, // Upper
-    { x: 50, y: 50, label: "2" }, // Middle
-    { x: 50, y: 88, label: "3" }, // Lower
-    { x: 25, y: 50, label: "4" }, // Left side
-    { x: 75, y: 50, label: "5" }, // Right side
-  ],
-  lower_back: [
-    { x: 50, y: 25, label: "1" }, // Upper lumbar
-    { x: 50, y: 75, label: "2" }, // Lower lumbar
-    { x: 25, y: 50, label: "3" }, // Left side
-    { x: 75, y: 50, label: "4" }, // Right side
-    { x: 50, y: 50, label: "5" }, // Center
-  ],
-  upper_back: [
-    { x: 50, y: 15, label: "1" }, // Upper thoracic
-    { x: 50, y: 65, label: "2" }, // Mid thoracic
-    { x: 25, y: 40, label: "3" }, // Left side
-    { x: 75, y: 40, label: "4" }, // Right side
-  ],
-  knee: [
-    { x: 50, y: 15, label: "1" }, // Front (patella)
-    { x: 50, y: 85, label: "2" }, // Back
-    { x: 25, y: 50, label: "3" }, // Inner (medial)
-    { x: 75, y: 50, label: "4" }, // Outer (lateral)
-    { x: 50, y: 50, label: "5" }, // Center
-  ],
-  ankle: [
-    { x: 50, y: 15, label: "1" }, // Front
-    { x: 50, y: 85, label: "2" }, // Back (Achilles)
-    { x: 25, y: 50, label: "3" }, // Inner (medial)
-    { x: 75, y: 50, label: "4" }, // Outer (lateral)
-  ],
-  foot: [
-    { x: 30, y: 30, label: "1" }, // Heel
-    { x: 50, y: 20, label: "2" }, // Arch
-    { x: 70, y: 15, label: "3" }, // Ball
-    { x: 80, y: 10, label: "4" }, // Toes
-    { x: 50, y: 50, label: "5" }, // Top
-  ],
-  hip: [
-    { x: 50, y: 20, label: "1" }, // Front (groin)
-    { x: 50, y: 80, label: "2" }, // Back (buttock)
-    { x: 30, y: 50, label: "3" }, // Side (lateral)
-    { x: 50, y: 50, label: "4" }, // Center
-  ],
-  head: [
-    { x: 50, y: 20, label: "1" }, // Forehead
-    { x: 30, y: 50, label: "2" }, // Right temple
-    { x: 70, y: 50, label: "3" }, // Left temple
-    { x: 50, y: 80, label: "4" }, // Back of head
-  ],
-  chest: [
-    { x: 50, y: 30, label: "1" }, // Upper chest
-    { x: 50, y: 70, label: "2" }, // Lower chest
-    { x: 30, y: 50, label: "3" }, // Left side
-    { x: 70, y: 50, label: "4" }, // Right side
-    { x: 50, y: 50, label: "5" }, // Center (sternum)
-  ],
-  abdomen: [
-    { x: 50, y: 20, label: "1" }, // Upper abdomen
-    { x: 50, y: 50, label: "2" }, // Middle abdomen
-    { x: 50, y: 80, label: "3" }, // Lower abdomen
-    { x: 30, y: 50, label: "4" }, // Left side
-    { x: 70, y: 50, label: "5" }, // Right side
-  ],
+  switch (bodyPart) {
+    case "foot":
+      return {
+        src: "/Images/foot.png",
+        alt: "Foot pain diagram",
+      };
+    case "wrist":
+    case "hand":
+      return {
+        src: "/Images/Hand Wrist.png",
+        alt: "Hand, fingers, and wrist pain diagram",
+      };
+    case "elbow":
+      return {
+        src: "/Images/Forearm Elbow.png",
+        alt: "Forearm and elbow pain diagram",
+      };
+    case "knee":
+      return {
+        src: "/Images/knee.png",
+        alt: "Knee pain diagram",
+      };
+    case "ankle":
+      return {
+        src: "/Images/lower leg.png",
+        alt: "Lower leg and ankle pain diagram",
+      };
+    case "shoulder":
+      return {
+        src: "/Images/Shoulder.png",
+        alt: "Shoulder pain diagram",
+      };
+    case "head":
+    case "neck":
+      return {
+        src: "/Images/Head Face Neck.png",
+        alt: "Head, face, scalp, neck, and thyroid pain diagram",
+      };
+    case "hip":
+      return {
+        src: "/Images/Hip Upper Leg.png",
+        alt: "Hip and upper leg pain diagram",
+      };
+    case "back":
+    case "upper_back":
+    case "lower_back":
+      return {
+        src: "/Images/Thoracic Lumbar Spine.png",
+        alt: "Thoracic and lumbar spine pain diagram",
+      };
+    case "chest":
+    case "abdomen":
+      return {
+        src: "/Images/trunk front .png",
+        alt: "Chest, breast, abdomen, and anterior neck pain diagram",
+      };
+    default:
+      return {
+        src: "/Images/ankle.png",
+        alt: "Body part pain diagram",
+      };
+  }
 };
 
 export default function BodyPartDiagram({
   bodyPart,
   side,
-  selectedArea,
-  onAreaSelect,
   markers = [],
   onMarkerAdd,
   onMarkersClear,
 }: BodyPartDiagramProps) {
-  const areas = bodyPartAreas[bodyPart] || [];
-  const isLeftSoleDiagram = bodyPart === "foot" && side === "left";
-  const isHeadNeckDiagram = bodyPart === "head" || bodyPart === "neck";
-  const isShoulderDiagram = bodyPart === "shoulder";
-  const isAnkleDiagram = bodyPart === "ankle";
-  const isFootDiagram = bodyPart === "foot";
-  const isHipUpperLegDiagram = bodyPart === "hip";
-  const isTrunkFrontDiagram = bodyPart === "chest" || bodyPart === "abdomen";
-  const isHandWristDiagram = bodyPart === "hand" || bodyPart === "wrist";
-  const isForearmElbowDiagram = bodyPart === "elbow";
-  const isThoracicLumbarSpineDiagram =
-    bodyPart === "back" || bodyPart === "upper_back" || bodyPart === "lower_back";
+  const image = getDiagramImage(bodyPart, side);
 
-  const handleAreaClick = (areaNumber: number) => {
-    if (onAreaSelect) {
-      onAreaSelect(areaNumber);
-    }
-  };
-
-  const handleLeftSoleClick = (event: MouseEvent<HTMLDivElement>) => {
+  const handleDiagramClick = (event: MouseEvent<HTMLDivElement>) => {
     if (!onMarkerAdd) return;
     const rect = event.currentTarget.getBoundingClientRect();
     if (!rect.width || !rect.height) return;
@@ -160,397 +104,13 @@ export default function BodyPartDiagram({
     const y = ((event.clientY - rect.top) / rect.height) * 100;
     const xPct = Math.max(0, Math.min(100, Number(x.toFixed(1))));
     const yPct = Math.max(0, Math.min(100, Number(y.toFixed(1))));
-    onMarkerAdd({ xPct, yPct });
+    onMarkerAdd({
+      part: bodyPart,
+      side,
+      marker: { xPct, yPct },
+    });
   };
 
-  // Simple SVG representation - in a real app, you'd use more detailed anatomical diagrams
-  const renderBodyPart = () => {
-    const width = 200;
-    const height = 200;
-    const viewBox = "0 0 100 100";
-
-    switch (bodyPart) {
-      case "foot":
-        if (side === "left") {
-          return (
-            <div
-              role="button"
-              tabIndex={0}
-              aria-label="Left sole pain diagram"
-              onClick={handleLeftSoleClick}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" || event.key === " ") {
-                  event.preventDefault();
-                }
-              }}
-              className="relative h-full w-full overflow-hidden rounded-xl border border-slate-300 bg-white cursor-crosshair"
-            >
-              <img
-                src="/Images/Left_Sole.png"
-                alt="Left sole pain diagram"
-                className="absolute inset-0 h-full w-full object-contain"
-              />
-              {markers.map((marker, index) => (
-                <div
-                  key={`${marker.xPct}-${marker.yPct}-${index}`}
-                  className="pointer-events-none absolute text-base font-bold text-red-600 drop-shadow-sm"
-                  style={{
-                    left: `${marker.xPct}%`,
-                    top: `${marker.yPct}%`,
-                    transform: "translate(-50%, -50%)",
-                  }}
-                >
-                  X
-                </div>
-              ))}
-            </div>
-          );
-        }
-        return (
-          <div className="relative h-full w-full overflow-hidden rounded-xl border border-slate-300 bg-white">
-            <img
-              src="/Images/foot.png"
-              alt="Foot pain diagram"
-              className="absolute inset-0 h-full w-full object-contain"
-            />
-            <svg viewBox={viewBox} className="absolute inset-0 h-full w-full">
-              {areas.map((area, idx) => (
-                <g key={idx}>
-                  <circle
-                    cx={area.x}
-                    cy={area.y}
-                    r="3"
-                    fill={selectedArea === idx + 1 ? "#10b981" : "#fbbf24"}
-                    stroke="#374151"
-                    strokeWidth="0.75"
-                    className="cursor-pointer hover:opacity-80"
-                    onClick={() => handleAreaClick(idx + 1)}
-                  />
-                  <text
-                    x={area.x}
-                    y={area.y + 2.2}
-                    textAnchor="middle"
-                    className="text-[4px] font-bold fill-slate-900 pointer-events-none"
-                  >
-                    {area.label}
-                  </text>
-                </g>
-              ))}
-            </svg>
-          </div>
-        );
-      case "wrist":
-      case "hand":
-        return (
-          <div className="relative h-full w-full overflow-hidden rounded-xl border border-slate-300 bg-white">
-            <img
-              src="/Images/Hand Wrist.png"
-              alt="Hand, fingers, and wrist pain diagram"
-              className="absolute inset-0 h-full w-full object-contain"
-            />
-            <svg viewBox={viewBox} className="absolute inset-0 h-full w-full">
-              {areas.map((area, idx) => (
-                <g key={idx}>
-                  <circle
-                    cx={area.x}
-                    cy={area.y}
-                    r="3"
-                    fill={selectedArea === idx + 1 ? "#10b981" : "#fbbf24"}
-                    stroke="#374151"
-                    strokeWidth="0.75"
-                    className="cursor-pointer hover:opacity-80"
-                    onClick={() => handleAreaClick(idx + 1)}
-                  />
-                  <text
-                    x={area.x}
-                    y={area.y + 2.2}
-                    textAnchor="middle"
-                    className="text-[4px] font-bold fill-slate-900 pointer-events-none"
-                  >
-                    {area.label}
-                  </text>
-                </g>
-              ))}
-            </svg>
-          </div>
-        );
-      case "elbow":
-        return (
-          <div className="relative h-full w-full overflow-hidden rounded-xl border border-slate-300 bg-white">
-            <img
-              src="/Images/Forearm Elbow.png"
-              alt="Forearm and elbow pain diagram"
-              className="absolute inset-0 h-full w-full object-contain"
-            />
-            <svg viewBox={viewBox} className="absolute inset-0 h-full w-full">
-              {areas.map((area, idx) => (
-                <g key={idx}>
-                  <circle
-                    cx={area.x}
-                    cy={area.y}
-                    r="3"
-                    fill={selectedArea === idx + 1 ? "#10b981" : "#fbbf24"}
-                    stroke="#374151"
-                    strokeWidth="0.75"
-                    className="cursor-pointer hover:opacity-80"
-                    onClick={() => handleAreaClick(idx + 1)}
-                  />
-                  <text
-                    x={area.x}
-                    y={area.y + 2.2}
-                    textAnchor="middle"
-                    className="text-[4px] font-bold fill-slate-900 pointer-events-none"
-                  >
-                    {area.label}
-                  </text>
-                </g>
-              ))}
-            </svg>
-          </div>
-        );
-      case "ankle":
-        return (
-          <div className="relative h-full w-full overflow-hidden rounded-xl border border-slate-300 bg-white">
-            <img
-              src="/Images/ankle.png"
-              alt="Ankle pain diagram"
-              className="absolute inset-0 h-full w-full object-contain"
-            />
-            <svg viewBox={viewBox} className="absolute inset-0 h-full w-full">
-              {areas.map((area, idx) => (
-                <g key={idx}>
-                  <circle
-                    cx={area.x}
-                    cy={area.y}
-                    r="3"
-                    fill={selectedArea === idx + 1 ? "#10b981" : "#fbbf24"}
-                    stroke="#374151"
-                    strokeWidth="0.75"
-                    className="cursor-pointer hover:opacity-80"
-                    onClick={() => handleAreaClick(idx + 1)}
-                  />
-                  <text
-                    x={area.x}
-                    y={area.y + 2.2}
-                    textAnchor="middle"
-                    className="text-[4px] font-bold fill-slate-900 pointer-events-none"
-                  >
-                    {area.label}
-                  </text>
-                </g>
-              ))}
-            </svg>
-          </div>
-        );
-      case "shoulder":
-        return (
-          <div className="relative h-full w-full overflow-hidden rounded-xl border border-slate-300 bg-white">
-            <img
-              src="/Images/Shoulder.png"
-              alt="Shoulder pain diagram"
-              className="absolute inset-0 h-full w-full object-contain"
-            />
-            <svg viewBox={viewBox} className="absolute inset-0 h-full w-full">
-              {areas.map((area, idx) => (
-                <g key={idx}>
-                  <circle
-                    cx={area.x}
-                    cy={area.y}
-                    r="3"
-                    fill={selectedArea === idx + 1 ? "#10b981" : "#fbbf24"}
-                    stroke="#374151"
-                    strokeWidth="0.75"
-                    className="cursor-pointer hover:opacity-80"
-                    onClick={() => handleAreaClick(idx + 1)}
-                  />
-                  <text
-                    x={area.x}
-                    y={area.y + 2.2}
-                    textAnchor="middle"
-                    className="text-[4px] font-bold fill-slate-900 pointer-events-none"
-                  >
-                    {area.label}
-                  </text>
-                </g>
-              ))}
-            </svg>
-          </div>
-        );
-      case "head":
-      case "neck":
-        return (
-          <div className="relative h-full w-full overflow-hidden rounded-xl border border-slate-300 bg-white">
-            <img
-              src="/Images/Head Face Neck.png"
-              alt="Head, face, scalp, neck, and thyroid pain diagram"
-              className="absolute inset-0 h-full w-full object-contain"
-            />
-            <svg viewBox={viewBox} className="absolute inset-0 h-full w-full">
-              {areas.map((area, idx) => (
-                <g key={idx}>
-                  <circle
-                    cx={area.x}
-                    cy={area.y}
-                    r="3"
-                    fill={selectedArea === idx + 1 ? "#10b981" : "#fbbf24"}
-                    stroke="#374151"
-                    strokeWidth="0.75"
-                    className="cursor-pointer hover:opacity-80"
-                    onClick={() => handleAreaClick(idx + 1)}
-                  />
-                  <text
-                    x={area.x}
-                    y={area.y + 2.2}
-                    textAnchor="middle"
-                    className="text-[4px] font-bold fill-slate-900 pointer-events-none"
-                  >
-                    {area.label}
-                  </text>
-                </g>
-              ))}
-            </svg>
-          </div>
-        );
-      case "hip":
-        return (
-          <div className="relative h-full w-full overflow-hidden rounded-xl border border-slate-300 bg-white">
-            <img
-              src="/Images/Hip Upper Leg.png"
-              alt="Hip and upper leg pain diagram"
-              className="absolute inset-0 h-full w-full object-contain"
-            />
-            <svg viewBox={viewBox} className="absolute inset-0 h-full w-full">
-              {areas.map((area, idx) => (
-                <g key={idx}>
-                  <circle
-                    cx={area.x}
-                    cy={area.y}
-                    r="3"
-                    fill={selectedArea === idx + 1 ? "#10b981" : "#fbbf24"}
-                    stroke="#374151"
-                    strokeWidth="0.75"
-                    className="cursor-pointer hover:opacity-80"
-                    onClick={() => handleAreaClick(idx + 1)}
-                  />
-                  <text
-                    x={area.x}
-                    y={area.y + 2.2}
-                    textAnchor="middle"
-                    className="text-[4px] font-bold fill-slate-900 pointer-events-none"
-                  >
-                    {area.label}
-                  </text>
-                </g>
-              ))}
-            </svg>
-          </div>
-        );
-      case "back":
-      case "upper_back":
-      case "lower_back":
-        return (
-          <div className="relative h-full w-full overflow-hidden rounded-xl border border-slate-300 bg-white">
-            <img
-              src="/Images/Thoracic Lumbar Spine.png"
-              alt="Thoracic and lumbar spine pain diagram"
-              className="absolute inset-0 h-full w-full object-contain"
-            />
-            <svg viewBox={viewBox} className="absolute inset-0 h-full w-full">
-              {areas.map((area, idx) => (
-                <g key={idx}>
-                  <circle
-                    cx={area.x}
-                    cy={area.y}
-                    r="3"
-                    fill={selectedArea === idx + 1 ? "#10b981" : "#fbbf24"}
-                    stroke="#374151"
-                    strokeWidth="0.75"
-                    className="cursor-pointer hover:opacity-80"
-                    onClick={() => handleAreaClick(idx + 1)}
-                  />
-                  <text
-                    x={area.x}
-                    y={area.y + 2.2}
-                    textAnchor="middle"
-                    className="text-[4px] font-bold fill-slate-900 pointer-events-none"
-                  >
-                    {area.label}
-                  </text>
-                </g>
-              ))}
-            </svg>
-          </div>
-        );
-      case "chest":
-      case "abdomen":
-        return (
-          <div className="relative h-full w-full overflow-hidden rounded-xl border border-slate-300 bg-white">
-            <img
-              src="/Images/trunk front .png"
-              alt="Chest, breast, abdomen, and anterior neck pain diagram"
-              className="absolute inset-0 h-full w-full object-contain"
-            />
-            <svg viewBox={viewBox} className="absolute inset-0 h-full w-full">
-              {areas.map((area, idx) => (
-                <g key={idx}>
-                  <circle
-                    cx={area.x}
-                    cy={area.y}
-                    r="3"
-                    fill={selectedArea === idx + 1 ? "#10b981" : "#fbbf24"}
-                    stroke="#374151"
-                    strokeWidth="0.75"
-                    className="cursor-pointer hover:opacity-80"
-                    onClick={() => handleAreaClick(idx + 1)}
-                  />
-                  <text
-                    x={area.x}
-                    y={area.y + 2.2}
-                    textAnchor="middle"
-                    className="text-[4px] font-bold fill-slate-900 pointer-events-none"
-                  >
-                    {area.label}
-                  </text>
-                </g>
-              ))}
-            </svg>
-          </div>
-        );
-      default:
-        // Generic shape for other body parts
-        return (
-          <svg viewBox={viewBox} className="w-full h-full">
-            <ellipse cx="50" cy="50" rx="25" ry="35" fill="#e5e7eb" stroke="#374151" strokeWidth="2" />
-            {areas.map((area, idx) => (
-              <g key={idx}>
-                <circle
-                  cx={area.x}
-                  cy={area.y}
-                  r="3"
-                  fill={selectedArea === idx + 1 ? "#10b981" : "#fbbf24"}
-                  stroke="#374151"
-                  strokeWidth="0.75"
-                  className="cursor-pointer hover:opacity-80"
-                  onClick={() => handleAreaClick(idx + 1)}
-                />
-                <text
-                  x={area.x}
-                  y={area.y + 2.2}
-                  textAnchor="middle"
-                  className="text-[4px] font-bold fill-slate-900 pointer-events-none"
-                >
-                  {area.label}
-                </text>
-              </g>
-            ))}
-          </svg>
-        );
-    }
-  };
-
-  // Determine if this body part has left/right sides
-  const hasLeftRight = ["neck", "back", "lower_back", "upper_back", "chest", "abdomen", "shoulder", "elbow", "wrist", "hand", "knee", "ankle", "foot", "hip"].includes(bodyPart);
-  
   return (
     <div className="flex flex-col items-center gap-3 p-4 bg-white rounded-2xl border border-slate-200">
       <div className="text-sm font-semibold text-slate-800">
@@ -558,35 +118,38 @@ export default function BodyPartDiagram({
         {bodyPart.replace("_", " ").replace(/\b\w/g, (l) => l.toUpperCase())}
       </div>
       <div className="flex items-center justify-center w-64 h-64 relative">
-        {renderBodyPart()}
-        {/* Add Left/Right labels on the diagram if applicable */}
-        {hasLeftRight && (
-          <div className="absolute inset-0 pointer-events-none flex items-center justify-between px-1">
-            <div className="text-sm font-bold text-slate-700 bg-white/90 px-2 py-1 rounded-md border border-slate-300 shadow-sm" style={{ marginLeft: '-24px' }}>
-              Your Left
+        <div
+          role="button"
+          tabIndex={0}
+          aria-label={`${image.alt}. Click to place pain markers.`}
+          onClick={handleDiagramClick}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+            }
+          }}
+          className="relative h-full w-full overflow-hidden rounded-xl border border-slate-300 bg-white cursor-crosshair"
+        >
+          <img src={image.src} alt={image.alt} className="absolute inset-0 h-full w-full object-contain" />
+          {markers.map((marker, index) => (
+            <div
+              key={`${marker.xPct}-${marker.yPct}-${index}`}
+              className="pointer-events-none absolute text-base font-bold text-red-600 drop-shadow-sm"
+              style={{
+                left: `${marker.xPct}%`,
+                top: `${marker.yPct}%`,
+                transform: "translate(-50%, -50%)",
+              }}
+            >
+              X
             </div>
-            <div className="text-sm font-bold text-slate-700 bg-white/90 px-2 py-1 rounded-md border border-slate-300 shadow-sm" style={{ marginRight: '-24px' }}>
-              Your Right
-            </div>
-          </div>
-        )}
+          ))}
+        </div>
       </div>
       <div className="text-xs text-slate-600 text-center">
-        {isLeftSoleDiagram
-          ? "Click on the sole image to place X marks where you feel pain"
-          : isHeadNeckDiagram ||
-              isShoulderDiagram ||
-              isAnkleDiagram ||
-              isFootDiagram ||
-              isHipUpperLegDiagram ||
-              isTrunkFrontDiagram ||
-              isHandWristDiagram ||
-              isForearmElbowDiagram ||
-              isThoracicLumbarSpineDiagram
-            ? "Click on a numbered area on the image to indicate where you feel pain"
-          : "Click on a numbered area to indicate where you feel pain"}
+        Click or tap on the image to place X marks where you feel pain.
       </div>
-      {isLeftSoleDiagram && markers.length > 0 && (
+      {markers.length > 0 && (
         <div className="flex items-center gap-2">
           <div className="text-sm font-medium text-emerald-600">
             Marked: {markers.length} point{markers.length === 1 ? "" : "s"}
@@ -602,12 +165,6 @@ export default function BodyPartDiagram({
           )}
         </div>
       )}
-      {selectedArea && (
-        <div className="text-sm font-medium text-emerald-600">
-          Selected: Area {selectedArea}
-        </div>
-      )}
     </div>
   );
 }
-

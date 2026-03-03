@@ -100,7 +100,12 @@ const finalCommentsPromptTranslations: Record<string, string> = {
 const AZURE_TTS_DISABLED_SESSION_KEY = "speech.azureTtsDisabled";
 
 type ChatMessage = InterviewMessage;
-type LeftSoleMarker = { xPct: number; yPct: number };
+type DiagramMarker = { xPct: number; yPct: number };
+type DiagramMarkerSelection = {
+  part: string;
+  side?: "left" | "right";
+  markers: DiagramMarker[];
+};
 
 export default function Home() {
   const router = useRouter();
@@ -288,7 +293,9 @@ export default function Home() {
     }
   };
   const setSelectedDiagramMarkersWithRef = (
-    value: LeftSoleMarker[] | ((prev: LeftSoleMarker[]) => LeftSoleMarker[]),
+    value:
+      | DiagramMarkerSelection[]
+      | ((prev: DiagramMarkerSelection[]) => DiagramMarkerSelection[]),
   ) => {
     if (typeof value === "function") {
       setSelectedDiagramMarkers((prev) => {
@@ -300,6 +307,15 @@ export default function Home() {
     }
     selectedDiagramMarkersRef.current = value;
     setSelectedDiagramMarkers(value);
+  };
+  const getDiagramMarkerKey = (part: string, side?: "left" | "right") =>
+    `${part}::${side ?? "none"}`;
+  const summarizeDiagramMarkerSelection = (selection: DiagramMarkerSelection) => {
+    const markerSummary = selection.markers
+      .map((marker) => `(${Math.round(marker.xPct)},${Math.round(marker.yPct)})`)
+      .join(", ");
+    const partLabel = selection.side ? `${selection.side} ${selection.part}` : selection.part;
+    return `${partLabel} markers: ${markerSummary}`;
   };
   const updateSelectionRef = (target: HTMLTextAreaElement | null) => {
     if (!target) {
@@ -560,9 +576,8 @@ export default function Home() {
   const [addingContent, setAddingContent] = useState<string>("");
   const [showBodyDiagram, setShowBodyDiagram] = useState(false);
   const [selectedBodyParts, setSelectedBodyParts] = useState<Array<{ part: string; side?: "left" | "right" | "both" }>>([]);
-  const [selectedDiagramArea, setSelectedDiagramArea] = useState<number | null>(null);
-  const [selectedDiagramMarkers, setSelectedDiagramMarkers] = useState<LeftSoleMarker[]>([]);
-  const selectedDiagramMarkersRef = useRef<LeftSoleMarker[]>([]);
+  const [selectedDiagramMarkers, setSelectedDiagramMarkers] = useState<DiagramMarkerSelection[]>([]);
+  const selectedDiagramMarkersRef = useRef<DiagramMarkerSelection[]>([]);
   const [endedEarly, setEndedEarly] = useState(false);
   const [interviewStartTime, setInterviewStartTime] = useState<number | null>(null);
   const interviewStartTimeRef = useRef<number | null>(null);
@@ -895,7 +910,7 @@ export default function Home() {
       });
     }
 
-    const currentDiagramMarkers =
+    const currentDiagramMarkerSelections =
       selectedDiagramMarkersRef.current.length > 0
         ? selectedDiagramMarkersRef.current
         : selectedDiagramMarkers;
@@ -906,14 +921,9 @@ export default function Home() {
         selectedParts.map((part) => (part.side ? `${part.side} ${part.part}` : part.part)).join(", "),
       );
     }
-    if (selectedDiagramArea) {
-      bodyDiagramNoteParts.push(`Area ${selectedDiagramArea}`);
-    }
-    if (currentDiagramMarkers.length > 0) {
-      const markerSummary = currentDiagramMarkers
-        .map((marker) => `(${Math.round(marker.xPct)},${Math.round(marker.yPct)})`)
-        .join(", ");
-      bodyDiagramNoteParts.push(`Left sole markers: ${markerSummary}`);
+    for (const markerSelection of currentDiagramMarkerSelections) {
+      if (markerSelection.markers.length === 0) continue;
+      bodyDiagramNoteParts.push(summarizeDiagramMarkerSelection(markerSelection));
     }
 
     const uploads: PatientUploads = {};
@@ -933,10 +943,17 @@ export default function Home() {
       };
     }
 
-    if (selectedParts.length > 0 || selectedDiagramArea || currentDiagramMarkers.length > 0) {
+    const leftFootSelection = currentDiagramMarkerSelections.find(
+      (selection) => selection.part === "foot" && selection.side === "left",
+    );
+    if (selectedParts.length > 0 || currentDiagramMarkerSelections.length > 0) {
       uploads.bodyDiagram = {
-        selectedArea: selectedDiagramArea || undefined,
-        leftSoleMarkers: currentDiagramMarkers.length > 0 ? currentDiagramMarkers : undefined,
+        leftSoleMarkers: leftFootSelection?.markers?.length
+          ? leftFootSelection.markers
+          : undefined,
+        markersByPart: currentDiagramMarkerSelections.length > 0
+          ? currentDiagramMarkerSelections
+          : undefined,
         selectedParts,
         note: bodyDiagramNoteParts.join(" | ") || undefined,
       };
@@ -2203,34 +2220,20 @@ export default function Home() {
     const currentResponse = patientResponseRef.current.trim();
     let trimmed = currentResponse;
 
-    // If diagram selections were made, append them to the response.
-    if (selectedDiagramArea && selectedBodyParts.length > 0) {
-      trimmed = trimmed.trim();
-      if (trimmed) {
-        trimmed += ` (Area ${selectedDiagramArea} on diagram)`;
-      } else {
-        trimmed = `Area ${selectedDiagramArea} on diagram`;
-      }
-      // Clear diagram selection after including it (but keep diagram visible)
-      setSelectedDiagramArea(null);
-      // Don't hide the diagram - keep it visible for reference
-    }
-    const hasLeftFootSelectedPart = selectedBodyParts.some(
-      (part) => part.part === "foot" && part.side === "left",
-    );
-    const currentDiagramMarkers =
+    const currentDiagramMarkerSelections =
       selectedDiagramMarkersRef.current.length > 0
         ? selectedDiagramMarkersRef.current
         : selectedDiagramMarkers;
-    if (currentDiagramMarkers.length > 0 && hasLeftFootSelectedPart) {
-      const markerSummary = currentDiagramMarkers
-        .map((marker) => `(${Math.round(marker.xPct)},${Math.round(marker.yPct)})`)
-        .join(", ");
+    const markerNarrative = currentDiagramMarkerSelections
+      .filter((selection) => selection.markers.length > 0)
+      .map((selection) => summarizeDiagramMarkerSelection(selection))
+      .join(" | ");
+    if (markerNarrative) {
       trimmed = trimmed.trim();
       if (trimmed) {
-        trimmed += ` (Left sole markers: ${markerSummary})`;
+        trimmed += ` (${markerNarrative})`;
       } else {
-        trimmed = `Left sole markers: ${markerSummary}`;
+        trimmed = markerNarrative;
       }
     }
 
@@ -2674,7 +2677,6 @@ export default function Home() {
     setWantsToUploadImage(null);
     setShowBodyDiagram(false);
     setSelectedBodyParts([]);
-    setSelectedDiagramArea(null);
     setSelectedDiagramMarkersWithRef([]);
     setPmhPhoto(null);
     setPmhPreview(null);
@@ -3047,7 +3049,6 @@ export default function Home() {
     setSelectedImagePreview(null);
     setShowBodyDiagram(false);
     setSelectedBodyParts([]);
-    setSelectedDiagramArea(null);
     setSelectedDiagramMarkersWithRef([]);
   }
 
@@ -3205,10 +3206,8 @@ export default function Home() {
       
       // Check if the AI is asking about pain location on a diagram/photo.
       const locationKeywords = [
-        "numbered area",
-        "which area",
         "diagram",
-        "which number",
+        "which area",
         "mark where",
         "mark the area",
         "mark the painful area",
@@ -3271,17 +3270,17 @@ export default function Home() {
           part: bp.part,
           side: bp.side,
         }));
-        const hasLeftFootInNextPrompt = partsToShow.some(
-          (part) => part.part === "foot" && (part.side === "left" || part.side === "both"),
+        const nextMarkerKeys = new Set(
+          partsToShow.map((part) =>
+            getDiagramMarkerKey(part.part, part.side === "both" ? undefined : part.side),
+          ),
         );
         setSelectedBodyParts(partsToShow);
         setShowBodyDiagram(true);
-        setSelectedDiagramArea(null);
-        // Keep existing left-sole markers across follow-up location prompts.
-        // Only clear when the new prompt is not about left/both foot.
-        if (!hasLeftFootInNextPrompt) {
-          setSelectedDiagramMarkersWithRef([]);
-        }
+        // Keep markers only for diagrams that are still being shown.
+        setSelectedDiagramMarkersWithRef((prev) =>
+          prev.filter((selection) => nextMarkerKeys.has(getDiagramMarkerKey(selection.part, selection.side))),
+        );
       } else {
         // Hide diagram unless the assistant is asking location.
         setShowBodyDiagram(false);
@@ -4725,49 +4724,49 @@ export default function Home() {
                       <div className="mt-4 mb-4 flex flex-wrap justify-center gap-4 z-10 relative">
                         {selectedBodyParts.map((bodyPart, index) => {
                           const safeSide = bodyPart.side === "both" ? undefined : bodyPart.side;
-                          const isLeftFootDiagram = bodyPart.part === "foot" && safeSide === "left";
+                          const markerSelection = selectedDiagramMarkers.find(
+                            (selection) =>
+                              selection.part === bodyPart.part && selection.side === safeSide,
+                          );
                           return (
                           <BodyPartDiagram
                             key={`${bodyPart.part}-${bodyPart.side || 'none'}-${index}`}
                             bodyPart={bodyPart.part as any}
                             side={safeSide}
-                            selectedArea={isLeftFootDiagram ? undefined : selectedDiagramArea || undefined}
-                            markers={isLeftFootDiagram ? selectedDiagramMarkers : []}
-                            onMarkerAdd={
-                              isLeftFootDiagram
-                                ? (marker) => {
-                                    setSelectedDiagramMarkersWithRef((prev) =>
-                                      [...prev, marker].slice(0, 30),
-                                    );
-                                    if (!patientResponseRef.current.trim()) {
-                                      const markerResponse = "I marked the painful spot(s) on the left sole diagram.";
-                                      setPatientResponse(markerResponse);
-                                      patientResponseRef.current = markerResponse;
-                                    }
-                                  }
-                                : undefined
-                            }
-                            onMarkersClear={
-                              isLeftFootDiagram
-                                ? () => {
-                                    setSelectedDiagramMarkersWithRef([]);
-                                  }
-                                : undefined
-                            }
-                            onAreaSelect={(area) => {
-                              if (isLeftFootDiagram) return;
-                              setSelectedDiagramArea(area);
-                              // Auto-fill the response with the area number
-                              const areaResponse = `Area ${area}`;
-                              setPatientResponse(areaResponse);
-                              patientResponseRef.current = areaResponse;
-                              // Auto-submit after a brief delay to allow state to update
-                              setTimeout(() => {
-                                const currentStatus = statusRef.current;
-                                if (currentStatus === "awaitingPatient") {
-                                  handlePatientSubmit();
+                            markers={markerSelection?.markers || []}
+                            onMarkerAdd={({ part, side, marker }) => {
+                              setSelectedDiagramMarkersWithRef((prev) => {
+                                const key = getDiagramMarkerKey(part, side);
+                                const indexForPart = prev.findIndex(
+                                  (selection) =>
+                                    getDiagramMarkerKey(selection.part, selection.side) === key,
+                                );
+                                if (indexForPart === -1) {
+                                  return [{ part, side, markers: [marker] }, ...prev];
                                 }
-                              }, 300);
+                                const updated = [...prev];
+                                const existing = updated[indexForPart];
+                                updated[indexForPart] = {
+                                  ...existing,
+                                  markers: [...existing.markers, marker].slice(0, 30),
+                                };
+                                return updated;
+                              });
+                              if (!patientResponseRef.current.trim()) {
+                                const descriptor = side ? `${side} ${part}` : part;
+                                const markerResponse =
+                                  `I marked the painful spot(s) on the ${descriptor} diagram.`;
+                                setPatientResponse(markerResponse);
+                                patientResponseRef.current = markerResponse;
+                              }
+                            }}
+                            onMarkersClear={() => {
+                              setSelectedDiagramMarkersWithRef((prev) =>
+                                prev.filter(
+                                  (selection) =>
+                                    selection.part !== bodyPart.part || selection.side !== safeSide,
+                                ),
+                              );
                             }}
                           />
                         );

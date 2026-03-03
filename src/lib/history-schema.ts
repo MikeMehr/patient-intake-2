@@ -5,6 +5,17 @@ export const patientUploadBodyPartSchema = z.object({
   side: z.enum(["left", "right", "both"]).optional(),
 });
 
+export const diagramMarkerSchema = z.object({
+  xPct: z.number().min(0).max(100),
+  yPct: z.number().min(0).max(100),
+});
+
+export const bodyDiagramMarkersByPartSchema = z.object({
+  part: z.string().min(1).max(120),
+  side: z.enum(["left", "right"]).optional(),
+  markers: z.array(diagramMarkerSchema).max(30),
+});
+
 export const patientUploadsSchema = z.object({
   medPmh: z
     .object({
@@ -21,16 +32,11 @@ export const patientUploadsSchema = z.object({
     .optional(),
   bodyDiagram: z
     .object({
+      // Legacy numbered-area field. Kept for backward compatibility with old sessions.
       selectedArea: z.number().int().positive().optional(),
-      leftSoleMarkers: z
-        .array(
-          z.object({
-            xPct: z.number().min(0).max(100),
-            yPct: z.number().min(0).max(100),
-          }),
-        )
-        .max(30)
-        .optional(),
+      // Legacy left-sole-only field. Kept for backward compatibility with old sessions.
+      leftSoleMarkers: z.array(diagramMarkerSchema).max(30).optional(),
+      markersByPart: z.array(bodyDiagramMarkersByPartSchema).max(30).optional(),
       selectedParts: z.array(patientUploadBodyPartSchema).max(30).optional(),
       note: z.string().min(1).max(500).optional(),
     })

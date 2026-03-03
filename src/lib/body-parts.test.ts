@@ -45,4 +45,10 @@ describe("detectBodyParts", () => {
   it("maps forearm phrasing to elbow", () => {
     expect(detectBodyParts("left forearm pain").some((part) => part.part === "elbow")).toBe(true);
   });
+
+  it("maps lower-leg phrasing to ankle", () => {
+    expect(detectBodyParts("right lower leg pain").some((part) => part.part === "ankle")).toBe(true);
+    expect(detectBodyParts("left calf pain").some((part) => part.part === "ankle")).toBe(true);
+    expect(detectBodyParts("shin pain after running").some((part) => part.part === "ankle")).toBe(true);
+  });
 });

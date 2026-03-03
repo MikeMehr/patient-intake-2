@@ -83,8 +83,8 @@ export function detectBodyParts(text: string): BodyPartInfo[] {
     detected.push({ part: "knee", name: "knee", side });
   }
 
-  // Ankle
-  if (lowerText.match(/\b(ankle|ankles)\b/)) {
+  // Ankle (include lower-leg phrasing)
+  if (lowerText.match(/\b(ankle|ankles|lower\s+leg|shin|shins|calf|calves)\b/)) {
     const side = lowerText.includes("right") ? "right" : lowerText.includes("left") ? "left" : undefined;
     detected.push({ part: "ankle", name: "ankle", side });
   }

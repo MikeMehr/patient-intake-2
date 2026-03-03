@@ -39,6 +39,11 @@ type PatientPayload = {
 };
 
 type MarkerPoint = { xPct: number; yPct: number };
+type DiagramMarkerSelection = {
+  part?: string;
+  side?: string;
+  markers?: MarkerPoint[];
+};
 
 function parseMarkerTuples(text: string): MarkerPoint[] {
   const matches = text.match(/\((\d{1,3})\s*,\s*(\d{1,3})\)/g) || [];
@@ -54,6 +59,41 @@ function parseMarkerTuples(text: string): MarkerPoint[] {
     })
     .filter((marker): marker is MarkerPoint => Boolean(marker));
   return parsed.slice(0, 30);
+}
+
+function getBodyDiagramImage(part: string, side?: string): { src: string; alt: string } {
+  if (part === "foot" && side === "left") {
+    return { src: "/Images/Sole.png", alt: "Left sole pain diagram" };
+  }
+  switch (part) {
+    case "foot":
+      return { src: "/Images/foot.png", alt: "Foot pain diagram" };
+    case "wrist":
+    case "hand":
+      return { src: "/Images/Hand Wrist.png", alt: "Hand, fingers, and wrist pain diagram" };
+    case "elbow":
+      return { src: "/Images/Forearm Elbow.png", alt: "Forearm and elbow pain diagram" };
+    case "knee":
+      return { src: "/Images/knee.png", alt: "Knee pain diagram" };
+    case "ankle":
+      return { src: "/Images/lower leg.png", alt: "Lower leg and ankle pain diagram" };
+    case "shoulder":
+      return { src: "/Images/Shoulder.png", alt: "Shoulder pain diagram" };
+    case "head":
+    case "neck":
+      return { src: "/Images/Head Face Neck.png", alt: "Head, face, scalp, neck, and thyroid pain diagram" };
+    case "hip":
+      return { src: "/Images/Hip Upper Leg.png", alt: "Hip and upper leg pain diagram" };
+    case "back":
+    case "upper_back":
+    case "lower_back":
+      return { src: "/Images/Thoracic Lumbar Spine.png", alt: "Thoracic and lumbar spine pain diagram" };
+    case "chest":
+    case "abdomen":
+      return { src: "/Images/trunk front .png", alt: "Chest, breast, abdomen, and anterior neck pain diagram" };
+    default:
+      return { src: "/Images/ankle.png", alt: "Body part pain diagram" };
+  }
 }
 
 function computeAgeFromDob(dob: string | null): number | null {
@@ -280,6 +320,9 @@ export default function PatientChartPage() {
                   ? (bodyDiagram.selectedParts as Array<{ part?: string; side?: string }>)
                   : [];
                 const bodyDiagramNote = bodyDiagram?.note || "";
+                const structuredMarkersByPart = Array.isArray(bodyDiagram?.markersByPart)
+                  ? (bodyDiagram.markersByPart as DiagramMarkerSelection[])
+                  : [];
                 const structuredMarkers = Array.isArray(bodyDiagram?.leftSoleMarkers)
                   ? (bodyDiagram.leftSoleMarkers as MarkerPoint[])
                   : [];
@@ -292,11 +335,43 @@ export default function PatientChartPage() {
                 const hasLeftSoleSelection = bodyDiagramParts.some(
                   (part) => part?.part === "foot" && (part?.side === "left" || part?.side === "both"),
                 );
-                const shouldShowLeftSole = displayMarkers.length > 0 || hasLeftSoleSelection;
+                const markerSelectionsFromStructured = structuredMarkersByPart
+                  .map((selection) => {
+                    const part = (selection.part || "").trim();
+                    const side = selection.side === "left" || selection.side === "right"
+                      ? selection.side
+                      : undefined;
+                    const markers = Array.isArray(selection.markers)
+                      ? selection.markers.filter(
+                          (marker): marker is MarkerPoint =>
+                            Boolean(
+                              marker &&
+                                Number.isFinite(marker.xPct) &&
+                                Number.isFinite(marker.yPct) &&
+                                marker.xPct >= 0 &&
+                                marker.xPct <= 100 &&
+                                marker.yPct >= 0 &&
+                                marker.yPct <= 100,
+                            ),
+                        )
+                      : [];
+                    if (!part || markers.length === 0) return null;
+                    return { part, side, markers: markers.slice(0, 30) };
+                  })
+                  .filter(
+                    (selection): selection is { part: string; side?: "left" | "right"; markers: MarkerPoint[] } =>
+                      Boolean(selection),
+                  );
+                const shouldShowLegacyLeftSoleOnly =
+                  markerSelectionsFromStructured.length === 0 && (displayMarkers.length > 0 || hasLeftSoleSelection);
+                const markerSelections = shouldShowLegacyLeftSoleOnly
+                  ? [{ part: "foot", side: "left" as const, markers: displayMarkers }]
+                  : markerSelectionsFromStructured;
                 const hasUploadedContext =
                   Boolean(lesionSummary || lesionImageUrl || bodyDiagramNote || bodyDiagramArea) ||
                   bodyDiagramParts.length > 0 ||
-                  shouldShowLeftSole;
+                  markerSelections.length > 0 ||
+                  shouldShowLegacyLeftSoleOnly;
 
                 return (
                   <details key={enc.id} className="group px-6 py-4">
@@ -420,47 +495,52 @@ export default function PatientChartPage() {
                             </div>
                           )}
 
-                          {(shouldShowLeftSole || bodyDiagramArea || bodyDiagramParts.length > 0 || bodyDiagramNote) && (
+                          {(markerSelections.length > 0 || bodyDiagramArea || bodyDiagramParts.length > 0 || bodyDiagramNote) && (
                             <div className="mt-4">
                               <div className="text-sm font-medium text-slate-700">Body Diagram Selection</div>
 
-                              {shouldShowLeftSole && (
-                                <div className="mt-2">
-                                  <p className="text-sm text-slate-700">Left sole pain mapping:</p>
-                                  <div className="relative mt-2 h-72 w-56 overflow-hidden rounded-lg border border-slate-200 bg-white">
-                                    <img
-                                      src="/Images/Left_Sole.png"
-                                      alt="Left sole pain diagram with selected markers"
-                                      className="absolute inset-0 h-full w-full object-contain"
-                                    />
-                                    {displayMarkers.map((marker, index) => (
-                                      <div
-                                        key={`${marker.xPct}-${marker.yPct}-${index}`}
-                                        className="pointer-events-none absolute text-base font-bold text-red-600 drop-shadow-sm"
-                                        style={{
-                                          left: `${marker.xPct}%`,
-                                          top: `${marker.yPct}%`,
-                                          transform: "translate(-50%, -50%)",
-                                        }}
-                                      >
-                                        X
-                                      </div>
-                                    ))}
-                                  </div>
-                                  {displayMarkers.length > 0 ? (
+                              {markerSelections.map((selection, selectionIndex) => {
+                                const image = getBodyDiagramImage(selection.part, selection.side);
+                                const partLabel = selection.side
+                                  ? `${selection.side} ${selection.part}`
+                                  : selection.part;
+                                return (
+                                  <div
+                                    key={`${selection.part}-${selection.side || "none"}-${selectionIndex}`}
+                                    className="mt-2"
+                                  >
+                                    <p className="text-sm text-slate-700">
+                                      {partLabel.replace(/\b\w/g, (c) => c.toUpperCase())} pain mapping:
+                                    </p>
+                                    <div className="relative mt-2 h-72 w-56 overflow-hidden rounded-lg border border-slate-200 bg-white">
+                                      <img
+                                        src={image.src}
+                                        alt={`${image.alt} with selected markers`}
+                                        className="absolute inset-0 h-full w-full object-contain"
+                                      />
+                                      {selection.markers.map((marker, markerIndex) => (
+                                        <div
+                                          key={`${marker.xPct}-${marker.yPct}-${markerIndex}`}
+                                          className="pointer-events-none absolute text-base font-bold text-red-600 drop-shadow-sm"
+                                          style={{
+                                            left: `${marker.xPct}%`,
+                                            top: `${marker.yPct}%`,
+                                            transform: "translate(-50%, -50%)",
+                                          }}
+                                        >
+                                          X
+                                        </div>
+                                      ))}
+                                    </div>
                                     <p className="mt-2 text-xs text-slate-500">
                                       Coordinates:{" "}
-                                      {displayMarkers
+                                      {selection.markers
                                         .map((marker) => `(${Math.round(marker.xPct)}, ${Math.round(marker.yPct)})`)
                                         .join(", ")}
                                     </p>
-                                  ) : (
-                                    <p className="mt-2 text-xs text-slate-500">
-                                      No marker coordinates were submitted; showing selected left sole diagram.
-                                    </p>
-                                  )}
-                                </div>
-                              )}
+                                  </div>
+                                );
+                              })}
 
                               {bodyDiagramArea && (
                                 <p className="mt-2 text-sm text-slate-700">Selected area: {bodyDiagramArea}</p>
