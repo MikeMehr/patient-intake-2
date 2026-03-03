@@ -30,6 +30,7 @@ export function detectBodyParts(text: string): BodyPartInfo[] {
   const lowerText = text.toLowerCase();
   const detected: BodyPartInfo[] = [];
   const hasAnteriorNeckPhrasing = /\b(anterior\s+neck|front\s+of\s+neck)\b/.test(lowerText);
+  const hasThyroidPhrasing = /\bthyroid\b/.test(lowerText);
 
   // Wrist
   if (lowerText.match(/\b(wrist|wrists)\b/)) {
@@ -43,8 +44,8 @@ export function detectBodyParts(text: string): BodyPartInfo[] {
     detected.push({ part: "hand", name: "hand", side });
   }
 
-  // Elbow
-  if (lowerText.match(/\b(elbow|elbows)\b/)) {
+  // Elbow (include forearm phrasing)
+  if (lowerText.match(/\b(elbow|elbows|forearm|forearms)\b/)) {
     const side = lowerText.includes("right") ? "right" : lowerText.includes("left") ? "left" : undefined;
     detected.push({ part: "elbow", name: "elbow", side });
   }
@@ -55,8 +56,9 @@ export function detectBodyParts(text: string): BodyPartInfo[] {
     detected.push({ part: "shoulder", name: "shoulder", side });
   }
 
-  // Neck (include thyroid phrasing; anterior neck is handled in chest/trunk-front mapping)
-  if (!hasAnteriorNeckPhrasing && lowerText.match(/\b(neck|thyroid)\b/)) {
+  // Neck: keep thyroid mapped to neck even with anterior-neck wording.
+  // This preserves neck/MSK location prompting while still allowing trunk-front mapping below.
+  if ((hasThyroidPhrasing || !hasAnteriorNeckPhrasing) && lowerText.match(/\b(neck|thyroid)\b/)) {
     detected.push({ part: "neck", name: "neck" });
   }
 

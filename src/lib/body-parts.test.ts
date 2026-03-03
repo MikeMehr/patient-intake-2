@@ -25,6 +25,12 @@ describe("detectBodyParts", () => {
     expect(detectBodyParts("pain around thyroid area").some((part) => part.part === "neck")).toBe(true);
   });
 
+  it("keeps thyroid mapped to neck with anterior-neck wording", () => {
+    const parts = detectBodyParts("pain at the front of neck near the thyroid");
+    expect(parts.some((part) => part.part === "neck")).toBe(true);
+    expect(parts.some((part) => part.part === "chest")).toBe(true);
+  });
+
   it("maps hip and upper-leg phrasing to hip", () => {
     expect(detectBodyParts("left hip pain").some((part) => part.part === "hip")).toBe(true);
     expect(detectBodyParts("pain in right upper leg").some((part) => part.part === "hip")).toBe(true);
@@ -34,5 +40,9 @@ describe("detectBodyParts", () => {
   it("maps breast and anterior-neck phrasing to chest", () => {
     expect(detectBodyParts("right breast pain").some((part) => part.part === "chest")).toBe(true);
     expect(detectBodyParts("pain at front of neck").some((part) => part.part === "chest")).toBe(true);
+  });
+
+  it("maps forearm phrasing to elbow", () => {
+    expect(detectBodyParts("left forearm pain").some((part) => part.part === "elbow")).toBe(true);
   });
 });
