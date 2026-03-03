@@ -335,33 +335,34 @@ export default function PatientChartPage() {
                 const hasLeftSoleSelection = bodyDiagramParts.some(
                   (part) => part?.part === "foot" && (part?.side === "left" || part?.side === "both"),
                 );
-                const markerSelectionsFromStructured = structuredMarkersByPart
-                  .map((selection) => {
-                    const part = (selection.part || "").trim();
-                    const side = selection.side === "left" || selection.side === "right"
+                const markerSelectionsFromStructured = structuredMarkersByPart.reduce<
+                  Array<{ part: string; side?: "left" | "right"; markers: MarkerPoint[] }>
+                >((acc, selection) => {
+                  const part = (selection.part || "").trim();
+                  const side =
+                    selection.side === "left" || selection.side === "right"
                       ? selection.side
                       : undefined;
-                    const markers = Array.isArray(selection.markers)
-                      ? selection.markers.filter(
-                          (marker): marker is MarkerPoint =>
-                            Boolean(
-                              marker &&
-                                Number.isFinite(marker.xPct) &&
-                                Number.isFinite(marker.yPct) &&
-                                marker.xPct >= 0 &&
-                                marker.xPct <= 100 &&
-                                marker.yPct >= 0 &&
-                                marker.yPct <= 100,
-                            ),
-                        )
-                      : [];
-                    if (!part || markers.length === 0) return null;
-                    return { part, side, markers: markers.slice(0, 30) };
-                  })
-                  .filter(
-                    (selection): selection is { part: string; side?: "left" | "right"; markers: MarkerPoint[] } =>
-                      Boolean(selection),
-                  );
+                  const markers = Array.isArray(selection.markers)
+                    ? selection.markers.filter(
+                        (marker): marker is MarkerPoint =>
+                          Boolean(
+                            marker &&
+                              Number.isFinite(marker.xPct) &&
+                              Number.isFinite(marker.yPct) &&
+                              marker.xPct >= 0 &&
+                              marker.xPct <= 100 &&
+                              marker.yPct >= 0 &&
+                              marker.yPct <= 100,
+                          ),
+                      )
+                    : [];
+                  if (!part || markers.length === 0) {
+                    return acc;
+                  }
+                  acc.push({ part, side, markers: markers.slice(0, 30) });
+                  return acc;
+                }, []);
                 const shouldShowLegacyLeftSoleOnly =
                   markerSelectionsFromStructured.length === 0 && (displayMarkers.length > 0 || hasLeftSoleSelection);
                 const markerSelections = shouldShowLegacyLeftSoleOnly

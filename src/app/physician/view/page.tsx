@@ -1786,32 +1786,32 @@ function PhysicianViewContent() {
   const hasLeftSoleSelection = hpiBodyDiagramParts.some(
     (part) => part.part === "foot" && (part.side === "left" || part.side === "both"),
   );
-  const markerSelectionsFromStructured = (Array.isArray(hpiMarkersByPart) ? hpiMarkersByPart : [])
-    .map((selection) => {
-      const candidate = selection as DiagramMarkerSelection;
-      const part = (candidate.part || "").trim();
-      const side = candidate.side === "left" || candidate.side === "right" ? candidate.side : undefined;
-      const markers = Array.isArray(candidate.markers)
-        ? candidate.markers.filter(
-            (marker): marker is MarkerPoint =>
-              Boolean(
-                marker &&
-                  Number.isFinite(marker.xPct) &&
-                  Number.isFinite(marker.yPct) &&
-                  marker.xPct >= 0 &&
-                  marker.xPct <= 100 &&
-                  marker.yPct >= 0 &&
-                  marker.yPct <= 100,
-              ),
-          )
-        : [];
-      if (!part || markers.length === 0) return null;
-      return { part, side, markers: markers.slice(0, 30) };
-    })
-    .filter(
-      (selection): selection is { part: string; side?: "left" | "right"; markers: MarkerPoint[] } =>
-        Boolean(selection),
-    );
+  const markerSelectionsFromStructured = (Array.isArray(hpiMarkersByPart) ? hpiMarkersByPart : []).reduce<
+    Array<{ part: string; side?: "left" | "right"; markers: MarkerPoint[] }>
+  >((acc, selection) => {
+    const candidate = selection as DiagramMarkerSelection;
+    const part = (candidate.part || "").trim();
+    const side = candidate.side === "left" || candidate.side === "right" ? candidate.side : undefined;
+    const markers = Array.isArray(candidate.markers)
+      ? candidate.markers.filter(
+          (marker): marker is MarkerPoint =>
+            Boolean(
+              marker &&
+                Number.isFinite(marker.xPct) &&
+                Number.isFinite(marker.yPct) &&
+                marker.xPct >= 0 &&
+                marker.xPct <= 100 &&
+                marker.yPct >= 0 &&
+                marker.yPct <= 100,
+            ),
+        )
+      : [];
+    if (!part || markers.length === 0) {
+      return acc;
+    }
+    acc.push({ part, side, markers: markers.slice(0, 30) });
+    return acc;
+  }, []);
   const hpiNarrativeText = [
     hpiBodyDiagramNote,
     session.history.summary || "",
