@@ -110,7 +110,7 @@ export default function OrgAdminLoginPage() {
         </form>
 
         <p className="mt-6 text-xs text-slate-500 text-center">
-          This application is HIPAA-compliant and requires authentication to protect patient health information.
+          This application uses security safeguards and requires authentication to protect patient health information.
         </p>
       </div>
     </div>

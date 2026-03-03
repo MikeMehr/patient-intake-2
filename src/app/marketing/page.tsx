@@ -75,7 +75,7 @@ export default function MarketingPage() {
           </h1>
           <p className="text-xl md:text-2xl text-white/90 mb-8 max-w-3xl mx-auto">
             Significantly reduce your workload and increase productivity with our
-            HIPAA-compliant AI-powered patient intake solution. Designed from
+            security-focused AI-powered patient intake solution. Designed from
             bottom to top for patient confidentiality.
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
@@ -203,9 +203,9 @@ export default function MarketingPage() {
               },
               {
                 stat: "100%",
-                label: "HIPAA Compliant",
+                label: "Security Guardrails",
                 description:
-                  "Built from the ground up with patient confidentiality as the foundation",
+                  "Built from the ground up with patient confidentiality and access control safeguards",
               },
             ].map((benefit, index) => (
               <div key={index} className="text-center">
@@ -346,7 +346,7 @@ export default function MarketingPage() {
         </div>
       </section>
 
-      {/* HIPAA Compliance Section */}
+      {/* Security and Privacy Section */}
       <section
         id="hipaa"
         ref={(el: HTMLDivElement | null) => { sectionRefs.current["hipaa"] = el; }}
@@ -371,12 +371,12 @@ export default function MarketingPage() {
                 </svg>
               </div>
               <h2 className="text-4xl font-bold text-gray-900 mb-4">
-                HIPAA Compliant by Design
+                Privacy and Security by Design
               </h2>
               <p className="text-xl text-gray-700 max-w-3xl mx-auto">
                 Built from the bottom up with patient confidentiality and data
-                security as our foundation. Every feature is designed with HIPAA
-                compliance in mind.
+                security as our foundation. Every feature is designed with
+                healthcare privacy safeguards in mind.
               </p>
             </div>
 
@@ -400,12 +400,12 @@ export default function MarketingPage() {
                 {
                   title: "Business Associate Agreements",
                   description:
-                    "We sign BAAs with all healthcare providers to ensure legal compliance.",
+                    "Vendor BAAs are tracked and must be executed before PHI production workflows are enabled.",
                 },
                 {
                   title: "Regular Security Audits",
                   description:
-                    "Continuous security monitoring and regular third-party audits ensure ongoing compliance.",
+                    "Continuous monitoring and periodic reviews help maintain a strong security baseline.",
                 },
                 {
                   title: "Patient Privacy First",
@@ -427,18 +427,18 @@ export default function MarketingPage() {
 
             <div className="mt-12 text-center">
               <p className="text-lg text-gray-700 mb-4">
-                <strong>Designed from bottom to top</strong> to be compliant with
-                patient confidentiality regulations.
+                <strong>Designed from bottom to top</strong> to protect patient
+                confidentiality and enforce controlled PHI access.
               </p>
               <div className="flex flex-wrap justify-center gap-4">
                 <span className="bg-white px-4 py-2 rounded-full text-sm font-semibold text-gray-700 shadow-md">
-                  HIPAA Compliant
+                  HIPAA Readiness Program
                 </span>
                 <span className="bg-white px-4 py-2 rounded-full text-sm font-semibold text-gray-700 shadow-md">
-                  PIPEDA Compliant
+                  PIPEDA Alignment
                 </span>
                 <span className="bg-white px-4 py-2 rounded-full text-sm font-semibold text-gray-700 shadow-md">
-                  SOC 2 Certified
+                  SOC 2 Roadmap
                 </span>
               </div>
             </div>
@@ -602,9 +602,9 @@ function FAQAccordion() {
 
   const faqs = [
     {
-      question: "Is Health Assist AI really HIPAA compliant?",
+      question: "What is Health Assist AI's HIPAA readiness status?",
       answer:
-        "Yes, absolutely. Health Assist AI was designed from the bottom up with HIPAA compliance as a core requirement. We use end-to-end encryption, implement strict access controls, maintain comprehensive audit logs, and sign Business Associate Agreements (BAAs) with all healthcare providers. We also undergo regular security audits to ensure ongoing compliance.",
+        "Health Assist AI is built with HIPAA-oriented technical safeguards, including encryption, access controls, and audit logging. Formal HIPAA production launch depends on completion of legal and operational controls (including required vendor BAAs and approvals).",
     },
     {
       question: "How customizable is the platform?",
@@ -629,7 +629,7 @@ function FAQAccordion() {
     {
       question: "What happens to patient data if I cancel?",
       answer:
-        "Patient data security and privacy are our top priorities. If you cancel your subscription, you can export all your data in standard formats. We maintain data according to HIPAA requirements and can assist with secure data transfer or deletion as needed.",
+        "Patient data security and privacy are our top priorities. If you cancel your subscription, you can export your data in standard formats, and we can assist with secure transfer or deletion according to your contract and applicable regulations.",
     },
     {
       question: "Do patients need special software or apps?",

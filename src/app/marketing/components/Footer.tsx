@@ -19,7 +19,7 @@ export default function Footer() {
             <Logo className="mb-4" />
             <p className="text-gray-400 mb-4 max-w-md">
               Health Assist AI - Made by physicians, for physicians. 
-              Reducing workload and increasing productivity with HIPAA-compliant 
+              Reducing workload and increasing productivity with security-focused 
               AI-powered patient intake solutions.
             </p>
             <div className="flex space-x-4">

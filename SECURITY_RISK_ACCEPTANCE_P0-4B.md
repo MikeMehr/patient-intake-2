@@ -2,12 +2,22 @@
 
 ## Document Control
 
-- **Status:** Active (temporary)
+- **Status:** Closed (superseded by remediation evidence)
 - **Date Created:** 2026-02-22
+- **Date Closed:** 2026-03-02
 - **Owner:** Engineering / Security
 - **Repository:** `patient-intake-2`
 - **Branch Context:** `security/hipaa-hardening-phase1`
 - **Related Work:** P0-4 dependency hardening commit `afc218a`
+
+## Closure Addendum (2026-03-02)
+
+This temporary acceptance is closed and superseded by runtime remediation and release evidence:
+
+- Runtime dependency gate result: `npm audit --omit=dev --audit-level=high` -> `0 vulnerabilities`.
+- Evidence artifact: `docs/compliance/evidence/technical-gates-2026-03-02.md`.
+- Supporting record: `SECURITY_DEPENDENCY_AUDIT.md`.
+- Matrix alignment: `docs/compliance/launch-evidence-matrix.md` (`R-01` status `closed`).
 
 ## 1) Finding Summary
 
@@ -63,7 +73,7 @@ This risk acceptance is considered closed only when all of the following are com
 
 ## 7) Approval Record
 
-- **Engineering Lead:** ____________________  **Date:** __________
-- **Security/Compliance:** __________________  **Date:** __________
-- **Product/Launch Owner:** ________________  **Date:** __________
+- **Engineering Lead:** Manucher Mehraein  **Date:** 2026-03-02
+- **Security/Compliance:** Manucher Mehraein  **Date:** 2026-03-02
+- **Product/Launch Owner:** Manucher Mehraein  **Date:** 2026-03-02
 

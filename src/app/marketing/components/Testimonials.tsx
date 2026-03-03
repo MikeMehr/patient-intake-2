@@ -8,7 +8,7 @@ export default function Testimonials() {
       location: "Toronto, ON",
       image: "👩‍⚕️",
       rating: 5,
-      text: "Health Assist AI has transformed my practice. I've reduced my administrative time by 40% and can focus more on patient care. The HIPAA compliance gives me complete peace of mind.",
+      text: "Health Assist AI has transformed my practice. I've reduced my administrative time by 40% and can focus more on patient care. The security and privacy safeguards give me complete peace of mind.",
     },
     {
       name: "Dr. Michael Thompson",

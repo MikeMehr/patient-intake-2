@@ -42,7 +42,8 @@ function getPool(): Pool {
 
   pool = new Pool({
     connectionString,
-    ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : false,
+    // PHI launch posture: require certificate validation in production.
+    ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: true } : false,
     max: 20, // Maximum number of clients in the pool
     idleTimeoutMillis: 30000,
     connectionTimeoutMillis: 10000, // Increased to 10 seconds

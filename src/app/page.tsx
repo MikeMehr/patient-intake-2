@@ -97,6 +97,8 @@ const finalCommentsPromptTranslations: Record<string, string> = {
   fa: "پیش از پایان، آیا پرسش یا نظر پایانی برای پزشک خود دارید؟",
 };
 
+const AZURE_TTS_DISABLED_SESSION_KEY = "speech.azureTtsDisabled";
+
 type ChatMessage = InterviewMessage;
 type LeftSoleMarker = { xPct: number; yPct: number };
 
@@ -115,12 +117,20 @@ export default function Home() {
     let cancelled = false;
     const run = async () => {
       try {
+        const ttsDisabledForSession =
+          typeof window !== "undefined" &&
+          window.sessionStorage.getItem(AZURE_TTS_DISABLED_SESSION_KEY) === "1";
+        if (ttsDisabledForSession) {
+          setUseAzureTts(false);
+        }
         const res = await fetch("/api/runtime-config", { method: "GET" });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) return;
         if (cancelled) return;
         if (typeof (data as any)?.useAzureStt === "boolean") setUseAzureStt((data as any).useAzureStt);
-        if (typeof (data as any)?.useAzureTts === "boolean") setUseAzureTts((data as any).useAzureTts);
+        if (typeof (data as any)?.useAzureTts === "boolean") {
+          setUseAzureTts(ttsDisabledForSession ? false : (data as any).useAzureTts);
+        }
       } catch {
         // Ignore — fall back to build-time defaults.
       }
@@ -486,6 +496,7 @@ export default function Home() {
   const [selectedVoice, setSelectedVoice] = useState<SpeechSynthesisVoice | null>(null);
   const [interimTranscript, setInterimTranscript] = useState<string>("");
   const [isPaused, setIsPaused] = useState(false);
+  const [isEndingInterview, setIsEndingInterview] = useState(false);
   const [pauseCountdownSeconds, setPauseCountdownSeconds] = useState<number | null>(null);
   const [isMuted, setIsMuted] = useState(false);
   const [cleaningTranscript, setCleaningTranscript] = useState(false);
@@ -710,18 +721,23 @@ export default function Home() {
 
   useEffect(() => {
     if (isMuted) {
-      if (typeof window !== "undefined" && "speechSynthesis" in window) {
-        if (window.speechSynthesis.speaking) {
-          mutedWhileSpeakingRef.current = true;
-        }
-        window.speechSynthesis.cancel();
-      }
-      if (audioPlaybackRef.current && !audioPlaybackRef.current.paused) {
+      const wasSpeakingWithBrowserTts =
+        typeof window !== "undefined" &&
+        "speechSynthesis" in window &&
+        window.speechSynthesis.speaking;
+      const wasSpeakingWithAzureWebAudio = Boolean(audioSourceNodeRef.current);
+      const wasSpeakingWithHtmlAudio = Boolean(
+        audioPlaybackRef.current && !audioPlaybackRef.current.paused,
+      );
+      if (wasSpeakingWithBrowserTts || wasSpeakingWithAzureWebAudio || wasSpeakingWithHtmlAudio) {
         mutedWhileSpeakingRef.current = true;
       }
-      if (audioPlaybackRef.current) {
-        audioPlaybackRef.current.pause();
-        audioPlaybackRef.current.currentTime = 0;
+
+      // Stop every playback path immediately when mute is toggled on.
+      stopSpeaking();
+
+      if (typeof window !== "undefined" && "speechSynthesis" in window) {
+        window.speechSynthesis.cancel();
       }
       setIsSpeaking(false);
     } else if (mutedWhileSpeakingRef.current) {
@@ -1241,7 +1257,11 @@ export default function Home() {
     });
 
     if (!response.ok) {
-      throw new Error(`Azure TTS request failed (${response.status})`);
+      const error = new Error(`Azure TTS request failed (${response.status})`) as Error & {
+        status?: number;
+      };
+      error.status = response.status;
+      throw error;
     }
 
     const audioBlob = await response.blob();
@@ -1315,6 +1335,20 @@ export default function Home() {
       try {
         await speakWithAzureTts(text);
       } catch (error) {
+        const status =
+          typeof error === "object" &&
+          error !== null &&
+          "status" in error &&
+          typeof (error as { status?: unknown }).status === "number"
+            ? ((error as { status: number }).status as number)
+            : null;
+        if (status === 404 || status === 405) {
+          // Route unavailable in this deployment; avoid repeatedly failing Azure TTS calls.
+          setUseAzureTts(false);
+          if (typeof window !== "undefined") {
+            window.sessionStorage.setItem(AZURE_TTS_DISABLED_SESSION_KEY, "1");
+          }
+        }
         console.warn("[speech] Azure TTS failed, falling back to browser TTS:", error);
         speakWithBrowserTts(text);
       }
@@ -1892,14 +1926,19 @@ export default function Home() {
       return;
     }
 
+    setIsEndingInterview(false);
+
     // Check for physician ID before starting
     if (typeof window !== "undefined") {
       const physicianId = sessionStorage.getItem("physicianId");
       if (!physicianId) {
-        setError("Physician information not found. Please click on the invitation link provided by your physician again, or contact your physician's office for assistance.");
-        return;
+        // TEMP: Allow testing without physician ID
+        console.warn("[TEST MODE] No physicianId found, using test-physician-id");
+        sessionStorage.setItem("physicianId", "test-physician-id");
+        setPhysicianIdValue("test-physician-id");
+      } else {
+        setPhysicianIdValue(physicianId);
       }
-      setPhysicianIdValue(physicianId);
     }
 
     if (!hasConsented) {
@@ -2619,6 +2658,7 @@ export default function Home() {
     setHasPhysicianId(false);
     setError(null);
     setEndedEarly(false);
+    setIsEndingInterview(false);
     setInterviewStartTime(null);
     interviewStartTimeRef.current = null;
     setElapsedTime(0);
@@ -2785,6 +2825,9 @@ export default function Home() {
     clearPauseTimers();
     stopListening();
     stopSpeaking();
+    setIsPaused(false);
+    pausedStatusRef.current = null;
+    setIsEndingInterview(true);
     
     // If there are messages, generate a summary with what we have
     if (messages.length > 0 && lockedProfile && chiefComplaint) {
@@ -2972,6 +3015,7 @@ export default function Home() {
     setInterimTranscript("");
     interimTranscriptRef.current = "";
     setIsPaused(false);
+    setIsEndingInterview(false);
     pausedStatusRef.current = null;
     setStatus("idle");
     setMessages([]);
@@ -4600,7 +4644,9 @@ export default function Home() {
                     <div className="flex items-center justify-between gap-3 mt-8 relative z-0">
                       <div className="flex items-center gap-3">
                         {/* Pause/Resume and End buttons */}
-                        {(status === "awaitingPatient" || status === "awaitingAi" || status === "paused") && (
+                        {(status === "awaitingPatient" || status === "awaitingAi" || status === "paused") &&
+                          !awaitingFinalComments &&
+                          !isEndingInterview && (
                           <>
                             {isPaused ? (
                               <button

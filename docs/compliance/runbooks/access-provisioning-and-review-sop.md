@@ -49,3 +49,13 @@ Define controlled workforce access lifecycle for HIPAA-relevant systems.
 - Access review reports
 - Revocation evidence
 - Exceptions register with owner and expiry
+
+## Current Evidence
+
+- First access review output: `docs/compliance/evidence/access-review-2026-03-02.md`
+
+## Approval Record
+
+- Status: approved
+- Approver: Manucher Mehraein
+- Approval date: 2026-03-02

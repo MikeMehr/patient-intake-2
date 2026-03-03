@@ -7,6 +7,16 @@ export async function POST(request: NextRequest) {
   const started = Date.now();
   let status = 200;
 
+  if (process.env.HIPAA_MODE === "true") {
+    status = 503;
+    const res = NextResponse.json(
+      { error: "Transcript cleanup is disabled in HIPAA mode (external AI blocked)." },
+      { status },
+    );
+    logRequestMeta("/api/speech/clean", requestId, status, Date.now() - started);
+    return res;
+  }
+
   try {
     const body = await request.json();
     const { text, language } = body ?? {};

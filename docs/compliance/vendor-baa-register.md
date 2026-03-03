@@ -7,29 +7,29 @@ Use this register to track all vendors that may process PHI.
 - Vendor: Azure (hosting/infrastructure)
   - PHI touchpoint: application hosting, database/storage, networking
   - BAA required: yes
-  - BAA status: pending_execution
+  - BAA status: executed
   - Owner: Security/Legal
-  - Next review: TODO (date)
-  - Evidence link: TODO
-  - Approver: TODO
+  - Next review: 2026-06-02
+  - Evidence link: `docs/compliance/evidence/baa-execution-log-2026-03-02.md`
+  - Approver: Manucher Mehraein
 
 - Vendor: Resend (email delivery)
-  - PHI touchpoint: invitation workflow metadata/email routing
-  - BAA required: yes if PHI-bearing use
-  - BAA status: pending_execution
+  - PHI touchpoint: PHI-bearing email path disabled in HIPAA production mode
+  - BAA required: no for current PHI-disabled use
+  - BAA status: not_required_documented
   - Owner: Security/Legal
-  - Next review: TODO (date)
-  - Evidence link: TODO
-  - Approver: TODO
+  - Next review: 2026-06-02
+  - Evidence link: `docs/compliance/evidence/baa-execution-log-2026-03-02.md`
+  - Approver: Manucher Mehraein
 
 - Vendor: OpenAI / Google AI providers
-  - PHI touchpoint: model-assisted workflow paths
-  - BAA required: yes when PHI may be transmitted
-  - BAA status: pending_execution
+  - PHI touchpoint: external AI PHI paths disabled in HIPAA production mode
+  - BAA required: no for current PHI-disabled use
+  - BAA status: not_required_documented
   - Owner: Security/Legal/Engineering
-  - Next review: TODO (date)
-  - Evidence link: TODO
-  - Approver: TODO
+  - Next review: 2026-06-02
+  - Evidence link: `docs/compliance/evidence/baa-execution-log-2026-03-02.md`
+  - Approver: Manucher Mehraein
 
 ## Register Rules
 

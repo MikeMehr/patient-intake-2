@@ -140,6 +140,13 @@ export async function POST(request: NextRequest) {
     return res;
   };
 
+  if (process.env.HIPAA_MODE === "true") {
+    return respond(
+      { error: "Lab requisition AI generation is disabled in HIPAA mode (external AI blocked)." },
+      503,
+    );
+  }
+
   try {
     const body = await request.json();
     const {

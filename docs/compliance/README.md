@@ -12,10 +12,14 @@ This directory contains the detailed HIPAA launch compliance documentation for `
   - Training, sanctions policy, officer roles, policy governance, and workforce procedures.
 - `vendor-baa-register.md`
   - Vendor inventory, PHI handling, BAA status, and review cadence.
+- `phi-production-scope.md`
+  - Explicit PHI in-scope workflows, out-of-scope boundaries, and required runtime gates.
 - `launch-evidence-matrix.md`
   - Launch control-to-evidence mapping with owner, status, review date, and closure criteria.
 - `release-candidate-go-no-go.md`
   - Final launch decision template with technical gate results and compliance sign-off fields.
+- `evidence/`
+  - Dated evidence artifacts for access reviews, DR restore drills, key rotation, training attestations, officer designation, and vendor BAA decisions.
 - `runbooks/incident-response-and-breach-notification.md`
 - `runbooks/access-provisioning-and-review-sop.md`
 - `runbooks/backup-disaster-recovery-sop.md`

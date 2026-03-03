@@ -43,3 +43,13 @@ Define secure lifecycle management for encryption keys and secrets used in HIPAA
 - Rotation logs and dates
 - Access approval logs
 - Compromise-response records (if any)
+
+## Current Evidence
+
+- Key inventory and rotation log: `docs/compliance/evidence/key-inventory-and-rotation-log-2026-03-02.md`
+
+## Approval Record
+
+- Status: approved
+- Approver: Manucher Mehraein
+- Approval date: 2026-03-02

@@ -46,3 +46,13 @@ Ensure recoverability of HIPAA-relevant systems and data with verified restore c
 - Restore drill report
 - RTO/RPO compliance report
 - Post-drill corrective action tracking
+
+## Current Evidence
+
+- Restore drill report and RTO/RPO record: `docs/compliance/evidence/restore-drill-2026-03-02.md`
+
+## Approval Record
+
+- Status: approved
+- Approver: Manucher Mehraein
+- Approval date: 2026-03-02

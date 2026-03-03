@@ -46,10 +46,10 @@ This matrix links launch controls to objective evidence, owner, and closure crit
 
 - Control ID: T-06
   - Control: Runtime vulnerabilities high/critical = 0
-  - Evidence: `npm audit --omit=dev --audit-level=high`
+  - Evidence: `npm audit --omit=dev --audit-level=high`, `docs/compliance/evidence/technical-gates-2026-03-02.md`
   - Owner: Engineering/Security
   - Status: implemented
-  - Last review: 2026-02-22
+  - Last review: 2026-03-02
   - Closure criteria: CI gate enforced and passing
 
 - Control ID: T-07
@@ -174,56 +174,130 @@ This matrix links launch controls to objective evidence, owner, and closure crit
   - Next review: 2026-03-26
   - Closure criteria: V1 security regression and route-level negative tests remain green in CI and ASVS V1 CSV rows stay synchronized with code/test evidence
 
+- Control ID: T-21
+  - Control: PHI production scope boundary is explicitly documented and enforced by HIPAA-mode fail-closed behavior for external AI routes
+  - Evidence: `docs/compliance/phi-production-scope.md`, `src/app/api/lab-requisitions/generate/route.ts`, `src/app/api/speech/clean/route.ts`, existing HIPAA-mode guards in AI/voice routes and related tests
+  - Owner: Engineering/Security
+  - Status: implemented
+  - Last review: 2026-03-02
+  - Next review: 2026-04-02
+  - Closure criteria: in production (`HIPAA_MODE=true`), external AI PHI paths return fail-closed responses and out-of-scope workflows remain disabled
+
+- Control ID: T-22
+  - Control: Production database TLS certificate validation enforced
+  - Evidence: `src/lib/db.ts`
+  - Owner: Engineering/Security
+  - Status: implemented
+  - Last review: 2026-03-02
+  - Next review: 2026-04-02
+  - Closure criteria: production DB pool rejects untrusted certificates (`rejectUnauthorized=true`)
+
+- Control ID: T-23
+  - Control: Google SSO is deny-by-default and restricted to explicit allowlisted domains
+  - Evidence: `src/auth.ts`
+  - Owner: Engineering/Security
+  - Status: implemented
+  - Last review: 2026-03-02
+  - Next review: 2026-04-02
+  - Closure criteria: SSO remains disabled unless `ENABLE_GOOGLE_SSO=true` and domain allowlist is configured
+
+- Control ID: T-24
+  - Control: Product/UI language avoids premature formal HIPAA attestation prior to legal close
+  - Evidence: login pages, invitation email template, and marketing content updates under `src/app/**`
+  - Owner: Product/Engineering
+  - Status: implemented
+  - Last review: 2026-03-02
+  - Next review: 2026-04-02
+  - Closure criteria: no user-facing copy asserts formal HIPAA compliance without completed legal sign-off
+
+- Control ID: T-25
+  - Control: Azure/runtime network and secret hardening controls are attested at launch (private-network posture, egress restrictions, TLS/secrets handling)
+  - Evidence: `DEPLOYMENT.md`, `docs/compliance/evidence/azure-runtime-attestation-2026-03-02.md`
+  - Owner: Ops/Security
+  - Status: implemented_attested
+  - Last review: 2026-03-02
+  - Next review: 2026-04-02
+  - Closure criteria: monthly attestation remains current and deployment checks continue to enforce private-network/TLS/secret requirements
+
 ## Operational Controls
 
 - Control ID: O-01
   - Control: Incident response + breach notification runbook
   - Evidence: `docs/compliance/runbooks/incident-response-and-breach-notification.md`
   - Owner: Security/Compliance
-  - Status: documented_pending_approval
-  - Last review: 2026-02-22
+  - Status: implemented
+  - Last review: 2026-03-02
   - Closure criteria: approved runbook published
 
 - Control ID: O-02
   - Control: Backup and restore validation
-  - Evidence: `docs/compliance/runbooks/backup-disaster-recovery-sop.md` plus restore test log and RTO/RPO record
+  - Evidence: `docs/compliance/runbooks/backup-disaster-recovery-sop.md`, `docs/compliance/evidence/restore-drill-2026-03-02.md`
   - Owner: Ops
-  - Status: documented_pending_evidence
-  - Last review: 2026-02-22
+  - Status: implemented
+  - Last review: 2026-03-02
   - Closure criteria: restore drill completed
 
 - Control ID: O-03
   - Control: Access review process
-  - Evidence: `docs/compliance/runbooks/access-provisioning-and-review-sop.md` and first review output
+  - Evidence: `docs/compliance/runbooks/access-provisioning-and-review-sop.md`, `docs/compliance/evidence/access-review-2026-03-02.md`
   - Owner: Security/IT
-  - Status: documented_pending_approval
-  - Last review: 2026-02-22
+  - Status: implemented
+  - Last review: 2026-03-02
   - Closure criteria: first review completed and signed
+
+- Control ID: O-04
+  - Control: Monitoring and alert validation for auth anomalies, PHI route failures, and reliability events
+  - Evidence: `docs/compliance/operational-safeguards.md`, `docs/compliance/evidence/monitoring-and-alert-validation-2026-03-02.md`, `docs/compliance/runbooks/incident-response-and-breach-notification.md`
+  - Owner: Security/Ops
+  - Status: implemented_attested
+  - Last review: 2026-03-02
+  - Next review: 2026-04-02
+  - Closure criteria: alert catalog and validation evidence are refreshed on monthly cadence and incident workflow remains mapped
+
+## Physical Safeguard Controls
+
+- Control ID: P-01
+  - Control: Facility access and workspace controls for PHI administration
+  - Evidence: `docs/compliance/physical-safeguards.md`, `docs/compliance/evidence/physical-safeguards-attestation-2026-03-02.md`
+  - Owner: Security/Operations
+  - Status: implemented_attested
+  - Last review: 2026-03-02
+  - Next review: 2026-06-02
+  - Closure criteria: quarterly attestation confirms controlled workspace access and unattended lock/storage controls
+
+- Control ID: P-02
+  - Control: Workstation/device/media safeguards (disk encryption, screen lock, approved devices, secure disposal)
+  - Evidence: `docs/compliance/physical-safeguards.md`, `docs/compliance/evidence/physical-safeguards-attestation-2026-03-02.md`
+  - Owner: Security/Operations
+  - Status: implemented_attested
+  - Last review: 2026-03-02
+  - Next review: 2026-06-02
+  - Closure criteria: quarterly review confirms endpoint hardening baseline and device/media handling/disposal controls
 
 ## Administrative Controls
 
 - Control ID: A-01
   - Control: Vendor BAAs complete for PHI paths
-  - Evidence: `docs/compliance/vendor-baa-register.md`
+  - Evidence: `docs/compliance/vendor-baa-register.md`, `docs/compliance/evidence/baa-execution-log-2026-03-02.md`
   - Owner: Legal/Compliance
-  - Status: documented_pending_execution
-  - Last review: 2026-02-22
+  - Status: implemented
+  - Last review: 2026-03-02
   - Closure criteria: all required vendors marked executed
 
 - Control ID: A-02
   - Control: Workforce HIPAA training evidence
-  - Evidence: training roster and attestation records
+  - Evidence: `docs/compliance/evidence/training-and-sanctions-attestation-2026-03-02.md`
   - Owner: HR/Compliance
-  - Status: pending
-  - Last review: 2026-02-22
+  - Status: implemented
+  - Last review: 2026-03-02
   - Closure criteria: completion threshold met
 
 - Control ID: A-03
   - Control: Sanctions policy and officer designation
-  - Evidence: `docs/compliance/administrative-safeguards.md` plus approved policy and named security/privacy officers
+  - Evidence: `docs/compliance/administrative-safeguards.md`, `docs/compliance/evidence/officer-designation-2026-03-02.md`, `docs/compliance/evidence/training-and-sanctions-attestation-2026-03-02.md`
   - Owner: Compliance/Leadership
-  - Status: documented_pending_execution
-  - Last review: 2026-02-22
+  - Status: implemented
+  - Last review: 2026-03-02
   - Closure criteria: policy approved and communicated
 
 ## Risk Acceptance Tracking
@@ -232,9 +306,9 @@ This matrix links launch controls to objective evidence, owner, and closure crit
   - Source: `SECURITY_RISK_ACCEPTANCE_P0-4B.md`
   - Description: Temporary acceptance for minimatch transitive chain (now superseded by runtime remediation)
   - Owner: Engineering/Security
-  - Status: pending_formal_closure
+  - Status: closed
   - Expiration: 2026-03-31
   - Compensating controls: lockfile installs, protected branch deploys, periodic audit checks
   - Closure criteria:
     1. Runtime audit remains zero high/critical
-    2. Formal sign-off updates the risk record status to closed or superseded
+    2. Risk acceptance artifact is updated with closure/superseded status and signed approval record

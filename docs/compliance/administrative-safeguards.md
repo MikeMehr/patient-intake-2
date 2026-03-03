@@ -38,3 +38,8 @@
 
 - Keep compliance evidence and approvals versioned and reviewable.
 - Preserve audit/compliance records per policy and legal requirements.
+
+## Current Designation and Attestation Records
+
+- Officer designation record: `docs/compliance/evidence/officer-designation-2026-03-02.md`
+- Training and sanctions attestation: `docs/compliance/evidence/training-and-sanctions-attestation-2026-03-02.md`

@@ -12,7 +12,7 @@ export default function Pricing() {
         "AI-powered history taking",
         "Basic customization",
         "Email support",
-        "HIPAA compliance included",
+        "Security controls included",
       ],
       cta: "Get Started",
       popular: false,
@@ -27,7 +27,7 @@ export default function Pricing() {
         "Advanced AI features",
         "Full customization options",
         "Priority support",
-        "HIPAA compliance included",
+        "Security controls included",
         "Custom workflows",
         "Analytics dashboard",
       ],
@@ -44,7 +44,7 @@ export default function Pricing() {
         "All AI features",
         "White-label options",
         "Dedicated support",
-        "HIPAA compliance included",
+        "Security controls included",
         "Custom integrations",
         "Advanced analytics",
         "SLA guarantee",
@@ -63,7 +63,7 @@ export default function Pricing() {
           </h2>
           <p className="text-xl text-gray-600 max-w-2xl mx-auto">
             Choose the plan that fits your practice. All plans include 
-            HIPAA compliance and patient confidentiality protection.
+            patient confidentiality safeguards and role-based access protection.
           </p>
         </div>
 

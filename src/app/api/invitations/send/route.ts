@@ -283,7 +283,7 @@ export async function POST(request: NextRequest) {
                   <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 30px 0;">
                   
                   <p style="font-size: 12px; color: #64748b; margin-top: 20px;">
-                    This is a secure, HIPAA-compliant patient intake system. Your information will be kept confidential and only shared with your healthcare provider.
+                    This is a secure patient intake system with role-based access controls. Your information will be kept confidential and only shared with your healthcare provider.
                   </p>
                 </div>
               </body>
