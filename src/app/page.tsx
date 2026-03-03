@@ -2140,8 +2140,12 @@ export default function Home() {
       const shouldOfferImage = skinKeywords.some((keyword) =>
         complaintLower.includes(keyword),
       );
-      setShowImagePrompt(shouldOfferImage);
-      setWantsToUploadImage(null);
+      // Preserve any explicit photo prompt set by processTurn(turn).
+      // Only auto-enable for skin complaints; do not force-hide otherwise.
+      if (shouldOfferImage && !selectedImage && !selectedImagePreview) {
+        setShowImagePrompt(true);
+        setWantsToUploadImage(null);
+      }
       if (selectedImagePreview) {
         URL.revokeObjectURL(selectedImagePreview);
       }
