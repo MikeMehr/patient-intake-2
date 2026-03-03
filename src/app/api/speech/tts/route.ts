@@ -20,12 +20,23 @@ function xmlEscape(value: string): string {
 function getAzureTtsEndpoint(): string {
   const explicit = process.env.AZURE_SPEECH_TTS_ENDPOINT?.trim();
   if (explicit) {
-    return explicit.replace(/\/$/, "");
+    try {
+      // Accept either host-only or full URL values; always use origin for TTS.
+      return new URL(explicit).origin;
+    } catch {
+      return explicit.replace(/\/$/, "");
+    }
   }
 
   const generic = process.env.AZURE_SPEECH_ENDPOINT?.trim();
   if (generic) {
-    return generic.replace(/\/$/, "").replace(".stt.", ".tts.");
+    try {
+      const parsed = new URL(generic);
+      parsed.hostname = parsed.hostname.replace(".stt.", ".tts.");
+      return parsed.origin;
+    } catch {
+      return generic.replace(/\/$/, "").replace(".stt.", ".tts.");
+    }
   }
 
   const { region } = getAzureSpeechConfig();
@@ -96,7 +107,9 @@ export async function POST(request: NextRequest) {
   )}</voice></speak>`;
 
   try {
-    const safeEndpoint = assertSafeOutboundUrl(endpoint, { label: "Speech TTS endpoint" }).toString();
+    const safeEndpoint = assertSafeOutboundUrl(endpoint, { label: "Speech TTS endpoint" })
+      .toString()
+      .replace(/\/$/, "");
     const response = await fetch(`${safeEndpoint}/cognitiveservices/v1`, {
       method: "POST",
       headers: {
