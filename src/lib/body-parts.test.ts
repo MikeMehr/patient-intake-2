@@ -15,4 +15,24 @@ describe("detectBodyParts", () => {
     expect(leftHeel.find((part) => part.part === "foot")?.side).toBe("left");
     expect(rightSole.find((part) => part.part === "foot")?.side).toBe("right");
   });
+
+  it("maps scalp and face phrasing to head", () => {
+    expect(detectBodyParts("pain on scalp").some((part) => part.part === "head")).toBe(true);
+    expect(detectBodyParts("facial pain near cheek").some((part) => part.part === "head")).toBe(true);
+  });
+
+  it("maps thyroid phrasing to neck", () => {
+    expect(detectBodyParts("pain around thyroid area").some((part) => part.part === "neck")).toBe(true);
+  });
+
+  it("maps hip and upper-leg phrasing to hip", () => {
+    expect(detectBodyParts("left hip pain").some((part) => part.part === "hip")).toBe(true);
+    expect(detectBodyParts("pain in right upper leg").some((part) => part.part === "hip")).toBe(true);
+    expect(detectBodyParts("thigh ache after running").some((part) => part.part === "hip")).toBe(true);
+  });
+
+  it("maps breast and anterior-neck phrasing to chest", () => {
+    expect(detectBodyParts("right breast pain").some((part) => part.part === "chest")).toBe(true);
+    expect(detectBodyParts("pain at front of neck").some((part) => part.part === "chest")).toBe(true);
+  });
 });

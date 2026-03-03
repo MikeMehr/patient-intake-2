@@ -29,6 +29,7 @@ export interface BodyPartInfo {
 export function detectBodyParts(text: string): BodyPartInfo[] {
   const lowerText = text.toLowerCase();
   const detected: BodyPartInfo[] = [];
+  const hasAnteriorNeckPhrasing = /\b(anterior\s+neck|front\s+of\s+neck)\b/.test(lowerText);
 
   // Wrist
   if (lowerText.match(/\b(wrist|wrists)\b/)) {
@@ -54,8 +55,8 @@ export function detectBodyParts(text: string): BodyPartInfo[] {
     detected.push({ part: "shoulder", name: "shoulder", side });
   }
 
-  // Neck
-  if (lowerText.match(/\b(neck)\b/)) {
+  // Neck (include thyroid phrasing; anterior neck is handled in chest/trunk-front mapping)
+  if (!hasAnteriorNeckPhrasing && lowerText.match(/\b(neck|thyroid)\b/)) {
     detected.push({ part: "neck", name: "neck" });
   }
 
@@ -92,19 +93,22 @@ export function detectBodyParts(text: string): BodyPartInfo[] {
     detected.push({ part: "foot", name: "foot", side });
   }
 
-  // Hip
-  if (lowerText.match(/\b(hip|hips)\b/)) {
+  // Hip (include upper-leg phrasing)
+  if (lowerText.match(/\b(hip|hips|upper\s+leg|upper\s+thigh|thigh|thighs)\b/)) {
     const side = lowerText.includes("right") ? "right" : lowerText.includes("left") ? "left" : undefined;
     detected.push({ part: "hip", name: "hip", side });
   }
 
-  // Head
-  if (lowerText.match(/\b(head|headache|headaches)\b/)) {
+  // Head (include scalp/face phrasing)
+  if (lowerText.match(/\b(head|headache|headaches|scalp|face|facial)\b/)) {
     detected.push({ part: "head", name: "head" });
   }
 
-  // Chest
-  if (lowerText.match(/\b(chest|breastbone|sternum)\b/)) {
+  // Chest (include breast and anterior-neck phrasing for trunk-front diagram)
+  if (
+    lowerText.match(/\b(chest|breast|breasts|breastbone|sternum)\b/) ||
+    hasAnteriorNeckPhrasing
+  ) {
     detected.push({ part: "chest", name: "chest" });
   }
 

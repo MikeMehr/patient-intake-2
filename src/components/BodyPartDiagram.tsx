@@ -135,6 +135,9 @@ export default function BodyPartDiagram({
 }: BodyPartDiagramProps) {
   const areas = bodyPartAreas[bodyPart] || [];
   const isLeftSoleDiagram = bodyPart === "foot" && side === "left";
+  const isHeadNeckDiagram = bodyPart === "head" || bodyPart === "neck";
+  const isHipUpperLegDiagram = bodyPart === "hip";
+  const isTrunkFrontDiagram = bodyPart === "chest" || bodyPart === "abdomen";
 
   const handleAreaClick = (areaNumber: number) => {
     if (onAreaSelect) {
@@ -333,6 +336,110 @@ export default function BodyPartDiagram({
             ))}
           </svg>
         );
+      case "head":
+      case "neck":
+        return (
+          <div className="relative h-full w-full overflow-hidden rounded-xl border border-slate-300 bg-white">
+            <img
+              src="/Images/Head Face Neck.png"
+              alt="Head, face, scalp, neck, and thyroid pain diagram"
+              className="absolute inset-0 h-full w-full object-contain"
+            />
+            <svg viewBox={viewBox} className="absolute inset-0 h-full w-full">
+              {areas.map((area, idx) => (
+                <g key={idx}>
+                  <circle
+                    cx={area.x}
+                    cy={area.y}
+                    r="3"
+                    fill={selectedArea === idx + 1 ? "#10b981" : "#fbbf24"}
+                    stroke="#374151"
+                    strokeWidth="0.75"
+                    className="cursor-pointer hover:opacity-80"
+                    onClick={() => handleAreaClick(idx + 1)}
+                  />
+                  <text
+                    x={area.x}
+                    y={area.y + 2.2}
+                    textAnchor="middle"
+                    className="text-[4px] font-bold fill-slate-900 pointer-events-none"
+                  >
+                    {area.label}
+                  </text>
+                </g>
+              ))}
+            </svg>
+          </div>
+        );
+      case "hip":
+        return (
+          <div className="relative h-full w-full overflow-hidden rounded-xl border border-slate-300 bg-white">
+            <img
+              src="/Images/Hip Upper Leg.png"
+              alt="Hip and upper leg pain diagram"
+              className="absolute inset-0 h-full w-full object-contain"
+            />
+            <svg viewBox={viewBox} className="absolute inset-0 h-full w-full">
+              {areas.map((area, idx) => (
+                <g key={idx}>
+                  <circle
+                    cx={area.x}
+                    cy={area.y}
+                    r="3"
+                    fill={selectedArea === idx + 1 ? "#10b981" : "#fbbf24"}
+                    stroke="#374151"
+                    strokeWidth="0.75"
+                    className="cursor-pointer hover:opacity-80"
+                    onClick={() => handleAreaClick(idx + 1)}
+                  />
+                  <text
+                    x={area.x}
+                    y={area.y + 2.2}
+                    textAnchor="middle"
+                    className="text-[4px] font-bold fill-slate-900 pointer-events-none"
+                  >
+                    {area.label}
+                  </text>
+                </g>
+              ))}
+            </svg>
+          </div>
+        );
+      case "chest":
+      case "abdomen":
+        return (
+          <div className="relative h-full w-full overflow-hidden rounded-xl border border-slate-300 bg-white">
+            <img
+              src="/Images/trunk front .png"
+              alt="Chest, breast, abdomen, and anterior neck pain diagram"
+              className="absolute inset-0 h-full w-full object-contain"
+            />
+            <svg viewBox={viewBox} className="absolute inset-0 h-full w-full">
+              {areas.map((area, idx) => (
+                <g key={idx}>
+                  <circle
+                    cx={area.x}
+                    cy={area.y}
+                    r="3"
+                    fill={selectedArea === idx + 1 ? "#10b981" : "#fbbf24"}
+                    stroke="#374151"
+                    strokeWidth="0.75"
+                    className="cursor-pointer hover:opacity-80"
+                    onClick={() => handleAreaClick(idx + 1)}
+                  />
+                  <text
+                    x={area.x}
+                    y={area.y + 2.2}
+                    textAnchor="middle"
+                    className="text-[4px] font-bold fill-slate-900 pointer-events-none"
+                  >
+                    {area.label}
+                  </text>
+                </g>
+              ))}
+            </svg>
+          </div>
+        );
       default:
         // Generic shape for other body parts
         return (
@@ -391,6 +498,8 @@ export default function BodyPartDiagram({
       <div className="text-xs text-slate-600 text-center">
         {isLeftSoleDiagram
           ? "Click on the sole image to place X marks where you feel pain"
+          : isHeadNeckDiagram || isHipUpperLegDiagram || isTrunkFrontDiagram
+            ? "Click on a numbered area on the image to indicate where you feel pain"
           : "Click on a numbered area to indicate where you feel pain"}
       </div>
       {isLeftSoleDiagram && markers.length > 0 && (
