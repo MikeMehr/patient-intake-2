@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import SessionKeepAlive from "@/components/auth/SessionKeepAlive";
@@ -556,21 +557,32 @@ export default function PhysicianTranscriptionPage() {
       <SessionKeepAlive redirectTo="/auth/login" />
       <div className="min-h-screen bg-slate-100">
         <div className="max-w-7xl mx-auto px-4 py-8 space-y-6">
-          <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6 flex items-center justify-between">
-            <div>
-              <h1 className="text-2xl font-semibold text-slate-900">Physician Transcription</h1>
-              <p className="text-sm text-slate-600 mt-1">
-                Generate a HealthAssist SOAP snapshot for EMR transfer.
-              </p>
-              {snapshotLabel && <p className="text-xs text-amber-700 mt-2">{snapshotLabel}</p>}
+          <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6">
+            <Image
+              src="/LogoFinal.png"
+              alt="Health Assist AI logo"
+              width={260}
+              height={64}
+              className="mx-auto mb-5 h-24 w-[289px] object-cover"
+              style={{ objectPosition: "78% center" }}
+              priority
+            />
+            <div className="flex items-center justify-between">
+              <div>
+                <h1 className="text-2xl font-semibold text-slate-900">Physician Transcription</h1>
+                <p className="text-sm text-slate-600 mt-1">
+                  Generate a HealthAssist SOAP snapshot for EMR transfer.
+                </p>
+                {snapshotLabel && <p className="text-xs text-amber-700 mt-2">{snapshotLabel}</p>}
+              </div>
+              <button
+                type="button"
+                onClick={() => router.push("/physician/dashboard")}
+                className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50"
+              >
+                Back to dashboard
+              </button>
             </div>
-            <button
-              type="button"
-              onClick={() => router.push("/physician/dashboard")}
-              className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50"
-            >
-              Back to dashboard
-            </button>
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

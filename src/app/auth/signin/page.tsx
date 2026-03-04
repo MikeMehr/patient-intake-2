@@ -1,6 +1,7 @@
 "use client";
 
 import { signIn } from "next-auth/react";
+import Image from "next/image";
 import { Suspense, useState } from "react";
 import { useSearchParams } from "next/navigation";
 
@@ -16,6 +17,15 @@ function SignInContent() {
 
   return (
     <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-8 shadow-xl">
+      <Image
+        src="/LogoFinal.png"
+        alt="Health Assist AI logo"
+        width={240}
+        height={56}
+        className="mb-5 h-12 w-[145px] object-cover"
+        style={{ objectPosition: "58% center" }}
+        priority
+      />
       <h1 className="text-2xl font-semibold text-slate-900 mb-2">
         Physician Sign In
       </h1>

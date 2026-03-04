@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 
 export default function LoginPage() {
@@ -137,6 +138,15 @@ export default function LoginPage() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-slate-100 px-4">
       <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-8 shadow-xl">
+        <Image
+          src="/LogoFinal.png"
+          alt="Health Assist AI logo"
+          width={380}
+          height={88}
+          className="mx-auto mb-5 h-[72px] w-[228px] object-cover"
+          style={{ objectPosition: "58% center" }}
+          priority
+        />
         <h1 className="text-2xl font-semibold text-slate-900 mb-2">
           Physician Sign In
         </h1>

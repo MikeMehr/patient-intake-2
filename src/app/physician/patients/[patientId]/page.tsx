@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 
@@ -254,6 +255,15 @@ export default function PatientChartPage() {
     <div className="min-h-screen bg-slate-100">
       <div className="max-w-5xl mx-auto px-4 py-8">
         <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6 mb-6">
+          <Image
+            src="/LogoFinal.png"
+            alt="Health Assist AI logo"
+            width={260}
+            height={64}
+            className="mx-auto mb-5 h-24 w-[289px] object-cover"
+            style={{ objectPosition: "78% center" }}
+            priority
+          />
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
               <h1 className="text-2xl font-semibold text-slate-900 truncate">{patient.fullName}</h1>

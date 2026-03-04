@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import Image from "next/image";
 import { useParams, useRouter } from "next/navigation";
 
 type OpenInvitationResponse = {
@@ -274,6 +275,15 @@ export default function InvitationTokenIntakePage() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-slate-100 px-4">
       <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <Image
+          src="/LogoFinal.png"
+          alt="Health Assist AI logo"
+          width={240}
+          height={56}
+          className="mx-auto mb-5 h-20 w-[245px] object-cover"
+          style={{ objectPosition: "78% center" }}
+          priority
+        />
         <h1 className="text-xl font-semibold text-slate-900">Verify your invitation</h1>
         <p className="mt-2 text-sm text-slate-600">
           {openInfo

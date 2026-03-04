@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import type { PatientSession } from "@/lib/session-store";
 import SessionKeepAlive from "@/components/auth/SessionKeepAlive";
@@ -601,6 +602,15 @@ export default function PhysicianDashboard() {
         <div className="max-w-7xl mx-auto px-4 py-8">
         {/* Header */}
         <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6 mb-6">
+          <Image
+            src="/LogoFinal.png"
+            alt="Health Assist AI logo"
+            width={280}
+            height={64}
+            className="mx-auto mb-5 h-24 w-[289px] object-cover"
+            style={{ objectPosition: "78% center" }}
+            priority
+          />
           <div className="flex justify-between items-center">
             <div>
               <h1 className="text-2xl font-semibold text-slate-900">
