@@ -16,6 +16,12 @@ import {
 } from "@/lib/password-breach";
 import { CONTEXT_PASSWORD_ERROR, isPasswordContextWordSafe } from "@/lib/password-context";
 
+function isUniqueConstraintError(error: unknown): boolean {
+  return typeof error === "object" && error !== null && "code" in error
+    ? (error as { code?: string }).code === "23505"
+    : false;
+}
+
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -197,8 +203,24 @@ export async function PUT(
       values.push(clinicName.trim());
     }
     if (email !== undefined) {
+      const normalizedEmail = email ? email.toLowerCase().trim() : null;
+      if (normalizedEmail) {
+        const duplicateEmail = await query<{ id: string }>(
+          `SELECT id FROM physicians WHERE email = $1 AND id <> $2`,
+          [normalizedEmail, id]
+        );
+        if (duplicateEmail.rows.length > 0) {
+          status = 409;
+          const res = NextResponse.json(
+            { error: "Email already registered" },
+            { status }
+          );
+          logRequestMeta("/api/org/providers/[id]", requestId, status, Date.now() - started);
+          return res;
+        }
+      }
       updates.push(`email = $${paramIndex++}`);
-      values.push(email ? email.toLowerCase().trim() : null);
+      values.push(normalizedEmail);
     }
     if (phone !== undefined) {
       updates.push(`phone = $${paramIndex++}`);
@@ -236,6 +258,15 @@ export async function PUT(
     logRequestMeta("/api/org/providers/[id]", requestId, status, Date.now() - started);
     return res;
   } catch (error) {
+    if (isUniqueConstraintError(error)) {
+      status = 409;
+      const res = NextResponse.json(
+        { error: "Email already registered" },
+        { status }
+      );
+      logRequestMeta("/api/org/providers/[id]", requestId, status, Date.now() - started);
+      return res;
+    }
     status = 500;
     console.error("[org/providers/[id]] PUT Error");
     const res = NextResponse.json(

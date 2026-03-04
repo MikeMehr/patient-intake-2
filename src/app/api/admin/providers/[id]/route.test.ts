@@ -109,4 +109,23 @@ describe("PUT /api/admin/providers/[id]", () => {
     expect(response.status).toBe(400);
     expect(queryMock).toHaveBeenCalledTimes(1);
   });
+
+  it("returns 409 when updating to an email already used by another provider", async () => {
+    queryMock
+      .mockResolvedValueOnce({ rows: [{ id: "provider-1" }] }) // existing provider check
+      .mockResolvedValueOnce({ rows: [{ id: "provider-2" }] }); // duplicate email check
+
+    const { PUT } = await import("./route");
+    const response = await PUT(
+      new Request("http://localhost/api/admin/providers/provider-1", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: "taken@example.com" }),
+      }) as any,
+      { params: Promise.resolve({ id: "provider-1" }) } as any,
+    );
+
+    expect(response.status).toBe(409);
+    expect(queryMock).toHaveBeenCalledTimes(2);
+  });
 });
