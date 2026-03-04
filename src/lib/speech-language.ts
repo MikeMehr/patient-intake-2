@@ -1,16 +1,30 @@
 export const languageOptions = [
   { value: "en", label: "English (default)" },
+  { value: "am", label: "Amharic" },
+  { value: "ar", label: "Arabic" },
+  { value: "bn", label: "Bengali" },
+  { value: "bs", label: "Bosnian" },
+  { value: "my", label: "Burmese" },
+  { value: "yue", label: "Cantonese" },
+  { value: "chr", label: "Cherokee" },
+  { value: "cr", label: "Cree" },
+  { value: "hr", label: "Croatian" },
+  { value: "cs", label: "Czech" },
+  { value: "nl", label: "Dutch" },
   { value: "es", label: "Spanish" },
+  { value: "fa", label: "Farsi (Persian)" },
   { value: "fr", label: "French" },
   { value: "de", label: "German" },
+  { value: "el", label: "Greek" },
+  { value: "gu", label: "Gujarati" },
+  { value: "he", label: "Hebrew" },
+  { value: "hi", label: "Hindi" },
+  { value: "hu", label: "Hungarian" },
   { value: "it", label: "Italian" },
-  { value: "pt", label: "Portuguese" },
-  { value: "zh", label: "Chinese (Simplified)" },
   { value: "ja", label: "Japanese" },
   { value: "ko", label: "Korean" },
-  { value: "ar", label: "Arabic" },
-  { value: "hi", label: "Hindi" },
-  { value: "fa", label: "Farsi (Persian)" },
+  { value: "pt", label: "Portuguese" },
+  { value: "zh", label: "Chinese (Simplified)" },
 ] as const;
 
 export const supportedLanguageNames: Record<string, string> =
@@ -24,8 +38,32 @@ export function getSpeechLocale(code: string): string {
   switch (normalized) {
     case "en":
       return "en-US";
+    case "am":
+      return "am-ET";
+    case "bn":
+      return "bn-IN";
+    case "bs":
+      return "bs-BA";
+    case "my":
+      return "my-MM";
+    case "yue":
+      return "yue-HK";
+    case "hr":
+      return "hr-HR";
+    case "cs":
+      return "cs-CZ";
+    case "nl":
+      return "nl-NL";
     case "fa":
       return "fa-IR";
+    case "el":
+      return "el-GR";
+    case "gu":
+      return "gu-IN";
+    case "he":
+      return "he-IL";
+    case "hu":
+      return "hu-HU";
     case "zh":
       return "zh-CN";
     case "pt":
