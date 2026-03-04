@@ -280,7 +280,7 @@ export default function InvitationTokenIntakePage() {
           alt="Health Assist AI logo"
           width={240}
           height={56}
-          className="mx-auto mb-5 h-20 w-[245px] object-cover"
+          className="mx-auto mb-5 h-10 w-[122px] object-cover sm:h-20 sm:w-[245px]"
           style={{ objectPosition: "78% center" }}
           priority
         />

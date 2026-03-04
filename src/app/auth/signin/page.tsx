@@ -22,7 +22,7 @@ function SignInContent() {
         alt="Health Assist AI logo"
         width={240}
         height={56}
-        className="mb-5 h-12 w-[145px] object-cover"
+        className="mb-5 h-6 w-[72px] object-cover sm:h-12 sm:w-[145px]"
         style={{ objectPosition: "58% center" }}
         priority
       />

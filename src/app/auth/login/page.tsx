@@ -143,7 +143,7 @@ export default function LoginPage() {
           alt="Health Assist AI logo"
           width={380}
           height={88}
-          className="mx-auto mb-5 h-[72px] w-[228px] object-cover"
+          className="mx-auto mb-5 h-[36px] w-[114px] object-cover sm:h-[72px] sm:w-[228px]"
           style={{ objectPosition: "58% center" }}
           priority
         />
