@@ -13,7 +13,6 @@ import {
   normalizeLanguageCode,
 } from "@/lib/speech-language";
 import BodyPartDiagram from "@/components/BodyPartDiagram";
-import CollapsibleSection from "@/components/CollapsibleSection";
 import NextImage from "next/image";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -51,7 +50,7 @@ declare global {
 type Status = "idle" | "awaitingAi" | "awaitingPatient" | "saving" | "complete" | "paused";
 
 const statusCopy: Record<Status, string> = {
-  idle: "Enter the chief complaint and baseline history to begin.",
+  idle: "Enter your main concern to begin the interview.",
   awaitingAi: "Aurora is composing the next question...",
   awaitingPatient: "Answer the assistant's latest question below.",
   saving: "Finalizing and saving your interview...",
@@ -444,6 +443,23 @@ export default function Home() {
     setDraftTranscriptRaw("");
     draftTranscriptRawRef.current = "";
   };
+  const markDiagramAsDone = () => {
+    const completionText = "Diagram Marked.";
+    const existingDraft = draftTranscriptRef.current.trim();
+    const alreadyMarked = existingDraft.toLowerCase().includes(completionText.toLowerCase());
+    const nextDraft = !existingDraft
+      ? completionText
+      : alreadyMarked
+        ? existingDraft
+        : `${existingDraft} ${completionText}`;
+
+    if (hasPendingSubmission && nextDraft.length > 0) {
+      setHasPendingSubmission(false);
+    }
+    setDraftTranscript(nextDraft);
+    setShowReview(true);
+    setMicWarning(null);
+  };
   const [result, setResult] = useState<HistoryResponse | null>(null);
   const [translatedSummary, setTranslatedSummary] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -469,6 +485,7 @@ export default function Home() {
   const [currentMedications, setCurrentMedications] = useState("");
   const [allergies, setAllergies] = useState("");
   const [familyDoctor, setFamilyDoctor] = useState("");
+  const [showAdditionalMedicalHistory, setShowAdditionalMedicalHistory] = useState(false);
   const [pharmacyNameInput, setPharmacyNameInput] = useState("");
   const [pharmacyNumberInput, setPharmacyNumberInput] = useState("");
   const [pharmacyAddressInput, setPharmacyAddressInput] = useState("");
@@ -3430,7 +3447,7 @@ export default function Home() {
               </div>
             )}
             <form onSubmit={handleStart} onKeyDown={handlePreInterviewEnterKeyDown} className="space-y-4">
-              <div className="rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-3 text-sm text-slate-800">
+              <div className="rounded-2xl border border-slate-200 bg-slate-50/70 px-3.5 py-2.5 text-[13px] leading-[1.35rem] text-slate-800">
                 <label className="flex items-start gap-3">
                   <input
                     type="checkbox"
@@ -3523,7 +3540,7 @@ export default function Home() {
                 </p>
               )}
 
-              <div className="space-y-2">
+              <div className="space-y-1">
                 <label
                   htmlFor="chief-complaint"
                   className="text-sm font-medium text-slate-800"
@@ -3533,8 +3550,8 @@ export default function Home() {
                 <textarea
                   id="chief-complaint"
                   name="chiefComplaint"
-                  rows={3}
-                  placeholder="e.g., 3 days of sore throat with fevers and swollen glands"
+                  rows={2}
+                  placeholder="Describe your main concern (e.g., “3 days of sore throat with fever”)"
                   value={chiefComplaint}
                   disabled={status !== "idle"}
                   onChange={(event) => setChiefComplaint(event.target.value)}
@@ -3573,7 +3590,7 @@ export default function Home() {
                   htmlFor="age"
                   className="text-sm font-medium text-slate-800"
                 >
-                  Age (Required)
+                  Age (years)
                 </label>
                   <input
                     id="age"
@@ -3589,6 +3606,458 @@ export default function Home() {
                     required
                   />
                 </div>
+              </div>
+
+              <div className="space-y-2">
+                <button
+                  type="button"
+                  aria-expanded={showAdditionalMedicalHistory}
+                  onClick={() => setShowAdditionalMedicalHistory((prev) => !prev)}
+                  className="w-full cursor-pointer rounded-xl px-1 py-1 text-left transition-colors hover:bg-slate-50/80"
+                >
+                  <span className="inline-flex items-center gap-2 text-sm font-medium text-slate-800">
+                    <span
+                      className={[
+                        "text-[17px] font-semibold leading-none text-slate-500 transition-transform",
+                        showAdditionalMedicalHistory ? "rotate-90" : "",
+                      ].join(" ")}
+                      aria-hidden="true"
+                    >
+                      ▸
+                    </span>
+                    <span>Add Medical History (Optional)</span>
+                  </span>
+                </button>
+                {!showAdditionalMedicalHistory && (
+                  <p className="ml-6 -mt-0.5 text-xs text-slate-500">
+                    Allergies, medications, past history, and pharmacy.
+                  </p>
+                )}
+
+                {showAdditionalMedicalHistory && (
+                  <div className="space-y-5 pt-1">
+                    <div className="space-y-2">
+                      <label
+                        htmlFor="allergies"
+                        className="text-sm font-medium text-slate-800"
+                      >
+                        Drug allergies
+                      </label>
+                      <textarea
+                        id="allergies"
+                        name="allergies"
+                        rows={2}
+                        value={allergies}
+                        disabled={status !== "idle"}
+                        onChange={(event) => setAllergies(event.target.value)}
+                        placeholder='e.g., penicillin (rash) (leave blank for "None")'
+                        className="w-full rounded-2xl border border-slate-200 bg-slate-50/60 px-4 py-3 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white disabled:cursor-not-allowed disabled:opacity-70"
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-medium text-slate-800">
+                            Past Medical History (Optional)
+                          </p>
+                          <p className="text-xs text-slate-500">
+                            Type it in, or upload a photo/PDF and we’ll extract it below.
+                          </p>
+                        </div>
+                        {pmhPreview ? (
+                          <img
+                            src={pmhPreview}
+                            alt="PMH preview"
+                            className="h-12 w-12 rounded-lg border border-slate-200 object-cover"
+                          />
+                        ) : null}
+                      </div>
+                      <textarea
+                        id="pmh"
+                        name="pmh"
+                        rows={2}
+                        value={pmh}
+                        disabled={status !== "idle"}
+                        onChange={(event) => setPmh(event.target.value)}
+                        aria-label="Past medical history"
+                        placeholder="e.g., asthma, hypertension on lisinopril (leave blank for 'None')"
+                        className="w-full rounded-2xl border border-slate-200 bg-slate-50/60 px-4 py-3 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white disabled:cursor-not-allowed disabled:opacity-70"
+                      />
+                      <div className="space-y-2">
+                        <input
+                          type="file"
+                          accept="image/*,.pdf"
+                          disabled={status !== "idle"}
+                          aria-label="Upload PMH photo or PDF"
+                          onChange={async (event) => {
+                            const file = event.target.files?.[0] ?? null;
+                            if (pmhPreview) {
+                              URL.revokeObjectURL(pmhPreview);
+                            }
+                            if (!file) {
+                              setPmhPhoto(null);
+                              setPmhPreview(null);
+                              setPmhExtracted("");
+                              return;
+                            }
+                            if (file.size > 6 * 1024 * 1024) {
+                              setError(
+                                "File too large (max 6MB). Please choose a smaller/clearer image or PDF."
+                              );
+                              return;
+                            }
+                            const previewUrl = URL.createObjectURL(file);
+                            setPmhPhoto(file);
+                            setPmhPreview(previewUrl);
+                            setAnalyzingPmh(true);
+                            setPmhExtracted("");
+                            try {
+                              const formData = new FormData();
+                              formData.append("image", file);
+                              const response = await fetch("/api/analyze-med-pmh", {
+                                method: "POST",
+                                body: formData,
+                              });
+                              if (!response.ok) {
+                                const errJson = await response.json().catch(() => ({}));
+                                throw new Error(
+                                  errJson.error || errJson.details || "Failed to analyze photo."
+                                );
+                              }
+                              const data = (await response.json()) as { summary?: string };
+                              if (data.summary) {
+                                const summary = data.summary.trim();
+                                const parsed = parseMedPmhSummary(summary);
+                                const pmhOnly = parsed.pmh || summary;
+                                setPmhExtracted(pmhOnly);
+                                if (!pmh.trim()) {
+                                  setPmh(pmhOnly);
+                                }
+                              }
+                            } catch (err) {
+                              console.error("[page.tsx] PMH photo analysis error:", err);
+                              setError(
+                                err instanceof Error
+                                  ? err.message
+                                  : "Failed to analyze the photo. Please try again."
+                              );
+                            } finally {
+                              setAnalyzingPmh(false);
+                            }
+                          }}
+                          className="block w-full text-sm text-slate-700 file:mr-3 file:rounded-md file:border file:border-slate-200 file:bg-white file:px-3 file:py-2 file:text-sm file:font-medium file:text-slate-700 hover:file:border-slate-300 hover:file:bg-slate-50 disabled:cursor-not-allowed"
+                        />
+                        {analyzingPmh && <p className="text-xs text-slate-500">Analyzing file…</p>}
+                        <div className="space-y-2">
+                          <label className="text-sm font-medium text-slate-800">
+                            AI-extracted PMH (editable)
+                          </label>
+                          <textarea
+                            rows={3}
+                            value={pmhExtracted}
+                            disabled={status !== "idle"}
+                            onChange={(e) => setPmhExtracted(e.target.value)}
+                            placeholder="Extracted PMH will appear here. Edit freely."
+                            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white disabled:cursor-not-allowed disabled:opacity-70"
+                          />
+                          <p className="text-[11px] text-slate-500">
+                            You can edit this text. It will be shared with the assistant and your clinician.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-medium text-slate-800">
+                            Current medications (Optional)
+                          </p>
+                          <p className="text-xs text-slate-500">
+                            Type them in, or upload a photo/PDF and we’ll extract them below.
+                          </p>
+                        </div>
+                        {medListPreview ? (
+                          <img
+                            src={medListPreview}
+                            alt="Medication list preview"
+                            className="h-12 w-12 rounded-lg border border-slate-200 object-cover"
+                          />
+                        ) : null}
+                      </div>
+                      <textarea
+                        id="current-medications"
+                        name="currentMedications"
+                        rows={2}
+                        value={currentMedications}
+                        disabled={status !== "idle"}
+                        onChange={(event) => setCurrentMedications(event.target.value)}
+                        aria-label="Current medications"
+                        placeholder="e.g., amlodipine 5 mg daily, metformin 500 mg BID (leave blank for 'None')"
+                        className="w-full rounded-2xl border border-slate-200 bg-slate-50/60 px-4 py-3 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white disabled:cursor-not-allowed disabled:opacity-70"
+                      />
+                      <div className="space-y-2">
+                        <input
+                          type="file"
+                          accept="image/*,.pdf"
+                          disabled={status !== "idle"}
+                          aria-label="Upload medication list photo or PDF"
+                          onChange={async (event) => {
+                            const file = event.target.files?.[0] ?? null;
+                            if (medListPreview) {
+                              URL.revokeObjectURL(medListPreview);
+                            }
+                            if (!file) {
+                              setMedListPhoto(null);
+                              setMedListPreview(null);
+                              setMedListExtracted("");
+                              return;
+                            }
+                            if (file.size > 6 * 1024 * 1024) {
+                              setError(
+                                "File too large (max 6MB). Please choose a smaller/clearer image or PDF."
+                              );
+                              return;
+                            }
+                            const previewUrl = URL.createObjectURL(file);
+                            setMedListPhoto(file);
+                            setMedListPreview(previewUrl);
+                            setAnalyzingMedList(true);
+                            setMedListExtracted("");
+                            try {
+                              const formData = new FormData();
+                              formData.append("image", file);
+                              const response = await fetch("/api/analyze-med-pmh", {
+                                method: "POST",
+                                body: formData,
+                              });
+                              if (!response.ok) {
+                                const errJson = await response.json().catch(() => ({}));
+                                throw new Error(
+                                  errJson.error || errJson.details || "Failed to analyze photo."
+                                );
+                              }
+                              const data = (await response.json()) as { summary?: string };
+                              if (data.summary) {
+                                const summary = data.summary.trim();
+                                const parsed = parseMedPmhSummary(summary);
+                                const medsOnly = parsed.meds || summary;
+                                setMedListExtracted(medsOnly);
+                                if (!currentMedications.trim()) {
+                                  setCurrentMedications(medsOnly);
+                                }
+                              }
+                            } catch (err) {
+                              console.error("[page.tsx] Med list photo analysis error:", err);
+                              setError(
+                                err instanceof Error
+                                  ? err.message
+                                  : "Failed to analyze the photo. Please try again."
+                              );
+                            } finally {
+                              setAnalyzingMedList(false);
+                            }
+                          }}
+                          className="block w-full text-sm text-slate-700 file:mr-3 file:rounded-md file:border file:border-slate-200 file:bg-white file:px-3 file:py-2 file:text-sm file:font-medium file:text-slate-700 hover:file:border-slate-300 hover:file:bg-slate-50 disabled:cursor-not-allowed"
+                        />
+                        {analyzingMedList && <p className="text-xs text-slate-500">Analyzing file…</p>}
+                        <div className="space-y-2">
+                          <label className="text-sm font-medium text-slate-800">
+                            AI-extracted medications (editable)
+                          </label>
+                          <textarea
+                            rows={3}
+                            value={medListExtracted}
+                            disabled={status !== "idle"}
+                            onChange={(e) => setMedListExtracted(e.target.value)}
+                            placeholder="Extracted medications will appear here. Edit freely."
+                            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white disabled:cursor-not-allowed disabled:opacity-70"
+                          />
+                          <p className="text-[11px] text-slate-500">
+                            You can edit this text. It will be shared with the assistant and your clinician.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <label
+                        htmlFor="family-history"
+                        className="text-sm font-medium text-slate-800"
+                      >
+                        Family history (Optional)
+                      </label>
+                      <textarea
+                        id="family-history"
+                        name="familyHistory"
+                        rows={2}
+                        value={familyHistory}
+                        disabled={status !== "idle"}
+                        onChange={(event) => setFamilyHistory(event.target.value)}
+                        aria-label="Family history"
+                        placeholder="e.g., mother with HTN, father with type 2 diabetes (leave blank for 'None')"
+                        className="w-full rounded-2xl border border-slate-200 bg-slate-50/60 px-4 py-3 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white disabled:cursor-not-allowed disabled:opacity-70"
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <label
+                        htmlFor="family-doctor"
+                        className="text-sm font-medium text-slate-800"
+                      >
+                        Family doctor (Optional)
+                      </label>
+                      <input
+                        id="family-doctor"
+                        name="familyDoctor"
+                        type="text"
+                        value={familyDoctor}
+                        disabled={status !== "idle"}
+                        onChange={(event) => setFamilyDoctor(event.target.value)}
+                        aria-label="Family doctor"
+                        placeholder='e.g., Dr. Kim Lee (leave blank for "Unknown")'
+                        className="w-full rounded-2xl border border-slate-200 bg-slate-50/60 px-4 py-3 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white disabled:cursor-not-allowed disabled:opacity-70"
+                      />
+                    </div>
+
+                    <div className="space-y-4">
+                      <label
+                        htmlFor="pharmacy-name"
+                        className="text-sm font-medium text-slate-800"
+                      >
+                        Pharmacy (Optional)
+                      </label>
+                      <div className="space-y-2">
+                        <label
+                          htmlFor="pharmacy-name"
+                          className="text-sm font-medium text-slate-800"
+                        >
+                          Pharmacy name (Optional)
+                        </label>
+                        <input
+                          id="pharmacy-name"
+                          name="pharmacyName"
+                          type="text"
+                          value={pharmacyNameInput}
+                          disabled={status !== "idle"}
+                          onChange={(event) => setPharmacyNameInput(event.target.value)}
+                          placeholder="e.g., Shoppers Drug Mart"
+                          className="w-full rounded-2xl border border-slate-200 bg-slate-50/60 px-4 py-3 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white disabled:cursor-not-allowed disabled:opacity-70"
+                        />
+                      </div>
+
+                      <div className="space-y-2">
+                        <label
+                          htmlFor="pharmacy-number"
+                          className="text-sm font-medium text-slate-800"
+                        >
+                          Pharmacy number
+                        </label>
+                        <input
+                          id="pharmacy-number"
+                          name="pharmacyNumber"
+                          type="text"
+                          value={pharmacyNumberInput}
+                          disabled={status !== "idle"}
+                          onChange={(event) => setPharmacyNumberInput(event.target.value)}
+                          placeholder="e.g., 12345"
+                          className="w-full rounded-2xl border border-slate-200 bg-slate-50/60 px-4 py-3 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white disabled:cursor-not-allowed disabled:opacity-70"
+                        />
+                      </div>
+
+                      <div className="space-y-2">
+                        <label
+                          htmlFor="pharmacy-address"
+                          className="text-sm font-medium text-slate-800"
+                        >
+                          Pharmacy street address
+                        </label>
+                        <input
+                          id="pharmacy-address"
+                          name="pharmacyAddress"
+                          type="text"
+                          value={pharmacyAddressInput}
+                          disabled={status !== "idle"}
+                          onChange={(event) => setPharmacyAddressInput(event.target.value)}
+                          placeholder="e.g., 1221 Lynn Valley Rd"
+                          className="w-full rounded-2xl border border-slate-200 bg-slate-50/60 px-4 py-3 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white disabled:cursor-not-allowed disabled:opacity-70"
+                        />
+                      </div>
+
+                      <div className="space-y-2">
+                        <label
+                          htmlFor="pharmacy-city"
+                          className="text-sm font-medium text-slate-800"
+                        >
+                          Pharmacy city
+                        </label>
+                        <input
+                          id="pharmacy-city"
+                          name="pharmacyCity"
+                          type="text"
+                          value={pharmacyCityInput}
+                          disabled={status !== "idle"}
+                          onChange={(event) => setPharmacyCityInput(event.target.value)}
+                          placeholder="e.g., North Vancouver"
+                          className="w-full rounded-2xl border border-slate-200 bg-slate-50/60 px-4 py-3 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white disabled:cursor-not-allowed disabled:opacity-70"
+                        />
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-3">
+                        <button
+                          type="button"
+                          onClick={() => searchPharmacy()}
+                          className="inline-flex items-center justify-center rounded-2xl bg-emerald-600 px-5 py-3 text-base font-semibold text-white transition hover:bg-emerald-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600 disabled:cursor-not-allowed disabled:bg-emerald-300"
+                          disabled={
+                            status !== "idle" ||
+                            searchingPharmacy ||
+                            pharmacyNameInput.trim() === "" ||
+                            pharmacyAddressInput.trim() === ""
+                          }
+                        >
+                          {searchingPharmacy ? "Searching..." : "Search pharmacy"}
+                        </button>
+                        <p className="text-xs text-slate-500">
+                          Provide the pharmacy details, then search to auto-fill phone and fax.
+                        </p>
+                      </div>
+
+                      {pharmacyInfo && (
+                        <div className="rounded-2xl border border-emerald-200 bg-emerald-50/80 px-4 py-3 text-sm">
+                          <p className="font-semibold text-emerald-900">{pharmacyInfo.name}</p>
+                          <p className="mt-1 text-emerald-800">{pharmacyInfo.address}</p>
+                          {pharmacyInfo.phone ? (
+                            <p className="mt-1 text-emerald-700">
+                              <span className="font-medium">Tel:</span> {pharmacyInfo.phone}
+                            </p>
+                          ) : (
+                            <p className="mt-1 text-xs italic text-slate-500">
+                              Phone number not available from search
+                            </p>
+                          )}
+                          {pharmacyInfo.fax ? (
+                            <p className="mt-1 text-emerald-700">
+                              <span className="font-medium">Fax:</span> {pharmacyInfo.fax}
+                            </p>
+                          ) : (
+                            <p className="mt-1 text-xs italic text-slate-500">
+                              Fax number not available from search
+                            </p>
+                          )}
+                        </div>
+                      )}
+                      {!pharmacyInfo &&
+                        !searchingPharmacy &&
+                        (pharmacyNameInput.trim() !== "" ||
+                          pharmacyAddressInput.trim() !== "") && (
+                        <p className="text-xs italic text-slate-500">
+                          Pharmacy information will appear here after search. If not found, you can manually enter the details.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="space-y-2">
@@ -3617,449 +4086,27 @@ export default function Home() {
                 </p>
               </div>
 
-              <div className="space-y-2">
-                <label
-                  htmlFor="allergies"
-                  className="text-sm font-medium text-slate-800"
-                >
-                  Drug allergies
-                </label>
-                <textarea
-                  id="allergies"
-                  name="allergies"
-                  rows={2}
-                  value={allergies}
-                  disabled={status !== "idle"}
-                  onChange={(event) => setAllergies(event.target.value)}
-                  placeholder='e.g., penicillin (rash) (leave blank for "None")'
-                  className="w-full rounded-2xl border border-slate-200 bg-slate-50/60 px-4 py-3 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white disabled:cursor-not-allowed disabled:opacity-70"
-                />
-              </div>
-
-              <CollapsibleSection
-                id="pmh-section"
-                title="Past Medical History (Optional)"
-                description="Type it in, or upload a photo/PDF and we’ll extract it below."
-                previewText={pmh.trim() ? pmh : pmhExtracted}
-                headerRight={
-                  pmhPreview ? (
-                    <img
-                      src={pmhPreview}
-                      alt="PMH preview"
-                      className="h-12 w-12 rounded-lg object-cover border border-slate-200"
-                    />
-                  ) : null
-                }
-              >
-                <div className="space-y-2">
-                  <textarea
-                    id="pmh"
-                    name="pmh"
-                    rows={2}
-                    value={pmh}
-                    disabled={status !== "idle"}
-                    onChange={(event) => setPmh(event.target.value)}
-                    aria-label="Past medical history"
-                    placeholder="e.g., asthma, hypertension on lisinopril (leave blank for 'None')"
-                    className="w-full rounded-2xl border border-slate-200 bg-slate-50/60 px-4 py-3 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white disabled:cursor-not-allowed disabled:opacity-70"
-                  />
-                  <div className="space-y-2">
-                    <input
-                      type="file"
-                      accept="image/*,.pdf"
-                      disabled={status !== "idle"}
-                      aria-label="Upload PMH photo or PDF"
-                      onChange={async (event) => {
-                        const file = event.target.files?.[0] ?? null;
-                        if (pmhPreview) {
-                          URL.revokeObjectURL(pmhPreview);
-                        }
-                        if (!file) {
-                          setPmhPhoto(null);
-                          setPmhPreview(null);
-                          setPmhExtracted("");
-                          return;
-                        }
-                        if (file.size > 6 * 1024 * 1024) {
-                          setError(
-                            "File too large (max 6MB). Please choose a smaller/clearer image or PDF."
-                          );
-                          return;
-                        }
-                        const previewUrl = URL.createObjectURL(file);
-                        setPmhPhoto(file);
-                        setPmhPreview(previewUrl);
-                        setAnalyzingPmh(true);
-                        setPmhExtracted("");
-                        try {
-                          const formData = new FormData();
-                          formData.append("image", file);
-                          const response = await fetch("/api/analyze-med-pmh", {
-                            method: "POST",
-                            body: formData,
-                          });
-                          if (!response.ok) {
-                            const errJson = await response.json().catch(() => ({}));
-                            throw new Error(
-                              errJson.error || errJson.details || "Failed to analyze photo."
-                            );
-                          }
-                          const data = (await response.json()) as { summary?: string };
-                          if (data.summary) {
-                            const summary = data.summary.trim();
-                            const parsed = parseMedPmhSummary(summary);
-                            const pmhOnly = parsed.pmh || summary;
-                            setPmhExtracted(pmhOnly);
-                            if (!pmh.trim()) {
-                              setPmh(pmhOnly);
-                            }
-                          }
-                        } catch (err) {
-                          console.error("[page.tsx] PMH photo analysis error:", err);
-                          setError(
-                            err instanceof Error
-                              ? err.message
-                              : "Failed to analyze the photo. Please try again."
-                          );
-                        } finally {
-                          setAnalyzingPmh(false);
-                        }
-                      }}
-                      className="block w-full text-sm text-slate-700 file:mr-3 file:rounded-md file:border file:border-slate-200 file:bg-white file:px-3 file:py-2 file:text-sm file:font-medium file:text-slate-700 hover:file:border-slate-300 hover:file:bg-slate-50 disabled:cursor-not-allowed"
-                    />
-                    {analyzingPmh && <p className="text-xs text-slate-500">Analyzing file…</p>}
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium text-slate-800">
-                        AI-extracted PMH (editable)
-                      </label>
-                      <textarea
-                        rows={3}
-                        value={pmhExtracted}
-                        disabled={status !== "idle"}
-                        onChange={(e) => setPmhExtracted(e.target.value)}
-                        placeholder="Extracted PMH will appear here. Edit freely."
-                        className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white disabled:cursor-not-allowed disabled:opacity-70"
-                      />
-                      <p className="text-[11px] text-slate-500">
-                        You can edit this text. It will be shared with the assistant and your clinician.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </CollapsibleSection>
-
-              <CollapsibleSection
-                id="current-medications-section"
-                title="Current medications (Optional)"
-                description="Type them in, or upload a photo/PDF and we’ll extract them below."
-                previewText={currentMedications.trim() ? currentMedications : medListExtracted}
-                headerRight={
-                  medListPreview ? (
-                    <img
-                      src={medListPreview}
-                      alt="Medication list preview"
-                      className="h-12 w-12 rounded-lg object-cover border border-slate-200"
-                    />
-                  ) : null
-                }
-              >
-                <div className="space-y-2">
-                  <textarea
-                    id="current-medications"
-                    name="currentMedications"
-                    rows={2}
-                    value={currentMedications}
-                    disabled={status !== "idle"}
-                    onChange={(event) => setCurrentMedications(event.target.value)}
-                    aria-label="Current medications"
-                    placeholder="e.g., amlodipine 5 mg daily, metformin 500 mg BID (leave blank for 'None')"
-                    className="w-full rounded-2xl border border-slate-200 bg-slate-50/60 px-4 py-3 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white disabled:cursor-not-allowed disabled:opacity-70"
-                  />
-                  <div className="space-y-2">
-                    <input
-                      type="file"
-                      accept="image/*,.pdf"
-                      disabled={status !== "idle"}
-                      aria-label="Upload medication list photo or PDF"
-                      onChange={async (event) => {
-                        const file = event.target.files?.[0] ?? null;
-                        if (medListPreview) {
-                          URL.revokeObjectURL(medListPreview);
-                        }
-                        if (!file) {
-                          setMedListPhoto(null);
-                          setMedListPreview(null);
-                          setMedListExtracted("");
-                          return;
-                        }
-                        if (file.size > 6 * 1024 * 1024) {
-                          setError(
-                            "File too large (max 6MB). Please choose a smaller/clearer image or PDF."
-                          );
-                          return;
-                        }
-                        const previewUrl = URL.createObjectURL(file);
-                        setMedListPhoto(file);
-                        setMedListPreview(previewUrl);
-                        setAnalyzingMedList(true);
-                        setMedListExtracted("");
-                        try {
-                          const formData = new FormData();
-                          formData.append("image", file);
-                          const response = await fetch("/api/analyze-med-pmh", {
-                            method: "POST",
-                            body: formData,
-                          });
-                          if (!response.ok) {
-                            const errJson = await response.json().catch(() => ({}));
-                            throw new Error(
-                              errJson.error || errJson.details || "Failed to analyze photo."
-                            );
-                          }
-                          const data = (await response.json()) as { summary?: string };
-                          if (data.summary) {
-                            const summary = data.summary.trim();
-                            const parsed = parseMedPmhSummary(summary);
-                            const medsOnly = parsed.meds || summary;
-                            setMedListExtracted(medsOnly);
-                            if (!currentMedications.trim()) {
-                              setCurrentMedications(medsOnly);
-                            }
-                          }
-                        } catch (err) {
-                          console.error("[page.tsx] Med list photo analysis error:", err);
-                          setError(
-                            err instanceof Error
-                              ? err.message
-                              : "Failed to analyze the photo. Please try again."
-                          );
-                        } finally {
-                          setAnalyzingMedList(false);
-                        }
-                      }}
-                      className="block w-full text-sm text-slate-700 file:mr-3 file:rounded-md file:border file:border-slate-200 file:bg-white file:px-3 file:py-2 file:text-sm file:font-medium file:text-slate-700 hover:file:border-slate-300 hover:file:bg-slate-50 disabled:cursor-not-allowed"
-                    />
-                    {analyzingMedList && <p className="text-xs text-slate-500">Analyzing file…</p>}
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium text-slate-800">
-                        AI-extracted medications (editable)
-                      </label>
-                      <textarea
-                        rows={3}
-                        value={medListExtracted}
-                        disabled={status !== "idle"}
-                        onChange={(e) => setMedListExtracted(e.target.value)}
-                        placeholder="Extracted medications will appear here. Edit freely."
-                        className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white disabled:cursor-not-allowed disabled:opacity-70"
-                      />
-                      <p className="text-[11px] text-slate-500">
-                        You can edit this text. It will be shared with the assistant and your clinician.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </CollapsibleSection>
-
-              <CollapsibleSection
-                id="family-history-section"
-                title="Family history (Optional)"
-                previewText={familyHistory}
-              >
-                <textarea
-                  id="family-history"
-                  name="familyHistory"
-                  rows={2}
-                  value={familyHistory}
-                  disabled={status !== "idle"}
-                  onChange={(event) => setFamilyHistory(event.target.value)}
-                  aria-label="Family history"
-                  placeholder="e.g., mother with HTN, father with type 2 diabetes (leave blank for 'None')"
-                  className="w-full rounded-2xl border border-slate-200 bg-slate-50/60 px-4 py-3 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white disabled:cursor-not-allowed disabled:opacity-70"
-                />
-              </CollapsibleSection>
-
-              <CollapsibleSection
-                id="family-doctor-section"
-                title="Family doctor (Optional)"
-                previewText={familyDoctor}
-              >
-                <input
-                  id="family-doctor"
-                  name="familyDoctor"
-                  type="text"
-                  value={familyDoctor}
-                  disabled={status !== "idle"}
-                  onChange={(event) => setFamilyDoctor(event.target.value)}
-                  aria-label="Family doctor"
-                  placeholder='e.g., Dr. Kim Lee (leave blank for "Unknown")'
-                  className="w-full rounded-2xl border border-slate-200 bg-slate-50/60 px-4 py-3 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white disabled:cursor-not-allowed disabled:opacity-70"
-                />
-              </CollapsibleSection>
-
-              <CollapsibleSection
-                id="pharmacy-section"
-                title="Pharmacy (Optional)"
-                previewText={
-                  pharmacyInfo?.name ||
-                  [pharmacyNameInput, pharmacyAddressInput, pharmacyCityInput]
-                    .map((v) => v.trim())
-                    .filter(Boolean)
-                    .join(" • ")
-                }
-              >
-                <div className="space-y-4">
-                  <div className="space-y-2">
-                    <label
-                      htmlFor="pharmacy-name"
-                      className="text-sm font-medium text-slate-800"
-                    >
-                      Pharmacy name (Optional)
-                    </label>
-                    <input
-                      id="pharmacy-name"
-                      name="pharmacyName"
-                      type="text"
-                      value={pharmacyNameInput}
-                      disabled={status !== "idle"}
-                      onChange={(event) => setPharmacyNameInput(event.target.value)}
-                      placeholder="e.g., Shoppers Drug Mart"
-                      className="w-full rounded-2xl border border-slate-200 bg-slate-50/60 px-4 py-3 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white disabled:cursor-not-allowed disabled:opacity-70"
-                    />
-                  </div>
-
-                <div className="space-y-2">
-                  <label
-                    htmlFor="pharmacy-number"
-                    className="text-sm font-medium text-slate-800"
-                  >
-                    Pharmacy number
-                  </label>
-                  <input
-                    id="pharmacy-number"
-                    name="pharmacyNumber"
-                    type="text"
-                    value={pharmacyNumberInput}
-                    disabled={status !== "idle"}
-                    onChange={(event) => setPharmacyNumberInput(event.target.value)}
-                    placeholder="e.g., 12345"
-                    className="w-full rounded-2xl border border-slate-200 bg-slate-50/60 px-4 py-3 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white disabled:cursor-not-allowed disabled:opacity-70"
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <label
-                    htmlFor="pharmacy-address"
-                    className="text-sm font-medium text-slate-800"
-                  >
-                    Pharmacy street address
-                  </label>
-                  <input
-                    id="pharmacy-address"
-                    name="pharmacyAddress"
-                    type="text"
-                    value={pharmacyAddressInput}
-                    disabled={status !== "idle"}
-                    onChange={(event) => setPharmacyAddressInput(event.target.value)}
-                    placeholder="e.g., 1221 Lynn Valley Rd"
-                    className="w-full rounded-2xl border border-slate-200 bg-slate-50/60 px-4 py-3 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white disabled:cursor-not-allowed disabled:opacity-70"
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <label
-                    htmlFor="pharmacy-city"
-                    className="text-sm font-medium text-slate-800"
-                  >
-                    Pharmacy city
-                  </label>
-                  <input
-                    id="pharmacy-city"
-                    name="pharmacyCity"
-                    type="text"
-                    value={pharmacyCityInput}
-                    disabled={status !== "idle"}
-                    onChange={(event) => setPharmacyCityInput(event.target.value)}
-                    placeholder="e.g., North Vancouver"
-                    className="w-full rounded-2xl border border-slate-200 bg-slate-50/60 px-4 py-3 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white disabled:cursor-not-allowed disabled:opacity-70"
-                  />
-                </div>
-
-                <div className="flex flex-wrap items-center gap-3">
-                  <button
-                    type="button"
-                    onClick={() => searchPharmacy()}
-                    className="inline-flex items-center justify-center rounded-2xl bg-emerald-600 px-5 py-3 text-base font-semibold text-white transition hover:bg-emerald-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600 disabled:cursor-not-allowed disabled:bg-emerald-300"
-                    disabled={
-                      status !== "idle" ||
-                      searchingPharmacy ||
-                      pharmacyNameInput.trim() === "" ||
-                      pharmacyAddressInput.trim() === ""
-                    }
-                  >
-                    {searchingPharmacy ? "Searching..." : "Search pharmacy"}
-                  </button>
-                  <p className="text-xs text-slate-500">
-                    Provide the pharmacy details, then search to auto-fill phone and fax.
-                  </p>
-                </div>
-
-                {pharmacyInfo && (
-                  <div className="rounded-2xl border border-emerald-200 bg-emerald-50/80 px-4 py-3 text-sm">
-                    <p className="font-semibold text-emerald-900">{pharmacyInfo.name}</p>
-                    <p className="mt-1 text-emerald-800">{pharmacyInfo.address}</p>
-                    {pharmacyInfo.phone ? (
-                      <p className="mt-1 text-emerald-700">
-                        <span className="font-medium">Tel:</span> {pharmacyInfo.phone}
-                      </p>
-                    ) : (
-                      <p className="mt-1 text-xs text-slate-500 italic">
-                        Phone number not available from search
-                      </p>
-                    )}
-                    {pharmacyInfo.fax ? (
-                      <p className="mt-1 text-emerald-700">
-                        <span className="font-medium">Fax:</span> {pharmacyInfo.fax}
-                      </p>
-                    ) : (
-                      <p className="mt-1 text-xs text-slate-500 italic">
-                        Fax number not available from search
-                      </p>
-                    )}
-                  </div>
-                )}
-                  {!pharmacyInfo &&
-                    !searchingPharmacy &&
-                    (pharmacyNameInput.trim() !== "" ||
-                      pharmacyAddressInput.trim() !== "") && (
-                    <p className="text-xs text-slate-500 italic">
-                      Pharmacy information will appear here after search. If not found, you can manually enter the details.
-                    </p>
+              <div className="text-xs text-slate-400" aria-live="polite">
+                <p className="flex flex-wrap items-center gap-1">
+                  <span>Interview status:</span>
+                  <span>{statusCopy[status]}</span>
+                  {interviewStartTime && status !== "idle" && (
+                    <>
+                      <span aria-hidden="true">•</span>
+                      <span>
+                        ⏱ {Math.floor(elapsedTime / 60)}:
+                        {(elapsedTime % 60).toString().padStart(2, "0")}
+                      </span>
+                    </>
                   )}
-                </div>
-              </CollapsibleSection>
-
-              <div
-                className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/80 px-5 py-4 text-sm text-slate-600"
-                aria-live="polite"
-              >
-                <p className="font-medium text-slate-700">Status</p>
-                <p className="mt-1 text-slate-500">{statusCopy[status]}</p>
-                {interviewStartTime && status !== "idle" && (
-                  <p className="mt-2 text-xs font-medium text-slate-600">
-                    ⏱️ {Math.floor(elapsedTime / 60)}:{(elapsedTime % 60).toString().padStart(2, "0")}
-                  </p>
-                )}
-                {error && (
-                  <p className="mt-2 rounded-xl bg-red-50 px-3 py-2 text-sm text-red-600">
-                    {error}
-                  </p>
-                )}
+                </p>
+                {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
               </div>
 
-              <div className="flex flex-wrap gap-3">
+              <div className="mt-3 flex flex-wrap gap-3">
                 <button
                   type="submit"
-                  className="inline-flex flex-1 items-center justify-center rounded-2xl bg-slate-900 px-5 py-3 text-base font-semibold text-white transition hover:bg-slate-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900 disabled:cursor-not-allowed disabled:bg-slate-400"
+                  className="inline-flex flex-1 items-center justify-center rounded-2xl bg-slate-900 px-5 py-2.5 text-base font-semibold text-white transition hover:bg-slate-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900 disabled:cursor-not-allowed disabled:bg-slate-400"
                   disabled={status !== "idle" || chiefComplaint.length < 3}
                 >
                   Start interview
@@ -4080,41 +4127,12 @@ export default function Home() {
               </div>
             </form>
 
-            <section className="rounded-3xl border border-slate-100 bg-white/80 px-5 py-6 shadow-slate-100">
+            <div className="mt-2 h-px w-full bg-slate-200/70" aria-hidden="true" />
+
+            <section className="mt-2 rounded-3xl border border-slate-100 bg-white/80 px-5 py-6 shadow-slate-100">
               <div className="flex items-center justify-between gap-4">
                 <div>
-                  <div className="flex items-center gap-3">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                      {interviewMode === "conversation" ? "Conversation" : "Chat"}
-                    </p>
-                    {status === "idle" && (
-                      <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white p-1">
-                        <button
-                          type="button"
-                          onClick={() => setInterviewMode("conversation")}
-                          className={`px-3 py-1 text-xs font-medium rounded transition ${
-                            interviewMode === "conversation"
-                              ? "bg-emerald-600 text-white"
-                              : "text-slate-600 hover:text-slate-900"
-                          }`}
-                        >
-                          Conversation
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setInterviewMode("chatbot")}
-                          className={`px-3 py-1 text-xs font-medium rounded transition ${
-                            interviewMode === "chatbot"
-                              ? "bg-emerald-600 text-white"
-                              : "text-slate-600 hover:text-slate-900"
-                          }`}
-                        >
-                          Chatbot
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                  <div className="flex items-center justify-between mt-1">
+                  <div className="flex items-center justify-between">
                     <h2 className="text-2xl font-semibold text-slate-900">
                       Guided interview
                     </h2>
@@ -4173,7 +4191,7 @@ export default function Home() {
                 {messages.length === 0 ? (
                   <p className="text-slate-500">
                     {interviewMode === "conversation"
-                      ? "Once you start the interview, we'll have a natural conversation about your health concern."
+                      ? "The AI assistant will ask follow-up questions to help your doctor understand your symptoms."
                       : "Once you start the interview, the assistant will ask targeted questions here."}
                   </p>
                 ) : interviewMode === "conversation" ? (
@@ -4817,6 +4835,9 @@ export default function Home() {
                                     selection.part !== bodyPart.part || selection.side !== safeSide,
                                 ),
                               );
+                            }}
+                            onMarkersDone={() => {
+                              markDiagramAsDone();
                             }}
                           />
                         );

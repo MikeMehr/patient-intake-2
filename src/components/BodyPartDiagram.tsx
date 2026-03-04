@@ -13,6 +13,7 @@ interface BodyPartDiagramProps {
     marker: { xPct: number; yPct: number };
   }) => void;
   onMarkersClear?: () => void;
+  onMarkersDone?: () => void;
 }
 
 const getDiagramImage = (bodyPart: BodyPart, side?: "left" | "right") => {
@@ -93,6 +94,7 @@ export default function BodyPartDiagram({
   markers = [],
   onMarkerAdd,
   onMarkersClear,
+  onMarkersDone,
 }: BodyPartDiagramProps) {
   const image = getDiagramImage(bodyPart, side);
   const diagramSizeClass = "w-96 h-96";
@@ -162,6 +164,15 @@ export default function BodyPartDiagram({
               className="rounded-md border border-slate-300 px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
             >
               Clear marks
+            </button>
+          )}
+          {onMarkersDone && (
+            <button
+              type="button"
+              onClick={onMarkersDone}
+              className="rounded-md bg-emerald-600 px-2 py-1 text-xs font-medium text-white hover:bg-emerald-500"
+            >
+              Done
             </button>
           )}
         </div>
