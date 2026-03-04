@@ -3391,20 +3391,15 @@ export default function Home() {
             alt="Health Assist AI logo"
             width={260}
             height={64}
-            className="mx-auto mb-5 h-[72px] w-[218px] object-cover sm:h-24 sm:w-[289px]"
-            style={{ objectPosition: "78% center" }}
+            className="mx-auto mb-5 h-[72px] w-[218px] object-contain sm:h-24 sm:w-[289px]"
             priority
           />
           <p className="text-sm font-semibold uppercase tracking-wide text-slate-500">
-            MyMD Medical Intake Form
+            MyMD Medical
           </p>
-          <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-900">
-            Conversational history taking
+          <h1 className="mt-1 text-[1.35rem] font-semibold tracking-tight text-slate-900">
+            AI-Powered Medical History Intake
           </h1>
-          <p className="mt-1 text-sm text-slate-500">
-            Capture a structured illness narrative without replacing clinical
-            judgment.
-          </p>
         </header>
 
         <section className="grid gap-8 px-8 py-8 lg:grid-cols-[1.2fr_0.8fr]">
