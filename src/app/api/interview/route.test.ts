@@ -1,7 +1,7 @@
 import type { InterviewResponse } from "@/lib/interview-schema";
 import { describe, expect, it } from "vitest";
 import { computeFormInterviewPhase } from "./prompt-helpers";
-import { POST } from "./route";
+import { __testables, POST } from "./route";
 
 const endpoint = "http://localhost/api/interview";
 const patientProfile = {
@@ -139,6 +139,25 @@ describe("interview prompt phase controller", () => {
     });
 
     expect(phase.phase).toBe("form_phase");
+  });
+});
+
+describe("MSK location topic extraction", () => {
+  it("does not classify severity scale phrasing as location", () => {
+    const topics = __testables.extractTopics(
+      "On a scale of 0-10, where 0 is no pain and 10 is the worst pain, how severe is it?",
+    );
+
+    expect(topics).toContain("severity");
+    expect(topics).not.toContain("location");
+  });
+
+  it("treats marker-style diagram responses as location coverage", () => {
+    const extracted = __testables.extractInformationFromAnswers([
+      "I marked the painful spot on the right knee diagram.",
+    ]);
+
+    expect(extracted.mentionedTopics).toContain("location");
   });
 });
 

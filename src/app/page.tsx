@@ -4161,7 +4161,7 @@ export default function Home() {
                           className={`flex-1 ${
                             message.role === "assistant"
                               ? "max-w-[85%]"
-                              : "max-w-[85%] text-right"
+                              : "max-w-[85%]"
                           }`}
                         >
                           {message.role === "assistant" ? (
@@ -4182,7 +4182,7 @@ export default function Home() {
                           ) : (
                             <div
                               className={[
-                                "bg-emerald-600 rounded-2xl rounded-tr-sm px-5 py-3 text-white ml-auto relative group max-w-full",
+                                "bg-emerald-600 rounded-2xl rounded-tr-sm px-5 py-3 text-white text-left ml-auto relative group max-w-full",
                                 // When editing/adding, expand the bubble so the textarea isn't cramped on desktop/tablet.
                                 addingToMessageIndex === index || editingMessageIndex === index
                                   ? "block w-full"

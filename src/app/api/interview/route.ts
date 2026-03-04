@@ -887,13 +887,33 @@ function computeQuestionBudget(escalation: EscalationState): { budget: number | 
 /**
  * Extract topics/themes from a question to help detect semantic duplicates
  */
+const locationQuestionTopicPattern =
+  /\b(location|which area|which part|pain location|site of pain|where does it hurt|where is the pain|where exactly is the pain)\b/;
+
+const explicitLocationAnswerPattern =
+  /\b(location|pain location|which area|which part|site of pain|where (?:it|the pain) hurts|(?:left|right)\s+(?:knee|ankle|foot|hip|shoulder|elbow|wrist|hand|arm|leg|back|neck))\b/;
+
+function hasLocationQuestionIntent(questionLower: string): boolean {
+  return locationQuestionTopicPattern.test(questionLower);
+}
+
+function hasLocationAnswerSignal(answerLower: string): boolean {
+  if (explicitLocationAnswerPattern.test(answerLower)) {
+    return true;
+  }
+
+  const hasMarkerAction = /\b(marked|mark|clicked|tapped|placed an x|placed x)\b/.test(answerLower);
+  const hasMarkerTarget = /\b(diagram|photo|image|spot|area)\b/.test(answerLower);
+  return hasMarkerAction && hasMarkerTarget;
+}
+
 function extractTopics(question: string): string[] {
   const qLower = question.toLowerCase();
   const topics: string[] = [];
   
   // Core symptom characteristics
   if (qLower.match(/\b(severity|severe|pain level|scale|0-10|how bad|intensity)\b/)) topics.push("severity");
-  if (qLower.match(/\b(location|where|which area|which part|site)\b/)) topics.push("location");
+  if (hasLocationQuestionIntent(qLower)) topics.push("location");
   if (qLower.match(/\b(duration|how long|when did it start|onset|started|began)\b/)) topics.push("duration/onset");
   if (qLower.match(/\b(quality|what does it feel like|describe|type of pain|character)\b/)) topics.push("quality");
   if (qLower.match(/\b(triggers|what makes it worse|worsens|aggravates|provokes)\b/)) topics.push("triggers");
@@ -963,7 +983,7 @@ function extractInformationFromAnswers(answers: string[]): {
     }
   }
   
-  if (allAnswersText.match(/\b(location|where|which area|which part|site|here|there)\b/)) {
+  if (hasLocationAnswerSignal(allAnswersText)) {
     mentionedTopics.push("location");
   }
   
@@ -1747,3 +1767,8 @@ function parseInterviewTurn(payload: string) {
 
   return result.data;
 }
+
+export const __testables = {
+  extractTopics,
+  extractInformationFromAnswers,
+};
