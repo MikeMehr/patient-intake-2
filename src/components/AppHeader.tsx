@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 
 const getHeaderMaxWidthClass = (pathname: string): string => {
@@ -27,11 +28,15 @@ export function AppHeader() {
           "pb-3",
         ].join(" ")}
       >
-        <div
-          aria-hidden="true"
-          className="select-none text-xl font-semibold text-slate-900"
-        >
-          Health Assist AI
+        <div className="select-none">
+          <Image
+            src="/LogoFinal.png"
+            alt="Health Assist AI logo"
+            width={180}
+            height={40}
+            className="h-10 w-auto"
+            priority
+          />
         </div>
       </div>
     </header>
