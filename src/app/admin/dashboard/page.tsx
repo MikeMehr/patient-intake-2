@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import Image from "next/image";
 import SessionKeepAlive from "@/components/auth/SessionKeepAlive";
 
 interface Organization {
@@ -142,6 +143,15 @@ export default function SuperAdminDashboard() {
       <div className="min-h-screen bg-slate-50">
       <div className="bg-white border-b border-slate-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+          <Image
+            src="/LogoFinal.png"
+            alt="Health Assist AI logo"
+            width={280}
+            height={64}
+            className="mx-auto mb-5 h-[72px] w-[218px] object-cover sm:h-24 sm:w-[289px]"
+            style={{ objectPosition: "78% center" }}
+            priority
+          />
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-2xl font-semibold text-slate-900">

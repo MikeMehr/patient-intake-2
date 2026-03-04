@@ -607,7 +607,7 @@ export default function PhysicianDashboard() {
             alt="Health Assist AI logo"
             width={280}
             height={64}
-            className="mx-auto mb-5 h-12 w-[145px] object-cover sm:h-24 sm:w-[289px]"
+            className="mx-auto mb-5 h-[72px] w-[218px] object-cover sm:h-24 sm:w-[289px]"
             style={{ objectPosition: "78% center" }}
             priority
           />

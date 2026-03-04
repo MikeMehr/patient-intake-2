@@ -17,6 +17,7 @@ export function AppHeader() {
     pathname === "/" ||
     pathname === "/auth/login" ||
     pathname === "/auth/signin" ||
+    pathname === "/admin/dashboard" ||
     pathname === "/physician/dashboard" ||
     pathname === "/physician/transcription" ||
     pathname === "/physician/view" ||
@@ -46,7 +47,7 @@ export function AppHeader() {
             alt="Health Assist AI logo"
             width={180}
             height={40}
-            className="h-[34px] w-[104px] object-cover sm:h-[68px] sm:w-[207px]"
+            className="h-[51px] w-[156px] object-cover sm:h-[68px] sm:w-[207px]"
             style={{ objectPosition: "78% center" }}
             priority
           />
