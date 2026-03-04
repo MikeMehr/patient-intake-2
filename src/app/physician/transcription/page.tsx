@@ -108,6 +108,8 @@ export default function PhysicianTranscriptionPage() {
   const [actionLoading, setActionLoading] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
+  const [copyFeedbackState, setCopyFeedbackState] = useState<"idle" | "copied">("idle");
+  const copyFeedbackTimeoutRef = useRef<number | null>(null);
 
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyItems, setHistoryItems] = useState<TranscriptionListItem[]>([]);
@@ -132,6 +134,7 @@ export default function PhysicianTranscriptionPage() {
     }
     return null;
   }, [transcript, selectedPatient?.id, hasNewPatientIdentity]);
+  const canCopySoap = useMemo(() => reviewText.trim().length > 0, [reviewText]);
 
   useEffect(() => {
     void loadHistory();
@@ -139,6 +142,9 @@ export default function PhysicianTranscriptionPage() {
 
   useEffect(() => {
     return () => {
+      if (copyFeedbackTimeoutRef.current) {
+        window.clearTimeout(copyFeedbackTimeoutRef.current);
+      }
       if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
         mediaRecorderRef.current.stop();
       }
@@ -407,42 +413,32 @@ export default function PhysicianTranscriptionPage() {
     }
   }
 
-  async function finalizeDraft() {
+  async function finalizeAndSaveToEmr() {
     if (!soapVersionId) return;
     setActionLoading(true);
     setActionError(null);
     setActionSuccess(null);
     try {
-      const res = await fetch("/api/physician/transcription/finalize", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ soapVersionId }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.error || "Failed to finalize draft");
-      setLifecycleState("FINALIZED_FOR_EXPORT");
-      if (typeof data?.snapshotLabel === "string") setSnapshotLabel(data.snapshotLabel);
-      setTranscript("");
-      setActionSuccess("SOAP finalized for export. Draft transcript removed.");
-      await loadHistory();
-    } catch (err) {
-      setActionError(err instanceof Error ? err.message : "Failed to finalize draft");
-    } finally {
-      setActionLoading(false);
-    }
-  }
+      if (lifecycleState !== "FINALIZED_FOR_EXPORT") {
+        const finalizeRes = await fetch("/api/physician/transcription/finalize", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ soapVersionId }),
+        });
+        const finalizeData = await finalizeRes.json().catch(() => ({}));
+        if (!finalizeRes.ok) {
+          throw new Error(finalizeData?.error || "Failed to finalize SOAP before EMR save");
+        }
+        setLifecycleState("FINALIZED_FOR_EXPORT");
+        if (typeof finalizeData?.snapshotLabel === "string") setSnapshotLabel(finalizeData.snapshotLabel);
+        setTranscript("");
+      }
 
-  async function markExported() {
-    if (!soapVersionId) return;
-    setActionLoading(true);
-    setActionError(null);
-    setActionSuccess(null);
-    try {
       const idempotencyKey =
         typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
           ? crypto.randomUUID()
           : `${Date.now()}-${Math.random()}`;
-      const res = await fetch("/api/physician/transcription/mark-exported", {
+      const exportRes = await fetch("/api/physician/transcription/mark-exported", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -451,13 +447,40 @@ export default function PhysicianTranscriptionPage() {
           destinationSystem: "manual_copy_paste",
         }),
       });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.error || "Failed to mark exported");
-      setActionSuccess(data?.message || "Marked as exported.");
+      const exportData = await exportRes.json().catch(() => ({}));
+      if (!exportRes.ok) {
+        throw new Error(exportData?.error || "Finalized, but failed to record EMR save");
+      }
+      setActionSuccess(exportData?.message || "Finalized and saved to EMR.");
+      await loadHistory();
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : "Failed to mark exported");
+      setActionError(err instanceof Error ? err.message : "Failed to finalize and save to EMR");
     } finally {
       setActionLoading(false);
+    }
+  }
+
+  async function copySoapText() {
+    if (!canCopySoap) return;
+    setActionError(null);
+    setActionSuccess(null);
+    try {
+      if (!navigator?.clipboard?.writeText) {
+        throw new Error("Clipboard is not available in this browser.");
+      }
+      await navigator.clipboard.writeText(reviewText);
+      setCopyFeedbackState("copied");
+      if (copyFeedbackTimeoutRef.current) {
+        window.clearTimeout(copyFeedbackTimeoutRef.current);
+      }
+      copyFeedbackTimeoutRef.current = window.setTimeout(() => {
+        setCopyFeedbackState("idle");
+        copyFeedbackTimeoutRef.current = null;
+      }, 1500);
+      setActionSuccess("SOAP copied. You can now paste it into your EMR.");
+    } catch (err) {
+      setCopyFeedbackState("idle");
+      setActionError(err instanceof Error ? err.message : "Failed to copy SOAP text");
     }
   }
 
@@ -561,10 +584,9 @@ export default function PhysicianTranscriptionPage() {
             <Image
               src="/LogoFinal.png"
               alt="Health Assist AI logo"
-              width={260}
-              height={64}
-              className="mx-auto mb-5 h-[72px] w-[218px] object-cover sm:h-24 sm:w-[289px]"
-              style={{ objectPosition: "78% center" }}
+              width={338}
+              height={83}
+              className="mx-auto mb-5 h-[94px] w-[283px] object-contain sm:h-[125px] sm:w-[376px]"
               priority
             />
             <div className="flex items-center justify-between">
@@ -715,7 +737,17 @@ export default function PhysicianTranscriptionPage() {
               </div>
 
               <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6 space-y-4">
-                <h2 className="text-lg font-semibold text-slate-900">3) Review and export</h2>
+                <div className="flex items-center justify-between gap-3">
+                  <h2 className="text-lg font-semibold text-slate-900">3) Review and export</h2>
+                  <button
+                    type="button"
+                    onClick={copySoapText}
+                    disabled={!canCopySoap || actionLoading}
+                    className="px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 disabled:opacity-60"
+                  >
+                    {copyFeedbackState === "copied" ? "Copied!" : "Copy SOAP"}
+                  </button>
+                </div>
                 <div className="grid grid-cols-1 gap-3">
                   <textarea
                     value={reviewText}
@@ -737,19 +769,11 @@ export default function PhysicianTranscriptionPage() {
                   </button>
                   <button
                     type="button"
-                    onClick={finalizeDraft}
-                    disabled={!soapVersionId || lifecycleState === "FINALIZED_FOR_EXPORT" || actionLoading}
-                    className="px-4 py-2 text-sm font-medium text-white bg-blue-700 rounded-lg hover:bg-blue-800 disabled:bg-slate-400"
-                  >
-                    Finalize for export
-                  </button>
-                  <button
-                    type="button"
-                    onClick={markExported}
-                    disabled={!soapVersionId || lifecycleState !== "FINALIZED_FOR_EXPORT" || actionLoading}
+                    onClick={finalizeAndSaveToEmr}
+                    disabled={!soapVersionId || actionLoading}
                     className="px-4 py-2 text-sm font-medium text-white bg-emerald-700 rounded-lg hover:bg-emerald-800 disabled:bg-slate-400"
                   >
-                    Mark as exported
+                    Finalize &amp; Save to EMR
                   </button>
                 </div>
                 <p className="text-xs text-slate-500">
