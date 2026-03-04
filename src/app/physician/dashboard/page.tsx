@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import type { PatientSession } from "@/lib/session-store";
@@ -115,6 +115,7 @@ function mapInvitationFromApi(inv: any): Invitation {
 
 export default function PhysicianDashboard() {
   const router = useRouter();
+  const patientLookupSectionRef = useRef<HTMLDivElement | null>(null);
   const [sessions, setSessions] = useState<PatientSessionWithChartLink[]>([]);
   const [invitations, setInvitations] = useState<Invitation[]>([]);
   const [loading, setLoading] = useState(true);
@@ -260,6 +261,10 @@ export default function PhysicianDashboard() {
 
   const handleOpenTranscription = () => {
     router.push("/physician/transcription");
+  };
+
+  const handleScrollToPatientLookup = () => {
+    patientLookupSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
   const handlePatientLookup = async (e: React.FormEvent) => {
@@ -607,8 +612,7 @@ export default function PhysicianDashboard() {
             alt="Health Assist AI logo"
             width={280}
             height={64}
-            className="mx-auto mb-5 h-[72px] w-[218px] object-cover sm:h-24 sm:w-[289px]"
-            style={{ objectPosition: "78% center" }}
+            className="mx-auto mb-5 h-[94px] w-[283px] object-contain sm:h-[125px] sm:w-[376px]"
             priority
           />
           <div className="flex justify-between items-center">
@@ -623,18 +627,26 @@ export default function PhysicianDashboard() {
                 </p>
               )}
             </div>
-            <button
-              onClick={handleOpenTranscription}
-              className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 mr-2"
-            >
-              Transcription
-            </button>
-            <button
-              onClick={handleLogout}
-              className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50"
-            >
-              Sign Out
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleOpenTranscription}
+                className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50"
+              >
+                Transcription
+              </button>
+              <button
+                onClick={handleScrollToPatientLookup}
+                className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50"
+              >
+                Patient Lookup
+              </button>
+              <button
+                onClick={handleLogout}
+                className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50"
+              >
+                Sign Out
+              </button>
+            </div>
           </div>
         </div>
 
@@ -701,7 +713,7 @@ export default function PhysicianDashboard() {
                     >
                       Date of birth
                     </label>
-                    <div className="flex gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       <input
                         id="patientDob"
                         type="date"
@@ -711,6 +723,13 @@ export default function PhysicianDashboard() {
                         disabled={inviteLoading || emrLookupLoading}
                         className="flex-1 rounded-lg border border-slate-300 bg-white px-4 py-2 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200 disabled:cursor-not-allowed disabled:opacity-70"
                       />
+                      <button
+                        type="submit"
+                        disabled={inviteLoading}
+                        className="px-4 py-2 text-sm font-medium text-white bg-slate-900 rounded-lg hover:bg-slate-800 transition-colors disabled:cursor-not-allowed disabled:bg-slate-400"
+                      >
+                        {inviteLoading ? "Sending..." : "Send Invitation"}
+                      </button>
                       <button
                         type="button"
                         onClick={handleFetchFromEmr}
@@ -1222,7 +1241,10 @@ export default function PhysicianDashboard() {
         </div>
 
         {/* Patient Lookup (Chart) */}
-        <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6 mt-6">
+        <div
+          ref={patientLookupSectionRef}
+          className="bg-white rounded-lg shadow-sm border border-slate-200 p-6 mt-6"
+        >
           <h2 className="text-lg font-semibold text-slate-900 mb-2">Patient Lookup</h2>
           <p className="text-sm text-slate-600 mb-4">
             Search for a patient by Name (recommended: Name + DOB) or by Healthcare Number (HIN).

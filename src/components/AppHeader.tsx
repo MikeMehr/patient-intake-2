@@ -47,8 +47,7 @@ export function AppHeader() {
             alt="Health Assist AI logo"
             width={180}
             height={40}
-            className="h-[51px] w-[156px] object-cover sm:h-[68px] sm:w-[207px]"
-            style={{ objectPosition: "78% center" }}
+            className="h-[51px] w-[156px] object-contain sm:h-[68px] sm:w-[207px]"
             priority
           />
         </div>
