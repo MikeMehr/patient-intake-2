@@ -704,7 +704,7 @@ type EscalationState = {
   hasStructuredFormUpload: boolean;
 };
 
-const BASE_QUESTION_BUDGET = 10;
+const BASE_QUESTION_BUDGET = 15;
 const FATIGUE_PHRASES = [
   "i already answered",
   "already answered that",
@@ -892,8 +892,8 @@ function computeQuestionBudget(escalation: EscalationState): { budget: number | 
     modifiers.push("+5-chronic-complexity");
   }
   if (escalation.isTraumaOrMva) {
-    budget += 10;
-    modifiers.push("+10-trauma-mva");
+    budget += 15;
+    modifiers.push("+15-trauma-mva");
   }
   if (escalation.hasMedicoLegalDocumentation) {
     budget += 10;

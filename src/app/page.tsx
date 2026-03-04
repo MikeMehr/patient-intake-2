@@ -310,6 +310,35 @@ export default function Home() {
   };
   const getDiagramMarkerKey = (part: string, side?: "left" | "right") =>
     `${part}::${side ?? "none"}`;
+  const toReadableBodyPart = (part: string) => part.replace(/_/g, " ").trim();
+  const formatDiagramSelectionLabel = (selection: DiagramMarkerSelection) => {
+    const partName = toReadableBodyPart(selection.part);
+    return selection.side ? `${selection.side} ${partName}` : partName;
+  };
+  const joinWithAnd = (items: string[]) => {
+    if (items.length <= 1) return items[0] ?? "";
+    if (items.length === 2) return `${items[0]} and ${items[1]}`;
+    return `${items.slice(0, -1).join(", ")}, and ${items.at(-1)}`;
+  };
+  const buildDiagramMarkerResponse = (selections: DiagramMarkerSelection[]) => {
+    const uniqueLabels = Array.from(
+      new Set(
+        selections
+          .filter((selection) => selection.markers.length > 0)
+          .map((selection) => formatDiagramSelectionLabel(selection)),
+      ),
+    );
+    if (uniqueLabels.length === 0) {
+      return "I marked the painful spot(s) on the diagram.";
+    }
+    return `I marked the painful spot(s) on the ${joinWithAnd(uniqueLabels)} diagram.`;
+  };
+  const shouldAutoUpdateDiagramResponse = (value: string) => {
+    const trimmed = value.trim().toLowerCase();
+    if (!trimmed) return true;
+    if (trimmed === "diagram marked." || trimmed === "diagram marked") return true;
+    return /^i marked the painful spot\(s\) on the .+ diagram\.?$/.test(trimmed);
+  };
   const summarizeDiagramMarkerSelection = (selection: DiagramMarkerSelection) => {
     const markerSummary = selection.markers
       .map((marker) => `(${Math.round(marker.xPct)},${Math.round(marker.yPct)})`)
@@ -444,7 +473,11 @@ export default function Home() {
     draftTranscriptRawRef.current = "";
   };
   const markDiagramAsDone = () => {
-    const completionText = "Diagram Marked.";
+    const markerSelections =
+      selectedDiagramMarkersRef.current.length > 0
+        ? selectedDiagramMarkersRef.current
+        : selectedDiagramMarkers;
+    const completionText = buildDiagramMarkerResponse(markerSelections);
     const existingDraft = draftTranscriptRef.current.trim();
     const alreadyMarked = existingDraft.toLowerCase().includes(completionText.toLowerCase());
     const nextDraft = !existingDraft
@@ -4803,6 +4836,7 @@ export default function Home() {
                             side={safeSide}
                             markers={markerSelection?.markers || []}
                             onMarkerAdd={({ part, side, marker }) => {
+                              let nextSelections: DiagramMarkerSelection[] = [];
                               setSelectedDiagramMarkersWithRef((prev) => {
                                 const key = getDiagramMarkerKey(part, side);
                                 const indexForPart = prev.findIndex(
@@ -4810,7 +4844,8 @@ export default function Home() {
                                     getDiagramMarkerKey(selection.part, selection.side) === key,
                                 );
                                 if (indexForPart === -1) {
-                                  return [{ part, side, markers: [marker] }, ...prev];
+                                  nextSelections = [{ part, side, markers: [marker] }, ...prev];
+                                  return nextSelections;
                                 }
                                 const updated = [...prev];
                                 const existing = updated[indexForPart];
@@ -4818,14 +4853,12 @@ export default function Home() {
                                   ...existing,
                                   markers: [...existing.markers, marker].slice(0, 30),
                                 };
+                                nextSelections = updated;
                                 return updated;
                               });
-                              if (!patientResponseRef.current.trim()) {
-                                const descriptor = side ? `${side} ${part}` : part;
-                                const markerResponse =
-                                  `I marked the painful spot(s) on the ${descriptor} diagram.`;
-                                setPatientResponse(markerResponse);
-                                patientResponseRef.current = markerResponse;
+                              if (shouldAutoUpdateDiagramResponse(patientResponseRef.current)) {
+                                const markerResponse = buildDiagramMarkerResponse(nextSelections);
+                                setPatientResponseWithRef(markerResponse);
                               }
                             }}
                             onMarkersClear={() => {
