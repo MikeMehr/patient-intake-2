@@ -181,6 +181,11 @@ export const interviewRequestSchema = z.object({
     .transform((value) => value.trim().toLowerCase())
     .pipe(z.string().min(2).max(12))
     .optional(),
+  deferredIntentHint: z
+    .string()
+    .transform((value) => value.trim())
+    .pipe(z.string().min(3).max(500))
+    .optional(),
 });
 
 export type InterviewRequest = z.infer<typeof interviewRequestSchema>;
@@ -196,6 +201,8 @@ const interviewQuestionSchema = z.object({
     .min(5, "Explain why you are asking.")
     .max(280)
     .optional(),
+  requiresLocationMarking: z.boolean().optional(),
+  deferredIntentHint: z.string().min(3).max(500).optional(),
 });
 
 const interviewSummarySchema = historyResponseSchema.extend({

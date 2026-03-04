@@ -31,6 +31,13 @@ export function detectBodyParts(text: string): BodyPartInfo[] {
   const detected: BodyPartInfo[] = [];
   const hasAnteriorNeckPhrasing = /\b(anterior\s+neck|front\s+of\s+neck)\b/.test(lowerText);
   const hasThyroidPhrasing = /\bthyroid\b/.test(lowerText);
+  const hasBackOfJointPhrasing =
+    /\bback\s+of\s+(the\s+)?(knee|knees|elbow|elbows|shoulder|shoulders|hip|hips|ankle|ankles|wrist|wrists|neck)\b/.test(
+      lowerText,
+    ) ||
+    /\bbehind\s+(the\s+)?(knee|knees|elbow|elbows|shoulder|shoulders|hip|hips|ankle|ankles|wrist|wrists|neck)\b/.test(
+      lowerText,
+    );
 
   // Wrist
   if (lowerText.match(/\b(wrist|wrists)\b/)) {
@@ -73,7 +80,12 @@ export function detectBodyParts(text: string): BodyPartInfo[] {
   }
 
   // Back (general)
-  if (lowerText.match(/\b(back)\b/) && !lowerText.includes("lower") && !lowerText.includes("upper")) {
+  if (
+    lowerText.match(/\b(back)\b/) &&
+    !lowerText.includes("lower") &&
+    !lowerText.includes("upper") &&
+    !hasBackOfJointPhrasing
+  ) {
     detected.push({ part: "back", name: "back" });
   }
 

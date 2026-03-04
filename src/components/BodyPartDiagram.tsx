@@ -95,6 +95,7 @@ export default function BodyPartDiagram({
   onMarkersClear,
 }: BodyPartDiagramProps) {
   const image = getDiagramImage(bodyPart, side);
+  const diagramSizeClass = "w-96 h-96";
 
   const handleDiagramClick = (event: MouseEvent<HTMLDivElement>) => {
     if (!onMarkerAdd) return;
@@ -117,7 +118,7 @@ export default function BodyPartDiagram({
         {side ? `${side.charAt(0).toUpperCase() + side.slice(1)} ` : ""}
         {bodyPart.replace("_", " ").replace(/\b\w/g, (l) => l.toUpperCase())}
       </div>
-      <div className="flex items-center justify-center w-64 h-64 relative">
+      <div className={`relative flex items-center justify-center ${diagramSizeClass}`}>
         <div
           role="button"
           tabIndex={0}

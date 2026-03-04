@@ -2,7 +2,7 @@ import type { InterviewResponse } from "@/lib/interview-schema";
 import { describe, expect, it } from "vitest";
 import { computeFormInterviewPhase } from "./prompt-helpers";
 import { hasLocationAnswerSignal, hasLocationQuestionIntent } from "./location-signals";
-import { POST } from "./route";
+import { applyMskSecondQuestionOverride, POST } from "./route";
 
 const endpoint = "http://localhost/api/interview";
 const patientProfile = {
@@ -162,6 +162,75 @@ describe("MSK location topic extraction", () => {
     expect(
       hasLocationAnswerSignal("I marked the painful spot on the right knee diagram.".toLowerCase()),
     ).toBe(true);
+  });
+});
+
+describe("MSK hard override second question", () => {
+  it("forces MSK second question to location-marking prompt", () => {
+    const turn: InterviewResponse = {
+      type: "question",
+      question: "Do you have swelling around the right knee?",
+      rationale: "To assess for inflammatory process.",
+    };
+    const transcript = [
+      { role: "assistant", content: "Tell me what happened to your knee." },
+      { role: "patient", content: "I fell on it yesterday." },
+    ] as const;
+
+    const result = applyMskSecondQuestionOverride({
+      turn,
+      transcript: [...transcript],
+      chiefComplaint: "2 days of right knee pain after fall",
+      forceSummary: false,
+      languageCode: "en",
+    });
+
+    expect(result.type).toBe("question");
+    if (result.type === "question") {
+      expect(result.requiresLocationMarking).toBe(true);
+      expect(result.question.toLowerCase()).toContain("diagram/photo");
+      expect(result.deferredIntentHint?.toLowerCase()).toContain("swelling");
+    }
+  });
+
+  it("does not force override on non-msk complaints", () => {
+    const turn: InterviewResponse = {
+      type: "question",
+      question: "Have you had fever or chills?",
+      rationale: "Evaluate infectious symptoms.",
+    };
+    const transcript = [
+      { role: "assistant", content: "Tell me about your sore throat." },
+      { role: "patient", content: "It started three days ago." },
+    ] as const;
+
+    const result = applyMskSecondQuestionOverride({
+      turn,
+      transcript: [...transcript],
+      chiefComplaint: "3 days of sore throat",
+      forceSummary: false,
+      languageCode: "en",
+    });
+
+    expect(result).toEqual(turn);
+  });
+
+  it("does not force override outside second assistant turn", () => {
+    const turn: InterviewResponse = {
+      type: "question",
+      question: "Does your knee lock or give way?",
+      rationale: "Assess mechanical instability.",
+    };
+
+    const result = applyMskSecondQuestionOverride({
+      turn,
+      transcript: [],
+      chiefComplaint: "right knee pain",
+      forceSummary: false,
+      languageCode: "en",
+    });
+
+    expect(result).toEqual(turn);
   });
 });
 

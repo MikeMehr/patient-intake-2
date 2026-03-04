@@ -1,6 +1,7 @@
 import {
   interviewRequestSchema,
   interviewResponseSchema,
+  type InterviewResponse,
   type InterviewMessage,
   type PatientProfile,
 } from "@/lib/interview-schema";
@@ -11,7 +12,7 @@ import { logDebug } from "@/lib/secure-logger";
 import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
 import { query } from "@/lib/db";
 import { sanitizeAssistiveClinicalText } from "@/lib/clinical-safety";
-import { detectBodyParts } from "@/lib/body-parts";
+import { detectBodyParts, getPrimaryBodyPart } from "@/lib/body-parts";
 import {
   consumeRateLimit,
   getRequestIp,
@@ -340,6 +341,90 @@ LANGUAGE:
 const shouldMock = () =>
   process.env.MOCK_AI === "true" || process.env.NODE_ENV === "test";
 
+const mskBodyPartSet = new Set([
+  "wrist",
+  "hand",
+  "elbow",
+  "shoulder",
+  "neck",
+  "back",
+  "lower_back",
+  "upper_back",
+  "knee",
+  "ankle",
+  "foot",
+  "hip",
+]);
+
+const forcedLocationQuestionByLanguage: Record<string, string> = {
+  en: "Looking at the diagram/photo of your {bodyPart}, please mark exactly where the pain is most noticeable.",
+  es: "Mirando el diagrama/foto de su {bodyPart}, por favor marque exactamente dónde nota más dolor.",
+  fr: "En regardant le schéma/photo de votre {bodyPart}, veuillez marquer exactement où la douleur est la plus marquée.",
+  de: "Bitte markieren Sie im Diagramm/Foto Ihrer {bodyPart} genau die Stelle, an der der Schmerz am stärksten ist.",
+  it: "Guardando il diagramma/foto del/la {bodyPart}, indichi esattamente dove il dolore è più evidente.",
+  pt: "Olhando para o diagrama/foto do(a) seu(sua) {bodyPart}, marque exatamente onde a dor é mais intensa.",
+  zh: "请查看您{bodyPart}的示意图/照片，并准确标记疼痛最明显的位置。",
+  ja: "{bodyPart}の図/写真を見て、痛みが最も強い場所を正確にマークしてください。",
+  ko: "{bodyPart}의 도표/사진을 보고 통증이 가장 뚜렷한 위치를 정확히 표시해 주세요.",
+  ar: "بالنظر إلى المخطط/الصورة الخاصة بـ {bodyPart}، يرجى تحديد المكان الذي يكون فيه الألم أشد ما يمكن.",
+  hi: "अपने {bodyPart} के डायग्राम/फोटो को देखकर कृपया ठीक उस जगह को चिन्हित करें जहां दर्द सबसे अधिक है।",
+  fa: "با نگاه کردن به نمودار/عکس {bodyPart}، لطفاً دقیقاً محل بیشترین درد را علامت بزنید.",
+};
+
+function getMskContext(chiefComplaint: string) {
+  const detected = detectBodyParts(chiefComplaint);
+  const isMskComplaint = detected.some((bp) => mskBodyPartSet.has(bp.part));
+  const primary = getPrimaryBodyPart(detected);
+  return {
+    isMskComplaint,
+    mskBodyPartName: primary?.name || "affected area",
+  };
+}
+
+function buildForcedLocationQuestion(languageCode: string, bodyPartName: string): string {
+  const template =
+    forcedLocationQuestionByLanguage[languageCode] ?? forcedLocationQuestionByLanguage.en;
+  return template.replace("{bodyPart}", bodyPartName);
+}
+
+function extractDeferredIntentHint(turn: InterviewResponse): string | null {
+  if (turn.type !== "question") return null;
+  const question = turn.question.trim();
+  if (!question) return null;
+  const lower = question.toLowerCase();
+  const looksLikeLocationQuestion =
+    hasLocationQuestionIntent(lower) ||
+    (/\b(diagram|photo|image)\b/.test(lower) && /\b(mark|click|tap|point)\b/.test(lower));
+  if (looksLikeLocationQuestion) return null;
+  const rationale = typeof turn.rationale === "string" ? turn.rationale.trim() : "";
+  const hint = rationale ? `${question} | Intent: ${rationale}` : question;
+  return hint.slice(0, 500);
+}
+
+export function applyMskSecondQuestionOverride(args: {
+  turn: InterviewResponse;
+  transcript: InterviewMessage[];
+  chiefComplaint: string;
+  forceSummary: boolean;
+  languageCode: string;
+}): InterviewResponse {
+  const assistantQuestionsAsked = args.transcript.filter((msg) => msg.role === "assistant").length;
+  const isSecondQuestionTurn = assistantQuestionsAsked === 1;
+  const { isMskComplaint, mskBodyPartName } = getMskContext(args.chiefComplaint);
+  const shouldForce = isMskComplaint && !args.forceSummary && isSecondQuestionTurn;
+  if (!shouldForce) return args.turn;
+
+  const deferredIntentHint = extractDeferredIntentHint(args.turn);
+  const forcedQuestion = buildForcedLocationQuestion(args.languageCode, mskBodyPartName);
+  return {
+    type: "question",
+    question: forcedQuestion,
+    rationale: "Collect exact pain location using the body diagram to improve localization and triage.",
+    requiresLocationMarking: true,
+    deferredIntentHint: deferredIntentHint ?? undefined,
+  };
+}
+
 export async function POST(request: Request) {
   const requestId = getRequestId(request.headers);
   const started = Date.now();
@@ -400,6 +485,7 @@ export async function POST(request: Request) {
     patientBackground,
     forceSummary = false,
     language: requestedLanguage,
+    deferredIntentHint,
   } = parsed.data;
   
   const supportedLanguages: Record<string, string> = {
@@ -451,7 +537,14 @@ export async function POST(request: Request) {
 
   if (shouldMock()) {
     const mockTurn = mockInterviewStep(transcript, patientProfile, chiefComplaint);
-    const res = NextResponse.json(mockTurn);
+    const adjustedMockTurn = applyMskSecondQuestionOverride({
+      turn: mockTurn,
+      transcript,
+      chiefComplaint,
+      forceSummary,
+      languageCode,
+    });
+    const res = NextResponse.json(adjustedMockTurn);
     logRequestMeta("/api/interview", requestId, status, Date.now() - started);
     return res;
   }
@@ -604,6 +697,7 @@ export async function POST(request: Request) {
         : null,
       forceSummary || false,
       languageName,
+      deferredIntentHint ?? null,
     );
 
     const languageInstruction = `LANGUAGE: For all patient-facing questions and messages (the conversation), respond ONLY in ${languageName}. Do NOT include English translations or mixed language unless ${languageName} is English. If you cannot reliably produce ${languageName}, fall back to English. Keep summaries/assessment/plan in English for the clinician. Preserve medical accuracy.`;
@@ -620,8 +714,15 @@ export async function POST(request: Request) {
     const textPayload = completion.choices?.[0]?.message?.content?.trim() || "";
 
     const turn = enforceAssistiveLanguageOnInterviewTurn(parseInterviewTurn(textPayload));
+    const adjustedTurn = applyMskSecondQuestionOverride({
+      turn: turn as InterviewResponse,
+      transcript,
+      chiefComplaint,
+      forceSummary,
+      languageCode,
+    });
 
-    const res = NextResponse.json(turn);
+    const res = NextResponse.json(adjustedTurn);
     logRequestMeta("/api/interview", requestId, status, Date.now() - started);
     return res;
   } catch (error: unknown) {
@@ -1075,6 +1176,7 @@ function buildPrompt(
   patientBackground: string | null,
   forceSummary: boolean = false,
   languageName: string = "English",
+  deferredIntentHint: string | null = null,
 ): string {
   // Extract ALL questions from FULL transcript (not truncated) - CRITICAL for duplicate prevention
   const allQuestionsAsked = transcript
@@ -1289,33 +1391,21 @@ If the patient asks about a lab value or test result NOT mentioned in these summ
   // MSK complaints: ensure pain location is assessed using the body diagram/photo.
   // Client UI shows the diagram only when the assistant explicitly asks location, so
   // we must reliably generate a location question during the interview.
-  const mskBodyPartSet = new Set([
-    "wrist",
-    "hand",
-    "elbow",
-    "shoulder",
-    "neck",
-    "back",
-    "lower_back",
-    "upper_back",
-    "knee",
-    "ankle",
-    "foot",
-    "hip",
-  ]);
   const detectedFromCurrentComplaint = typeof currentComplaint === "string" ? detectBodyParts(currentComplaint) : [];
   const detectedFromChiefComplaint = detectBodyParts(chiefComplaint);
   const detectedForMsk = detectedFromCurrentComplaint.length > 0
     ? detectedFromCurrentComplaint
     : detectedFromChiefComplaint;
   const isMskComplaint = detectedForMsk.some((bp) => mskBodyPartSet.has(bp.part));
-  const locationAlreadyCovered =
-    topicsCovered.has("location") || patientInformation.mentionedTopics.includes("location");
   const shouldForceMskLocationNext =
-    isMskComplaint && !forceSummary && allQuestionsAsked.length >= 1 && !locationAlreadyCovered;
-  const mskBodyPartName = detectedForMsk[0]?.name || "affected area";
+    isMskComplaint && !forceSummary && allQuestionsAsked.length === 1;
+  const mskPrimaryBodyPart = getPrimaryBodyPart(detectedForMsk);
+  const mskBodyPartName = mskPrimaryBodyPart?.name || "affected area";
   const mskLocationDirective = shouldForceMskLocationNext
     ? `\n\nCRITICAL MSK LOCATION (DIAGRAM REQUIRED):\n- This is a musculoskeletal pain complaint and location has NOT been assessed yet.\n- Your NEXT question MUST ask the patient to identify the pain location using the body diagram/photo.\n- Use this exact style: \"Looking at the diagram/photo of your ${mskBodyPartName}, please mark where you feel the pain.\"\n- You may also say \"please click/tap the painful spot,\" but do NOT ask for a numbered area and do NOT ask the patient to tell you a number.\n- IMPORTANT: If the patient has already clearly described the location in their own words, do NOT re-ask; proceed to the next highest-yield MSK question instead (ROM, neurologic symptoms, red flags).\n`
+    : "";
+  const deferredIntentSection = deferredIntentHint
+    ? `\n\nDEFERRED CLINICAL INTENT (PRIORITIZE NOW):\n- In the previous turn, the system intentionally used a location-marking question.\n- Your NEXT question should now cover this deferred clinical intent: ${deferredIntentHint}\n- Ask one concise, non-duplicative question that addresses the same intent.\n- Do NOT repeat the location-marking request unless the patient did not provide location information.\n`
     : "";
 
   const complaintClass = classifyComplaint(currentComplaint || chiefComplaint);
@@ -1401,7 +1491,7 @@ Family doctor: ${profile.familyDoctor}
 Documented drug allergies: ${profile.allergies}
 ${patientBackground ? `\nPhysician-provided background: ${patientBackground}` : ""}
 ${imageSection}${labReportSection}${formSection}${medPmhSection}
-${transcriptSection}${transcriptNote}${questionsList}${topicsList}${informationAlreadyProvided}${openEndedReminder}${mskLocationDirective}${controllerSection}${interviewPhaseSection}${formCoverageSection}
+${transcriptSection}${transcriptNote}${questionsList}${topicsList}${informationAlreadyProvided}${openEndedReminder}${mskLocationDirective}${deferredIntentSection}${controllerSection}${interviewPhaseSection}${formCoverageSection}
 
 CLINICAL INTERVIEW GUIDANCE (You are operating as a Physician Assistant):
 ${physicianGuidanceSection}

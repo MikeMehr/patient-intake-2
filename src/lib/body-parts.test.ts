@@ -51,4 +51,20 @@ describe("detectBodyParts", () => {
     expect(detectBodyParts("left calf pain").some((part) => part.part === "ankle")).toBe(true);
     expect(detectBodyParts("shin pain after running").some((part) => part.part === "ankle")).toBe(true);
   });
+
+  it("does not treat back of the knee as a separate back complaint", () => {
+    const parts = detectBodyParts("back of the knee pain");
+    expect(parts.some((part) => part.part === "knee")).toBe(true);
+    expect(parts.some((part) => part.part === "back")).toBe(false);
+  });
+
+  it("keeps explicit back complaints mapped to back", () => {
+    const parts = detectBodyParts("my back hurts when I bend");
+    expect(parts.some((part) => part.part === "back")).toBe(true);
+  });
+
+  it("keeps upper back complaints mapped to upper_back", () => {
+    const parts = detectBodyParts("upper back pain after lifting");
+    expect(parts.some((part) => part.part === "upper_back")).toBe(true);
+  });
 });

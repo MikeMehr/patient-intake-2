@@ -6,7 +6,7 @@ import type {
   InterviewResponse,
   PatientProfile,
 } from "@/lib/interview-schema";
-import { detectBodyParts, getPrimaryBodyPart } from "@/lib/body-parts";
+import { detectBodyParts } from "@/lib/body-parts";
 import {
   getSpeechLocale,
   languageOptions,
@@ -523,6 +523,7 @@ export default function Home() {
   const [showSubmitToast, setShowSubmitToast] = useState(false);
   const [draftTranscript, setDraftTranscript] = useState<string>("");
   const [draftTranscriptRaw, setDraftTranscriptRaw] = useState<string>("");
+  const [deferredIntentHint, setDeferredIntentHint] = useState<string | null>(null);
   const [showReview, setShowReview] = useState(false);
   const [isHolding, setIsHolding] = useState(false);
   const [micWarning, setMicWarning] = useState<string | null>(null);
@@ -569,6 +570,7 @@ export default function Home() {
   const pendingStopOnResultRef = useRef<boolean>(false);
   const hadResultRef = useRef<boolean>(false);
   const lastTranslatedSummaryKeyRef = useRef<string | null>(null);
+  const consentCheckboxRef = useRef<HTMLInputElement | null>(null);
   
   const [hasPhysicianId, setHasPhysicianId] = useState<boolean>(false);
   const [editingMessageIndex, setEditingMessageIndex] = useState<number | null>(null);
@@ -1935,6 +1937,12 @@ export default function Home() {
     }
   };
 
+  const isConsentErrorMessage = (value: string | null): boolean => {
+    if (!value) return false;
+    const normalized = value.toLowerCase();
+    return normalized.includes("consent") || normalized.includes("acknowledgement");
+  };
+
   async function handleStart(
     event: React.FormEvent<HTMLFormElement>,
   ): Promise<void> {
@@ -1960,7 +1968,12 @@ export default function Home() {
     }
 
     if (!hasConsented) {
-      setError("Please confirm the acknowledgement/consent checkbox to proceed.");
+      setError("Please check the acknowledgement/consent checkbox to proceed.");
+      const consentCheckbox = consentCheckboxRef.current;
+      if (consentCheckbox) {
+        consentCheckbox.scrollIntoView({ behavior: "smooth", block: "center" });
+        consentCheckbox.focus({ preventScroll: true });
+      }
       return;
     }
 
@@ -2048,6 +2061,7 @@ export default function Home() {
     setLockedProfile(profile);
 
     setChiefComplaint(trimmed);
+    setDeferredIntentHint(null);
     setMessages([]);
     setResult(null);
     setPatientResponse("");
@@ -2141,6 +2155,7 @@ export default function Home() {
         patientEmail.trim(),
         physicianIdToUse,
         language,
+        deferredIntentHint,
       );
       processTurn(turn);
       const complaintLower = trimmed.toLowerCase();
@@ -2398,6 +2413,7 @@ export default function Home() {
         patientEmail.trim(),
         physicianIdToUse,
         language,
+        deferredIntentHint,
       );
       processTurn(turn);
       submittedSuccessfully = true;
@@ -2497,6 +2513,7 @@ export default function Home() {
             patientEmail.trim(),
             physicianIdToUse,
             language,
+            deferredIntentHint,
           );
           processTurn(turn);
         } catch (err) {
@@ -2868,6 +2885,7 @@ export default function Home() {
           patientEmail.trim(),
           physicianIdToUse,
           language,
+          deferredIntentHint,
           true,
         );
         
@@ -3162,6 +3180,7 @@ export default function Home() {
 
   async function processTurn(turn: InterviewResponse) {
     if (turn.type === "question") {
+      setDeferredIntentHint(turn.deferredIntentHint ?? null);
       // Use the AI question as-is (no added greeting)
       const questionContent = turn.question;
       
@@ -3205,10 +3224,8 @@ export default function Home() {
         setWantsToUploadImage(null);
       }
       
-      // Check if the AI is asking about pain location on a diagram/photo.
-      const locationKeywords = [
-        "diagram",
-        "which area",
+      // Check if the AI is explicitly asking to mark/click/tap location on a diagram/photo.
+      const diagramActionKeywords = [
         "mark where",
         "mark the area",
         "mark the painful area",
@@ -3223,15 +3240,17 @@ export default function Home() {
         "tap on the image",
         "place an x",
         "place a mark",
-        "where exactly",
-        "where is the pain",
         "point to",
+      ];
+      const painLocationKeywords = [
+        "where is the pain",
         "site of pain",
         "pain location",
       ];
-      const isAskingLocation = locationKeywords.some((keyword) =>
-        questionLower.includes(keyword),
-      );
+      const hasDiagramReference = /\b(diagram|photo|image)\b/.test(questionLower);
+      const hasDiagramAction = diagramActionKeywords.some((keyword) => questionLower.includes(keyword));
+      const hasPainLocationCue = painLocationKeywords.some((keyword) => questionLower.includes(keyword));
+      const isAskingLocation = hasDiagramAction || (hasDiagramReference && hasPainLocationCue);
 
       // First try to detect body parts from question text, then chief complaint.
       let bodyParts = detectBodyParts(turn.question);
@@ -3266,8 +3285,23 @@ export default function Home() {
         hasMskBodyPart && hasPainMention && hasLocationIntentFallback;
 
       // Only show the diagram when the assistant explicitly asks about location.
-      if (bodyParts.length > 0 && (isAskingLocation || shouldForceLocationDiagram)) {
-        const partsToShow = bodyParts.map((bp) => ({
+      const shouldShowDiagramFromFlag = turn.requiresLocationMarking === true;
+      if (bodyParts.length > 0 && (isAskingLocation || shouldForceLocationDiagram || shouldShowDiagramFromFlag)) {
+        const uniqueParts = bodyParts.filter((bp, index, arr) => {
+          const key = getDiagramMarkerKey(bp.part, bp.side === "both" ? undefined : bp.side);
+          return index === arr.findIndex((candidate) => {
+            const candidateKey = getDiagramMarkerKey(
+              candidate.part,
+              candidate.side === "both" ? undefined : candidate.side,
+            );
+            return candidateKey === key;
+          });
+        });
+        const shouldDropGenericBack = uniqueParts.some((bp) => bp.part !== "back");
+        const filteredParts = shouldDropGenericBack
+          ? uniqueParts.filter((bp) => bp.part !== "back")
+          : uniqueParts;
+        const partsToShow = filteredParts.map((bp) => ({
           part: bp.part,
           side: bp.side,
         }));
@@ -3291,6 +3325,7 @@ export default function Home() {
       return;
     }
 
+    setDeferredIntentHint(null);
     const historyResult: HistoryResponse = {
       positives: turn.positives,
       negatives: turn.negatives,
@@ -3399,11 +3434,13 @@ export default function Home() {
                   <input
                     type="checkbox"
                     checked={hasConsented}
+                    ref={consentCheckboxRef}
+                    aria-invalid={isConsentErrorMessage(error)}
                     disabled={status !== "idle"}
                     onChange={(event) => {
                       const next = event.target.checked;
                       setHasConsented(next);
-                      if (next && error?.toLowerCase().includes("consent")) {
+                      if (next && isConsentErrorMessage(error)) {
                         setError(null);
                       }
                     }}
@@ -4022,7 +4059,7 @@ export default function Home() {
                 <button
                   type="submit"
                   className="inline-flex flex-1 items-center justify-center rounded-2xl bg-slate-900 px-5 py-3 text-base font-semibold text-white transition hover:bg-slate-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900 disabled:cursor-not-allowed disabled:bg-slate-400"
-                  disabled={status !== "idle" || chiefComplaint.length < 3 || !hasConsented}
+                  disabled={status !== "idle" || chiefComplaint.length < 3}
                 >
                   Start interview
                 </button>
@@ -5127,6 +5164,7 @@ async function requestTurn(
   patientEmail: string,
   physicianId: string,
   language: string,
+  deferredIntentHint: string | null,
   forceSummary: boolean = false,
 ): Promise<InterviewResponse> {
   if (process.env.NODE_ENV === "development") {
@@ -5157,6 +5195,7 @@ async function requestTurn(
       patientEmail,
       physicianId,
       language,
+      deferredIntentHint: deferredIntentHint ?? undefined,
       forceSummary,
     }),
   });
