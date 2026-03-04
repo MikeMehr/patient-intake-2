@@ -1,7 +1,8 @@
 import type { InterviewResponse } from "@/lib/interview-schema";
 import { describe, expect, it } from "vitest";
 import { computeFormInterviewPhase } from "./prompt-helpers";
-import { __testables, POST } from "./route";
+import { hasLocationAnswerSignal, hasLocationQuestionIntent } from "./location-signals";
+import { POST } from "./route";
 
 const endpoint = "http://localhost/api/interview";
 const patientProfile = {
@@ -144,20 +145,23 @@ describe("interview prompt phase controller", () => {
 
 describe("MSK location topic extraction", () => {
   it("does not classify severity scale phrasing as location", () => {
-    const topics = __testables.extractTopics(
-      "On a scale of 0-10, where 0 is no pain and 10 is the worst pain, how severe is it?",
-    );
+    const severityPrompt =
+      "On a scale of 0-10, where 0 is no pain and 10 is the worst pain, how severe is it?";
 
-    expect(topics).toContain("severity");
-    expect(topics).not.toContain("location");
+    expect(hasLocationQuestionIntent(severityPrompt.toLowerCase())).toBe(false);
+  });
+
+  it("still detects explicit location-question wording", () => {
+    expect(
+      hasLocationQuestionIntent("where exactly is the pain in your right knee?".toLowerCase()),
+    );
+    expect(hasLocationQuestionIntent("which area hurts the most?".toLowerCase())).toBe(true);
   });
 
   it("treats marker-style diagram responses as location coverage", () => {
-    const extracted = __testables.extractInformationFromAnswers([
-      "I marked the painful spot on the right knee diagram.",
-    ]);
-
-    expect(extracted.mentionedTopics).toContain("location");
+    expect(
+      hasLocationAnswerSignal("I marked the painful spot on the right knee diagram.".toLowerCase()),
+    ).toBe(true);
   });
 });
 

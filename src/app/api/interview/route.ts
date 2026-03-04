@@ -24,6 +24,7 @@ import {
   getFormCoverageHints,
   getRemainingFormCoverageHints,
 } from "./prompt-helpers";
+import { hasLocationAnswerSignal, hasLocationQuestionIntent } from "./location-signals";
 
 const systemInstruction = `
 You are a Physician Assistant conducting a clinical interview. Your role is to gather a comprehensive history of present illness, perform a virtual physical examination when appropriate, and systematically rule out red flags.
@@ -887,26 +888,6 @@ function computeQuestionBudget(escalation: EscalationState): { budget: number | 
 /**
  * Extract topics/themes from a question to help detect semantic duplicates
  */
-const locationQuestionTopicPattern =
-  /\b(location|which area|which part|pain location|site of pain|where does it hurt|where is the pain|where exactly is the pain)\b/;
-
-const explicitLocationAnswerPattern =
-  /\b(location|pain location|which area|which part|site of pain|where (?:it|the pain) hurts|(?:left|right)\s+(?:knee|ankle|foot|hip|shoulder|elbow|wrist|hand|arm|leg|back|neck))\b/;
-
-function hasLocationQuestionIntent(questionLower: string): boolean {
-  return locationQuestionTopicPattern.test(questionLower);
-}
-
-function hasLocationAnswerSignal(answerLower: string): boolean {
-  if (explicitLocationAnswerPattern.test(answerLower)) {
-    return true;
-  }
-
-  const hasMarkerAction = /\b(marked|mark|clicked|tapped|placed an x|placed x)\b/.test(answerLower);
-  const hasMarkerTarget = /\b(diagram|photo|image|spot|area)\b/.test(answerLower);
-  return hasMarkerAction && hasMarkerTarget;
-}
-
 function extractTopics(question: string): string[] {
   const qLower = question.toLowerCase();
   const topics: string[] = [];
@@ -1767,8 +1748,3 @@ function parseInterviewTurn(payload: string) {
 
   return result.data;
 }
-
-export const __testables = {
-  extractTopics,
-  extractInformationFromAnswers,
-};
