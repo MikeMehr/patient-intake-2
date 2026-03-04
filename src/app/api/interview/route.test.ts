@@ -2,7 +2,8 @@ import type { InterviewResponse } from "@/lib/interview-schema";
 import { describe, expect, it } from "vitest";
 import { computeFormInterviewPhase } from "./prompt-helpers";
 import { hasLocationAnswerSignal, hasLocationQuestionIntent } from "./location-signals";
-import { applyMskSecondQuestionOverride, POST } from "./route";
+import { applyMskSecondQuestionOverride } from "./msk-second-question";
+import { POST } from "./route";
 
 const endpoint = "http://localhost/api/interview";
 const patientProfile = {
@@ -231,6 +232,32 @@ describe("MSK hard override second question", () => {
     });
 
     expect(result).toEqual(turn);
+  });
+
+  it("forces anterior neck complaints on second question", () => {
+    const turn: InterviewResponse = {
+      type: "question",
+      question: "Any trouble swallowing?",
+      rationale: "Assess aerodigestive red flags.",
+    };
+    const transcript = [
+      { role: "assistant", content: "Tell me more about your neck pain." },
+      { role: "patient", content: "It hurts at the front of my neck." },
+    ] as const;
+
+    const result = applyMskSecondQuestionOverride({
+      turn,
+      transcript: [...transcript],
+      chiefComplaint: "anterior neck pain",
+      forceSummary: false,
+      languageCode: "en",
+    });
+
+    expect(result.type).toBe("question");
+    if (result.type === "question") {
+      expect(result.requiresLocationMarking).toBe(true);
+      expect(result.question.toLowerCase()).toContain("your neck");
+    }
   });
 });
 

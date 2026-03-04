@@ -37,9 +37,11 @@ describe("detectBodyParts", () => {
     expect(detectBodyParts("thigh ache after running").some((part) => part.part === "hip")).toBe(true);
   });
 
-  it("maps breast and anterior-neck phrasing to chest", () => {
+  it("maps breast phrasing to chest and keeps anterior-neck mapped to neck+chest", () => {
     expect(detectBodyParts("right breast pain").some((part) => part.part === "chest")).toBe(true);
-    expect(detectBodyParts("pain at front of neck").some((part) => part.part === "chest")).toBe(true);
+    const anteriorNeck = detectBodyParts("pain at front of neck");
+    expect(anteriorNeck.some((part) => part.part === "chest")).toBe(true);
+    expect(anteriorNeck.some((part) => part.part === "neck")).toBe(true);
   });
 
   it("maps forearm phrasing to elbow", () => {

@@ -19,6 +19,7 @@ export function AppHeader() {
     pathname === "/auth/signin" ||
     pathname === "/physician/dashboard" ||
     pathname === "/physician/transcription" ||
+    pathname === "/physician/view" ||
     pathname.startsWith("/physician/patients/") ||
     pathname.startsWith("/intake/invite/");
 

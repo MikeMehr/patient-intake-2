@@ -524,6 +524,7 @@ export default function Home() {
   const [draftTranscript, setDraftTranscript] = useState<string>("");
   const [draftTranscriptRaw, setDraftTranscriptRaw] = useState<string>("");
   const [deferredIntentHint, setDeferredIntentHint] = useState<string | null>(null);
+  const [showStillThinking, setShowStillThinking] = useState(false);
   const [showReview, setShowReview] = useState(false);
   const [isHolding, setIsHolding] = useState(false);
   const [micWarning, setMicWarning] = useState<string | null>(null);
@@ -636,6 +637,23 @@ export default function Home() {
     }
     return message.content;
   };
+  const thinkingStatusLabel = showStillThinking ? "Still thinking..." : "Thinking...";
+
+  useEffect(() => {
+    if (status !== "awaitingAi" || isPaused) {
+      setShowStillThinking(false);
+      return;
+    }
+
+    setShowStillThinking(false);
+    const stillThinkingTimeout = setTimeout(() => {
+      setShowStillThinking(true);
+    }, 20000);
+
+    return () => {
+      clearTimeout(stillThinkingTimeout);
+    };
+  }, [status, isPaused]);
   const choosePreferredVoice = (
     voices: SpeechSynthesisVoice[],
     langTag: string,
@@ -2236,23 +2254,6 @@ export default function Home() {
     const currentResponse = patientResponseRef.current.trim();
     let trimmed = currentResponse;
 
-    const currentDiagramMarkerSelections =
-      selectedDiagramMarkersRef.current.length > 0
-        ? selectedDiagramMarkersRef.current
-        : selectedDiagramMarkers;
-    const markerNarrative = currentDiagramMarkerSelections
-      .filter((selection) => selection.markers.length > 0)
-      .map((selection) => summarizeDiagramMarkerSelection(selection))
-      .join(" | ");
-    if (markerNarrative) {
-      trimmed = trimmed.trim();
-      if (trimmed) {
-        trimmed += ` (${markerNarrative})`;
-      } else {
-        trimmed = markerNarrative;
-      }
-    }
-
     const lastMessage = messagesRef.current[messagesRef.current.length - 1];
     const isFinalCommentsTurn =
       awaitingFinalComments ||
@@ -3298,10 +3299,15 @@ export default function Home() {
           });
         });
         const shouldDropGenericBack = uniqueParts.some((bp) => bp.part !== "back");
+        const hasNeckSelection = uniqueParts.some((bp) => bp.part === "neck");
         const filteredParts = shouldDropGenericBack
           ? uniqueParts.filter((bp) => bp.part !== "back")
           : uniqueParts;
-        const partsToShow = filteredParts.map((bp) => ({
+        const partsForTurn =
+          shouldShowDiagramFromFlag && hasNeckSelection
+            ? filteredParts.filter((bp) => bp.part !== "chest")
+            : filteredParts;
+        const partsToShow = partsForTurn.map((bp) => ({
           part: bp.part,
           side: bp.side,
         }));
@@ -4685,7 +4691,9 @@ export default function Home() {
                             <p className={micStatusClassName}>{micStatusText}</p>
                           )}
                           {status === "awaitingAi" && !isPaused && (
-                            <span className="text-slate-500 animate-pulse">Thinking...</span>
+                            <span className="text-lg font-medium text-slate-500 animate-pulse">
+                              {thinkingStatusLabel}
+                            </span>
                           )}
                         </div>
                       </div>
@@ -4902,7 +4910,9 @@ export default function Home() {
                         <p className={micStatusClassName}>{micStatusText}</p>
                       )}
                       {status === "awaitingAi" && !isPaused && (
-                        <span className="text-slate-500 animate-pulse">Thinking...</span>
+                        <span className="text-lg font-medium text-slate-500 animate-pulse">
+                          {thinkingStatusLabel}
+                        </span>
                       )}
                     </div>
                     {isSubmittingResponse && (

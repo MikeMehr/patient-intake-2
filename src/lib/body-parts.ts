@@ -63,9 +63,9 @@ export function detectBodyParts(text: string): BodyPartInfo[] {
     detected.push({ part: "shoulder", name: "shoulder", side });
   }
 
-  // Neck: keep thyroid mapped to neck even with anterior-neck wording.
-  // This preserves neck/MSK location prompting while still allowing trunk-front mapping below.
-  if ((hasThyroidPhrasing || !hasAnteriorNeckPhrasing) && lowerText.match(/\b(neck|thyroid)\b/)) {
+  // Neck: include anterior/front neck so MSK neck flows can force neck diagram on Q2.
+  // Chest mapping below still allows trunk-front context when needed.
+  if (lowerText.match(/\b(neck|thyroid)\b/)) {
     detected.push({ part: "neck", name: "neck" });
   }
 

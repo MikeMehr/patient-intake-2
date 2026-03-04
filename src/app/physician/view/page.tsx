@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useEffect, useMemo, useRef, useState, Suspense, type PointerEvent as ReactPointerEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { PatientSession } from "@/lib/session-store";
@@ -1847,6 +1848,15 @@ function PhysicianViewContent() {
       <div className="max-w-5xl mx-auto px-4 py-8">
         {/* Header */}
         <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6 mb-6">
+          <Image
+            src="/LogoFinal.png"
+            alt="Health Assist AI logo"
+            width={260}
+            height={64}
+            className="mx-auto mb-5 h-12 w-[145px] object-cover sm:h-24 sm:w-[289px]"
+            style={{ objectPosition: "78% center" }}
+            priority
+          />
           <div className="flex justify-between items-center">
             <h1 className="text-2xl font-semibold text-slate-900">
               Patient Intake Summary
