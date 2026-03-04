@@ -14,7 +14,7 @@ import {
 } from "@/lib/speech-language";
 import BodyPartDiagram from "@/components/BodyPartDiagram";
 import CollapsibleSection from "@/components/CollapsibleSection";
-import Image from "next/image";
+import NextImage from "next/image";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { z } from "zod";
@@ -3345,7 +3345,7 @@ export default function Home() {
     <div className="flex min-h-screen items-center justify-center bg-slate-100 px-4 py-10 text-slate-900">
       <main className="w-full max-w-5xl rounded-3xl border border-slate-200 bg-white/90 shadow-xl shadow-slate-100 backdrop-blur">
         <header className="border-b border-slate-100 px-8 py-6">
-          <Image
+          <NextImage
             src="/LogoFinal.png"
             alt="Health Assist AI logo"
             width={260}
