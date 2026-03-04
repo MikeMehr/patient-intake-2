@@ -1848,18 +1848,6 @@ function PhysicianViewContent() {
   );
   const shouldShowLegacyImageAnalysisCard = Boolean(session.imageSummary && !patientUploads?.lesionImage);
 
-  useEffect(() => {
-    if (process.env.NODE_ENV !== "development") return;
-    const bodyDiagram = patientUploads?.bodyDiagram;
-    console.debug("[physician/view] bodyDiagram render summary", {
-      sessionCode: session.sessionCode,
-      selectedParts: Array.isArray(bodyDiagram?.selectedParts) ? bodyDiagram.selectedParts.length : 0,
-      markersByPart: Array.isArray(bodyDiagram?.markersByPart) ? bodyDiagram.markersByPart.length : 0,
-      leftSoleMarkers: Array.isArray(bodyDiagram?.leftSoleMarkers) ? bodyDiagram.leftSoleMarkers.length : 0,
-      renderedDiagrams: hpiDiagramSelectionsToRender.length,
-    });
-  }, [patientUploads, session.sessionCode, hpiDiagramSelectionsToRender.length]);
-
   return (
     <div className="min-h-screen bg-slate-100">
       <div className="max-w-5xl mx-auto px-4 py-8">
