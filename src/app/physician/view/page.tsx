@@ -1853,8 +1853,7 @@ function PhysicianViewContent() {
             alt="Health Assist AI logo"
             width={260}
             height={64}
-            className="mx-auto mb-5 h-[72px] w-[218px] object-cover sm:h-24 sm:w-[289px]"
-            style={{ objectPosition: "78% center" }}
+            className="mx-auto mb-5 h-[72px] w-[218px] object-contain sm:h-24 sm:w-[289px]"
             priority
           />
           <div className="flex justify-between items-center">

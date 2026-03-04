@@ -1,7 +1,11 @@
 import type { InterviewResponse } from "@/lib/interview-schema";
 import { describe, expect, it } from "vitest";
 import { computeFormInterviewPhase } from "./prompt-helpers";
-import { hasLocationAnswerSignal, hasLocationQuestionIntent } from "./location-signals";
+import {
+  hasBodyPartLocationAnswerSignal,
+  hasLocationAnswerSignal,
+  hasLocationQuestionIntent,
+} from "./location-signals";
 import { applyMskSecondQuestionOverride } from "./msk-second-question";
 import { POST } from "./route";
 
@@ -164,9 +168,25 @@ describe("MSK location topic extraction", () => {
       hasLocationAnswerSignal("I marked the painful spot on the right knee diagram.".toLowerCase()),
     ).toBe(true);
   });
+
+  it("requires part-specific location evidence for per-part completion", () => {
+    expect(
+      hasBodyPartLocationAnswerSignal(
+        "I marked the painful spot on the right knee diagram.".toLowerCase(),
+        "knee",
+      ),
+    ).toBe(true);
+    expect(
+      hasBodyPartLocationAnswerSignal(
+        "I marked the painful spot on the right knee diagram.".toLowerCase(),
+        "ankle",
+      ),
+    ).toBe(false);
+    expect(hasBodyPartLocationAnswerSignal("diagram marked.".toLowerCase(), "knee")).toBe(false);
+  });
 });
 
-describe("MSK hard override second question", () => {
+describe("MSK hard override checkpoints", () => {
   it("forces MSK second question to location-marking prompt", () => {
     const turn: InterviewResponse = {
       type: "question",
@@ -194,6 +214,101 @@ describe("MSK hard override second question", () => {
     }
   });
 
+  it("forces checkpoint at upcoming fifth question for transcript-detected MVA neck and lower back injuries", () => {
+    const turn: InterviewResponse = {
+      type: "question",
+      question: "Any bowel or bladder changes?",
+      rationale: "Assess cauda equina red flags.",
+    };
+    const transcript = [
+      { role: "assistant", content: "Tell me what happened in the collision." },
+      { role: "patient", content: "I was rear-ended and now my neck and lower back hurt." },
+      { role: "assistant", content: "Any numbness or weakness?" },
+      { role: "patient", content: "No." },
+      { role: "assistant", content: "Were airbags deployed?" },
+      { role: "patient", content: "No airbags." },
+      { role: "assistant", content: "Any prior injuries?" },
+      { role: "patient", content: "No." },
+    ] as const;
+
+    const result = applyMskSecondQuestionOverride({
+      turn,
+      transcript: [...transcript],
+      chiefComplaint: "motor vehicle accident",
+      forceSummary: false,
+      languageCode: "en",
+    });
+
+    expect(result.type).toBe("question");
+    if (result.type === "question") {
+      expect(result.requiresLocationMarking).toBe(true);
+      expect(result.question.toLowerCase()).toContain("neck");
+      expect(result.question.toLowerCase()).toContain("lower back");
+    }
+  });
+
+  it("keeps forcing checkpoints for remaining unmarked parts only", () => {
+    const turn: InterviewResponse = {
+      type: "question",
+      question: "How severe is your pain today?",
+      rationale: "Assess symptom severity trend.",
+    };
+    const transcript = [
+      { role: "assistant", content: "Tell me what happened in the collision." },
+      { role: "patient", content: "I have neck and lower back pain after being rear-ended." },
+      { role: "assistant", content: "Any numbness or weakness?" },
+      { role: "patient", content: "No." },
+      { role: "assistant", content: "Did airbags deploy?" },
+      { role: "patient", content: "No." },
+      { role: "assistant", content: "Any previous injuries?" },
+      { role: "patient", content: "I marked the painful spot on the neck diagram." },
+    ] as const;
+
+    const result = applyMskSecondQuestionOverride({
+      turn,
+      transcript: [...transcript],
+      chiefComplaint: "motor vehicle accident",
+      forceSummary: false,
+      languageCode: "en",
+    });
+
+    expect(result.type).toBe("question");
+    if (result.type === "question") {
+      expect(result.requiresLocationMarking).toBe(true);
+      expect(result.question.toLowerCase()).toContain("lower back");
+      expect(result.question.toLowerCase()).not.toContain("neck");
+    }
+  });
+
+  it("does not force at checkpoints once all required parts are marked", () => {
+    const turn: InterviewResponse = {
+      type: "question",
+      question: "How has this affected your sleep?",
+      rationale: "Assess functional impact.",
+    };
+    const transcript = [
+      { role: "assistant", content: "Tell me what happened in the collision." },
+      { role: "patient", content: "I have neck and lower back pain after being rear-ended." },
+      { role: "assistant", content: "Any numbness or weakness?" },
+      { role: "patient", content: "No." },
+      { role: "assistant", content: "Did airbags deploy?" },
+      { role: "patient", content: "No." },
+      { role: "assistant", content: "Any previous injuries?" },
+      { role: "patient", content: "I marked the painful spot on the neck diagram." },
+      { role: "patient", content: "I marked the painful spot on the lower back diagram." },
+    ] as const;
+
+    const result = applyMskSecondQuestionOverride({
+      turn,
+      transcript: [...transcript],
+      chiefComplaint: "motor vehicle accident",
+      forceSummary: false,
+      languageCode: "en",
+    });
+
+    expect(result).toEqual(turn);
+  });
+
   it("does not force override on non-msk complaints", () => {
     const turn: InterviewResponse = {
       type: "question",
@@ -216,7 +331,7 @@ describe("MSK hard override second question", () => {
     expect(result).toEqual(turn);
   });
 
-  it("does not force override outside second assistant turn", () => {
+  it("does not force override outside checkpoint turns", () => {
     const turn: InterviewResponse = {
       type: "question",
       question: "Does your knee lock or give way?",
@@ -232,32 +347,6 @@ describe("MSK hard override second question", () => {
     });
 
     expect(result).toEqual(turn);
-  });
-
-  it("forces anterior neck complaints on second question", () => {
-    const turn: InterviewResponse = {
-      type: "question",
-      question: "Any trouble swallowing?",
-      rationale: "Assess aerodigestive red flags.",
-    };
-    const transcript = [
-      { role: "assistant", content: "Tell me more about your neck pain." },
-      { role: "patient", content: "It hurts at the front of my neck." },
-    ] as const;
-
-    const result = applyMskSecondQuestionOverride({
-      turn,
-      transcript: [...transcript],
-      chiefComplaint: "anterior neck pain",
-      forceSummary: false,
-      languageCode: "en",
-    });
-
-    expect(result.type).toBe("question");
-    if (result.type === "question") {
-      expect(result.requiresLocationMarking).toBe(true);
-      expect(result.question.toLowerCase()).toContain("your neck");
-    }
   });
 });
 

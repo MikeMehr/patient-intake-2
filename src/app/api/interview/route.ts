@@ -12,7 +12,6 @@ import { logDebug } from "@/lib/secure-logger";
 import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
 import { query } from "@/lib/db";
 import { sanitizeAssistiveClinicalText } from "@/lib/clinical-safety";
-import { detectBodyParts, getPrimaryBodyPart } from "@/lib/body-parts";
 import {
   consumeRateLimit,
   getRequestIp,
@@ -25,7 +24,7 @@ import {
   getFormCoverageHints,
   getRemainingFormCoverageHints,
 } from "./prompt-helpers";
-import { applyMskSecondQuestionOverride } from "./msk-second-question";
+import { applyMskSecondQuestionOverride, getMskDiagramProgress } from "./msk-second-question";
 import { hasLocationAnswerSignal, hasLocationQuestionIntent } from "./location-signals";
 
 const systemInstruction = `
@@ -341,21 +340,6 @@ LANGUAGE:
 
 const shouldMock = () =>
   process.env.MOCK_AI === "true" || process.env.NODE_ENV === "test";
-
-const mskBodyPartSet = new Set([
-  "wrist",
-  "hand",
-  "elbow",
-  "shoulder",
-  "neck",
-  "back",
-  "lower_back",
-  "upper_back",
-  "knee",
-  "ankle",
-  "foot",
-  "hip",
-]);
 
 export async function POST(request: Request) {
   const requestId = getRequestId(request.headers);
@@ -1320,21 +1304,16 @@ If the patient asks about a lab value or test result NOT mentioned in these summ
     ? `\n\nLANGUAGE PREFERENCE: Conduct all patient-facing questions and messages in ${languageName}. If you cannot reliably produce ${languageName}, fall back to English. Do NOT mix languages.`
     : "";
 
-  // MSK complaints: ensure pain location is assessed using the body diagram/photo.
-  // Client UI shows the diagram only when the assistant explicitly asks location, so
-  // we must reliably generate a location question during the interview.
-  const detectedFromCurrentComplaint = typeof currentComplaint === "string" ? detectBodyParts(currentComplaint) : [];
-  const detectedFromChiefComplaint = detectBodyParts(chiefComplaint);
-  const detectedForMsk = detectedFromCurrentComplaint.length > 0
-    ? detectedFromCurrentComplaint
-    : detectedFromChiefComplaint;
-  const isMskComplaint = detectedForMsk.some((bp) => mskBodyPartSet.has(bp.part));
+  // MSK complaints: enforce deterministic location checkpoints for all required body parts.
+  const mskProgress = getMskDiagramProgress(chiefComplaint, transcript);
   const shouldForceMskLocationNext =
-    isMskComplaint && !forceSummary && allQuestionsAsked.length === 1;
-  const mskPrimaryBodyPart = getPrimaryBodyPart(detectedForMsk);
-  const mskBodyPartName = mskPrimaryBodyPart?.name || "affected area";
+    mskProgress.isMskComplaint &&
+    !forceSummary &&
+    new Set([1, 4, 9]).has(allQuestionsAsked.length) &&
+    mskProgress.remainingParts.length > 0;
+  const mskMissingPartList = mskProgress.remainingPartNames.join(", ");
   const mskLocationDirective = shouldForceMskLocationNext
-    ? `\n\nCRITICAL MSK LOCATION (DIAGRAM REQUIRED):\n- This is a musculoskeletal pain complaint and location has NOT been assessed yet.\n- Your NEXT question MUST ask the patient to identify the pain location using the body diagram/photo.\n- Use this exact style: \"Looking at the diagram/photo of your ${mskBodyPartName}, please mark where you feel the pain.\"\n- You may also say \"please click/tap the painful spot,\" but do NOT ask for a numbered area and do NOT ask the patient to tell you a number.\n- IMPORTANT: If the patient has already clearly described the location in their own words, do NOT re-ask; proceed to the next highest-yield MSK question instead (ROM, neurologic symptoms, red flags).\n`
+    ? `\n\nCRITICAL MSK LOCATION CHECKPOINT (DIAGRAM REQUIRED):\n- This is a musculoskeletal complaint and these body parts still need location marking: ${mskMissingPartList}.\n- The NEXT question MUST ask the patient to mark the painful location on the body diagram/photo for EACH remaining part.\n- Use phrasing like: \"Looking at the diagram/photo of your ${mskMissingPartList}, please mark exactly where the pain is.\"\n- Do NOT ask for numbered areas. Ask the patient to click/tap/mark the exact painful spot.\n- Keep re-checking missing parts at question checkpoints 2, 5, and 10 until all required parts are marked.\n`
     : "";
   const deferredIntentSection = deferredIntentHint
     ? `\n\nDEFERRED CLINICAL INTENT (PRIORITIZE NOW):\n- In the previous turn, the system intentionally used a location-marking question.\n- Your NEXT question should now cover this deferred clinical intent: ${deferredIntentHint}\n- Ask one concise, non-duplicative question that addresses the same intent.\n- Do NOT repeat the location-marking request unless the patient did not provide location information.\n`

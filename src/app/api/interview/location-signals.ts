@@ -1,8 +1,28 @@
+import type { BodyPart } from "@/lib/body-parts";
+
 const locationQuestionTopicPattern =
   /\b(location|which area|which part|pain location|site of pain|where does it hurt|where is the pain|where exactly is the pain)\b/;
 
 const explicitLocationAnswerPattern =
   /\b(location|pain location|which area|which part|site of pain|where (?:it|the pain) hurts|(?:left|right)\s+(?:knee|ankle|foot|hip|shoulder|elbow|wrist|hand|arm|leg|back|neck))\b/;
+
+const bodyPartMentionPattern: Record<BodyPart, RegExp> = {
+  wrist: /\b(wrist|wrists)\b/,
+  hand: /\b(hand|hands)\b/,
+  elbow: /\b(elbow|elbows|forearm|forearms)\b/,
+  shoulder: /\b(shoulder|shoulders)\b/,
+  neck: /\b(neck|cervical)\b/,
+  back: /\b(back)\b/,
+  lower_back: /\b(lower\s+back|low\s+back|lumbar)\b/,
+  upper_back: /\b(upper\s+back|thoracic)\b/,
+  knee: /\b(knee|knees)\b/,
+  ankle: /\b(ankle|ankles|lower\s+leg|shin|shins|calf|calves)\b/,
+  foot: /\b(foot|feet|heel|heels|sole|plantar|arch)\b/,
+  hip: /\b(hip|hips|upper\s+leg|upper\s+thigh|thigh|thighs)\b/,
+  head: /\b(head|headache|headaches|scalp|face|facial)\b/,
+  chest: /\b(chest|sternum|breastbone|anterior\s+chest)\b/,
+  abdomen: /\b(abdomen|abdominal|stomach|belly)\b/,
+};
 
 export function hasLocationQuestionIntent(questionLower: string): boolean {
   return locationQuestionTopicPattern.test(questionLower);
@@ -16,4 +36,19 @@ export function hasLocationAnswerSignal(answerLower: string): boolean {
   const hasMarkerAction = /\b(marked|mark|clicked|tapped|placed an x|placed x)\b/.test(answerLower);
   const hasMarkerTarget = /\b(diagram|photo|image|spot|area)\b/.test(answerLower);
   return hasMarkerAction && hasMarkerTarget;
+}
+
+export function hasBodyPartLocationAnswerSignal(
+  answerLower: string,
+  bodyPart: BodyPart,
+): boolean {
+  const mentionsBodyPart = bodyPartMentionPattern[bodyPart]?.test(answerLower) ?? false;
+  if (!mentionsBodyPart) {
+    return false;
+  }
+
+  const markerSignal =
+    /\b(marked|mark|clicked|tapped|placed an x|placed x)\b/.test(answerLower) &&
+    /\b(diagram|photo|image|spot|area)\b/.test(answerLower);
+  return markerSignal;
 }
