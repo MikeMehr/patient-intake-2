@@ -309,6 +309,125 @@ describe("MSK hard override checkpoints", () => {
     expect(result).toEqual(turn);
   });
 
+  it("does not infer neck pain from assistant prompts or negated patient response", () => {
+    const turn: InterviewResponse = {
+      type: "question",
+      question: "Any instability when walking?",
+      rationale: "Check ankle mechanical instability.",
+    };
+    const transcript = [
+      { role: "assistant", content: "I understand you were in a motor vehicle accident. What happened?" },
+      {
+        role: "patient",
+        content:
+          "I was rear-ended and now I have right ankle pain and low back pain.",
+      },
+      {
+        role: "assistant",
+        content:
+          "Looking at the diagram/photo of your lower back and ankle, please mark exactly where it hurts.",
+      },
+      { role: "patient", content: "I marked the painful spot on the lower back diagram." },
+      {
+        role: "assistant",
+        content:
+          "Since the accident, have you had any of the following: loss of consciousness, numbness, tingling, weakness, or neck pain?",
+      },
+      { role: "patient", content: "I'm not having any neck pain." },
+      { role: "assistant", content: "How would you describe the right ankle pain?" },
+      { role: "patient", content: "Aching, with some swelling on the outside." },
+    ] as const;
+
+    const result = applyMskSecondQuestionOverride({
+      turn,
+      transcript: [...transcript],
+      chiefComplaint: "motor vehicle accident",
+      forceSummary: false,
+      languageCode: "en",
+    });
+
+    expect(result.type).toBe("question");
+    if (result.type === "question") {
+      expect(result.requiresLocationMarking).toBe(true);
+      expect(result.question.toLowerCase()).toContain("ankle");
+      expect(result.question.toLowerCase()).not.toContain("neck");
+      expect(result.question.toLowerCase()).not.toContain("lower back");
+    }
+  });
+
+  it("does not add foot from non-symptom accident details", () => {
+    const turn: InterviewResponse = {
+      type: "question",
+      question: "Any numbness or tingling down the legs?",
+      rationale: "Assess lumbar radicular symptoms.",
+    };
+    const transcript = [
+      { role: "assistant", content: "Can you describe your symptoms?" },
+      { role: "patient", content: "I have neck pain and right lower back pain." },
+      {
+        role: "assistant",
+        content:
+          "A few details about the accident itself: was there significant damage to your vehicle, did airbags deploy, and was there an ambulance?",
+      },
+      {
+        role: "patient",
+        content:
+          "My insurance is ICBC claim F-250. Minor rear damage. No police or ambulance. Seat belt on, no airbags.",
+      },
+      { role: "assistant", content: "How is your low back motion?" },
+      {
+        role: "patient",
+        content:
+          "Pain is in the right lower back and neck. Tender to touch and worse with flexion at end range.",
+      },
+      { role: "assistant", content: "Any prior injuries?" },
+      { role: "patient", content: "No previous injuries." },
+    ] as const;
+
+    const result = applyMskSecondQuestionOverride({
+      turn,
+      transcript: [...transcript],
+      chiefComplaint: "motor vehicle accident",
+      forceSummary: false,
+      languageCode: "en",
+    });
+
+    expect(result.type).toBe("question");
+    if (result.type === "question") {
+      expect(result.requiresLocationMarking).toBe(true);
+      expect(result.question.toLowerCase()).toContain("neck");
+      expect(result.question.toLowerCase()).toContain("lower back");
+      expect(result.question.toLowerCase()).not.toContain("foot");
+    }
+  });
+
+  it("still keeps foot when explicitly reported in symptom context", () => {
+    const turn: InterviewResponse = {
+      type: "question",
+      question: "Do you have pain when bearing weight?",
+      rationale: "Assess severity of foot injury.",
+    };
+    const transcript = [
+      { role: "assistant", content: "Tell me about your injury." },
+      { role: "patient", content: "I have neck pain and pain on top of my right foot after the crash." },
+    ] as const;
+
+    const result = applyMskSecondQuestionOverride({
+      turn,
+      transcript: [...transcript],
+      chiefComplaint: "motor vehicle accident",
+      forceSummary: false,
+      languageCode: "en",
+    });
+
+    expect(result.type).toBe("question");
+    if (result.type === "question") {
+      expect(result.requiresLocationMarking).toBe(true);
+      expect(result.question.toLowerCase()).toContain("neck");
+      expect(result.question.toLowerCase()).toContain("foot");
+    }
+  });
+
   it("does not force override on non-msk complaints", () => {
     const turn: InterviewResponse = {
       type: "question",

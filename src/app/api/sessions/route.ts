@@ -324,6 +324,15 @@ export async function POST(request: Request) {
       duration,
       transcript: transcriptToStore,
     };
+
+    if (process.env.NODE_ENV === "development") {
+      const bodyDiagram = historyToStore?.patientUploads?.bodyDiagram;
+      logDebug("[api/sessions] bodyDiagram payload summary", {
+        selectedParts: Array.isArray(bodyDiagram?.selectedParts) ? bodyDiagram.selectedParts.length : 0,
+        markersByPart: Array.isArray(bodyDiagram?.markersByPart) ? bodyDiagram.markersByPart.length : 0,
+        leftSoleMarkers: Array.isArray(bodyDiagram?.leftSoleMarkers) ? bodyDiagram.leftSoleMarkers.length : 0,
+      });
+    }
     
     await storeSession(session);
 

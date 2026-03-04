@@ -2842,6 +2842,8 @@ export default function Home() {
       imageUrl = selectedImagePreview;
     }
 
+    const patientUploadsPayload = buildPatientUploads(imageUrl);
+    const bodyDiagramPayload = patientUploadsPayload?.bodyDiagram;
     const requestBody = {
       physicianId,
       patientName: finalPatientName,
@@ -2855,7 +2857,7 @@ export default function Home() {
         previousLabReportSummary: previousLabReportSummary || undefined,
         formSummary: formSummary || undefined,
         medPmhSummary: medPmhSummary || undefined,
-        patientUploads: buildPatientUploads(imageUrl),
+        patientUploads: patientUploadsPayload,
       },
       imageSummary: imageSummary || undefined,
       imageUrl,
@@ -2869,6 +2871,15 @@ export default function Home() {
         hasImage: !!imageUrl,
         hasTranscript: !!requestBody.transcript,
         transcriptLength: requestBody.transcript?.length || 0,
+        bodyDiagramSelectedParts: Array.isArray(bodyDiagramPayload?.selectedParts)
+          ? bodyDiagramPayload.selectedParts.length
+          : 0,
+        bodyDiagramMarkersByPart: Array.isArray(bodyDiagramPayload?.markersByPart)
+          ? bodyDiagramPayload.markersByPart.length
+          : 0,
+        bodyDiagramLeftSoleMarkers: Array.isArray(bodyDiagramPayload?.leftSoleMarkers)
+          ? bodyDiagramPayload.leftSoleMarkers.length
+          : 0,
         bodyKeys: Object.keys(requestBody),
       });
     }

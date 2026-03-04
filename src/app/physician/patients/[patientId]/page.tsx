@@ -3,6 +3,7 @@
 import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
+import { mergeDiagramSelectionsForDisplay, type DiagramSelectionInput } from "@/lib/body-diagram-display";
 
 type Encounter = {
   id: string;
@@ -150,6 +151,27 @@ export default function PatientChartPage() {
   const [labRequisitions, setLabRequisitions] = useState<LabRequisition[]>([]);
 
   const age = useMemo(() => computeAgeFromDob(patient?.dateOfBirth || null), [patient?.dateOfBirth]);
+
+  useEffect(() => {
+    if (process.env.NODE_ENV !== "development") return;
+    const summary = encounters.slice(0, 10).map((enc) => {
+      const bodyDiagram = enc?.hpi?.patientUploads?.bodyDiagram;
+      const selectedParts = Array.isArray(bodyDiagram?.selectedParts) ? bodyDiagram.selectedParts.length : 0;
+      const markersByPart = Array.isArray(bodyDiagram?.markersByPart) ? bodyDiagram.markersByPart.length : 0;
+      const leftSoleMarkers = Array.isArray(bodyDiagram?.leftSoleMarkers)
+        ? bodyDiagram.leftSoleMarkers.length
+        : 0;
+      return {
+        encounterId: enc.id,
+        selectedParts,
+        markersByPart,
+        leftSoleMarkers,
+      };
+    });
+    if (summary.length > 0) {
+      console.debug("[physician/patients] bodyDiagram render summary", summary);
+    }
+  }, [encounters]);
 
   useEffect(() => {
     let cancelled = false;
@@ -378,6 +400,10 @@ export default function PatientChartPage() {
                 const markerSelections = shouldShowLegacyLeftSoleOnly
                   ? [{ part: "foot", side: "left" as const, markers: displayMarkers }]
                   : markerSelectionsFromStructured;
+                const diagramSelectionsToRender = mergeDiagramSelectionsForDisplay({
+                  markerSelections: markerSelections as DiagramSelectionInput[],
+                  selectedParts: bodyDiagramParts,
+                });
                 const hasUploadedContext =
                   Boolean(lesionSummary || lesionImageUrl || bodyDiagramNote || bodyDiagramArea) ||
                   bodyDiagramParts.length > 0 ||
@@ -510,7 +536,7 @@ export default function PatientChartPage() {
                             <div className="mt-4">
                               <div className="text-sm font-medium text-slate-700">Body Diagram Selection</div>
 
-                              {markerSelections.map((selection, selectionIndex) => {
+                              {diagramSelectionsToRender.map((selection, selectionIndex) => {
                                 const image = getBodyDiagramImage(selection.part, selection.side);
                                 const partLabel = selection.side
                                   ? `${selection.side} ${selection.part}`
@@ -544,10 +570,14 @@ export default function PatientChartPage() {
                                       ))}
                                     </div>
                                     <p className="mt-2 text-xs text-slate-500">
-                                      Coordinates:{" "}
-                                      {selection.markers
-                                        .map((marker) => `(${Math.round(marker.xPct)}, ${Math.round(marker.yPct)})`)
-                                        .join(", ")}
+                                      {selection.markers.length > 0
+                                        ? `Coordinates: ${selection.markers
+                                            .map(
+                                              (marker) =>
+                                                `(${Math.round(marker.xPct)}, ${Math.round(marker.yPct)})`,
+                                            )
+                                            .join(", ")}`
+                                        : "No marker coordinates captured for this selection."}
                                     </p>
                                   </div>
                                 );

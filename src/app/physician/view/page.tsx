@@ -7,6 +7,7 @@ import type { PatientSession } from "@/lib/session-store";
 import { jsPDF } from "jspdf";
 import { CLINICAL_ASSISTIVE_DISCLAIMER } from "@/lib/clinical-safety";
 import SessionKeepAlive from "@/components/auth/SessionKeepAlive";
+import { mergeDiagramSelectionsForDisplay, type DiagramSelectionInput } from "@/lib/body-diagram-display";
 
 type RxMedicationRow = {
   id: string;
@@ -1830,6 +1831,10 @@ function PhysicianViewContent() {
   const hpiMarkerSelections = shouldRenderLegacyLeftSoleOnly
     ? [{ part: "foot", side: "left" as const, markers: hpiDisplayLeftSoleMarkers }]
     : markerSelectionsFromStructured;
+  const hpiDiagramSelectionsToRender = mergeDiagramSelectionsForDisplay({
+    markerSelections: hpiMarkerSelections as DiagramSelectionInput[],
+    selectedParts: Array.isArray(hpiBodyDiagramParts) ? hpiBodyDiagramParts : [],
+  });
   const interviewEndedEarly = session.history?.interviewEndedEarly === true;
 
   const hasPatientUploadedContext = Boolean(
@@ -1842,6 +1847,18 @@ function PhysicianViewContent() {
       hpiBodyDiagramParts.length > 0,
   );
   const shouldShowLegacyImageAnalysisCard = Boolean(session.imageSummary && !patientUploads?.lesionImage);
+
+  useEffect(() => {
+    if (process.env.NODE_ENV !== "development") return;
+    const bodyDiagram = patientUploads?.bodyDiagram;
+    console.debug("[physician/view] bodyDiagram render summary", {
+      sessionCode: session.sessionCode,
+      selectedParts: Array.isArray(bodyDiagram?.selectedParts) ? bodyDiagram.selectedParts.length : 0,
+      markersByPart: Array.isArray(bodyDiagram?.markersByPart) ? bodyDiagram.markersByPart.length : 0,
+      leftSoleMarkers: Array.isArray(bodyDiagram?.leftSoleMarkers) ? bodyDiagram.leftSoleMarkers.length : 0,
+      renderedDiagrams: hpiDiagramSelectionsToRender.length,
+    });
+  }, [patientUploads, session.sessionCode, hpiDiagramSelectionsToRender.length]);
 
   return (
     <div className="min-h-screen bg-slate-100">
@@ -2046,7 +2063,7 @@ function PhysicianViewContent() {
                           <p className="text-sm font-medium text-slate-700">
                             Body Diagram Selection
                           </p>
-                          {hpiMarkerSelections.map((selection, selectionIndex) => {
+                          {hpiDiagramSelectionsToRender.map((selection, selectionIndex) => {
                             const image = getBodyDiagramImage(selection.part, selection.side);
                             const partLabel = selection.side
                               ? `${selection.side} ${selection.part}`
@@ -2080,10 +2097,13 @@ function PhysicianViewContent() {
                                   ))}
                                 </div>
                                 <p className="mt-2 text-xs text-slate-500">
-                                  Coordinates:{" "}
-                                  {selection.markers
-                                    .map((marker) => `(${Math.round(marker.xPct)}, ${Math.round(marker.yPct)})`)
-                                    .join(", ")}
+                                  {selection.markers.length > 0
+                                    ? `Coordinates: ${selection.markers
+                                        .map(
+                                          (marker) => `(${Math.round(marker.xPct)}, ${Math.round(marker.yPct)})`,
+                                        )
+                                        .join(", ")}`
+                                    : "No marker coordinates captured for this selection."}
                                 </p>
                               </div>
                             );

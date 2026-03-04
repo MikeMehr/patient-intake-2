@@ -23,6 +23,71 @@ const mskBodyPartSet = new Set<BodyPart>([
 
 const mskCheckpointAssistantCounts = new Set([1, 4, 9]);
 
+const negationPattern =
+  /\b(no|not|without|denies|deny|denied|never|none|free of|don['’]t|do not|doesn['’]t|does not|isn['’]t|is not|am not|aren['’]t|are not|haven['’]t|have not|hadn['’]t|had not)\b/;
+const symptomContextPattern =
+  /\b(pain|painful|hurt|hurts|hurting|ache|aching|swelling|swollen|tender|tenderness|sore|stiff|stiffness|injury|injured|sprain|strain|numb|numbness|tingling|weakness|limited|limit(ed|ation)?|limp|limping|deformity|bruise|bruising)\b/;
+
+const bodyPartMentionPattern: Record<BodyPart, RegExp> = {
+  wrist: /\b(wrist|wrists)\b/,
+  hand: /\b(hand|hands)\b/,
+  elbow: /\b(elbow|elbows|forearm|forearms)\b/,
+  shoulder: /\b(shoulder|shoulders)\b/,
+  neck: /\b(neck|cervical|thyroid)\b/,
+  back: /\b(back)\b/,
+  lower_back: /\b(lower\s+back|low\s+back|lumbar)\b/,
+  upper_back: /\b(upper\s+back|upper\s+spine|thoracic)\b/,
+  knee: /\b(knee|knees)\b/,
+  ankle: /\b(ankle|ankles|lower\s+leg|shin|shins|calf|calves)\b/,
+  foot: /\b(foot|feet|heel|heels|sole|plantar|arch)\b/,
+  hip: /\b(hip|hips|upper\s+leg|upper\s+thigh|thigh|thighs)\b/,
+  head: /\b(head|headache|headaches|scalp|face|facial)\b/,
+  chest: /\b(chest|breast|breasts|breastbone|sternum|anterior\s+neck|front\s+of\s+neck)\b/,
+  abdomen: /\b(abdomen|abdominal|stomach|belly)\b/,
+};
+
+function hasNegatedBodyPartMention(textLower: string, part: BodyPart): boolean {
+  const mention = bodyPartMentionPattern[part];
+  if (!mention) return false;
+  const tokens = textLower.split(/[.!?;\n]/).map((segment) => segment.trim());
+  return tokens.some((segment) => {
+    if (!mention.test(segment)) return false;
+    const mentionIndex = segment.search(mention);
+    if (mentionIndex === -1) return false;
+    const prefix = segment.slice(0, mentionIndex);
+    // Keep the scope narrow to avoid over-filtering distant negations.
+    const nearbyPrefix = prefix.slice(-60);
+    return negationPattern.test(nearbyPrefix);
+  });
+}
+
+function getPatientReportedMskParts(transcript: InterviewMessage[]): BodyPartInfo[] {
+  const patientMessages = transcript.filter((message) => message.role === "patient");
+  const inferred: BodyPartInfo[] = [];
+  for (const message of patientMessages) {
+    const lower = message.content.toLowerCase();
+    const detected = dedupeMskParts(detectBodyParts(message.content));
+    for (const detectedPart of detected) {
+      if (hasNegatedBodyPartMention(lower, detectedPart.part)) {
+        continue;
+      }
+      const hasMarkerEvidence = hasBodyPartLocationAnswerSignal(lower, detectedPart.part);
+      const hasSymptomContext = lower
+        .split(/[.!?;\n]/)
+        .map((segment) => segment.trim())
+        .some((segment) => {
+          if (!segment || !symptomContextPattern.test(segment)) return false;
+          return bodyPartMentionPattern[detectedPart.part]?.test(segment) ?? false;
+        });
+      if (!hasMarkerEvidence && !hasSymptomContext) {
+        continue;
+      }
+      inferred.push(detectedPart);
+    }
+  }
+  return dedupeMskParts(inferred);
+}
+
 const forcedLocationQuestionByLanguage: Record<string, string> = {
   en: "Looking at the diagram/photo of your {bodyParts}, please mark exactly where the pain is most noticeable.",
   es: "Mirando el diagrama/foto de su(s) {bodyParts}, por favor marque exactamente dónde nota más dolor.",
@@ -75,9 +140,7 @@ export function getRequiredMskParts(
   transcript: InterviewMessage[],
 ): BodyPartInfo[] {
   const fromChiefComplaint = dedupeMskParts(detectBodyParts(chiefComplaint));
-  const fromTranscript = dedupeMskParts(
-    transcript.flatMap((message) => detectBodyParts(message.content)),
-  );
+  const fromTranscript = getPatientReportedMskParts(transcript);
   return dedupeMskParts([...fromChiefComplaint, ...fromTranscript]);
 }
 
