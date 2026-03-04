@@ -495,7 +495,7 @@ export default function OrganizationDetailPage() {
             <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-6 mt-6">
               <div className="flex items-start justify-between gap-4">
                 <div>
-                  <h2 className="text-lg font-semibold text-slate-900">EMR (OSCAR)</h2>
+                  <h2 className="text-lg font-semibold text-slate-900">EMR</h2>
                   <p className="text-xs text-slate-500 mt-1">
                     Store credentials per organization. Tokens are stored encrypted.
                   </p>
@@ -526,7 +526,7 @@ export default function OrganizationDetailPage() {
               <div className="mt-4 space-y-3">
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">
-                    OSCAR Base URL
+                    EMR Base URL
                   </label>
                   <input
                     type="url"
