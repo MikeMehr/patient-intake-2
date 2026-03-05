@@ -4231,57 +4231,53 @@ export default function Home() {
             <div className="mt-2 h-px w-full bg-slate-200/70" aria-hidden="true" />
 
             <section className="mt-2 rounded-3xl border border-slate-100 bg-white/80 px-5 py-6 shadow-slate-100">
-              <div className="flex items-center justify-between gap-4">
-                <div>
-                  <div className="flex items-center justify-between">
-                    <h2 className="text-2xl font-semibold text-slate-900">
-                      Guided interview
-                    </h2>
-                    <div className="ml-3 flex items-center gap-2">
-                      <button
-                        onClick={() => {
-                          setIsMuted(!isMuted);
-                        }}
-                        className={`inline-flex items-center justify-center rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
-                          isMuted
-                            ? "bg-red-100 text-red-700 hover:bg-red-200"
-                            : "bg-slate-100 text-slate-700 hover:bg-slate-200"
-                        }`}
-                        title={isMuted ? "Unmute AI voice" : "Mute AI voice"}
-                      >
-                        {isMuted ? (
-                          <>
-                            <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" clipPath="url(#clip0)" />
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" />
-                            </svg>
-                            Muted
-                          </>
-                        ) : (
-                          <>
-                            <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072M18.364 5.636a9 9 0 010 12.728M12 9l-6 6H4a1 1 0 01-1-1v-4a1 1 0 011-1h2l6-6v14z" />
-                            </svg>
-                            Sound On
-                          </>
-                        )}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-                {isSpeaking && !isPaused && language.toLowerCase().startsWith("en") && (
-                  <video
-                    className="w-40 h-24 rounded-xl object-cover border border-slate-200 shadow-sm"
-                    autoPlay
-                    loop
-                    muted
-                    playsInline
-                    preload="auto"
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+                <h2 className="text-2xl font-semibold text-slate-900">
+                  Guided interview
+                </h2>
+                <div className="flex w-full flex-wrap items-center justify-center gap-2 sm:w-auto sm:justify-end">
+                  <button
+                    onClick={() => {
+                      setIsMuted(!isMuted);
+                    }}
+                    className={`inline-flex items-center justify-center rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+                      isMuted
+                        ? "bg-red-100 text-red-700 hover:bg-red-200"
+                        : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                    }`}
+                    title={isMuted ? "Unmute AI voice" : "Mute AI voice"}
                   >
-                    <source src="/Confident_Busines_woman.mp4" type="video/mp4" />
-                    Your browser does not support the video tag.
-                  </video>
-                )}
+                    {isMuted ? (
+                      <>
+                        <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" clipPath="url(#clip0)" />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" />
+                        </svg>
+                        Muted
+                      </>
+                    ) : (
+                      <>
+                        <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072M18.364 5.636a9 9 0 010 12.728M12 9l-6 6H4a1 1 0 01-1-1v-4a1 1 0 011-1h2l6-6v14z" />
+                        </svg>
+                        Sound On
+                      </>
+                    )}
+                  </button>
+                  {isSpeaking && !isPaused && language.toLowerCase().startsWith("en") && (
+                    <video
+                      className="h-24 w-full max-w-40 rounded-xl border border-slate-200 object-cover shadow-sm sm:w-40"
+                      autoPlay
+                      loop
+                      muted
+                      playsInline
+                      preload="auto"
+                    >
+                      <source src="/Confident_Busines_woman.mp4" type="video/mp4" />
+                      Your browser does not support the video tag.
+                    </video>
+                  )}
+                </div>
               </div>
               <div
                 ref={chatRef}

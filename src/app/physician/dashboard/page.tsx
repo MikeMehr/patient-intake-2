@@ -636,7 +636,7 @@ export default function PhysicianDashboard() {
               </button>
               <button
                 onClick={handleScrollToPatientLookup}
-                className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50"
+                className="hidden sm:inline-flex px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50"
               >
                 Patient Lookup
               </button>
