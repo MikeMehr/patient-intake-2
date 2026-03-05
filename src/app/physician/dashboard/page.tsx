@@ -611,19 +611,19 @@ export default function PhysicianDashboard() {
           <Image
             src="/LogoFinal.png"
             alt="Health Assist AI logo"
-            width={140}
-            height={32}
-            className="mx-auto mb-5 h-[47px] w-[142px] object-contain sm:h-[63px] sm:w-[188px]"
+            width={112}
+            height={26}
+            className="mx-auto mb-2 h-[38px] w-[114px] object-contain sm:h-[50px] sm:w-[150px]"
             priority
           />
           <div className="flex justify-between items-center">
             <div>
-              <h1 className="text-2xl font-semibold text-slate-900">
-                Patient Intake Dashboard
+              <h1 className="text-[1.1rem] font-semibold text-slate-900">
+                Physician Dashboard
               </h1>
               {physician && (
                 <p className="text-slate-600 mt-1">
-                  {physician.firstName} {physician.lastName} - {physician.clinicName}
+                  Dr. {physician.firstName} {physician.lastName} - {physician.clinicName}
                   {physician.clinicAddress ? ` • ${physician.clinicAddress}` : ""}
                 </p>
               )}
@@ -653,9 +653,8 @@ export default function PhysicianDashboard() {
 
         {/* Invite Patient Form */}
         <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6 mb-6">
-          <p className="text-[1.75rem] font-medium text-slate-700 mb-1">AI Guided patient interview</p>
           <h2 className="text-lg font-semibold text-slate-900 mb-4">
-            Invite Patient
+            Invite Patient for AI guided interview
           </h2>
           <form
             onSubmit={handleSendInvitation}

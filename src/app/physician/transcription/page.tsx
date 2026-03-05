@@ -584,17 +584,14 @@ export default function PhysicianTranscriptionPage() {
             <Image
               src="/LogoFinal.png"
               alt="Health Assist AI logo"
-              width={169}
-              height={42}
-              className="mx-auto mb-5 h-[47px] w-[142px] object-contain sm:h-[63px] sm:w-[188px]"
+              width={112}
+              height={26}
+              className="mx-auto mb-2 h-[38px] w-[114px] object-contain sm:h-[50px] sm:w-[150px]"
               priority
             />
             <div className="flex items-center justify-between">
               <div>
-                <h1 className="text-2xl font-semibold text-slate-900">Physician Transcription</h1>
-                <p className="text-sm text-slate-600 mt-1">
-                  Generate a HealthAssist SOAP snapshot for EMR transfer.
-                </p>
+                <h1 className="text-[1.1rem] font-semibold text-slate-900">Physician Transcription</h1>
                 {snapshotLabel && <p className="text-xs text-amber-700 mt-2">{snapshotLabel}</p>}
               </div>
               <button
@@ -610,7 +607,7 @@ export default function PhysicianTranscriptionPage() {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="lg:col-span-2 space-y-6">
               <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6 space-y-4">
-                <h2 className="text-lg font-semibold text-slate-900">1) Select patient</h2>
+                <h2 className="text-[1.1rem] font-semibold text-slate-900">1) Select patient</h2>
                 <div className="flex gap-2">
                   <input
                     type="text"
@@ -694,7 +691,7 @@ export default function PhysicianTranscriptionPage() {
               </div>
 
               <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6 space-y-4">
-                <h2 className="text-lg font-semibold text-slate-900">2) Capture transcript</h2>
+                <h2 className="text-[1.1rem] font-semibold text-slate-900">2) Capture transcript</h2>
                 <input
                   type="text"
                   value={chiefComplaint}
@@ -738,7 +735,7 @@ export default function PhysicianTranscriptionPage() {
 
               <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6 space-y-4">
                 <div className="flex items-center justify-between gap-3">
-                  <h2 className="text-lg font-semibold text-slate-900">3) Review and export</h2>
+                  <h2 className="text-[1.1rem] font-semibold text-slate-900">3) Review and export</h2>
                   <button
                     type="button"
                     onClick={copySoapText}
@@ -786,7 +783,7 @@ export default function PhysicianTranscriptionPage() {
 
             <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6">
               <div className="mb-3 flex items-center justify-between gap-2">
-                <h2 className="text-lg font-semibold text-slate-900">Recent snapshots</h2>
+                <h2 className="text-[1.1rem] font-semibold text-slate-900">Recent snapshots</h2>
                 <button
                   type="button"
                   onClick={deleteAllSnapshots}
