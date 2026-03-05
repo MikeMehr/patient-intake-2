@@ -4233,7 +4233,7 @@ export default function Home() {
             <section className="mt-2 rounded-3xl border border-slate-100 bg-white/80 px-5 py-6 shadow-slate-100">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
                 <h2 className="text-2xl font-semibold text-slate-900">
-                  Guided interview
+                  Guided Interview
                 </h2>
                 <div className="flex w-full flex-wrap items-center justify-center gap-2 sm:w-auto sm:justify-end">
                   <button

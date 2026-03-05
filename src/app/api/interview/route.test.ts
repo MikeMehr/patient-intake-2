@@ -450,6 +450,28 @@ describe("MSK hard override checkpoints", () => {
     expect(result).toEqual(turn);
   });
 
+  it("does not force back diagram when patient says pain comes back for headache", () => {
+    const turn: InterviewResponse = {
+      type: "question",
+      question: "Do you have nausea with the headache?",
+      rationale: "Assess migraine-associated symptoms.",
+    };
+    const transcript = [
+      { role: "assistant", content: "When did the headache start?" },
+      { role: "patient", content: "About 3 days ago. Advil helps with pain but it tends to come back." },
+    ] as const;
+
+    const result = applyMskSecondQuestionOverride({
+      turn,
+      transcript: [...transcript],
+      chiefComplaint: "3 days of headache",
+      forceSummary: false,
+      languageCode: "en",
+    });
+
+    expect(result).toEqual(turn);
+  });
+
   it("does not force override outside checkpoint turns", () => {
     const turn: InterviewResponse = {
       type: "question",

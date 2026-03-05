@@ -30,6 +30,17 @@ export interface BodyPartInfo {
 export function detectBodyParts(text: string): BodyPartInfo[] {
   const lowerText = text.toLowerCase();
   const detected: BodyPartInfo[] = [];
+  const hasBackRecurrencePhrasing =
+    /\b(come|comes|coming|came)\s+back\b/.test(lowerText) ||
+    /\b(back)\s+(again)\b/.test(lowerText);
+  const hasExplicitBackAnatomyContext =
+    /\b(my|the|your|his|her|their)\s+back\b/.test(lowerText) ||
+    /\bback\s+(pain|ache|aches|aching|hurt|hurts|hurting|injury|injured|spasm|stiff|stiffness|sore)\b/.test(
+      lowerText,
+    ) ||
+    /\b(pain|ache|aches|aching|hurt|hurts|hurting|injury|injured|spasm|stiff|stiffness|sore)\s+(in|at|of)\s+(my|the|your|his|her|their)?\s*back\b/.test(
+      lowerText,
+    );
   const hasAnteriorNeckPhrasing = /\b(anterior\s+neck|front\s+of\s+neck)\b/.test(lowerText);
   const hasThyroidPhrasing = /\bthyroid\b/.test(lowerText);
   const hasBackOfJointPhrasing =
@@ -85,7 +96,8 @@ export function detectBodyParts(text: string): BodyPartInfo[] {
     lowerText.match(/\b(back)\b/) &&
     !lowerText.includes("lower") &&
     !lowerText.includes("upper") &&
-    !hasBackOfJointPhrasing
+    !hasBackOfJointPhrasing &&
+    (!hasBackRecurrencePhrasing || hasExplicitBackAnatomyContext)
   ) {
     detected.push({ part: "back", name: "back" });
   }

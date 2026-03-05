@@ -44,7 +44,7 @@ function IntakeCompletedContent() {
     }, 1000);
 
     const timeout = window.setTimeout(() => {
-      window.location.assign(redirectUrl);
+      window.location.replace(redirectUrl);
     }, AUTO_REDIRECT_MS);
 
     return () => {
@@ -61,6 +61,9 @@ function IntakeCompletedContent() {
           Thank you. Your intake has been submitted to your physician.
         </p>
         <p className="mt-2 text-sm text-slate-700">
+          You will soon be contacted by your physician.
+        </p>
+        <p className="mt-2 text-sm text-slate-700">
           For your privacy, please close this browser tab now.
         </p>
         <p className="mt-4 text-xs text-slate-500">
@@ -68,7 +71,7 @@ function IntakeCompletedContent() {
         </p>
         <button
           type="button"
-          onClick={() => window.location.assign(redirectUrl)}
+          onClick={() => window.location.replace(redirectUrl)}
           className="mt-6 inline-flex items-center justify-center rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
         >
           Continue
@@ -87,6 +90,9 @@ export default function IntakeCompletedPage() {
             <h1 className="text-2xl font-semibold text-slate-900">Submission received</h1>
             <p className="mt-3 text-sm text-slate-700">
               Thank you. Your intake has been submitted to your physician.
+            </p>
+            <p className="mt-2 text-sm text-slate-700">
+              You will soon be contacted by your physician.
             </p>
             <p className="mt-2 text-sm text-slate-700">
               For your privacy, please close this browser tab now.

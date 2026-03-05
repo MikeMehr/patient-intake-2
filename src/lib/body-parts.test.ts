@@ -69,6 +69,16 @@ describe("detectBodyParts", () => {
     expect(parts.some((part) => part.part === "back")).toBe(true);
   });
 
+  it("does not map recurrence phrasing as anatomical back pain", () => {
+    const parts = detectBodyParts("Advil helps with the headache, but the pain comes back.");
+    expect(parts.some((part) => part.part === "back")).toBe(false);
+  });
+
+  it("keeps explicit anatomical back pain even with recurrence phrasing", () => {
+    const parts = detectBodyParts("My back pain improves with Advil but comes back at night.");
+    expect(parts.some((part) => part.part === "back")).toBe(true);
+  });
+
   it("keeps upper back complaints mapped to upper_back", () => {
     const parts = detectBodyParts("upper back pain after lifting");
     expect(parts.some((part) => part.part === "upper_back")).toBe(true);
