@@ -48,6 +48,7 @@ declare global {
 }
 
 type Status = "idle" | "awaitingAi" | "awaitingPatient" | "saving" | "complete" | "paused";
+type MicUiState = "idle" | "starting" | "listening";
 
 const statusCopy: Record<Status, string> = {
   idle: "Enter your main concern to begin the interview.",
@@ -577,6 +578,7 @@ export default function Home() {
   const [showStillThinking, setShowStillThinking] = useState(false);
   const [showReview, setShowReview] = useState(false);
   const [isHolding, setIsHolding] = useState(false);
+  const [micUiState, setMicUiState] = useState<MicUiState>("idle");
   const [micWarning, setMicWarning] = useState<string | null>(null);
   const [isCoarsePointer, setIsCoarsePointer] = useState(false);
   const [isSmallWidth, setIsSmallWidth] = useState(false);
@@ -1576,6 +1578,7 @@ export default function Home() {
           recognitionStartedAtRef.current = Date.now();
           setIsListening(true);
           isListeningRef.current = true;
+          setMicUiState("listening");
           lastResultTime = Date.now();
           setError(null); // Clear any previous errors
           hadResultRef.current = false;
@@ -1654,6 +1657,7 @@ export default function Home() {
             console.error("Speech recognition error: Microphone access denied");
             setIsListening(false);
             isListeningRef.current = false;
+            setMicUiState("idle");
             setError("Microphone access denied. Please enable microphone permissions.");
           } else if (event.error === "no-speech") {
             // "no-speech" is normal - don't log as error, just handle it
@@ -1673,17 +1677,20 @@ export default function Home() {
             setIsListening(false);
             isListeningRef.current = false;
             isListeningRef.current = false;
+            setMicUiState("idle");
           } else if (event.error === "network") {
             // Network error
             console.error("Speech recognition error: Network issue");
             setIsListening(false);
             isListeningRef.current = false;
+            setMicUiState("idle");
             setError("Network error. Please check your connection and try again.");
           } else if (event.error === "audio-capture") {
             // Audio capture error
             console.error("Speech recognition error: Audio capture failed");
             setIsListening(false);
             isListeningRef.current = false;
+            setMicUiState("idle");
             setError("Audio capture failed. Please check your microphone.");
           } else {
             // Other errors - log but don't show to user unless critical
@@ -1692,6 +1699,7 @@ export default function Home() {
             if (event.error === "service-not-allowed" || event.error === "bad-grammar") {
               setIsListening(false);
               isListeningRef.current = false;
+              setMicUiState("idle");
             }
           }
         };
@@ -1705,17 +1713,20 @@ export default function Home() {
             !isCancellingRef.current;
           if (shouldRestart) {
             try {
+              setMicUiState("starting");
               speechRecognitionRef.current?.start();
               isListeningRef.current = true;
               setIsListening(true);
             } catch {
               setIsListening(false);
               isListeningRef.current = false;
+              setMicUiState("idle");
             }
             return;
           }
           setIsListening(false);
           isListeningRef.current = false;
+          setMicUiState("idle");
           const interimAtEnd = interimTranscriptRef.current.trim();
           // Always preserve any interim results when holding, even if short
           // This ensures speech that was detected but not finalized gets captured
@@ -1753,12 +1764,20 @@ export default function Home() {
     // Capture current selection before we start listening (in case focus shifts)
     updateSelectionRef(patientResponseInputRef.current);
     const allowDuringReview = options?.allowDuringReview ?? false;
+    if (status !== "awaitingPatient") return;
+    setMicUiState("starting");
     if (isSpeaking) {
       stopSpeaking();
       await new Promise((resolve) => setTimeout(resolve, 120));
     }
-    if (cleaningTranscript) return;
-    if (showReview && !allowDuringReview) return;
+    if (cleaningTranscript) {
+      setMicUiState("idle");
+      return;
+    }
+    if (showReview && !allowDuringReview) {
+      setMicUiState("idle");
+      return;
+    }
     if (useAzureStt && status === "awaitingPatient") {
       try {
         if (hasPendingSubmission) {
@@ -1824,12 +1843,14 @@ export default function Home() {
         recorder.onerror = () => {
           setIsListening(false);
           isListeningRef.current = false;
+          setMicUiState("idle");
           setError("Audio capture failed. Please check your microphone.");
         };
 
         recorder.onstop = async () => {
           setIsListening(false);
           isListeningRef.current = false;
+          setMicUiState("idle");
           const shouldFinalize = finalizeMediaOnStopRef.current;
           finalizeMediaOnStopRef.current = false;
           const chunks = [...mediaChunksRef.current];
@@ -1868,10 +1889,12 @@ export default function Home() {
         isHoldingRef.current = true;
         setIsListening(true);
         isListeningRef.current = true;
+        setMicUiState("listening");
         return;
       } catch (error) {
         setIsListening(false);
         isListeningRef.current = false;
+        setMicUiState("idle");
         if (error instanceof DOMException && error.name === "NotAllowedError") {
           setError("Microphone access denied. Please enable microphone permissions.");
         } else {
@@ -1925,23 +1948,30 @@ export default function Home() {
         recognitionStartScheduledAtRef.current = Date.now();
         speechRecognitionRef.current?.start();
         isListeningRef.current = true;
+        return;
       } catch (error) {
         // Check if error is because recognition is already started
         if (error instanceof Error && error.name === "InvalidStateError") {
           console.log("[Speech Recognition] Recognition already started");
           setIsListening(true);
           isListeningRef.current = true;
+          setMicUiState("listening");
+          return;
         } else {
           console.error("Error starting speech recognition:", error);
+          setMicUiState("idle");
           setError("Unable to start voice input. Please try again.");
+          return;
         }
       }
     }
+    setMicUiState("idle");
   };
 
   const stopListening = (finalizeDraft = false) => {
     setIsHolding(false);
     isHoldingRef.current = false;
+    setMicUiState("idle");
     if (useAzureStt) {
       finalizeMediaOnStopRef.current = finalizeDraft;
       const recorder = mediaRecorderRef.current;
@@ -1978,6 +2008,9 @@ export default function Home() {
   };
 
   const toggleListening = (options?: { allowDuringReview?: boolean }) => {
+    if (micUiState === "starting") {
+      return;
+    }
     if (isHoldingRef.current || isListeningRef.current) {
       stopListening(true);
       return;
@@ -3332,7 +3365,9 @@ export default function Home() {
       const hasPhotoVerbPair =
         /\b(upload|share|send|take)\b/.test(questionLower) &&
         /\b(photo|picture|image)\b/.test(questionLower);
+      const isRequestingPhotoFromFlag = turn.requiresPhotoUpload === true;
       const isRequestingPhoto =
+        isRequestingPhotoFromFlag ||
         photoKeywords.some((keyword) => questionLower.includes(keyword)) ||
         hasPhotoVerbPair;
       
@@ -3491,14 +3526,22 @@ export default function Home() {
 
   const microphoneBlocked =
     typeof error === "string" && error.toLowerCase().includes("microphone access denied");
-  const micStatusText = isHolding
+  const micStatusText = micUiState === "listening"
     ? "Listening..."
+    : micUiState === "starting"
+      ? "Starting microphone..."
     : cleaningTranscript
       ? "Processing transcript..."
       : microphoneBlocked
         ? "Microphone blocked. Please allow access in browser settings."
         : "Microphone ready";
   const micStatusClassName = microphoneBlocked ? "text-amber-600" : "text-slate-500";
+  const micButtonLabel =
+    micUiState === "listening"
+      ? "Stop listening"
+      : micUiState === "starting"
+        ? "Starting..."
+        : "Start listening";
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-slate-100 px-4 py-10 text-slate-900">
@@ -4780,18 +4823,20 @@ export default function Home() {
                           }
                           style={{ touchAction: "manipulation", WebkitUserSelect: "none", userSelect: "none" }}
                           className={`mt-2 inline-flex items-center gap-2 rounded-full px-5 py-2 text-base font-semibold shadow-sm transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 select-none ${
-                            isHolding
+                            micUiState === "listening"
                               ? "bg-red-500 text-white border border-red-500 focus-visible:outline-red-500"
+                              : micUiState === "starting"
+                                ? "bg-amber-500 text-white border border-amber-500 focus-visible:outline-amber-500"
                               : "border border-slate-200 bg-white text-slate-700 focus-visible:outline-emerald-600"
                           } ${isCoarsePointer ? "opacity-100" : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"}`}
-                          title={isHolding ? "Stop listening" : "Start listening"}
+                          title={micButtonLabel}
                         >
                           <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 1a3 3 0 00-3 3v6a3 3 0 006 0V4a3 3 0 00-3-3z" />
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 10v2a7 7 0 01-14 0v-2" />
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19v4m-4 0h8" />
                           </svg>
-                          {isHolding ? "Stop listening" : "Start listening"}
+                          {micButtonLabel}
                         </button>
                         <div className="mt-2 flex min-h-[20px] w-full items-center justify-between gap-3 text-xs">
                           {micWarning ? (
@@ -5005,13 +5050,15 @@ export default function Home() {
                           WebkitTapHighlightColor: "transparent",
                         }}
                         className={`inline-flex items-center justify-center rounded-2xl px-4 py-2 text-sm font-semibold transition select-none ${
-                          isHolding
+                          micUiState === "listening"
                             ? "bg-red-500 text-white hover:bg-red-600"
+                            : micUiState === "starting"
+                              ? "bg-amber-500 text-white hover:bg-amber-600"
                             : "bg-emerald-600 text-white hover:bg-emerald-500"
                         } appearance-none outline-none focus:outline-none focus-visible:outline-none focus-visible:ring-0 disabled:cursor-not-allowed disabled:bg-emerald-200 disabled:text-emerald-600`}
-                        title={isHolding ? "Stop listening" : "Start listening"}
+                        title={micButtonLabel}
                       >
-                        {isHolding ? "Stop listening" : "Start listening"}
+                        {micButtonLabel}
                       </button>
                     </div>
                     <div className="flex min-h-[20px] items-center justify-between gap-3 text-xs">

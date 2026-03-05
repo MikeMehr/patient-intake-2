@@ -162,6 +162,7 @@ PHOTO REQUEST GUIDANCE:
   * Any visible abnormality that would aid assessment
 - Ask early (after initial open-ended questions) with optional language: "If you can, you can upload/share a photo of the area to help me see what you're describing."
 - Include clear upload phrasing: "upload a photo", "share a photo", "send a picture", "take a photo".
+- If your current question is asking the patient to upload/share/send/take a photo, set "requiresPhotoUpload": true in your JSON response.
 - Example: "A photo would help me assess this — would you like to upload a picture of the area?"
 - Only request photos if not already provided (check if imageSummary is available in the context).
 - If imageSummary is available, do NOT ask for another photo by default. Briefly acknowledge the uploaded image and only ask targeted follow-up questions if key image details remain unclear (for example onset, spread, color/shape change, pain/itch, discharge, warmth, or tenderness).
@@ -1440,7 +1441,7 @@ ${forceSummary ? `CRITICAL: The patient has requested to end the interview. You 
 - Have enough information for physician handoff and follow-up planning ${hasMultipleComplaints ? "for ALL complaints" : ""}
 - ${hasMultipleComplaints ? "Explicit confirmation: You have asked comprehensive clinical questions for ALL complaints AND assessed red flags for ALL complaints AND can form differential diagnoses and physician-handoff recommendations" : "Explicit confirmation: You have asked comprehensive clinical questions and assessed all red flags and can form differential diagnoses and physician-handoff recommendations"}`}
 
-If you still need more critical clinical information${forceSummary ? "" : " and the patient hasn't requested to end"}${forceSummary ? "" : ", respond with a JSON object shaped like {\"type\":\"question\",\"question\":\"...\",\"rationale\":\"...\"}"}. The rationale should explain the clinical purpose of your question (e.g., "To assess for cardiac risk factors" or "To distinguish between viral and bacterial pharyngitis").
+If you still need more critical clinical information${forceSummary ? "" : " and the patient hasn't requested to end"}${forceSummary ? "" : ", respond with a JSON object shaped like {\"type\":\"question\",\"question\":\"...\",\"rationale\":\"...\",\"requiresPhotoUpload\":false}"}. The rationale should explain the clinical purpose of your question (e.g., "To assess for cardiac risk factors" or "To distinguish between viral and bacterial pharyngitis"). Set "requiresPhotoUpload": true only when the question explicitly asks for image upload/share/send/take.
 If you have sufficient information for a clinical assessment with differential diagnoses and physician handoff${forceSummary ? " or the patient has requested to end" : ` (typically when complaint-scoped data is sufficient and relevant red flags are addressed)`}, OR if the FOCUS CONTROLLER says early-stop is met, respond with {"type":"summary","positives":[],"negatives":[],"summary":"","investigations":[],"assessment":"","plan":[]}. Remember: Your assessment must include differential diagnoses, and your plan must avoid treatment/medication advice and focus on physician handoff.
 
 CRITICAL: You MUST respond with valid JSON only. Do not include any text before or after the JSON object. Ensure all strings are properly escaped and all JSON syntax is correct.

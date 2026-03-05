@@ -202,6 +202,7 @@ const interviewQuestionSchema = z.object({
     .max(280)
     .optional(),
   requiresLocationMarking: z.boolean().optional(),
+  requiresPhotoUpload: z.boolean().optional(),
   deferredIntentHint: z.string().min(3).max(500).optional(),
 });
 
