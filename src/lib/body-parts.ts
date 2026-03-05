@@ -10,6 +10,7 @@ export type BodyPart =
   | "lower_back"
   | "upper_back"
   | "knee"
+  | "lower_leg"
   | "ankle"
   | "foot"
   | "hip"
@@ -95,8 +96,14 @@ export function detectBodyParts(text: string): BodyPartInfo[] {
     detected.push({ part: "knee", name: "knee", side });
   }
 
-  // Ankle (include lower-leg phrasing)
-  if (lowerText.match(/\b(ankle|ankles|lower\s+leg|shin|shins|calf|calves)\b/)) {
+  // Lower leg
+  if (lowerText.match(/\b(lower\s+leg|shin|shins|calf|calves)\b/)) {
+    const side = lowerText.includes("right") ? "right" : lowerText.includes("left") ? "left" : undefined;
+    detected.push({ part: "lower_leg", name: "lower leg", side });
+  }
+
+  // Ankle
+  if (lowerText.match(/\b(ankle|ankles)\b/)) {
     const side = lowerText.includes("right") ? "right" : lowerText.includes("left") ? "left" : undefined;
     detected.push({ part: "ankle", name: "ankle", side });
   }

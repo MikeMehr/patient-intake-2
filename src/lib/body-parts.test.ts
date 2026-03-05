@@ -48,10 +48,14 @@ describe("detectBodyParts", () => {
     expect(detectBodyParts("left forearm pain").some((part) => part.part === "elbow")).toBe(true);
   });
 
-  it("maps lower-leg phrasing to ankle", () => {
-    expect(detectBodyParts("right lower leg pain").some((part) => part.part === "ankle")).toBe(true);
-    expect(detectBodyParts("left calf pain").some((part) => part.part === "ankle")).toBe(true);
-    expect(detectBodyParts("shin pain after running").some((part) => part.part === "ankle")).toBe(true);
+  it("maps lower-leg phrasing to lower_leg", () => {
+    expect(detectBodyParts("right lower leg pain").some((part) => part.part === "lower_leg")).toBe(true);
+    expect(detectBodyParts("left calf pain").some((part) => part.part === "lower_leg")).toBe(true);
+    expect(detectBodyParts("shin pain after running").some((part) => part.part === "lower_leg")).toBe(true);
+  });
+
+  it("keeps explicit ankle phrasing mapped to ankle", () => {
+    expect(detectBodyParts("right ankle pain").some((part) => part.part === "ankle")).toBe(true);
   });
 
   it("does not treat back of the knee as a separate back complaint", () => {

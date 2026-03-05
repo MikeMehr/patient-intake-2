@@ -3330,6 +3330,7 @@ export default function Home() {
         "hand",
         "hip",
         "knee",
+        "lower_leg",
         "ankle",
         "foot",
       ]);

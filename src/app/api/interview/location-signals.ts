@@ -4,7 +4,7 @@ const locationQuestionTopicPattern =
   /\b(location|which area|which part|pain location|site of pain|where does it hurt|where is the pain|where exactly is the pain)\b/;
 
 const explicitLocationAnswerPattern =
-  /\b(location|pain location|which area|which part|site of pain|where (?:it|the pain) hurts|(?:left|right)\s+(?:knee|ankle|foot|hip|shoulder|elbow|wrist|hand|arm|leg|back|neck))\b/;
+  /\b(location|pain location|which area|which part|site of pain|where (?:it|the pain) hurts|(?:left|right)\s+(?:knee|ankle|lower leg|foot|hip|shoulder|elbow|wrist|hand|arm|leg|back|neck))\b/;
 
 const bodyPartMentionPattern: Record<BodyPart, RegExp> = {
   wrist: /\b(wrist|wrists)\b/,
@@ -16,7 +16,8 @@ const bodyPartMentionPattern: Record<BodyPart, RegExp> = {
   lower_back: /\b(lower\s+back|low\s+back|lumbar)\b/,
   upper_back: /\b(upper\s+back|thoracic)\b/,
   knee: /\b(knee|knees)\b/,
-  ankle: /\b(ankle|ankles|lower\s+leg|shin|shins|calf|calves)\b/,
+  lower_leg: /\b(lower\s+leg|shin|shins|calf|calves)\b/,
+  ankle: /\b(ankle|ankles)\b/,
   foot: /\b(foot|feet|heel|heels|sole|plantar|arch)\b/,
   hip: /\b(hip|hips|upper\s+leg|upper\s+thigh|thigh|thighs)\b/,
   head: /\b(head|headache|headaches|scalp|face|facial)\b/,

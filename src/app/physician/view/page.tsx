@@ -139,8 +139,10 @@ const getBodyDiagramImage = (part: string, side?: string): { src: string; alt: s
       return { src: "/Images/Forearm Elbow.png", alt: "Forearm and elbow pain diagram" };
     case "knee":
       return { src: "/Images/knee.png", alt: "Knee pain diagram" };
+    case "lower_leg":
+      return { src: "/Images/lower leg.png", alt: "Lower leg pain diagram" };
     case "ankle":
-      return { src: "/Images/lower leg.png", alt: "Lower leg and ankle pain diagram" };
+      return { src: "/Images/ankle.png", alt: "Ankle pain diagram" };
     case "shoulder":
       return { src: "/Images/Shoulder.png", alt: "Shoulder pain diagram" };
     case "head":
