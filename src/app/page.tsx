@@ -2618,12 +2618,19 @@ export default function Home() {
 
     const objectUrl = URL.createObjectURL(file);
     try {
-      const image = await new Promise<HTMLImageElement>((resolve, reject) => {
-        const img = new Image();
-        img.onload = () => resolve(img);
-        img.onerror = () => reject(new Error("Unable to load uploaded image for compression."));
-        img.src = objectUrl;
-      });
+      let image: HTMLImageElement;
+      try {
+        image = await new Promise<HTMLImageElement>((resolve, reject) => {
+          const img = new Image();
+          img.onload = () => resolve(img);
+          img.onerror = () => reject(new Error("Unable to load uploaded image for compression."));
+          img.src = objectUrl;
+        });
+      } catch {
+        // Some browsers cannot decode HEIC/HEIF for canvas compression.
+        // Fall back to storing original bytes instead of failing the upload.
+        return await fileToDataUrl(file);
+      }
 
       const maxDimension = 1600;
       const scale = Math.min(1, maxDimension / Math.max(image.width, image.height));
@@ -5089,7 +5096,7 @@ export default function Home() {
                       id="lesion-photo"
                       name="lesionPhoto"
                       type="file"
-                      accept="image/*"
+                      accept="image/*,.heic,.heif"
                       onChange={(event) => {
                         const file = event.target.files?.[0] ?? null;
                         if (selectedImagePreview) {

@@ -52,12 +52,24 @@ export async function POST(request: Request) {
     return res;
   }
 
-  // Validate allowed image types (restrict to common formats)
-  const allowedTypes = ["image/png", "image/jpeg", "image/webp"];
-  if (!allowedTypes.includes(file.type)) {
+  // Validate allowed image types (including HEIC/HEIF from iOS devices)
+  const normalizedType = file.type.toLowerCase();
+  const normalizedName = file.name.toLowerCase();
+  const allowedTypes = new Set([
+    "image/png",
+    "image/jpeg",
+    "image/webp",
+    "image/heic",
+    "image/heif",
+    "image/heic-sequence",
+    "image/heif-sequence",
+  ]);
+  const hasAllowedMime = allowedTypes.has(normalizedType);
+  const hasAllowedExtension = /\.(heic|heif)$/.test(normalizedName);
+  if (!hasAllowedMime && !hasAllowedExtension) {
     status = 400;
     const res = NextResponse.json(
-      { error: "Invalid image type. Only PNG, JPEG, or WEBP are supported." },
+      { error: "Invalid image type. Only PNG, JPEG, WEBP, HEIC, or HEIF are supported." },
       { status },
     );
     logRequestMeta("/api/analyze-lesion", requestId, status, Date.now() - started);
@@ -67,16 +79,20 @@ export async function POST(request: Request) {
   try {
     const arrayBuffer = await file.arrayBuffer();
 
-    // Basic magic-number checks for PNG/JPEG/WEBP
-    const bytes = new Uint8Array(arrayBuffer.slice(0, 12));
+    // Basic magic-number checks for PNG/JPEG/WEBP/HEIC/HEIF
+    const bytes = new Uint8Array(arrayBuffer.slice(0, 32));
     const isPng = bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47;
     const isJpeg = bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
     const isWebp =
       bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46 &&
       bytes[8] === 0x57 && bytes[9] === 0x45 && bytes[10] === 0x42 && bytes[11] === 0x50;
-    if (!(isPng || isJpeg || isWebp)) {
+    const hasFtypBox =
+      bytes[4] === 0x66 && bytes[5] === 0x74 && bytes[6] === 0x79 && bytes[7] === 0x70; // "ftyp"
+    const majorBrand = String.fromCharCode(bytes[8], bytes[9], bytes[10], bytes[11]).toLowerCase();
+    const isHeicOrHeif = hasFtypBox && new Set(["heic", "heix", "hevc", "hevx", "heif", "mif1", "msf1"]).has(majorBrand);
+    if (!(isPng || isJpeg || isWebp || isHeicOrHeif)) {
       return NextResponse.json(
-        { error: "Invalid image content." },
+        { error: "Invalid image content. Supported formats: PNG, JPEG, WEBP, HEIC, HEIF." },
         { status: 400 },
       );
     }
