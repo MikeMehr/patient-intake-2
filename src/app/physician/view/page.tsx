@@ -5,8 +5,8 @@ import { useEffect, useMemo, useRef, useState, Suspense, type PointerEvent as Re
 import { useRouter, useSearchParams } from "next/navigation";
 import type { PatientSession } from "@/lib/session-store";
 import { jsPDF } from "jspdf";
-import { CLINICAL_ASSISTIVE_DISCLAIMER } from "@/lib/clinical-safety";
 import SessionKeepAlive from "@/components/auth/SessionKeepAlive";
+import CollapsibleSection from "@/components/CollapsibleSection";
 import { mergeDiagramSelectionsForDisplay, type DiagramSelectionInput } from "@/lib/body-diagram-display";
 
 type RxMedicationRow = {
@@ -237,6 +237,47 @@ const formatHpiUpdatedAt = (value?: string): string => {
   return parsed.toLocaleString();
 };
 
+type HpiSections = {
+  subjective: string;
+  physicalFindings: string[];
+  assessment: string;
+  plan: string[];
+  patientFinalComments: string;
+};
+
+const getHpiSections = (history?: PatientSession["history"]): HpiSections => {
+  const subjective = stripOptionalNone(history?.summary || "");
+  const assessment = stripOptionalNone(history?.assessment || "");
+  const physicalFindings = toStringList((history as any)?.physicalFindings);
+  const plan = toStringList((history as any)?.plan).map((item) => item.replace(/^[-*•]\s*/, "").trim());
+  const patientFinalComments = stripOptionalNone(
+    history?.patientFinalQuestionsCommentsEnglish?.trim()
+      ? history.patientFinalQuestionsCommentsEnglish
+      : history?.patientFinalQuestionsComments || "",
+  );
+
+  return {
+    subjective: subjective || "None",
+    physicalFindings,
+    assessment: assessment || "None",
+    plan,
+    patientFinalComments: patientFinalComments || "None",
+  };
+};
+
+const getHpiAiSummary = (sections: HpiSections): string => {
+  const firstSentence = sections.subjective
+    .split(/(?<=[.!?])\s+/)
+    .map((part) => part.trim())
+    .find((part) => part.length > 0 && part.toLowerCase() !== "none");
+  if (firstSentence) return firstSentence;
+
+  const fallback = [sections.assessment, ...sections.physicalFindings, ...sections.plan]
+    .map((part) => part.trim())
+    .find((part) => part.length > 0 && part.toLowerCase() !== "none");
+  return fallback || "Clinical summary not available.";
+};
+
 function PhysicianViewContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -252,7 +293,6 @@ function PhysicianViewContent() {
   const [hpiSaveError, setHpiSaveError] = useState<string | null>(null);
   const [hpiSaveSuccess, setHpiSaveSuccess] = useState<string | null>(null);
   const [hpiCopyStatus, setHpiCopyStatus] = useState<string | null>(null);
-  const [showTranscript, setShowTranscript] = useState(false);
   const [aiAction, setAiAction] = useState<"referral_letter" | "labs" | "custom" | "lab_requisition" | "prescription">("referral_letter");
   const [aiPrompt, setAiPrompt] = useState("");
   const [aiResponse, setAiResponse] = useState("");
@@ -1723,6 +1763,9 @@ function PhysicianViewContent() {
     }
   };
 
+  const hpiSections = useMemo(() => getHpiSections(session?.history), [session?.history]);
+  const hpiAiSummary = useMemo(() => getHpiAiSummary(hpiSections), [hpiSections]);
+
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-100">
@@ -1849,22 +1892,26 @@ function PhysicianViewContent() {
       hpiBodyDiagramParts.length > 0,
   );
   const shouldShowLegacyImageAnalysisCard = Boolean(session.imageSummary && !patientUploads?.lesionImage);
+  const patientPrimaryPhone = session.patientProfile?.primaryPhone?.trim() || "";
+  const patientSecondaryPhone = session.patientProfile?.secondaryPhone?.trim() || "";
+  const patientInsuranceNumber = session.patientProfile?.insuranceNumber?.trim() || "";
+  const patientAddress = session.patientProfile?.address?.trim() || "";
 
   return (
     <div className="min-h-screen bg-slate-100">
       <div className="max-w-5xl mx-auto px-4 py-8">
         {/* Header */}
-        <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6 mb-6">
+        <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-5 mb-6">
           <Image
             src="/LogoFinal.png"
             alt="Health Assist AI logo"
-            width={260}
-            height={64}
-            className="mx-auto mb-5 h-[72px] w-[218px] object-contain sm:h-24 sm:w-[289px]"
+            width={130}
+            height={32}
+            className="mx-auto mb-3 h-[36px] w-[109px] object-contain sm:h-12 sm:w-[145px]"
             priority
           />
           <div className="flex justify-between items-center">
-            <h1 className="text-2xl font-semibold text-slate-900">
+            <h1 className="text-[1.1rem] font-semibold text-slate-900">
               Patient Intake Summary
             </h1>
             <div className="flex gap-2">
@@ -1897,14 +1944,10 @@ function PhysicianViewContent() {
           )}
         </div>
 
-        {/* Patient Information */}
         <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6 mb-6">
-          <h2 className="text-lg font-semibold text-slate-900 mb-4">
-            Patient Information
-          </h2>
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <p className="text-sm text-slate-500">Name</p>
+              <p className="text-sm text-slate-500">Patient Name</p>
               <p className="text-base font-medium text-slate-900">{session.patientName}</p>
             </div>
             <div>
@@ -1931,31 +1974,91 @@ function PhysicianViewContent() {
                 {session.patientProfile?.dateOfBirth?.trim() || "—"}
               </p>
             </div>
-            <div>
-              <p className="text-sm text-slate-500">Phone</p>
-              <p className="text-base font-medium text-slate-900">
-                {session.patientProfile?.primaryPhone?.trim() || "—"}
-              </p>
-            </div>
-            <div>
-              <p className="text-sm text-slate-500">Alternate Phone</p>
-              <p className="text-base font-medium text-slate-900">
-                {session.patientProfile?.secondaryPhone?.trim() || "—"}
-              </p>
-            </div>
-            <div>
-              <p className="text-sm text-slate-500">Health Care Number</p>
-              <p className="text-base font-medium text-slate-900">
-                {session.patientProfile?.insuranceNumber?.trim() || "—"}
-              </p>
-            </div>
+            {patientPrimaryPhone ? (
+              <div>
+                <p className="text-sm text-slate-500">Phone</p>
+                <p className="text-base font-medium text-slate-900">{patientPrimaryPhone}</p>
+              </div>
+            ) : null}
+            {patientSecondaryPhone ? (
+              <div>
+                <p className="text-sm text-slate-500">Alternate Phone</p>
+                <p className="text-base font-medium text-slate-900">{patientSecondaryPhone}</p>
+              </div>
+            ) : null}
+            {patientInsuranceNumber ? (
+              <div>
+                <p className="text-sm text-slate-500">Health Care Number</p>
+                <p className="text-base font-medium text-slate-900">{patientInsuranceNumber}</p>
+              </div>
+            ) : null}
+            {patientAddress ? (
+              <div>
+                <p className="text-sm text-slate-500">Address</p>
+                <p className="text-base text-slate-900">{patientAddress}</p>
+              </div>
+            ) : null}
             <div className="col-span-2">
-              <p className="text-sm text-slate-500">Address</p>
-              <p className="text-base text-slate-900">{session.patientProfile?.address?.trim() || "—"}</p>
-            </div>
-            <div className="col-span-2">
-              <p className="text-sm text-slate-500">Chief Complaint</p>
-              <p className="text-base text-slate-900">{session.chiefComplaint}</p>
+              <CollapsibleSection
+                id="patient-medical-history"
+                title="Medical History (PMHx, Medications, Allergies)"
+                defaultOpen={false}
+              >
+                <div className="grid grid-cols-1 gap-3 text-sm md:grid-cols-2">
+                  <div className="md:col-span-2">
+                    <p className="text-sm text-slate-500">Past Medical History</p>
+                    <p className="text-base text-slate-900">{session.patientProfile?.pmh?.trim() || "—"}</p>
+                  </div>
+                  <div className="md:col-span-2">
+                    <p className="text-sm text-slate-500">Family History</p>
+                    <p className="text-base text-slate-900">{session.patientProfile?.familyHistory?.trim() || "—"}</p>
+                  </div>
+                  <div className="md:col-span-2">
+                    <p className="text-sm text-slate-500">Current Medications</p>
+                    <p className="text-base text-slate-900">
+                      {session.patientProfile?.currentMedications?.trim() || "—"}
+                    </p>
+                  </div>
+                  <div className="md:col-span-2">
+                    <p className="text-sm text-slate-500">Allergies</p>
+                    <p className="text-base text-slate-900">{session.patientProfile?.allergies?.trim() || "—"}</p>
+                  </div>
+                  <div className="md:col-span-2">
+                    <p className="text-sm text-slate-500">Family Doctor</p>
+                    <p className="text-base text-slate-900">{session.patientProfile?.familyDoctor?.trim() || "—"}</p>
+                  </div>
+                  <div className="md:col-span-2">
+                    <p className="text-sm text-slate-500">Pharmacy</p>
+                    <div className="space-y-1">
+                      <p className="text-base text-slate-900">
+                        <span className="font-medium">Name:</span>{" "}
+                        {session.patientProfile?.pharmacyName?.trim() || "Not provided"}
+                      </p>
+                      <p className="text-base text-slate-900">
+                        <span className="font-medium">Number:</span>{" "}
+                        {session.patientProfile?.pharmacyNumber?.trim() || "Not provided"}
+                      </p>
+                      <p className="text-base text-slate-900">
+                        <span className="font-medium">Address:</span>{" "}
+                        {[
+                          session.patientProfile?.pharmacyAddress?.trim() || "",
+                          session.patientProfile?.pharmacyCity?.trim() || "",
+                        ]
+                          .filter((value) => value.length > 0)
+                          .join(", ") || "Not provided"}
+                      </p>
+                      <p className="text-base text-slate-900">
+                        <span className="font-medium">Phone:</span>{" "}
+                        {session.patientProfile?.pharmacyPhone?.trim() || "Not provided"}
+                      </p>
+                      <p className="text-base text-slate-900">
+                        <span className="font-medium">Fax:</span>{" "}
+                        {session.patientProfile?.pharmacyFax?.trim() || "Not provided"}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </CollapsibleSection>
             </div>
           </div>
         </div>
@@ -1968,16 +2071,25 @@ function PhysicianViewContent() {
                 <h2 className="text-lg font-semibold text-slate-900">
                   History of Present Illness
                 </h2>
-                <button
-                  onClick={handleCopyHpi}
-                  className="px-3 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 disabled:opacity-60"
-                  disabled={!session?.history}
-                >
-                  Copy
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleCopyHpi}
+                    className="px-3 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 disabled:opacity-60"
+                    disabled={!session?.history}
+                  >
+                    Copy
+                  </button>
+                  <button
+                    onClick={handleStartHpiEdit}
+                    className="px-3 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 disabled:opacity-60 disabled:cursor-not-allowed"
+                    disabled={isEditingHpi}
+                  >
+                    Edit
+                  </button>
+                </div>
               </div>
-              <p className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-[15px] text-amber-900">
-                {CLINICAL_ASSISTIVE_DISCLAIMER}
+              <p className="mb-4 text-sm text-slate-500">
+                AI-generated documentation requires physician verification.
               </p>
               {interviewEndedEarly && (
                 <p className="mb-4 rounded-md border border-orange-200 bg-orange-50 px-3 py-2 text-sm font-medium text-orange-900">
@@ -1985,6 +2097,12 @@ function PhysicianViewContent() {
                 </p>
               )}
               <div className="space-y-4">
+                <div>
+                  <p className="text-sm font-medium text-slate-700 mb-2">Chief Complaint</p>
+                  <p className="text-base text-slate-900 whitespace-pre-wrap">
+                    {session.chiefComplaint || "—"}
+                  </p>
+                </div>
                 <div>
                   <p className="text-sm font-medium text-slate-700 mb-2">HPI</p>
                   {isEditingHpi ? (
@@ -1997,9 +2115,56 @@ function PhysicianViewContent() {
                       placeholder={"Subjective:\n\nPhysical Findings:\n\nAssessment:\n\nPlan:\n\nPatient Final Comments:"}
                     />
                   ) : (
-                    <p className="text-base text-slate-900 whitespace-pre-wrap">
-                      {composeUnifiedHpiText(session.history)}
-                    </p>
+                    <div className="space-y-5">
+                      <div>
+                        <p className="text-sm font-medium text-slate-700">AI Summary</p>
+                        <div className="mt-1 h-px bg-slate-200" />
+                        <p className="mt-2 text-base text-slate-900">{hpiAiSummary}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-slate-700">Subjective</p>
+                        <div className="mt-1 h-px bg-slate-200" />
+                        <p className="mt-2 text-base text-slate-900 whitespace-pre-wrap">{hpiSections.subjective}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-slate-700">Physical Findings</p>
+                        <div className="mt-1 h-px bg-slate-200" />
+                        {hpiSections.physicalFindings.length > 0 ? (
+                          <ul className="mt-2 space-y-1 text-base text-slate-900">
+                            {hpiSections.physicalFindings.map((item, index) => (
+                              <li key={`${item}-${index}`}>• {item}</li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <p className="mt-2 text-base text-slate-900">None</p>
+                        )}
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-slate-700">Assessment</p>
+                        <div className="mt-1 h-px bg-slate-200" />
+                        <p className="mt-2 text-base text-slate-900 whitespace-pre-wrap">{hpiSections.assessment}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-slate-700">Plan</p>
+                        <div className="mt-1 h-px bg-slate-200" />
+                        {hpiSections.plan.length > 0 ? (
+                          <ul className="mt-2 space-y-1 text-base text-slate-900">
+                            {hpiSections.plan.map((item, index) => (
+                              <li key={`${item}-${index}`}>• {item}</li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <p className="mt-2 text-base text-slate-900">None</p>
+                        )}
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-slate-700">Patient Final Comments</p>
+                        <div className="mt-1 h-px bg-slate-200" />
+                        <p className="mt-2 text-base text-slate-900 whitespace-pre-wrap">
+                          {hpiSections.patientFinalComments}
+                        </p>
+                      </div>
+                    </div>
                   )}
                 </div>
                 {hasPatientUploadedContext && (
@@ -2150,14 +2315,7 @@ function PhysicianViewContent() {
                         {hpiSaving ? "Saving..." : "Save"}
                       </button>
                     </>
-                  ) : (
-                    <button
-                      onClick={handleStartHpiEdit}
-                      className="px-3 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50"
-                    >
-                      Edit
-                    </button>
-                  )}
+                  ) : null}
                 </div>
                 {session?.history?.hpiUpdatedAt && (
                   <p className="mt-3 text-xs text-slate-500">
@@ -2167,18 +2325,13 @@ function PhysicianViewContent() {
               </div>
             </div>
 
-            <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6 mb-6">
-              <div className="flex items-start justify-between gap-3 mb-3">
-                <div>
-                  <h3 className="text-lg font-semibold text-slate-900">
-                    AI help with HPI
-                  </h3>
-                  <p className="text-sm text-slate-600 mt-1">
-                    Ask the AI to draft a referral note, suggest labs, or handle a custom request using the collected HPI.
-                  </p>
-                </div>
-              </div>
-
+            <div className="mb-6">
+              <CollapsibleSection
+                id="ai-help-with-hpi"
+                title="AI help with HPI"
+                description="Ask the AI to draft a referral note, suggest labs, or handle a custom request using the collected HPI."
+                defaultOpen={false}
+              >
               <div className="grid gap-4">
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">
@@ -2740,20 +2893,17 @@ function PhysicianViewContent() {
                   </>
                 )}
               </div>
+              </CollapsibleSection>
             </div>
 
           {/* Previous Prescriptions */}
-          <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6 mb-6">
-            <div className="flex items-start justify-between gap-3 mb-3">
-              <div>
-                <h3 className="text-lg font-semibold text-slate-900">
-                  Previous prescriptions
-                </h3>
-                <p className="text-sm text-slate-600 mt-1">
-                  Saved prescriptions for this session.
-                </p>
-              </div>
-            </div>
+          <div className="mb-6">
+            <CollapsibleSection
+              id="previous-prescriptions"
+              title="Previous prescriptions"
+              description="Saved prescriptions for this session."
+              defaultOpen={false}
+            >
             {prescriptionListLoading && (
               <p className="text-sm text-slate-500">Loading…</p>
             )}
@@ -2822,20 +2972,17 @@ function PhysicianViewContent() {
                 ))}
               </div>
             )}
+            </CollapsibleSection>
           </div>
 
           {/* Previous Lab Requisitions */}
-          <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6 mb-6">
-            <div className="flex items-start justify-between gap-3 mb-3">
-              <div>
-                <h3 className="text-lg font-semibold text-slate-900">
-                  Previous lab requisitions
-                </h3>
-                <p className="text-sm text-slate-600 mt-1">
-                  Saved requisitions for this session with download links.
-                </p>
-              </div>
-            </div>
+          <div className="mb-6">
+            <CollapsibleSection
+              id="previous-lab-requisitions"
+              title="Previous lab requisitions"
+              description="Saved requisitions for this session with download links."
+              defaultOpen={false}
+            >
             {labListLoading && (
               <p className="text-sm text-slate-500">Loading…</p>
             )}
@@ -2891,34 +3038,26 @@ function PhysicianViewContent() {
                 ))}
               </div>
             )}
+            </CollapsibleSection>
           </div>
           </>
         )}
 
         {/* Complete Intake History (Guided Interview Transcript) */}
-        {Array.isArray(session.transcript) ? (
-          <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6 mb-6">
-            <h2 className="text-lg font-semibold text-slate-900 mb-4">
-              Complete Intake History
-            </h2>
-            {session.transcript.length > 0 ? (
-              <div>
-                <button
-                  onClick={() => setShowTranscript(!showTranscript)}
-                  className="flex items-center justify-between w-full text-left text-sm font-medium text-slate-700 hover:text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-offset-2 rounded-lg p-2 -ml-2"
-                >
-                  <span>Guided Interview Questions & Answers ({session.transcript.length} messages)</span>
-                  <svg
-                    className={`w-5 h-5 transform transition-transform ${showTranscript ? 'rotate-180' : ''}`}
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                  </svg>
-                </button>
-                {showTranscript && (
-                  <div className="mt-3 space-y-4 border-t border-slate-200 pt-4">
+        <div className="mb-6">
+          <CollapsibleSection
+            id="complete-intake-history"
+            title="Complete Intake History"
+            description="Guided Interview Questions & Answers"
+            defaultOpen={false}
+          >
+            {Array.isArray(session.transcript) ? (
+              session.transcript.length > 0 ? (
+                <div>
+                  <p className="text-sm font-medium text-slate-700 mb-3">
+                    Guided Interview Questions & Answers ({session.transcript.length} messages)
+                  </p>
+                  <div className="space-y-4 border-t border-slate-200 pt-4">
                     {session.transcript.map((message, index) => (
                       <div
                         key={index}
@@ -2937,38 +3076,33 @@ function PhysicianViewContent() {
                       </div>
                     ))}
                   </div>
-                )}
-              </div>
+                </div>
+              ) : (
+                <div className="text-sm text-slate-500 italic">
+                  No interview transcript available for this session.
+                  {process.env.NODE_ENV === "development" && (
+                    <div className="mt-2 text-xs text-slate-400 space-y-1">
+                      <div>Debug: transcript is an empty array (length: {session.transcript.length})</div>
+                      <div>This session may have been saved before the transcript feature was added, or the interview had no messages.</div>
+                    </div>
+                  )}
+                </div>
+              )
             ) : (
               <div className="text-sm text-slate-500 italic">
-                No interview transcript available for this session.
+                Transcript data is not available or in an unexpected format.
                 {process.env.NODE_ENV === "development" && (
                   <div className="mt-2 text-xs text-slate-400 space-y-1">
-                    <div>Debug: transcript is an empty array (length: {session.transcript.length})</div>
-                    <div>This session may have been saved before the transcript feature was added, or the interview had no messages.</div>
+                    <div>Debug: transcript type = {typeof session.transcript}, isArray = {Array.isArray(session.transcript) ? "true" : "false"}</div>
+                    <div>Has history: {session.history ? "yes" : "no"}</div>
+                    <div>History keys: {session.history ? Object.keys(session.history).join(", ") : "none"}</div>
+                    <div>History has transcript: {session.history && (session.history as any).transcript ? "yes" : "no"}</div>
                   </div>
                 )}
               </div>
             )}
-          </div>
-        ) : (
-          <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6 mb-6">
-            <h2 className="text-lg font-semibold text-slate-900 mb-4">
-              Complete Intake History
-            </h2>
-            <div className="text-sm text-slate-500 italic">
-              Transcript data is not available or in an unexpected format.
-              {process.env.NODE_ENV === "development" && (
-                <div className="mt-2 text-xs text-slate-400 space-y-1">
-                  <div>Debug: transcript type = {typeof session.transcript}, isArray = {Array.isArray(session.transcript) ? "true" : "false"}</div>
-                  <div>Has history: {session.history ? "yes" : "no"}</div>
-                  <div>History keys: {session.history ? Object.keys(session.history).join(", ") : "none"}</div>
-                  <div>History has transcript: {session.history && (session.history as any).transcript ? "yes" : "no"}</div>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
+          </CollapsibleSection>
+        </div>
 
         {/* Image Analysis */}
         {shouldShowLegacyImageAnalysisCard && (
@@ -3023,74 +3157,6 @@ function PhysicianViewContent() {
           </div>
         )}
 
-        {/* Patient Profile */}
-        {session.patientProfile && (
-          <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6">
-            <h2 className="text-lg font-semibold text-slate-900 mb-4">
-              Patient Profile
-            </h2>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <p className="text-sm text-slate-500">Age</p>
-                <p className="text-base font-medium text-slate-900">{session.patientProfile.age}</p>
-              </div>
-              <div>
-                <p className="text-sm text-slate-500">Sex</p>
-                <p className="text-base font-medium text-slate-900 capitalize">{session.patientProfile.sex}</p>
-              </div>
-              <div className="col-span-2">
-                <p className="text-sm text-slate-500">Past Medical History</p>
-                <p className="text-base text-slate-900">{session.patientProfile.pmh}</p>
-              </div>
-              <div className="col-span-2">
-                <p className="text-sm text-slate-500">Family History</p>
-                <p className="text-base text-slate-900">{session.patientProfile.familyHistory}</p>
-              </div>
-              <div className="col-span-2">
-                <p className="text-sm text-slate-500">Current Medications</p>
-                <p className="text-base text-slate-900">{session.patientProfile.currentMedications}</p>
-              </div>
-              <div className="col-span-2">
-                <p className="text-sm text-slate-500">Allergies</p>
-                <p className="text-base text-slate-900">{session.patientProfile.allergies}</p>
-              </div>
-              <div className="col-span-2">
-                <p className="text-sm text-slate-500">Family Doctor</p>
-                <p className="text-base text-slate-900">{session.patientProfile.familyDoctor}</p>
-              </div>
-              <div className="col-span-2">
-                <p className="text-sm text-slate-500">Pharmacy</p>
-                <div className="space-y-1">
-                  <p className="text-base text-slate-900">
-                    <span className="font-medium">Name:</span>{" "}
-                    {session.patientProfile.pharmacyName?.trim() || "Not provided"}
-                  </p>
-                  <p className="text-base text-slate-900">
-                    <span className="font-medium">Number:</span>{" "}
-                    {session.patientProfile.pharmacyNumber?.trim() || "Not provided"}
-                  </p>
-                  <p className="text-base text-slate-900">
-                    <span className="font-medium">Address:</span>{" "}
-                    {[
-                      session.patientProfile.pharmacyAddress?.trim() || "",
-                      session.patientProfile.pharmacyCity?.trim() || "",
-                    ]
-                      .filter((value) => value.length > 0)
-                      .join(", ") || "Not provided"}
-                  </p>
-                  <p className="text-base text-slate-900">
-                    <span className="font-medium">Phone:</span>{" "}
-                    {session.patientProfile.pharmacyPhone?.trim() || "Not provided"}
-                  </p>
-                  <p className="text-base text-slate-900">
-                    <span className="font-medium">Fax:</span>{" "}
-                    {session.patientProfile.pharmacyFax?.trim() || "Not provided"}
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );

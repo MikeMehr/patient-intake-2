@@ -1,8 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 function buildCspHeader(pathname: string) {
+  const isDevelopment = process.env.NODE_ENV !== "production";
   const isLegacyEformPath = pathname.startsWith("/eforms/");
-  const scriptSrc = isLegacyEformPath
+  const scriptSrc = isDevelopment || isLegacyEformPath
     ? "script-src 'self' 'unsafe-inline' 'unsafe-eval'"
     : "script-src 'self' 'unsafe-inline'";
   return [

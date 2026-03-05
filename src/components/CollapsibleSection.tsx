@@ -20,11 +20,11 @@ function ChevronIcon({ open }: { open: boolean }) {
       focusable="false"
       className={[
         "h-5 w-5 text-slate-500 transition-transform duration-150",
-        open ? "rotate-180" : "rotate-0",
+        open ? "rotate-90" : "rotate-0",
       ].join(" ")}
     >
       <path
-        d="M5.23 7.21a.75.75 0 0 1 1.06.02L10 10.94l3.71-3.71a.75.75 0 1 1 1.06 1.06l-4.24 4.25a.75.75 0 0 1-1.06 0L5.21 8.29a.75.75 0 0 1 .02-1.08Z"
+        d="M7.21 5.23a.75.75 0 0 1 1.06-.02l4.25 4.24a.75.75 0 0 1 0 1.06L8.27 14.77a.75.75 0 1 1-1.04-1.08L10.94 10 7.23 6.29a.75.75 0 0 1-.02-1.06Z"
         fill="currentColor"
       />
     </svg>

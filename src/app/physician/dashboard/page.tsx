@@ -5,6 +5,7 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import type { PatientSession } from "@/lib/session-store";
 import SessionKeepAlive from "@/components/auth/SessionKeepAlive";
+import CollapsibleSection from "@/components/CollapsibleSection";
 
 type PatientSessionWithChartLink = PatientSession & { patientId?: string | null };
 type InvitationActivityStatus =
@@ -610,9 +611,9 @@ export default function PhysicianDashboard() {
           <Image
             src="/LogoFinal.png"
             alt="Health Assist AI logo"
-            width={280}
-            height={64}
-            className="mx-auto mb-5 h-[94px] w-[283px] object-contain sm:h-[125px] sm:w-[376px]"
+            width={140}
+            height={32}
+            className="mx-auto mb-5 h-[47px] w-[142px] object-contain sm:h-[63px] sm:w-[188px]"
             priority
           />
           <div className="flex justify-between items-center">
@@ -956,131 +957,131 @@ export default function PhysicianDashboard() {
         </div>
 
         {/* Sessions List */}
-        {error ? (
-          <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-            <p className="text-red-800">{error}</p>
-          </div>
-        ) : sessions.length === 0 ? (
-          <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-8 text-center">
-            <p className="text-slate-600">No patient sessions yet.</p>
-            <p className="text-sm text-slate-500 mt-2">
-              Invite patients using the form above to get started.
-            </p>
-          </div>
-        ) : (
-          <div className="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden">
-            <div className="px-6 py-4 border-b border-slate-200">
-              <h2 className="text-lg font-semibold text-slate-900">
-                Patient Sessions ({sessions.length})
-              </h2>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-slate-50">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
-                      Patient Name
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
-                      Email
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
-                      Chief Complaint
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
-                      Completed
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
-                      <span className="inline-flex items-center gap-1">
-                        Status
-                        <span
-                          title="Status order: Revoked/Expired/Completed first; then Active Recently (last 15m), In Progress (started), Clicked (opened), otherwise Sent."
-                          aria-label="Status logic"
-                          className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-slate-400 text-[10px] normal-case text-slate-600"
-                        >
-                          i
-                        </span>
-                      </span>
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
-                      Actions
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-slate-200">
-                  {sessions.map((session) => (
-                    <tr key={session.sessionCode} className="hover:bg-slate-50">
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-slate-900">
-                        {session.patientName}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600">
-                        {session.patientEmail}
-                      </td>
-                      <td className="px-6 py-4 text-sm text-slate-600">
-                        <div className="max-w-xs truncate">
-                          {session.chiefComplaint}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600">
-                        {new Date(session.completedAt).toLocaleString()}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        {session.viewedByPhysician ? (
-                          <span className="px-2 py-1 text-xs font-medium text-green-800 bg-green-100 rounded-full">
-                            Viewed
-                          </span>
-                        ) : (
-                          <span className="px-2 py-1 text-xs font-medium text-blue-800 bg-blue-100 rounded-full">
-                            New
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm">
-                        {(() => {
-                          const pid = session.patientId;
-                          return (
-                        <div className="flex items-center gap-3">
-                          <button
-                            onClick={() => handleViewSession(session.sessionCode)}
-                            className="text-blue-600 hover:text-blue-900 font-medium"
-                          >
-                            View
-                          </button>
-                          {isUuid(pid) ? (
-                            <button
-                              type="button"
-                              onClick={() => handleOpenPatientChart(pid)}
-                              className="text-slate-900 hover:text-slate-700 font-medium"
+        <div className="mt-6">
+          <CollapsibleSection
+            id="patient-sessions"
+            title={`Patient Sessions${sessions.length ? ` (${sessions.length})` : ""}`}
+            defaultOpen={false}
+          >
+            {error ? (
+              <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                <p className="text-red-800">{error}</p>
+              </div>
+            ) : sessions.length === 0 ? (
+              <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-8 text-center">
+                <p className="text-slate-600">No patient sessions yet.</p>
+                <p className="text-sm text-slate-500 mt-2">
+                  Invite patients using the form above to get started.
+                </p>
+              </div>
+            ) : (
+              <div className="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead className="bg-slate-50">
+                      <tr>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
+                          Patient Name
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
+                          Email
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
+                          Chief Complaint
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
+                          Completed
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
+                          <span className="inline-flex items-center gap-1">
+                            Status
+                            <span
+                              title="Status order: Revoked/Expired/Completed first; then Active Recently (last 15m), In Progress (started), Clicked (opened), otherwise Sent."
+                              aria-label="Status logic"
+                              className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-slate-400 text-[10px] normal-case text-slate-600"
                             >
-                              Open chart
-                            </button>
-                          ) : (
-                            <span className="text-xs text-slate-400">Chart pending</span>
-                          )}
-                        </div>
-                          );
-                        })()}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
+                              i
+                            </span>
+                          </span>
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
+                          Actions
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-slate-200">
+                      {sessions.map((session) => (
+                        <tr key={session.sessionCode} className="hover:bg-slate-50">
+                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-slate-900">
+                            {session.patientName}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600">
+                            {session.patientEmail}
+                          </td>
+                          <td className="px-6 py-4 text-sm text-slate-600">
+                            <div className="max-w-xs truncate">
+                              {session.chiefComplaint}
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600">
+                            {new Date(session.completedAt).toLocaleString()}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            {session.viewedByPhysician ? (
+                              <span className="px-2 py-1 text-xs font-medium text-green-800 bg-green-100 rounded-full">
+                                Viewed
+                              </span>
+                            ) : (
+                              <span className="px-2 py-1 text-xs font-medium text-blue-800 bg-blue-100 rounded-full">
+                                New
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm">
+                            {(() => {
+                              const pid = session.patientId;
+                              return (
+                                <div className="flex items-center gap-3">
+                                  <button
+                                    onClick={() => handleViewSession(session.sessionCode)}
+                                    className="text-blue-600 hover:text-blue-900 font-medium"
+                                  >
+                                    View
+                                  </button>
+                                  {isUuid(pid) ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleOpenPatientChart(pid)}
+                                      className="text-slate-900 hover:text-slate-700 font-medium"
+                                    >
+                                      Open chart
+                                    </button>
+                                  ) : (
+                                    <span className="text-xs text-slate-400">Chart pending</span>
+                                  )}
+                                </div>
+                              );
+                            })()}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </CollapsibleSection>
+        </div>
 
         {/* Invitations List */}
-        <div className="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden mt-6">
-          <div className="px-6 py-4 border-b border-slate-200">
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-slate-900">
-                Invited Patients {invitations.length ? `(${invitations.length})` : ""}
-              </h2>
-              {invitationsLoading && (
-                <span className="text-sm text-slate-500">Loading...</span>
-              )}
-            </div>
-            <div className="mt-2 flex flex-wrap gap-2 text-xs">
+        <div className="mt-6">
+          <CollapsibleSection
+            id="invited-patients"
+            title={`Invited Patients${invitations.length ? ` (${invitations.length})` : ""}`}
+            defaultOpen={false}
+            headerRight={invitationsLoading ? <span className="text-sm text-slate-500">Loading...</span> : null}
+          >
+            <div className="mb-3 flex flex-wrap gap-2 text-xs">
               {(
                 [
                   "sent",
@@ -1141,230 +1142,229 @@ export default function PhysicianDashboard() {
                 );
               })}
             </div>
-          </div>
-          {invitationsError && (
-            <div className="px-6 py-4 bg-red-50 text-sm text-red-800 border-b border-red-200">
-              {invitationsError}
-            </div>
-          )}
-          {invitations.length === 0 && !invitationsLoading ? (
-            <div className="px-6 py-6 text-sm text-slate-600">
-              No invitations yet. Send an invitation above to see it here.
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-slate-50">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
-                      Patient Name
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
-                      Patient Email
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
-                      Sent At
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
-                      Status
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
-                      Actions
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-slate-200">
-                  {invitations.map((invitation) => (
-                    <tr key={invitation.id} className="hover:bg-slate-50">
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-slate-900">
-                        {invitation.patientName}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600">
-                        {invitation.patientEmail}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600">
-                        {invitation.sentAt
-                          ? new Date(invitation.sentAt).toLocaleString()
-                          : "—"}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm">
-                        {(() => {
-                          const meta = invitationStatusMeta[invitation.activityStatus];
-                          const recentActivity = formatRelativeTime(invitation.lastAccessedAt);
-                          const detail =
-                            invitation.activityStatus === "active_recently" && recentActivity
-                              ? `Last activity ${recentActivity}`
-                              : meta.hint || null;
-                          const statusTimeLabel = (() => {
-                            if (invitation.activityStatus === "completed") {
-                              return formatStatusDate(invitation.completedAt);
-                            }
-                            if (invitation.activityStatus === "active_recently") {
-                              return formatStatusDate(invitation.lastAccessedAt);
-                            }
-                            if (invitation.activityStatus === "in_progress") {
+            {invitationsError && (
+              <div className="mb-3 rounded-lg bg-red-50 text-sm text-red-800 border border-red-200 px-4 py-3">
+                {invitationsError}
+              </div>
+            )}
+            {invitations.length === 0 && !invitationsLoading ? (
+              <div className="bg-white rounded-lg shadow-sm border border-slate-200 px-6 py-6 text-sm text-slate-600">
+                No invitations yet. Send an invitation above to see it here.
+              </div>
+            ) : (
+              <div className="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead className="bg-slate-50">
+                      <tr>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
+                          Patient Name
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
+                          Patient Email
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
+                          Sent At
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
+                          Status
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
+                          Actions
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-slate-200">
+                      {invitations.map((invitation) => (
+                        <tr key={invitation.id} className="hover:bg-slate-50">
+                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-slate-900">
+                            {invitation.patientName}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600">
+                            {invitation.patientEmail}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600">
+                            {invitation.sentAt
+                              ? new Date(invitation.sentAt).toLocaleString()
+                              : "—"}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm">
+                            {(() => {
+                              const meta = invitationStatusMeta[invitation.activityStatus];
+                              const recentActivity = formatRelativeTime(invitation.lastAccessedAt);
+                              const detail =
+                                invitation.activityStatus === "active_recently" && recentActivity
+                                  ? `Last activity ${recentActivity}`
+                                  : meta.hint || null;
+                              const statusTimeLabel = (() => {
+                                if (invitation.activityStatus === "completed") {
+                                  return formatStatusDate(invitation.completedAt);
+                                }
+                                if (invitation.activityStatus === "active_recently") {
+                                  return formatStatusDate(invitation.lastAccessedAt);
+                                }
+                                if (invitation.activityStatus === "in_progress") {
+                                  return (
+                                    formatStatusDate(invitation.interviewStartedAt) ||
+                                    formatStatusDate(invitation.otpVerifiedAt) ||
+                                    formatStatusDate(invitation.invitationSessionCreatedAt)
+                                  );
+                                }
+                                if (invitation.activityStatus === "opened") {
+                                  return formatStatusDate(invitation.openedAt);
+                                }
+                                return null;
+                              })();
+                              const title = statusTimeLabel
+                                ? `${meta.label} at ${statusTimeLabel}`
+                                : meta.label;
                               return (
-                                formatStatusDate(invitation.interviewStartedAt) ||
-                                formatStatusDate(invitation.otpVerifiedAt) ||
-                                formatStatusDate(invitation.invitationSessionCreatedAt)
+                                <div className="flex flex-col">
+                                  <span
+                                    title={title}
+                                    className={`inline-flex w-fit px-2 py-1 text-xs font-medium rounded-full ${meta.className}`}
+                                  >
+                                    {meta.label}
+                                  </span>
+                                  {detail ? <span className="mt-1 text-xs text-slate-500">{detail}</span> : null}
+                                </div>
                               );
-                            }
-                            if (invitation.activityStatus === "opened") {
-                              return formatStatusDate(invitation.openedAt);
-                            }
-                            return null;
-                          })();
-                          const title = statusTimeLabel
-                            ? `${meta.label} at ${statusTimeLabel}`
-                            : meta.label;
-                          return (
-                            <div className="flex flex-col">
-                              <span
-                                title={title}
-                                className={`inline-flex w-fit px-2 py-1 text-xs font-medium rounded-full ${meta.className}`}
-                              >
-                                {meta.label}
-                              </span>
-                              {detail ? <span className="mt-1 text-xs text-slate-500">{detail}</span> : null}
-                            </div>
-                          );
-                        })()}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm">
-                        <button
-                          onClick={() => handleDeleteInvitation(invitation.id)}
-                          disabled={deletingInvitationId === invitation.id}
-                          className="text-red-600 hover:text-red-800 font-medium disabled:opacity-60 disabled:cursor-not-allowed"
-                        >
-                          {deletingInvitationId === invitation.id ? "Deleting..." : "Delete"}
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+                            })()}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm">
+                            <button
+                              onClick={() => handleDeleteInvitation(invitation.id)}
+                              disabled={deletingInvitationId === invitation.id}
+                              className="text-red-600 hover:text-red-800 font-medium disabled:opacity-60 disabled:cursor-not-allowed"
+                            >
+                              {deletingInvitationId === invitation.id ? "Deleting..." : "Delete"}
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </CollapsibleSection>
         </div>
 
         {/* Patient Lookup (Chart) */}
-        <div
-          ref={patientLookupSectionRef}
-          className="bg-white rounded-lg shadow-sm border border-slate-200 p-6 mt-6"
-        >
-          <h2 className="text-lg font-semibold text-slate-900 mb-2">Patient Lookup</h2>
-          <p className="text-sm text-slate-600 mb-4">
-            Search for a patient by Name (recommended: Name + DOB) or by Healthcare Number (HIN).
-          </p>
-
-          <form onSubmit={handlePatientLookup} className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Name</label>
-                <input
-                  type="text"
-                  value={patientLookupName}
-                  onChange={(e) => setPatientLookupName(e.target.value)}
-                  disabled={patientLookupLoading}
-                  className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200 disabled:cursor-not-allowed disabled:opacity-70"
-                  placeholder="First Last"
-                />
+        <div ref={patientLookupSectionRef} className="mt-6">
+          <CollapsibleSection id="patient-lookup" title="Patient Lookup" defaultOpen={false}>
+            <p className="text-sm text-slate-600 mb-4">
+              Search for a patient by Name (recommended: Name + DOB) or by Healthcare Number (HIN).
+            </p>
+            <form onSubmit={handlePatientLookup} className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Name</label>
+                  <input
+                    type="text"
+                    value={patientLookupName}
+                    onChange={(e) => setPatientLookupName(e.target.value)}
+                    disabled={patientLookupLoading}
+                    className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200 disabled:cursor-not-allowed disabled:opacity-70"
+                    placeholder="First Last"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Date of birth</label>
+                  <input
+                    type="date"
+                    value={patientLookupDob}
+                    onChange={(e) => setPatientLookupDob(e.target.value)}
+                    disabled={patientLookupLoading}
+                    className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200 disabled:cursor-not-allowed disabled:opacity-70"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                    Healthcare number (HIN)
+                  </label>
+                  <input
+                    type="text"
+                    value={patientLookupHin}
+                    onChange={(e) => setPatientLookupHin(e.target.value)}
+                    disabled={patientLookupLoading}
+                    className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200 disabled:cursor-not-allowed disabled:opacity-70"
+                    placeholder="Optional"
+                  />
+                </div>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Date of birth</label>
-                <input
-                  type="date"
-                  value={patientLookupDob}
-                  onChange={(e) => setPatientLookupDob(e.target.value)}
-                  disabled={patientLookupLoading}
-                  className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200 disabled:cursor-not-allowed disabled:opacity-70"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">
-                  Healthcare number (HIN)
-                </label>
-                <input
-                  type="text"
-                  value={patientLookupHin}
-                  onChange={(e) => setPatientLookupHin(e.target.value)}
-                  disabled={patientLookupLoading}
-                  className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200 disabled:cursor-not-allowed disabled:opacity-70"
-                  placeholder="Optional"
-                />
-              </div>
-            </div>
 
-            {patientLookupError && (
-              <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3">
-                <p className="text-sm text-red-800">{patientLookupError}</p>
-              </div>
-            )}
+              {patientLookupError && (
+                <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3">
+                  <p className="text-sm text-red-800">{patientLookupError}</p>
+                </div>
+              )}
 
-            <button
-              type="submit"
-              disabled={patientLookupLoading}
-              className="px-4 py-2 text-sm font-medium text-white bg-slate-900 rounded-lg hover:bg-slate-800 transition-colors disabled:cursor-not-allowed disabled:bg-slate-400"
-            >
-              {patientLookupLoading ? "Searching..." : "Search"}
-            </button>
-          </form>
+              <button
+                type="submit"
+                disabled={patientLookupLoading}
+                className="px-4 py-2 text-sm font-medium text-white bg-slate-900 rounded-lg hover:bg-slate-800 transition-colors disabled:cursor-not-allowed disabled:bg-slate-400"
+              >
+                {patientLookupLoading ? "Searching..." : "Search"}
+              </button>
+            </form>
 
-          <div className="mt-5">
-            {patientLookupResults.length === 0 ? (
-              <p className="text-sm text-slate-600">No results yet.</p>
-            ) : (
-              <div className="overflow-x-auto rounded-lg border border-slate-200">
-                <table className="w-full">
-                  <thead className="bg-slate-50">
-                    <tr>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
-                        Patient
-                      </th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
-                        DOB
-                      </th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
-                        Phone
-                      </th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
-                        Actions
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-slate-200">
-                    {patientLookupResults.map((p) => (
-                      <tr key={p.id} className="hover:bg-slate-50">
-                        <td className="px-4 py-3 text-sm font-medium text-slate-900">
-                          <div className="min-w-0">
-                            <div className="truncate">{p.fullName}</div>
-                            <div className="text-xs text-slate-500 truncate">
-                              {p.oscarDemographicNo ? `OSCAR: ${p.oscarDemographicNo}` : "OSCAR: —"}
-                            </div>
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 text-sm text-slate-600 whitespace-nowrap">
-                          {p.dateOfBirth || "—"}
-                        </td>
-                        <td className="px-4 py-3 text-sm text-slate-600 whitespace-nowrap">
-                          {p.primaryPhone || p.secondaryPhone || "—"}
-                        </td>
-                        <td className="px-4 py-3 text-sm whitespace-nowrap">
-                          <button
-                            type="button"
-                            onClick={() => handleOpenPatientChart(p.id)}
-                            className="text-blue-600 hover:text-blue-900 font-medium"
-                          >
-                            Open chart
-                          </button>
-                        </td>
+            <div className="mt-5">
+              {patientLookupResults.length === 0 ? (
+                <p className="text-sm text-slate-600">No results yet.</p>
+              ) : (
+                <div className="overflow-x-auto rounded-lg border border-slate-200">
+                  <table className="w-full">
+                    <thead className="bg-slate-50">
+                      <tr>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
+                          Patient
+                        </th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
+                          DOB
+                        </th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
+                          Phone
+                        </th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
+                          Actions
+                        </th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-slate-200">
+                      {patientLookupResults.map((p) => (
+                        <tr key={p.id} className="hover:bg-slate-50">
+                          <td className="px-4 py-3 text-sm font-medium text-slate-900">
+                            <div className="min-w-0">
+                              <div className="truncate">{p.fullName}</div>
+                              <div className="text-xs text-slate-500 truncate">
+                                {p.oscarDemographicNo ? `OSCAR: ${p.oscarDemographicNo}` : "OSCAR: —"}
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3 text-sm text-slate-600 whitespace-nowrap">
+                            {p.dateOfBirth || "—"}
+                          </td>
+                          <td className="px-4 py-3 text-sm text-slate-600 whitespace-nowrap">
+                            {p.primaryPhone || p.secondaryPhone || "—"}
+                          </td>
+                          <td className="px-4 py-3 text-sm whitespace-nowrap">
+                            <button
+                              type="button"
+                              onClick={() => handleOpenPatientChart(p.id)}
+                              className="text-blue-600 hover:text-blue-900 font-medium"
+                            >
+                              Open chart
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </CollapsibleSection>
         </div>
         </div>
       </div>

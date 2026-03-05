@@ -584,9 +584,9 @@ export default function PhysicianTranscriptionPage() {
             <Image
               src="/LogoFinal.png"
               alt="Health Assist AI logo"
-              width={338}
-              height={83}
-              className="mx-auto mb-5 h-[94px] w-[283px] object-contain sm:h-[125px] sm:w-[376px]"
+              width={169}
+              height={42}
+              className="mx-auto mb-5 h-[47px] w-[142px] object-contain sm:h-[63px] sm:w-[188px]"
               priority
             />
             <div className="flex items-center justify-between">
