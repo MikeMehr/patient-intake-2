@@ -604,6 +604,7 @@ export default function Home() {
   const pauseTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pauseCountdownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const isCancellingRef = useRef<boolean>(false); // Track if we're intentionally cancelling
+  const speakingWatchdogTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const speechRecognitionRef = useRef<SpeechRecognition | null>(null); // Ref for speech recognition to access in callbacks
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
@@ -1281,6 +1282,33 @@ export default function Home() {
     }
   };
 
+  const clearSpeakingWatchdog = () => {
+    if (speakingWatchdogTimeoutRef.current) {
+      clearTimeout(speakingWatchdogTimeoutRef.current);
+      speakingWatchdogTimeoutRef.current = null;
+    }
+  };
+
+  const armSpeakingWatchdog = (durationMs: number) => {
+    clearSpeakingWatchdog();
+    const safeDuration = Number.isFinite(durationMs) ? durationMs : 0;
+    if (safeDuration <= 0) return;
+    speakingWatchdogTimeoutRef.current = setTimeout(() => {
+      // Fallback recovery when browser audio events do not fire reliably.
+      clearAzureAudioPlayback();
+      if (typeof window !== "undefined" && "speechSynthesis" in window) {
+        isCancellingRef.current = true;
+        window.speechSynthesis.cancel();
+        setTimeout(() => {
+          isCancellingRef.current = false;
+        }, 200);
+      }
+      speechSynthesisRef.current = null;
+      setIsSpeaking(false);
+      speakingWatchdogTimeoutRef.current = null;
+    }, safeDuration);
+  };
+
   const speakWithBrowserTts = (text: string) => {
     if (typeof window === "undefined" || !("speechSynthesis" in window)) {
       return;
@@ -1314,9 +1342,15 @@ export default function Home() {
 
     utterance.onstart = () => {
       setIsSpeaking(true);
+      const estimatedMs = Math.max(
+        4000,
+        Math.min(45000, Math.ceil((text.length / 13) * 1000) + 2500),
+      );
+      armSpeakingWatchdog(estimatedMs);
     };
 
     utterance.onend = () => {
+      clearSpeakingWatchdog();
       setIsSpeaking(false);
       speechSynthesisRef.current = null;
     };
@@ -1325,6 +1359,7 @@ export default function Home() {
       if (!isCancellingRef.current && event.error !== "interrupted") {
         console.error("Speech synthesis error:", event.error, event);
       }
+      clearSpeakingWatchdog();
       setIsSpeaking(false);
       speechSynthesisRef.current = null;
     };
@@ -1380,7 +1415,9 @@ export default function Home() {
       audioSourceNodeRef.current = source;
 
       setIsSpeaking(true);
+      armSpeakingWatchdog(Math.ceil(audioBuffer.duration * 1000) + 1500);
       source.onended = () => {
+        clearSpeakingWatchdog();
         setIsSpeaking(false);
         audioSourceNodeRef.current = null;
       };
@@ -1395,12 +1432,20 @@ export default function Home() {
     audioPlaybackRef.current = audio;
     audioPlaybackUrlRef.current = audioUrl;
 
-    audio.onplay = () => setIsSpeaking(true);
+    audio.onplay = () => {
+      setIsSpeaking(true);
+      const fallbackMs = Number.isFinite(audio.duration) && audio.duration > 0
+        ? Math.ceil(audio.duration * 1000) + 1500
+        : Math.max(4000, Math.min(45000, Math.ceil((text.length / 13) * 1000) + 2500));
+      armSpeakingWatchdog(fallbackMs);
+    };
     audio.onended = () => {
+      clearSpeakingWatchdog();
       setIsSpeaking(false);
       clearAzureAudioPlayback();
     };
     audio.onerror = () => {
+      clearSpeakingWatchdog();
       setIsSpeaking(false);
       clearAzureAudioPlayback();
     };
@@ -1485,6 +1530,7 @@ export default function Home() {
   };
 
   const stopSpeaking = () => {
+    clearSpeakingWatchdog();
     clearAzureAudioPlayback();
     if (typeof window !== "undefined" && "speechSynthesis" in window) {
       // Set flag BEFORE cancelling to prevent error logging
@@ -1707,7 +1753,10 @@ export default function Home() {
     // Capture current selection before we start listening (in case focus shifts)
     updateSelectionRef(patientResponseInputRef.current);
     const allowDuringReview = options?.allowDuringReview ?? false;
-    if (isSpeaking) return; // Don't allow listening while AI is speaking
+    if (isSpeaking) {
+      stopSpeaking();
+      await new Promise((resolve) => setTimeout(resolve, 120));
+    }
     if (cleaningTranscript) return;
     if (showReview && !allowDuringReview) return;
     if (useAzureStt && status === "awaitingPatient") {
@@ -4730,7 +4779,6 @@ export default function Home() {
                           disabled={
                             status !== "awaitingPatient" ||
                             isPaused ||
-                            isSpeaking ||
                             cleaningTranscript ||
                             (awaitingFinalComments && finalCommentsChoice !== "yes")
                           }
@@ -4951,7 +4999,6 @@ export default function Home() {
                         disabled={
                           status !== "awaitingPatient" ||
                           isPaused ||
-                          isSpeaking ||
                           cleaningTranscript ||
                           showReview
                         }
