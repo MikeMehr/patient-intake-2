@@ -4962,6 +4962,7 @@ export default function Home() {
                             key={`${bodyPart.part}-${bodyPart.side || 'none'}-${index}`}
                             bodyPart={bodyPart.part as any}
                             side={safeSide}
+                            sex={sex}
                             markers={markerSelection?.markers || []}
                             onMarkerAdd={({ part, side, marker }) => {
                               let nextSelections: DiagramMarkerSelection[] = [];

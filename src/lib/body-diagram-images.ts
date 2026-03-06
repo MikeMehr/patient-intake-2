@@ -1,8 +1,11 @@
 import type { BodyPart } from "@/lib/body-parts";
 
+export type BodyDiagramSex = "female" | "male";
+
 export function getBodyDiagramImage(
   bodyPart: BodyPart,
   side?: "left" | "right",
+  sex?: BodyDiagramSex,
 ): { src: string; alt: string } {
   if (bodyPart === "foot" && side === "left") {
     return {
@@ -67,6 +70,22 @@ export function getBodyDiagramImage(
         alt: "Thoracic and lumbar spine pain diagram",
       };
     case "chest":
+      if (sex === "male") {
+        return {
+          src: "/Images/Male Breast.png",
+          alt: "Male chest and breast pain diagram",
+        };
+      }
+      if (sex === "female") {
+        return {
+          src: "/Images/Female Breast.png",
+          alt: "Female chest and breast pain diagram",
+        };
+      }
+      return {
+        src: "/Images/trunk front .png",
+        alt: "Chest, breast, abdomen, and anterior neck pain diagram",
+      };
     case "abdomen":
       return {
         src: "/Images/trunk front .png",

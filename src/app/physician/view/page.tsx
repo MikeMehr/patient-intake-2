@@ -2219,7 +2219,13 @@ function PhysicianViewContent() {
                             Body Diagram Selection
                           </p>
                           {hpiDiagramSelectionsToRender.map((selection, selectionIndex) => {
-                            const image = getBodyDiagramImage(selection.part, selection.side);
+                            const image = getBodyDiagramImage(
+                              selection.part,
+                              selection.side,
+                              session?.patientProfile?.sex === "male" || session?.patientProfile?.sex === "female"
+                                ? session.patientProfile.sex
+                                : undefined,
+                            );
                             const partLabel = selection.side
                               ? `${selection.side} ${selection.part}`
                               : selection.part;

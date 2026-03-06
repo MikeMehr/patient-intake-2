@@ -7,6 +7,7 @@ import type { MouseEvent } from "react";
 interface BodyPartDiagramProps {
   bodyPart: BodyPart;
   side?: "left" | "right";
+  sex?: "female" | "male";
   markers?: Array<{ xPct: number; yPct: number }>;
   onMarkerAdd?: (payload: {
     part: BodyPart;
@@ -20,12 +21,13 @@ interface BodyPartDiagramProps {
 export default function BodyPartDiagram({
   bodyPart,
   side,
+  sex,
   markers = [],
   onMarkerAdd,
   onMarkersClear,
   onMarkersDone,
 }: BodyPartDiagramProps) {
-  const image = getBodyDiagramImage(bodyPart, side);
+  const image = getBodyDiagramImage(bodyPart, side, sex);
   const diagramSizeClass = "w-96 h-96";
 
   const handleDiagramClick = (event: MouseEvent<HTMLDivElement>) => {
