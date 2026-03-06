@@ -167,6 +167,9 @@ describe("MSK location topic extraction", () => {
     expect(
       hasLocationAnswerSignal("I marked the painful spot on the right knee diagram.".toLowerCase()),
     ).toBe(true);
+    expect(hasLocationAnswerSignal("من محل درد را روی نمودار knee علامت زدم.".toLowerCase())).toBe(
+      true,
+    );
   });
 
   it("requires part-specific location evidence for per-part completion", () => {
@@ -182,6 +185,12 @@ describe("MSK location topic extraction", () => {
         "ankle",
       ),
     ).toBe(false);
+    expect(
+      hasBodyPartLocationAnswerSignal(
+        "من محل درد را روی نمودار knee علامت زدم.".toLowerCase(),
+        "knee",
+      ),
+    ).toBe(true);
     expect(hasBodyPartLocationAnswerSignal("diagram marked.".toLowerCase(), "knee")).toBe(false);
   });
 });

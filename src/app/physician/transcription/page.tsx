@@ -90,6 +90,7 @@ export default function PhysicianTranscriptionPage() {
   const [newPatientFullName, setNewPatientFullName] = useState("");
   const [newPatientDob, setNewPatientDob] = useState("");
   const [chiefComplaint, setChiefComplaint] = useState("");
+  const [activeWorkflowTab, setActiveWorkflowTab] = useState<"capture" | "review">("capture");
 
   const [isRecording, setIsRecording] = useState(false);
   const [recordingError, setRecordingError] = useState<string | null>(null);
@@ -608,6 +609,34 @@ export default function PhysicianTranscriptionPage() {
             <div className="lg:col-span-2 space-y-6">
               <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6 space-y-4">
                 <h2 className="text-[1.1rem] font-semibold text-slate-900">1) Select patient</h2>
+                <div>
+                  <p className="text-xs font-medium text-slate-700 mb-2">
+                    Add new patient quickly (for patients not yet in Health Assist)
+                  </p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                    <input
+                      type="text"
+                      value={newPatientFullName}
+                      onChange={(e) => {
+                        setNewPatientFullName(e.target.value);
+                        if (e.target.value.trim().length > 0) setSelectedPatient(null);
+                      }}
+                      className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
+                      placeholder="First name Last name"
+                    />
+                    <input
+                      type="date"
+                      value={newPatientDob}
+                      onChange={(e) => {
+                        setNewPatientDob(e.target.value);
+                        if (e.target.value.trim().length > 0) setSelectedPatient(null);
+                      }}
+                      className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
+                    />
+                  </div>
+                </div>
+                <div className="pt-2 border-t border-slate-200 space-y-4">
+                  <p className="text-xs font-medium text-slate-700">Or select existing patient</p>
                 <div className="flex gap-2">
                   <input
                     type="text"
@@ -662,122 +691,127 @@ export default function PhysicianTranscriptionPage() {
                     ))}
                   </div>
                 )}
-                <div className="pt-2 border-t border-slate-200">
-                  <p className="text-xs font-medium text-slate-700 mb-2">
-                    Or add new patient quickly (for patients not yet in Health Assist)
-                  </p>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                    <input
-                      type="text"
-                      value={newPatientFullName}
-                      onChange={(e) => {
-                        setNewPatientFullName(e.target.value);
-                        if (e.target.value.trim().length > 0) setSelectedPatient(null);
-                      }}
-                      className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
-                      placeholder="First name Last name"
-                    />
-                    <input
-                      type="date"
-                      value={newPatientDob}
-                      onChange={(e) => {
-                        setNewPatientDob(e.target.value);
-                        if (e.target.value.trim().length > 0) setSelectedPatient(null);
-                      }}
-                      className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
-                    />
-                  </div>
                 </div>
-              </div>
-
-              <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6 space-y-4">
-                <h2 className="text-[1.1rem] font-semibold text-slate-900">2) Capture transcript</h2>
-                <input
-                  type="text"
-                  value={chiefComplaint}
-                  onChange={(e) => setChiefComplaint(e.target.value)}
-                  className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
-                  placeholder="Chief complaint (optional)"
-                />
-                <div className="flex items-center gap-3">
-                  <button
-                    type="button"
-                    onClick={isRecording ? stopRecording : startRecording}
-                    disabled={transcriptLoading}
-                    className={`px-4 py-2 text-sm font-medium text-white rounded-lg ${
-                      isRecording ? "bg-red-600 hover:bg-red-700" : "bg-slate-900 hover:bg-slate-800"
-                    } disabled:bg-slate-400`}
-                  >
-                    {isRecording ? "Stop transcription" : "Start transcription"}
-                  </button>
-                  {transcriptLoading && <span className="text-sm text-slate-600">Transcribing...</span>}
-                </div>
-                {recordingError && <p className="text-sm text-red-700">{recordingError}</p>}
-                <textarea
-                  value={transcript}
-                  onChange={(e) => setTranscript(e.target.value)}
-                  rows={8}
-                  className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm text-slate-900 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
-                  placeholder="Transcript text..."
-                />
-                <button
-                  type="button"
-                  onClick={generateSoap}
-                  disabled={!canGenerate}
-                  className="px-4 py-2 text-sm font-medium text-white bg-slate-900 rounded-lg hover:bg-slate-800 disabled:bg-slate-400"
-                >
-                  {actionLoading ? "Generating..." : "Generate SOAP"}
-                </button>
-                {generateDisabledReason && (
-                  <p className="text-xs text-slate-500">{generateDisabledReason}</p>
-                )}
               </div>
 
               <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6 space-y-4">
                 <div className="flex items-center justify-between gap-3">
-                  <h2 className="text-[1.1rem] font-semibold text-slate-900">3) Review and export</h2>
-                  <button
-                    type="button"
-                    onClick={copySoapText}
-                    disabled={!canCopySoap || actionLoading}
-                    className="px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 disabled:opacity-60"
-                  >
-                    {copyFeedbackState === "copied" ? "Copied!" : "Copy SOAP"}
-                  </button>
+                  <h2 className="text-[1.1rem] font-semibold text-slate-900">2) Encounter workflow</h2>
+                  <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-1">
+                    <button
+                      type="button"
+                      onClick={() => setActiveWorkflowTab("capture")}
+                      className={`px-3 py-1.5 text-xs font-medium rounded-md ${
+                        activeWorkflowTab === "capture"
+                          ? "bg-white text-slate-900 shadow-sm"
+                          : "text-slate-600 hover:text-slate-900"
+                      }`}
+                    >
+                      Capture transcript
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setActiveWorkflowTab("review")}
+                      className={`px-3 py-1.5 text-xs font-medium rounded-md ${
+                        activeWorkflowTab === "review"
+                          ? "bg-white text-slate-900 shadow-sm"
+                          : "text-slate-600 hover:text-slate-900"
+                      }`}
+                    >
+                      Review and export
+                    </button>
+                  </div>
                 </div>
-                <div className="grid grid-cols-1 gap-3">
-                  <textarea
-                    value={reviewText}
-                    onChange={(e) => setReviewText(e.target.value)}
-                    rows={16}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                    placeholder={"Subjective:\n\nObjective:\n\nAssessment:\n\nPlan:"}
-                    disabled={!soapVersionId || lifecycleState === "FINALIZED_FOR_EXPORT"}
-                  />
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={saveDraft}
-                    disabled={!soapVersionId || lifecycleState === "FINALIZED_FOR_EXPORT" || actionLoading}
-                    className="px-4 py-2 text-sm font-medium text-white bg-slate-900 rounded-lg hover:bg-slate-800 disabled:bg-slate-400"
-                  >
-                    Save draft
-                  </button>
-                  <button
-                    type="button"
-                    onClick={finalizeAndSaveToEmr}
-                    disabled={!soapVersionId || actionLoading}
-                    className="px-4 py-2 text-sm font-medium text-white bg-emerald-700 rounded-lg hover:bg-emerald-800 disabled:bg-slate-400"
-                  >
-                    Finalize &amp; Save to EMR
-                  </button>
-                </div>
-                <p className="text-xs text-slate-500">
-                  Lifecycle: {lifecycleState || "—"} {encounterId ? `• Encounter ${encounterId}` : ""}
-                </p>
-                {actionError && <p className="text-sm text-red-700">{actionError}</p>}
-                {actionSuccess && <p className="text-sm text-green-700">{actionSuccess}</p>}
+                {activeWorkflowTab === "capture" && (
+                  <>
+                    <input
+                      type="text"
+                      value={chiefComplaint}
+                      onChange={(e) => setChiefComplaint(e.target.value)}
+                      className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
+                      placeholder="Chief complaint (optional)"
+                    />
+                    <div className="flex items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={isRecording ? stopRecording : startRecording}
+                        disabled={transcriptLoading}
+                        className={`px-4 py-2 text-sm font-medium text-white rounded-lg ${
+                          isRecording ? "bg-red-600 hover:bg-red-700" : "bg-slate-900 hover:bg-slate-800"
+                        } disabled:bg-slate-400`}
+                      >
+                        {isRecording ? "Stop transcription" : "Start transcription"}
+                      </button>
+                      {transcriptLoading && <span className="text-sm text-slate-600">Transcribing...</span>}
+                    </div>
+                    {recordingError && <p className="text-sm text-red-700">{recordingError}</p>}
+                    <textarea
+                      value={transcript}
+                      onChange={(e) => setTranscript(e.target.value)}
+                      rows={8}
+                      className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm text-slate-900 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
+                      placeholder="Transcript text..."
+                    />
+                    <button
+                      type="button"
+                      onClick={generateSoap}
+                      disabled={!canGenerate}
+                      className="px-4 py-2 text-sm font-medium text-white bg-slate-900 rounded-lg hover:bg-slate-800 disabled:bg-slate-400"
+                    >
+                      {actionLoading ? "Generating..." : "Generate SOAP"}
+                    </button>
+                    {generateDisabledReason && (
+                      <p className="text-xs text-slate-500">{generateDisabledReason}</p>
+                    )}
+                  </>
+                )}
+                {activeWorkflowTab === "review" && (
+                  <>
+                    <div className="flex items-center justify-end">
+                      <button
+                        type="button"
+                        onClick={copySoapText}
+                        disabled={!canCopySoap || actionLoading}
+                        className="px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 disabled:opacity-60"
+                      >
+                        {copyFeedbackState === "copied" ? "Copied!" : "Copy SOAP"}
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-1 gap-3">
+                      <textarea
+                        value={reviewText}
+                        onChange={(e) => setReviewText(e.target.value)}
+                        rows={16}
+                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                        placeholder={"Subjective:\n\nObjective:\n\nAssessment:\n\nPlan:"}
+                        disabled={!soapVersionId || lifecycleState === "FINALIZED_FOR_EXPORT"}
+                      />
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={saveDraft}
+                        disabled={!soapVersionId || lifecycleState === "FINALIZED_FOR_EXPORT" || actionLoading}
+                        className="px-4 py-2 text-sm font-medium text-white bg-slate-900 rounded-lg hover:bg-slate-800 disabled:bg-slate-400"
+                      >
+                        Save draft
+                      </button>
+                      <button
+                        type="button"
+                        onClick={finalizeAndSaveToEmr}
+                        disabled={!soapVersionId || actionLoading}
+                        className="px-4 py-2 text-sm font-medium text-white bg-emerald-700 rounded-lg hover:bg-emerald-800 disabled:bg-slate-400"
+                      >
+                        Finalize &amp; Save to EMR
+                      </button>
+                    </div>
+                    <p className="text-xs text-slate-500">
+                      Lifecycle: {lifecycleState || "—"} {encounterId ? `• Encounter ${encounterId}` : ""}
+                    </p>
+                    {actionError && <p className="text-sm text-red-700">{actionError}</p>}
+                    {actionSuccess && <p className="text-sm text-green-700">{actionSuccess}</p>}
+                  </>
+                )}
               </div>
             </div>
 

@@ -316,12 +316,21 @@ export default function Home() {
     const partName = toReadableBodyPart(selection.part);
     return selection.side ? `${selection.side} ${partName}` : partName;
   };
-  const joinWithAnd = (items: string[]) => {
+  const joinWithAnd = (items: string[], languageCode: string) => {
+    const normalizedLanguage = normalizeLanguageCode(languageCode).split("-")[0];
     if (items.length <= 1) return items[0] ?? "";
+    if (normalizedLanguage === "fa") {
+      if (items.length === 2) return `${items[0]} و ${items[1]}`;
+      return `${items.slice(0, -1).join("، ")}، و ${items.at(-1)}`;
+    }
     if (items.length === 2) return `${items[0]} and ${items[1]}`;
     return `${items.slice(0, -1).join(", ")}, and ${items.at(-1)}`;
   };
-  const buildDiagramMarkerResponse = (selections: DiagramMarkerSelection[]) => {
+  const buildDiagramMarkerResponse = (
+    selections: DiagramMarkerSelection[],
+    languageCode: string,
+  ) => {
+    const normalizedLanguage = normalizeLanguageCode(languageCode).split("-")[0];
     const uniqueLabels = Array.from(
       new Set(
         selections
@@ -329,15 +338,26 @@ export default function Home() {
           .map((selection) => formatDiagramSelectionLabel(selection)),
       ),
     );
+    if (normalizedLanguage === "fa") {
+      if (uniqueLabels.length === 0) {
+        return "من محل(های) درد را روی نمودار علامت زدم.";
+      }
+      return `من محل(های) درد را روی نمودار ${joinWithAnd(uniqueLabels, languageCode)} علامت زدم.`;
+    }
     if (uniqueLabels.length === 0) {
       return "I marked the painful spot(s) on the diagram.";
     }
-    return `I marked the painful spot(s) on the ${joinWithAnd(uniqueLabels)} diagram.`;
+    return `I marked the painful spot(s) on the ${joinWithAnd(uniqueLabels, languageCode)} diagram.`;
   };
-  const shouldAutoUpdateDiagramResponse = (value: string) => {
+  const shouldAutoUpdateDiagramResponse = (value: string, languageCode: string) => {
     const trimmed = value.trim().toLowerCase();
+    const normalizedLanguage = normalizeLanguageCode(languageCode).split("-")[0];
     if (!trimmed) return true;
     if (trimmed === "diagram marked." || trimmed === "diagram marked") return true;
+    if (normalizedLanguage === "fa") {
+      const rawTrimmed = value.trim();
+      return /^من محل\(های\) درد را روی نمودار(?: .+)? علامت زدم\.?$/u.test(rawTrimmed);
+    }
     return /^i marked the painful spot\(s\) on the .+ diagram\.?$/.test(trimmed);
   };
   const summarizeDiagramMarkerSelection = (selection: DiagramMarkerSelection) => {
@@ -478,7 +498,7 @@ export default function Home() {
       selectedDiagramMarkersRef.current.length > 0
         ? selectedDiagramMarkersRef.current
         : selectedDiagramMarkers;
-    const completionText = buildDiagramMarkerResponse(markerSelections);
+    const completionText = buildDiagramMarkerResponse(markerSelections, language);
     const existingDraft = draftTranscriptRef.current.trim();
     const alreadyMarked = existingDraft.toLowerCase().includes(completionText.toLowerCase());
     const nextDraft = !existingDraft
@@ -4964,8 +4984,16 @@ export default function Home() {
                                 nextSelections = updated;
                                 return updated;
                               });
-                              if (shouldAutoUpdateDiagramResponse(patientResponseRef.current)) {
-                                const markerResponse = buildDiagramMarkerResponse(nextSelections);
+                              if (
+                                shouldAutoUpdateDiagramResponse(
+                                  patientResponseRef.current,
+                                  language,
+                                )
+                              ) {
+                                const markerResponse = buildDiagramMarkerResponse(
+                                  nextSelections,
+                                  language,
+                                );
                                 setPatientResponseWithRef(markerResponse);
                               }
                             }}

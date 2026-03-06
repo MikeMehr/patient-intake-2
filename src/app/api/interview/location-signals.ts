@@ -29,14 +29,26 @@ export function hasLocationQuestionIntent(questionLower: string): boolean {
   return locationQuestionTopicPattern.test(questionLower);
 }
 
+function hasMarkerSignal(answerLower: string): boolean {
+  const hasEnglishMarkerAction =
+    /\b(marked|mark|clicked|tapped|placed an x|placed x)\b/.test(answerLower);
+  const hasEnglishMarkerTarget = /\b(diagram|photo|image|spot|area)\b/.test(answerLower);
+  if (hasEnglishMarkerAction && hasEnglishMarkerTarget) {
+    return true;
+  }
+
+  // Farsi marker support for localized diagram confirmations from the patient app.
+  const hasFarsiMarkerAction = /(علامت|نشانه|کلیک|تپ)/u.test(answerLower);
+  const hasFarsiMarkerTarget = /(نمودار|عکس|تصویر|محل|نقطه)/u.test(answerLower);
+  return hasFarsiMarkerAction && hasFarsiMarkerTarget;
+}
+
 export function hasLocationAnswerSignal(answerLower: string): boolean {
   if (explicitLocationAnswerPattern.test(answerLower)) {
     return true;
   }
 
-  const hasMarkerAction = /\b(marked|mark|clicked|tapped|placed an x|placed x)\b/.test(answerLower);
-  const hasMarkerTarget = /\b(diagram|photo|image|spot|area)\b/.test(answerLower);
-  return hasMarkerAction && hasMarkerTarget;
+  return hasMarkerSignal(answerLower);
 }
 
 export function hasBodyPartLocationAnswerSignal(
@@ -48,8 +60,5 @@ export function hasBodyPartLocationAnswerSignal(
     return false;
   }
 
-  const markerSignal =
-    /\b(marked|mark|clicked|tapped|placed an x|placed x)\b/.test(answerLower) &&
-    /\b(diagram|photo|image|spot|area)\b/.test(answerLower);
-  return markerSignal;
+  return hasMarkerSignal(answerLower);
 }
