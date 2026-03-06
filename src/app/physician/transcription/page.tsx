@@ -105,7 +105,7 @@ export default function PhysicianTranscriptionPage() {
   const [soapVersionId, setSoapVersionId] = useState<string | null>(null);
   const [encounterId, setEncounterId] = useState<string | null>(null);
   const [lifecycleState, setLifecycleState] = useState<"DRAFT" | "FINALIZED_FOR_EXPORT" | null>(null);
-  const [snapshotLabel, setSnapshotLabel] = useState<string>("");
+  const [, setSnapshotLabel] = useState<string>("");
   const [draft, setDraft] = useState<SoapDraft>(initialDraft);
   const [reviewText, setReviewText] = useState<string>(composeUnifiedSoapText(initialDraft));
   const [actionLoading, setActionLoading] = useState(false);
@@ -621,12 +621,11 @@ export default function PhysicianTranscriptionPage() {
             <div className="flex items-center justify-between">
               <div>
                 <h1 className="text-[1.1rem] font-semibold text-slate-900">Physician Transcription</h1>
-                {snapshotLabel && <p className="text-xs text-amber-700 mt-2">{snapshotLabel}</p>}
               </div>
               <button
                 type="button"
                 onClick={() => router.push("/physician/dashboard")}
-                className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50"
+                className="px-3 py-1.5 text-[0.7rem] font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50"
               >
                 Back to dashboard
               </button>
