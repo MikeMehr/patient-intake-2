@@ -618,11 +618,11 @@ export default function PhysicianDashboard() {
           />
           <div className="flex justify-between items-center">
             <div>
-              <h1 className="text-[1.1rem] font-semibold text-slate-900">
+              <h1 className="text-[0.88rem] sm:text-[1.1rem] font-semibold text-slate-900">
                 Physician Dashboard
               </h1>
               {physician && (
-                <p className="text-slate-600 mt-1">
+                <p className="text-[0.8rem] sm:text-base text-slate-600 mt-1">
                   Dr. {physician.firstName} {physician.lastName} - {physician.clinicName}
                   {physician.clinicAddress ? ` • ${physician.clinicAddress}` : ""}
                 </p>
@@ -633,7 +633,7 @@ export default function PhysicianDashboard() {
                 onClick={handleOpenTranscription}
                 className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50"
               >
-                Transcription
+                Transcribe
               </button>
               <button
                 onClick={handleScrollToPatientLookup}
@@ -653,7 +653,7 @@ export default function PhysicianDashboard() {
 
         {/* Invite Patient Form */}
         <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6 mb-6">
-          <h2 className="text-lg font-semibold text-slate-900 mb-4">
+          <h2 className="text-[0.9rem] sm:text-lg font-semibold text-slate-900 mb-4">
             Invite Patient for AI guided interview
           </h2>
           <form
