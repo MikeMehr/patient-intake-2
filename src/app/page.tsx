@@ -3562,6 +3562,7 @@ export default function Home() {
       : micUiState === "starting"
         ? "Starting..."
         : "Start listening";
+  const showListeningDecor = micUiState === "listening" && !micWarning;
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-slate-100 px-4 py-10 text-slate-900">
@@ -4844,7 +4845,7 @@ export default function Home() {
                           style={{ touchAction: "manipulation", WebkitUserSelect: "none", userSelect: "none" }}
                           className={`mt-2 inline-flex items-center gap-2 rounded-full px-5 py-2 text-base font-semibold shadow-sm transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 select-none ${
                             micUiState === "listening"
-                              ? "bg-red-500 text-white border border-red-500 focus-visible:outline-red-500"
+                              ? "gi-animate-mic-pulse border border-red-700 bg-red-600 text-white shadow-red-300/60 focus-visible:outline-red-600"
                               : micUiState === "starting"
                                 ? "bg-amber-500 text-white border border-amber-500 focus-visible:outline-amber-500"
                               : "border border-slate-200 bg-white text-slate-700 focus-visible:outline-emerald-600"
@@ -4862,7 +4863,22 @@ export default function Home() {
                           {micWarning ? (
                             <p className="text-amber-600">{micWarning}</p>
                           ) : (
-                            <p className={micStatusClassName}>{micStatusText}</p>
+                            <div className="flex items-center gap-2">
+                              {showListeningDecor && (
+                                <span
+                                  aria-hidden="true"
+                                  className="gi-voice-bars text-red-600"
+                                >
+                                  <span className="gi-voice-bar gi-voice-bar--1" />
+                                  <span className="gi-voice-bar gi-voice-bar--2" />
+                                  <span className="gi-voice-bar gi-voice-bar--3" />
+                                  <span className="gi-voice-bar gi-voice-bar--4" />
+                                </span>
+                              )}
+                              <p className={showListeningDecor ? "font-semibold text-red-600" : micStatusClassName}>
+                                {showListeningDecor ? "Listening..." : micStatusText}
+                              </p>
+                            </div>
                           )}
                           {status === "awaitingAi" && !isPaused && (
                             <span className="text-lg font-medium text-slate-500 animate-pulse">
@@ -4884,11 +4900,11 @@ export default function Home() {
                               <button
                                 type="button"
                                 onClick={resumeInterview}
-                                className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 transition whitespace-nowrap"
+                                className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-white bg-emerald-600 rounded-md hover:bg-emerald-700 transition whitespace-nowrap"
                                 title="Resume interview"
                               >
                                 <svg
-                                  className="w-4 h-4 flex-shrink-0"
+                                  className="w-2 h-2 flex-shrink-0"
                                   fill="currentColor"
                                   viewBox="0 0 24 24"
                                 >
@@ -4900,11 +4916,11 @@ export default function Home() {
                               <button
                                 type="button"
                                 onClick={pauseInterview}
-                                className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-lg hover:bg-slate-200 transition whitespace-nowrap"
+                                className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-slate-700 bg-slate-100 rounded-md hover:bg-slate-200 transition whitespace-nowrap"
                                 title="Pause interview"
                               >
                                 <svg
-                                  className="w-4 h-4 flex-shrink-0"
+                                  className="w-2 h-2 flex-shrink-0"
                                   fill="currentColor"
                                   viewBox="0 0 24 24"
                                 >
@@ -4920,11 +4936,11 @@ export default function Home() {
                                   endInterview();
                                 }
                               }}
-                              className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 transition whitespace-nowrap"
+                              className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-white bg-red-600 rounded-md hover:bg-red-700 transition whitespace-nowrap"
                               title="End interview and generate summary"
                             >
                               <svg
-                                className="w-4 h-4 flex-shrink-0"
+                                className="w-2 h-2 flex-shrink-0"
                                 fill="currentColor"
                                 viewBox="0 0 24 24"
                               >
@@ -5080,7 +5096,7 @@ export default function Home() {
                         }}
                         className={`inline-flex items-center justify-center rounded-2xl px-4 py-2 text-sm font-semibold transition select-none ${
                           micUiState === "listening"
-                            ? "bg-red-500 text-white hover:bg-red-600"
+                            ? "gi-animate-mic-pulse border border-red-700 bg-red-600 text-white shadow-sm shadow-red-300/60 hover:bg-red-700"
                             : micUiState === "starting"
                               ? "bg-amber-500 text-white hover:bg-amber-600"
                             : "bg-emerald-600 text-white hover:bg-emerald-500"
@@ -5094,7 +5110,22 @@ export default function Home() {
                       {micWarning ? (
                         <p className="text-amber-600">{micWarning}</p>
                       ) : (
-                        <p className={micStatusClassName}>{micStatusText}</p>
+                        <div className="flex items-center gap-2">
+                          {showListeningDecor && (
+                            <span
+                              aria-hidden="true"
+                              className="gi-voice-bars text-red-600"
+                            >
+                              <span className="gi-voice-bar gi-voice-bar--1" />
+                              <span className="gi-voice-bar gi-voice-bar--2" />
+                              <span className="gi-voice-bar gi-voice-bar--3" />
+                              <span className="gi-voice-bar gi-voice-bar--4" />
+                            </span>
+                          )}
+                          <p className={showListeningDecor ? "font-semibold text-red-600" : micStatusClassName}>
+                            {showListeningDecor ? "Listening..." : micStatusText}
+                          </p>
+                        </div>
                       )}
                       {status === "awaitingAi" && !isPaused && (
                         <span className="text-lg font-medium text-slate-500 animate-pulse">

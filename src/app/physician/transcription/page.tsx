@@ -82,14 +82,16 @@ function formatDateTime(value: string | null): string {
 
 export default function PhysicianTranscriptionPage() {
   const router = useRouter();
-  const [patientQuery, setPatientQuery] = useState("");
   const [patientSearchLoading, setPatientSearchLoading] = useState(false);
   const [patientSearchError, setPatientSearchError] = useState<string | null>(null);
-  const [patientResults, setPatientResults] = useState<PatientSearchResult[]>([]);
+  const [patientIdentityMessage, setPatientIdentityMessage] = useState<string | null>(null);
+  const [patientIdentityResolution, setPatientIdentityResolution] = useState<"existing" | "new" | null>(
+    null,
+  );
   const [selectedPatient, setSelectedPatient] = useState<PatientSearchResult | null>(null);
   const [newPatientFullName, setNewPatientFullName] = useState("");
   const [newPatientDob, setNewPatientDob] = useState("");
-  const [chiefComplaint, setChiefComplaint] = useState("");
+  const chiefComplaint = "";
   const [activeWorkflowTab, setActiveWorkflowTab] = useState<"capture" | "review">("capture");
 
   const [isRecording, setIsRecording] = useState(false);
@@ -121,20 +123,27 @@ export default function PhysicianTranscriptionPage() {
     () => newPatientFullName.trim().length >= 3 && /^\d{4}-\d{2}-\d{2}$/.test(newPatientDob.trim()),
     [newPatientFullName, newPatientDob],
   );
+  const canCreateNewPatient = useMemo(
+    () => patientIdentityResolution === "new" && hasNewPatientIdentity,
+    [patientIdentityResolution, hasNewPatientIdentity],
+  );
   const canGenerate = useMemo(
     () =>
       transcript.trim().length >= 10 &&
-      (Boolean(selectedPatient?.id) || hasNewPatientIdentity) &&
+      (Boolean(selectedPatient?.id) || canCreateNewPatient) &&
       !actionLoading,
-    [selectedPatient?.id, transcript, hasNewPatientIdentity, actionLoading],
+    [selectedPatient?.id, transcript, canCreateNewPatient, actionLoading],
   );
   const generateDisabledReason = useMemo(() => {
     if (transcript.trim().length < 10) return "Add transcript text first.";
-    if (!selectedPatient?.id && !hasNewPatientIdentity) {
-      return "Select existing patient or enter new patient full name and DOB.";
+    if (!hasNewPatientIdentity) {
+      return "Enter patient name and DOB.";
+    }
+    if (!selectedPatient?.id && !canCreateNewPatient) {
+      return "Click Continue to resolve patient identity.";
     }
     return null;
-  }, [transcript, selectedPatient?.id, hasNewPatientIdentity]);
+  }, [transcript, selectedPatient?.id, hasNewPatientIdentity, canCreateNewPatient]);
   const canCopySoap = useMemo(() => reviewText.trim().length > 0, [reviewText]);
 
   useEffect(() => {
@@ -174,19 +183,31 @@ export default function PhysicianTranscriptionPage() {
     }
   }
 
-  async function searchPatients() {
-    const q = patientQuery.trim();
-    if (q.length < 3) {
-      setPatientSearchError("Enter at least 3 characters.");
+  async function continuePatientIdentity() {
+    const fullName = newPatientFullName.trim().replace(/\s+/g, " ");
+    const dob = newPatientDob.trim();
+    if (fullName.length < 3) {
+      setPatientSearchError("Enter at least 3 characters for patient name.");
+      setPatientIdentityMessage(null);
+      setPatientIdentityResolution(null);
+      setSelectedPatient(null);
+      return;
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dob)) {
+      setPatientSearchError("Enter DOB in YYYY-MM-DD format.");
+      setPatientIdentityMessage(null);
+      setPatientIdentityResolution(null);
+      setSelectedPatient(null);
       return;
     }
     setPatientSearchError(null);
+    setPatientIdentityMessage(null);
     setPatientSearchLoading(true);
     try {
       const res = await fetch("/api/patients/search", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: q, limit: 10 }),
+        body: JSON.stringify({ name: fullName, dob, limit: 10 }),
       });
       if (res.status === 401) {
         router.push("/auth/login");
@@ -194,10 +215,28 @@ export default function PhysicianTranscriptionPage() {
       }
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || "Search failed");
-      setPatientResults(Array.isArray(data?.patients) ? data.patients : []);
+      const matches = Array.isArray(data?.patients) ? (data.patients as PatientSearchResult[]) : [];
+      const normalizedInputName = fullName.toLowerCase();
+      const exactMatch = matches.find((patient) => {
+        const normalizedPatientName = patient.fullName.trim().replace(/\s+/g, " ").toLowerCase();
+        const patientDob = (patient.dateOfBirth || "").slice(0, 10);
+        return normalizedPatientName === normalizedInputName && patientDob === dob;
+      });
+      const resolvedPatient = exactMatch || matches[0] || null;
+      if (resolvedPatient) {
+        setSelectedPatient(resolvedPatient);
+        setPatientIdentityResolution("existing");
+        setPatientIdentityMessage("Existing patient found and selected.");
+      } else {
+        setSelectedPatient(null);
+        setPatientIdentityResolution("new");
+        setPatientIdentityMessage("No match found. A new patient will be created on Generate SOAP.");
+      }
     } catch (err) {
       setPatientSearchError(err instanceof Error ? err.message : "Search failed");
-      setPatientResults([]);
+      setPatientIdentityMessage(null);
+      setPatientIdentityResolution(null);
+      setSelectedPatient(null);
     } finally {
       setPatientSearchLoading(false);
     }
@@ -345,7 +384,7 @@ export default function PhysicianTranscriptionPage() {
         body: JSON.stringify({
           patientId: selectedPatient?.id || undefined,
           newPatient:
-            !selectedPatient?.id && hasNewPatientIdentity
+            !selectedPatient?.id && canCreateNewPatient
               ? {
                   fullName: newPatientFullName.trim(),
                   dateOfBirth: newPatientDob.trim(),
@@ -374,9 +413,8 @@ export default function PhysicianTranscriptionPage() {
       };
       setDraft(nextDraft);
       setReviewText(composeUnifiedSoapText(nextDraft));
+      setActiveWorkflowTab("review");
       setActionSuccess("SOAP draft generated.");
-      setNewPatientFullName("");
-      setNewPatientDob("");
       await loadHistory();
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "Failed to generate SOAP");
@@ -519,16 +557,6 @@ export default function PhysicianTranscriptionPage() {
     setTranscript("");
   }
 
-  function handleSelectPatient(patient: PatientSearchResult) {
-    setSelectedPatient(patient);
-    setNewPatientFullName("");
-    setNewPatientDob("");
-    setChiefComplaint("");
-    clearEditorState();
-    setActionError(null);
-    setActionSuccess(null);
-  }
-
   async function deleteSnapshot(item: TranscriptionListItem) {
     if (!window.confirm("Delete this snapshot from Recent snapshots?")) return;
     setDeletingSnapshotId(item.transcriptionSessionId);
@@ -608,53 +636,57 @@ export default function PhysicianTranscriptionPage() {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="lg:col-span-2 space-y-6">
               <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6 space-y-4">
-                <h2 className="text-[1.1rem] font-semibold text-slate-900">1) Select patient</h2>
-                <div>
-                  <p className="text-xs font-medium text-slate-700 mb-2">
-                    Add new patient quickly (for patients not yet in Health Assist)
-                  </p>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                    <input
-                      type="text"
-                      value={newPatientFullName}
-                      onChange={(e) => {
-                        setNewPatientFullName(e.target.value);
-                        if (e.target.value.trim().length > 0) setSelectedPatient(null);
-                      }}
-                      className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
-                      placeholder="First name Last name"
-                    />
-                    <input
-                      type="date"
-                      value={newPatientDob}
-                      onChange={(e) => {
-                        setNewPatientDob(e.target.value);
-                        if (e.target.value.trim().length > 0) setSelectedPatient(null);
-                      }}
-                      className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
-                    />
-                  </div>
-                </div>
-                <div className="pt-2 border-t border-slate-200 space-y-4">
-                  <p className="text-xs font-medium text-slate-700">Or select existing patient</p>
-                <div className="flex gap-2">
+                <p className="text-sm font-medium text-slate-700">Search or add new patient</p>
+                <form
+                  className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] gap-2"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    void continuePatientIdentity();
+                  }}
+                >
                   <input
                     type="text"
-                    value={patientQuery}
-                    onChange={(e) => setPatientQuery(e.target.value)}
-                    className="flex-1 rounded-lg border border-slate-300 bg-white px-4 py-2 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
-                    placeholder="Search patient by name"
+                    value={newPatientFullName}
+                    onChange={(e) => {
+                      setNewPatientFullName(e.target.value);
+                      setSelectedPatient(null);
+                      setPatientIdentityResolution(null);
+                      setPatientIdentityMessage(null);
+                      setPatientSearchError(null);
+                    }}
+                    className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
+                    placeholder="First name Last name"
+                  />
+                  <input
+                    type="date"
+                    value={newPatientDob}
+                    onChange={(e) => {
+                      setNewPatientDob(e.target.value);
+                      setSelectedPatient(null);
+                      setPatientIdentityResolution(null);
+                      setPatientIdentityMessage(null);
+                      setPatientSearchError(null);
+                    }}
+                    className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
                   />
                   <button
-                    type="button"
-                    onClick={searchPatients}
+                    type="submit"
                     disabled={patientSearchLoading}
                     className="px-4 py-2 text-sm font-medium text-white bg-slate-900 rounded-lg hover:bg-slate-800 disabled:bg-slate-400"
                   >
-                    {patientSearchLoading ? "Searching..." : "Search"}
+                    {patientSearchLoading ? "Resolving..." : "Continue"}
                   </button>
-                </div>
+                </form>
                 {patientSearchError && <p className="text-sm text-red-700">{patientSearchError}</p>}
+                {patientIdentityMessage && (
+                  <p
+                    className={`text-sm ${
+                      patientIdentityResolution === "existing" ? "text-emerald-700" : "text-slate-600"
+                    }`}
+                  >
+                    {patientIdentityMessage}
+                  </p>
+                )}
                 {selectedPatient && (
                   <div className="rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 flex items-start justify-between gap-3">
                     <div>
@@ -667,36 +699,21 @@ export default function PhysicianTranscriptionPage() {
                     </div>
                     <button
                       type="button"
-                      onClick={() => setSelectedPatient(null)}
+                      onClick={() => {
+                        setSelectedPatient(null);
+                        setPatientIdentityResolution(null);
+                        setPatientIdentityMessage(null);
+                      }}
                       className="px-3 py-1.5 text-xs font-medium text-emerald-900 bg-white border border-emerald-300 rounded-lg hover:bg-emerald-100"
                     >
-                      Change patient
+                      Edit patient
                     </button>
                   </div>
                 )}
-                {!selectedPatient && patientResults.length > 0 && (
-                  <div className="space-y-2">
-                    {patientResults.map((p) => (
-                      <button
-                        key={p.id}
-                        type="button"
-                        onClick={() => handleSelectPatient(p)}
-                        className="w-full text-left rounded-lg border border-slate-200 px-3 py-2 hover:bg-slate-50"
-                      >
-                        <div className="text-sm font-medium text-slate-900">{p.fullName}</div>
-                        <div className="text-xs text-slate-500">
-                          DOB: {p.dateOfBirth || "—"} • {p.primaryPhone || p.email || "No contact"}
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                )}
-                </div>
               </div>
 
               <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6 space-y-4">
-                <div className="flex items-center justify-between gap-3">
-                  <h2 className="text-[1.1rem] font-semibold text-slate-900">2) Encounter workflow</h2>
+                <div className="flex items-center justify-start">
                   <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-1">
                     <button
                       type="button"
@@ -724,13 +741,6 @@ export default function PhysicianTranscriptionPage() {
                 </div>
                 {activeWorkflowTab === "capture" && (
                   <>
-                    <input
-                      type="text"
-                      value={chiefComplaint}
-                      onChange={(e) => setChiefComplaint(e.target.value)}
-                      className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
-                      placeholder="Chief complaint (optional)"
-                    />
                     <div className="flex items-center gap-3">
                       <button
                         type="button"

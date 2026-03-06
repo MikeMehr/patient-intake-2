@@ -100,3 +100,79 @@ html {
 .animate-scroll:hover {
   animation-play-state: paused;
 }
+
+@keyframes giMicPulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+    box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.09);
+  }
+  50% {
+    transform: scale(1.04);
+    opacity: 0.97;
+    box-shadow: 0 0 0 4px rgba(220, 38, 38, 0.04);
+  }
+}
+
+.gi-animate-mic-pulse {
+  animation: giMicPulse 1.5s ease-in-out infinite;
+  will-change: transform, opacity, box-shadow;
+}
+
+@keyframes giVoiceBar {
+  0%,
+  100% {
+    transform: scaleY(var(--gi-bar-min, 0.35));
+    opacity: 0.58;
+  }
+  50% {
+    transform: scaleY(1);
+    opacity: 1;
+  }
+}
+
+.gi-voice-bars {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 12px;
+}
+
+.gi-voice-bar {
+  width: 3px;
+  height: 100%;
+  border-radius: 9999px;
+  background: currentColor;
+  transform-origin: bottom center;
+  animation: giVoiceBar 0.95s ease-in-out infinite;
+}
+
+.gi-voice-bar--1 {
+  --gi-bar-min: 0.3;
+  animation-delay: 0s;
+}
+
+.gi-voice-bar--2 {
+  --gi-bar-min: 0.45;
+  animation-delay: 0.14s;
+}
+
+.gi-voice-bar--3 {
+  --gi-bar-min: 0.28;
+  animation-delay: 0.28s;
+}
+
+.gi-voice-bar--4 {
+  --gi-bar-min: 0.52;
+  animation-delay: 0.42s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gi-animate-mic-pulse,
+  .gi-voice-bar {
+    animation: none !important;
+    transform: none !important;
+    box-shadow: none !important;
+  }
+}
