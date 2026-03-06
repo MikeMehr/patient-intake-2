@@ -100,6 +100,7 @@ const finalCommentsPromptTranslations: Record<string, string> = {
 };
 
 const AZURE_TTS_DISABLED_SESSION_KEY = "speech.azureTtsDisabled";
+const MIC_STARTING_FEEDBACK_MS = 280;
 
 type ChatMessage = InterviewMessage;
 type DiagramMarker = { xPct: number; yPct: number };
@@ -645,6 +646,7 @@ export default function Home() {
   const hadResultRef = useRef<boolean>(false);
   const lastTranslatedSummaryKeyRef = useRef<string | null>(null);
   const consentCheckboxRef = useRef<HTMLInputElement | null>(null);
+  const micStartingUiTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   
   const [hasPhysicianId, setHasPhysicianId] = useState<boolean>(false);
   const [editingMessageIndex, setEditingMessageIndex] = useState<number | null>(null);
@@ -1643,7 +1645,7 @@ export default function Home() {
           recognitionStartedAtRef.current = Date.now();
           setIsListening(true);
           isListeningRef.current = true;
-          setMicUiState("listening");
+          setMicUiListeningWithFeedbackDelay();
           lastResultTime = Date.now();
           setError(null); // Clear any previous errors
           hadResultRef.current = false;
@@ -1825,6 +1827,24 @@ export default function Home() {
     }
   }, [status, language, useAzureStt]);
 
+  const setMicUiListeningWithFeedbackDelay = () => {
+    const scheduledAt = recognitionStartScheduledAtRef.current;
+    const elapsed = scheduledAt ? Date.now() - scheduledAt : MIC_STARTING_FEEDBACK_MS;
+    const delayMs = Math.max(0, MIC_STARTING_FEEDBACK_MS - elapsed);
+
+    if (micStartingUiTimeoutRef.current) {
+      clearTimeout(micStartingUiTimeoutRef.current);
+      micStartingUiTimeoutRef.current = null;
+    }
+
+    micStartingUiTimeoutRef.current = setTimeout(() => {
+      micStartingUiTimeoutRef.current = null;
+      if (isHoldingRef.current || isListeningRef.current) {
+        setMicUiState("listening");
+      }
+    }, delayMs);
+  };
+
   const startListening = async (options?: { allowDuringReview?: boolean }) => {
     // Capture current selection before we start listening (in case focus shifts)
     updateSelectionRef(patientResponseInputRef.current);
@@ -1954,7 +1974,7 @@ export default function Home() {
         isHoldingRef.current = true;
         setIsListening(true);
         isListeningRef.current = true;
-        setMicUiState("listening");
+        setMicUiListeningWithFeedbackDelay();
         return;
       } catch (error) {
         setIsListening(false);
@@ -2020,7 +2040,7 @@ export default function Home() {
           console.log("[Speech Recognition] Recognition already started");
           setIsListening(true);
           isListeningRef.current = true;
-          setMicUiState("listening");
+          setMicUiListeningWithFeedbackDelay();
           return;
         } else {
           console.error("Error starting speech recognition:", error);
@@ -2034,6 +2054,10 @@ export default function Home() {
   };
 
   const stopListening = (finalizeDraft = false) => {
+    if (micStartingUiTimeoutRef.current) {
+      clearTimeout(micStartingUiTimeoutRef.current);
+      micStartingUiTimeoutRef.current = null;
+    }
     setIsHolding(false);
     isHoldingRef.current = false;
     setMicUiState("idle");
@@ -4802,7 +4826,7 @@ export default function Home() {
                                   commitDraftToResponse(true);
                                 }
                               }}
-                              className="inline-flex min-h-[24px] sm:min-h-0 items-center justify-center rounded-full bg-emerald-700 px-2.5 py-1 sm:py-0.5 text-xs font-medium text-white shadow-sm transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-300"
+                            className="inline-flex min-h-[31px] sm:min-h-[26px] items-center justify-center rounded-full bg-emerald-700 px-2.5 py-1.5 sm:py-1 text-xs font-medium text-white shadow-sm transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-300"
                             >
                               Use this
                             </button>
@@ -5114,7 +5138,7 @@ export default function Home() {
                                 commitDraftToResponse();
                               }
                             }}
-                            className="inline-flex min-h-[69px] sm:min-h-[57px] items-center justify-center rounded-xl bg-emerald-600 px-4 py-2.5 sm:py-2 text-sm font-semibold text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-emerald-300"
+                            className="inline-flex min-h-[90px] sm:min-h-[74px] items-center justify-center rounded-xl bg-emerald-600 px-4 py-2.5 sm:py-2 text-sm font-semibold text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-emerald-300"
                           >
                             {isSubmittingResponse ? "Sending..." : "Use this"}
                           </button>
