@@ -125,7 +125,11 @@ type DiagramMarkerSelection = {
   markers?: MarkerPoint[];
 };
 
-const getBodyDiagramImage = (part: string, side?: string): { src: string; alt: string } => {
+const getBodyDiagramImage = (
+  part: string,
+  side?: string,
+  sex?: "female" | "male",
+): { src: string; alt: string } => {
   if (part === "foot" && side === "left") {
     return { src: "/Images/Sole.png", alt: "Left sole pain diagram" };
   }
@@ -155,6 +159,13 @@ const getBodyDiagramImage = (part: string, side?: string): { src: string; alt: s
     case "lower_back":
       return { src: "/Images/Thoracic Lumbar Spine.png", alt: "Thoracic and lumbar spine pain diagram" };
     case "chest":
+      if (sex === "male") {
+        return { src: "/Images/Male Breast.png", alt: "Male chest and breast pain diagram" };
+      }
+      if (sex === "female") {
+        return { src: "/Images/Female Breast.png", alt: "Female chest and breast pain diagram" };
+      }
+      return { src: "/Images/trunk front .png", alt: "Chest, breast, abdomen, and anterior neck pain diagram" };
     case "abdomen":
       return { src: "/Images/trunk front .png", alt: "Chest, breast, abdomen, and anterior neck pain diagram" };
     default:

@@ -13,6 +13,7 @@ import {
   normalizeLanguageCode,
 } from "@/lib/speech-language";
 import BodyPartDiagram from "@/components/BodyPartDiagram";
+import { getSensitivePhotoContext, isPhotoUploadRequestText } from "@/app/api/interview/prompt-helpers";
 import NextImage from "next/image";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -2343,9 +2344,18 @@ export default function Home() {
       const shouldOfferImage = skinKeywords.some((keyword) =>
         complaintLower.includes(keyword),
       );
+      const sensitiveComplaintContext = getSensitivePhotoContext({
+        sex: profile.sex,
+        textBlocks: [trimmed],
+      });
       // Preserve any explicit photo prompt set by processTurn(turn).
       // Only auto-enable for skin complaints; do not force-hide otherwise.
-      if (shouldOfferImage && !selectedImage && !selectedImagePreview) {
+      if (
+        shouldOfferImage &&
+        !sensitiveComplaintContext.suppressPhotoRequest &&
+        !selectedImage &&
+        !selectedImagePreview
+      ) {
         setShowImagePrompt(true);
         setWantsToUploadImage(null);
       }
@@ -3364,35 +3374,21 @@ export default function Home() {
       
       // Check if the AI is asking for a photo
       const questionLower = turn.question.toLowerCase();
-      const photoKeywords = [
-        "upload a photo",
-        "share a photo",
-        "send a photo",
-        "take a photo",
-        "upload a picture",
-        "share a picture",
-        "send a picture",
-        "take a picture",
-        "upload an image",
-        "share an image",
-        "send an image",
-        "photo would be helpful",
-        "picture would be helpful",
-        "image would be helpful",
-        "can you upload",
-        "would you like to upload",
-      ];
-      const hasPhotoVerbPair =
-        /\b(upload|share|send|take)\b/.test(questionLower) &&
-        /\b(photo|picture|image)\b/.test(questionLower);
       const isRequestingPhotoFromFlag = turn.requiresPhotoUpload === true;
       const isRequestingPhoto =
-        isRequestingPhotoFromFlag ||
-        photoKeywords.some((keyword) => questionLower.includes(keyword)) ||
-        hasPhotoVerbPair;
+        isRequestingPhotoFromFlag || isPhotoUploadRequestText(turn.question);
+      const sensitivePhotoContext = getSensitivePhotoContext({
+        sex: lockedProfile?.sex || sex,
+        textBlocks: [chiefComplaint, turn.question],
+      });
       
       // Show image prompt if AI is requesting a photo and no image has been uploaded yet
-      if (isRequestingPhoto && !selectedImage && !selectedImagePreview) {
+      if (
+        isRequestingPhoto &&
+        !sensitivePhotoContext.suppressPhotoRequest &&
+        !selectedImage &&
+        !selectedImagePreview
+      ) {
         setShowImagePrompt(true);
         setWantsToUploadImage(null);
       }
@@ -4888,67 +4884,32 @@ export default function Home() {
                         </div>
                       </div>
                     )}
-                    {/* Pause/Resume, End buttons and Thinking indicator - moved below Listening box */}
+                    {/* End button and paused status - moved below Listening box */}
                     <div className="flex items-center justify-between gap-3 mt-8 relative z-0">
                       <div className="flex items-center gap-3">
-                        {/* Pause/Resume and End buttons */}
+                        {/* End button */}
                         {(status === "awaitingPatient" || status === "awaitingAi" || status === "paused") &&
                           !awaitingFinalComments &&
                           !isEndingInterview && (
-                          <>
-                            {isPaused ? (
-                              <button
-                                type="button"
-                                onClick={resumeInterview}
-                                className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-white bg-emerald-600 rounded-md hover:bg-emerald-700 transition whitespace-nowrap"
-                                title="Resume interview"
-                              >
-                                <svg
-                                  className="w-2 h-2 flex-shrink-0"
-                                  fill="currentColor"
-                                  viewBox="0 0 24 24"
-                                >
-                                  <path d="M8 5v14l11-7z" />
-                                </svg>
-                                <span>Resume</span>
-                              </button>
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={pauseInterview}
-                                className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-slate-700 bg-slate-100 rounded-md hover:bg-slate-200 transition whitespace-nowrap"
-                                title="Pause interview"
-                              >
-                                <svg
-                                  className="w-2 h-2 flex-shrink-0"
-                                  fill="currentColor"
-                                  viewBox="0 0 24 24"
-                                >
-                                  <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z" />
-                                </svg>
-                                <span>Pause</span>
-                              </button>
-                            )}
-                            <button
-                              type="button"
-                              onClick={() => {
-                                if (window.confirm("Are you sure you want to end the interview early? Your answers so far will be saved, and a summary will still be prepared for your doctor.")) {
-                                  endInterview();
-                                }
-                              }}
-                              className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-white bg-red-600 rounded-md hover:bg-red-700 transition whitespace-nowrap"
-                              title="End interview and generate summary"
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (window.confirm("Are you sure you want to end the interview early? Your answers so far will be saved, and a summary will still be prepared for your doctor.")) {
+                                endInterview();
+                              }
+                            }}
+                            className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-white bg-red-600 rounded-md hover:bg-red-700 transition whitespace-nowrap"
+                            title="Ent Interview"
+                          >
+                            <svg
+                              className="w-2 h-2 flex-shrink-0"
+                              fill="currentColor"
+                              viewBox="0 0 24 24"
                             >
-                              <svg
-                                className="w-2 h-2 flex-shrink-0"
-                                fill="currentColor"
-                                viewBox="0 0 24 24"
-                              >
-                                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" />
-                              </svg>
-                              <span>End</span>
-                            </button>
-                          </>
+                              <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" />
+                            </svg>
+                            <span>Ent Interview</span>
+                          </button>
                         )}
                       </div>
                       <div className="flex items-center gap-3">
@@ -4978,7 +4939,7 @@ export default function Home() {
                             key={`${bodyPart.part}-${bodyPart.side || 'none'}-${index}`}
                             bodyPart={bodyPart.part as any}
                             side={safeSide}
-                            sex={sex}
+                            sex={sex === "female" || sex === "male" ? sex : undefined}
                             markers={markerSelection?.markers || []}
                             onMarkerAdd={({ part, side, marker }) => {
                               let nextSelections: DiagramMarkerSelection[] = [];

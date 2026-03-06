@@ -1,3 +1,5 @@
+import type { InterviewResponse } from "@/lib/interview-schema";
+
 type InterviewPhase = "hpi_phase" | "form_phase";
 
 type FormInterviewPhaseState = {
@@ -12,6 +14,12 @@ type FormCoverageHint = {
   label: string;
   patterns: RegExp[];
   topicHints?: string[];
+};
+
+export type SensitivePhotoContext = {
+  suppressPhotoRequest: boolean;
+  reason: string | null;
+  matchedScope: "female_breast" | "genital_private" | null;
 };
 
 type EscalationStateLike = {
@@ -124,4 +132,94 @@ export function getRemainingFormCoverageHints(params: {
       return !(coveredByText || coveredByTopic);
     })
     .map((hint) => hint.label);
+}
+
+const PHOTO_REQUEST_PHRASES = [
+  "upload a photo",
+  "share a photo",
+  "send a photo",
+  "take a photo",
+  "upload a picture",
+  "share a picture",
+  "send a picture",
+  "take a picture",
+  "upload an image",
+  "share an image",
+  "send an image",
+  "photo would be helpful",
+  "picture would be helpful",
+  "image would be helpful",
+  "can you upload",
+  "would you like to upload",
+];
+
+const PRIVATE_AREA_PATTERN =
+  /\b(genital|genitals|groin|penis|penile|scrotum|scrotal|testicle|testicles|testis|vagina|vaginal|vulva|vulvar|labia|perineum|perineal|private area|private part|intimate area|intimate part)\b/i;
+const FEMALE_BREAST_ANATOMY_PATTERN = /\b(breast|breasts|nipple|areola)\b/i;
+const FEMALE_BREAST_SENSITIVE_CONDITION_PATTERN =
+  /\b(rash|lesion|lump|mass|discharge|ulcer|wound|bump|mole|spot|skin change|skin changes)\b/i;
+
+export function isPhotoUploadRequestText(text: string): boolean {
+  const lower = text.toLowerCase();
+  return (
+    PHOTO_REQUEST_PHRASES.some((phrase) => lower.includes(phrase)) ||
+    (/\b(upload|share|send|take)\b/.test(lower) && /\b(photo|picture|image)\b/.test(lower))
+  );
+}
+
+export function getSensitivePhotoContext(params: {
+  sex?: string | null;
+  textBlocks: string[];
+}): SensitivePhotoContext {
+  const combined = params.textBlocks.join(" ").toLowerCase();
+  const normalizedSex = (params.sex || "").toLowerCase();
+
+  if (PRIVATE_AREA_PATTERN.test(combined)) {
+    return {
+      suppressPhotoRequest: true,
+      reason: "private-genital-area",
+      matchedScope: "genital_private",
+    };
+  }
+
+  if (
+    normalizedSex === "female" &&
+    FEMALE_BREAST_ANATOMY_PATTERN.test(combined) &&
+    FEMALE_BREAST_SENSITIVE_CONDITION_PATTERN.test(combined)
+  ) {
+    return {
+      suppressPhotoRequest: true,
+      reason: "female-breast-sensitive-condition",
+      matchedScope: "female_breast",
+    };
+  }
+
+  return {
+    suppressPhotoRequest: false,
+    reason: null,
+    matchedScope: null,
+  };
+}
+
+export function applySensitivePhotoSuppressionToTurn(
+  turn: InterviewResponse,
+  context: SensitivePhotoContext,
+): InterviewResponse {
+  if (!context.suppressPhotoRequest || turn.type !== "question") {
+    return turn;
+  }
+
+  const isPhotoRequest = turn.requiresPhotoUpload === true || isPhotoUploadRequestText(turn.question);
+  if (!isPhotoRequest) {
+    return turn;
+  }
+
+  return {
+    ...turn,
+    question:
+      "Please describe the affected area in words, including exact location, appearance changes, tenderness, discharge, itch, or progression over time.",
+    rationale:
+      "Sensitive-area safety policy: collect text-only clinical details without requesting photo upload.",
+    requiresPhotoUpload: false,
+  };
 }

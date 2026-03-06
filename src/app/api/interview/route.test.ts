@@ -1,6 +1,11 @@
 import type { InterviewResponse } from "@/lib/interview-schema";
 import { describe, expect, it } from "vitest";
-import { computeFormInterviewPhase } from "./prompt-helpers";
+import {
+  applySensitivePhotoSuppressionToTurn,
+  computeFormInterviewPhase,
+  getSensitivePhotoContext,
+  isPhotoUploadRequestText,
+} from "./prompt-helpers";
 import {
   hasBodyPartLocationAnswerSignal,
   hasLocationAnswerSignal,
@@ -497,6 +502,74 @@ describe("MSK hard override checkpoints", () => {
     });
 
     expect(result).toEqual(turn);
+  });
+});
+
+describe("sensitive photo suppression safeguards", () => {
+  it("suppresses female breast rash/lesion/lump photo requests", () => {
+    const context = getSensitivePhotoContext({
+      sex: "female",
+      textBlocks: ["I have a breast rash and a painful lump near my nipple."],
+    });
+    const turn: InterviewResponse = {
+      type: "question",
+      question: "Would you like to upload a photo of the breast area?",
+      rationale: "Visual inspection can help.",
+      requiresPhotoUpload: true,
+    };
+
+    const guarded = applySensitivePhotoSuppressionToTurn(turn, context);
+
+    expect(context.suppressPhotoRequest).toBe(true);
+    expect(context.matchedScope).toBe("female_breast");
+    expect(guarded.type).toBe("question");
+    if (guarded.type === "question") {
+      expect(guarded.requiresPhotoUpload).toBe(false);
+      expect(guarded.question.toLowerCase()).not.toContain("upload");
+      expect(guarded.question.toLowerCase()).not.toContain("photo");
+    }
+  });
+
+  it("suppresses genital/private-area photo requests for any sex", () => {
+    const context = getSensitivePhotoContext({
+      sex: "male",
+      textBlocks: ["I have a rash in my groin and genital area."],
+    });
+    const turn: InterviewResponse = {
+      type: "question",
+      question: "Can you send a picture of the affected genital area?",
+      rationale: "Assess visible changes.",
+      requiresPhotoUpload: false,
+    };
+
+    const guarded = applySensitivePhotoSuppressionToTurn(turn, context);
+
+    expect(context.suppressPhotoRequest).toBe(true);
+    expect(context.matchedScope).toBe("genital_private");
+    expect(isPhotoUploadRequestText(turn.question)).toBe(true);
+    expect(guarded.type).toBe("question");
+    if (guarded.type === "question") {
+      expect(guarded.requiresPhotoUpload).toBe(false);
+      expect(guarded.question.toLowerCase()).not.toContain("picture");
+    }
+  });
+
+  it("does not suppress non-sensitive dermatology photo requests", () => {
+    const context = getSensitivePhotoContext({
+      sex: "female",
+      textBlocks: ["Forearm rash with itching for 2 days."],
+    });
+    const turn: InterviewResponse = {
+      type: "question",
+      question: "If you can, please upload a photo of your forearm rash.",
+      rationale: "Assess lesion morphology.",
+      requiresPhotoUpload: true,
+    };
+
+    const guarded = applySensitivePhotoSuppressionToTurn(turn, context);
+
+    expect(context.suppressPhotoRequest).toBe(false);
+    expect(guarded).toEqual(turn);
   });
 });
 

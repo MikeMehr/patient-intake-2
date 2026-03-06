@@ -20,9 +20,12 @@ import {
   resolveInvitationFromCookie,
 } from "@/lib/invitation-security";
 import {
+  applySensitivePhotoSuppressionToTurn,
   computeFormInterviewPhase,
   getFormCoverageHints,
   getRemainingFormCoverageHints,
+  getSensitivePhotoContext,
+  type SensitivePhotoContext,
 } from "./prompt-helpers";
 import { applyMskSecondQuestionOverride, getMskDiagramProgress } from "./msk-second-question";
 import { hasLocationAnswerSignal, hasLocationQuestionIntent } from "./location-signals";
@@ -595,6 +598,10 @@ export async function POST(request: Request) {
   }
 
   try {
+    const sensitivePhotoContext = getSensitivePhotoContext({
+      sex: patientProfile.sex,
+      textBlocks: [chiefComplaint, ...transcript.map((message) => message.content)],
+    });
     const prompt = buildPrompt(
       chiefComplaint,
       patientProfile,
@@ -615,6 +622,7 @@ export async function POST(request: Request) {
       forceSummary || false,
       languageName,
       deferredIntentHint ?? null,
+      sensitivePhotoContext,
     );
 
     const languageInstruction = `LANGUAGE: For all patient-facing questions and messages (the conversation), respond ONLY in ${languageName}. Do NOT include English translations or mixed language unless ${languageName} is English. If you cannot reliably produce ${languageName}, fall back to English. Keep summaries/assessment/plan in English for the clinician. Preserve medical accuracy.`;
@@ -638,8 +646,9 @@ export async function POST(request: Request) {
       forceSummary,
       languageCode,
     });
+    const finalTurn = applySensitivePhotoSuppressionToTurn(adjustedTurn, sensitivePhotoContext);
 
-    const res = NextResponse.json(adjustedTurn);
+    const res = NextResponse.json(finalTurn);
     logRequestMeta("/api/interview", requestId, status, Date.now() - started);
     return res;
   } catch (error: unknown) {
@@ -1094,6 +1103,11 @@ function buildPrompt(
   forceSummary: boolean = false,
   languageName: string = "English",
   deferredIntentHint: string | null = null,
+  sensitivePhotoContext: SensitivePhotoContext = {
+    suppressPhotoRequest: false,
+    reason: null,
+    matchedScope: null,
+  },
 ): string {
   // Extract ALL questions from FULL transcript (not truncated) - CRITICAL for duplicate prevention
   const allQuestionsAsked = transcript
@@ -1304,6 +1318,9 @@ If the patient asks about a lab value or test result NOT mentioned in these summ
   const languageSection = languageName
     ? `\n\nLANGUAGE PREFERENCE: Conduct all patient-facing questions and messages in ${languageName}. If you cannot reliably produce ${languageName}, fall back to English. Do NOT mix languages.`
     : "";
+  const sensitivePhotoDirective = sensitivePhotoContext.suppressPhotoRequest
+    ? `\n\nSENSITIVE PHOTO SAFETY OVERRIDE (MANDATORY):\n- Sensitive area context detected (${sensitivePhotoContext.reason}).\n- You MUST NOT ask the patient to upload/share/send/take any photo for this complaint.\n- Set "requiresPhotoUpload": false.\n- Continue with text-only history questions and respectful, non-image clarifying questions.`
+    : "";
 
   // MSK complaints: enforce deterministic location checkpoints for all required body parts.
   const mskProgress = getMskDiagramProgress(chiefComplaint, transcript);
@@ -1403,6 +1420,7 @@ Family doctor: ${profile.familyDoctor}
 Documented drug allergies: ${profile.allergies}
 ${patientBackground ? `\nPhysician-provided background: ${patientBackground}` : ""}
 ${imageSection}${labReportSection}${formSection}${medPmhSection}
+${sensitivePhotoDirective}
 ${transcriptSection}${transcriptNote}${questionsList}${topicsList}${informationAlreadyProvided}${openEndedReminder}${mskLocationDirective}${deferredIntentSection}${controllerSection}${interviewPhaseSection}${formCoverageSection}
 
 CLINICAL INTERVIEW GUIDANCE (You are operating as a Physician Assistant):
@@ -1750,3 +1768,4 @@ function parseInterviewTurn(payload: string) {
 
   return result.data;
 }
+
