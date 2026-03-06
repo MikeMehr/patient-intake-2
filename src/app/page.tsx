@@ -603,7 +603,6 @@ export default function Home() {
   const [micWarning, setMicWarning] = useState<string | null>(null);
   const [isCoarsePointer, setIsCoarsePointer] = useState(false);
   const [isSmallWidth, setIsSmallWidth] = useState(false);
-  const [isEditingDraft, setIsEditingDraft] = useState(false);
   // Note: short "no" auto-submit removed (per request)
   const speechSynthesisRef = useRef<SpeechSynthesisUtterance | null>(null);
   const hasUnlockedSpeechRef = useRef(false);
@@ -914,21 +913,21 @@ export default function Home() {
       typingStateLogRef.current = "";
       return;
     }
-    const key = `${trimmed.length}|${showReview}|${status}|${isEditingDraft}`;
+    const key = `${trimmed.length}|${showReview}|${status}`;
     if (key === typingStateLogRef.current) {
       return;
     }
     typingStateLogRef.current = key;
-  }, [draftTranscript, showReview, status, isEditingDraft]);
+  }, [draftTranscript, showReview, status]);
   useEffect(() => {
     const nextLength = draftTranscript.trim().length;
     if (draftLengthLogRef.current === nextLength) {
       return;
     }
     draftLengthLogRef.current = nextLength;
-  }, [draftTranscript, showReview, status, isEditingDraft]);
+  }, [draftTranscript, showReview, status]);
   useEffect(() => {
-  }, [showReview, draftTranscript, status, isEditingDraft]);
+  }, [showReview, draftTranscript, status]);
   useEffect(() => {
     if (statusLogRef.current === status) {
       return;
@@ -2039,14 +2038,9 @@ export default function Home() {
     void startListening(options);
   };
 
-  const commitDraftToResponse = (mode: "use" | "edit", autoSubmit = false) => {
+  const commitDraftToResponse = (autoSubmit = false) => {
     const draft = draftTranscript.trim();
     if (!draft) {
-      return;
-    }
-    if (mode === "edit") {
-      setIsEditingDraft(true);
-      setShowReview(true);
       return;
     }
     if (autoSubmit) {
@@ -2060,9 +2054,7 @@ export default function Home() {
       draftTranscriptRawRef.current = "";
       setInterimTranscript("");
       interimTranscriptRef.current = "";
-      setIsEditingDraft(false);
     }
-    setIsEditingDraft(false);
     setPatientResponseWithRef(draft);
     if (patientResponseInputRef.current) {
       requestAnimationFrame(() => {
@@ -2071,24 +2063,12 @@ export default function Home() {
         patientResponseInputRef.current?.setSelectionRange(pos, pos);
       });
     }
-    if (mode === "use") {
-      setInterimTranscript("");
-      interimTranscriptRef.current = "";
-    }
+    setInterimTranscript("");
+    interimTranscriptRef.current = "";
     const shouldAutoSubmit = autoSubmit && statusRef.current === "awaitingPatient";
     if (shouldAutoSubmit) {
       void handlePatientSubmit();
-    } else if (autoSubmit) {
     }
-  };
-
-  const toggleDraftEditing = () => {
-    if (isEditingDraft) {
-      // Exit edit mode without altering the current draft text.
-      setIsEditingDraft(false);
-      return;
-    }
-    commitDraftToResponse("edit");
   };
 
   const redoDraftTranscript = () => {
@@ -4719,14 +4699,7 @@ export default function Home() {
                     )}
                     {showResponseBox && (
                       <div className="group flex flex-col items-center">
-                        <div
-                          className={[
-                            "relative w-full rounded-2xl border bg-white px-4 py-3 text-sm text-slate-800 transition",
-                            isEditingDraft
-                              ? "border-red-400 ring-2 ring-red-200"
-                              : "border-slate-200",
-                          ].join(" ")}
-                        >
+                        <div className="relative w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 transition">
                         <textarea
                           rows={4}
                           maxLength={1000}
@@ -4736,7 +4709,6 @@ export default function Home() {
                               : "Tap mic to start/stop or type your response."
                           }
                           value={draftTranscript}
-                          autoFocus={isEditingDraft}
                           disabled={
                             isSubmittingResponse ||
                             (awaitingFinalComments && finalCommentsChoice !== "yes")
@@ -4775,17 +4747,17 @@ export default function Home() {
                               onPointerDown={(event) => {
                                 event.preventDefault();
                                 if (!isSubmittingResponse && !hasPendingSubmission) {
-                                  commitDraftToResponse("use", true);
+                                  commitDraftToResponse(true);
                                 }
                               }}
                               onPointerUp={() => {
                               }}
                               onClick={() => {
                                 if (!isSubmittingResponse && !hasPendingSubmission) {
-                                  commitDraftToResponse("use", true);
+                                  commitDraftToResponse(true);
                                 }
                               }}
-                              className="inline-flex items-center justify-center rounded-full bg-emerald-700 px-2.5 py-0.5 text-xs font-medium text-white shadow-sm transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-300"
+                              className="inline-flex min-h-[24px] sm:min-h-0 items-center justify-center rounded-full bg-emerald-700 px-2.5 py-1 sm:py-0.5 text-xs font-medium text-white shadow-sm transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-300"
                             >
                               Use this
                             </button>
@@ -4797,30 +4769,9 @@ export default function Home() {
                                 (awaitingFinalComments && finalCommentsChoice !== "yes")
                               }
                               onClick={() => {
-                                toggleDraftEditing();
-                              }}
-                              className={[
-                                "inline-flex items-center justify-center rounded-full px-2.5 py-0.5 text-xs font-medium shadow-sm transition",
-                                "select-none active:scale-[0.98] active:opacity-90",
-                                isEditingDraft
-                                  ? "bg-red-600 text-white border border-red-600"
-                                  : "border border-slate-200 text-slate-700 hover:bg-slate-100",
-                                "disabled:cursor-not-allowed disabled:opacity-60",
-                              ].join(" ")}
-                            >
-                              {isEditingDraft ? "Done editing" : "Edit"}
-                            </button>
-                            <button
-                              type="button"
-                              disabled={
-                                isSubmittingResponse ||
-                                hasPendingSubmission ||
-                                (awaitingFinalComments && finalCommentsChoice !== "yes")
-                              }
-                              onClick={() => {
                                 redoDraftTranscript();
                               }}
-                              className="inline-flex items-center justify-center rounded-full border border-slate-200 px-2.5 py-0.5 text-xs font-medium text-slate-700 shadow-sm transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+                              className="inline-flex min-h-[24px] sm:min-h-0 items-center justify-center rounded-full border border-slate-200 px-2.5 py-1 sm:py-0.5 text-xs font-medium text-slate-700 shadow-sm transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
                             >
                               Redo
                             </button>
@@ -5108,40 +5059,25 @@ export default function Home() {
                             onPointerDown={(event) => {
                               event.preventDefault();
                               if (!isSubmittingResponse && !hasPendingSubmission) {
-                                commitDraftToResponse("use");
+                                commitDraftToResponse();
                               }
                             }}
                             onPointerUp={() => {
                             }}
                             onClick={() => {
                               if (!isSubmittingResponse && !hasPendingSubmission) {
-                                commitDraftToResponse("use");
+                                commitDraftToResponse();
                               }
                             }}
-                            className="inline-flex min-h-[44px] items-center justify-center rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-emerald-300"
+                            className="inline-flex min-h-[53px] sm:min-h-[44px] items-center justify-center rounded-xl bg-emerald-600 px-4 py-2.5 sm:py-2 text-sm font-semibold text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-emerald-300"
                           >
                             {isSubmittingResponse ? "Sending..." : "Use this"}
                           </button>
                           <button
                             type="button"
                             disabled={isSubmittingResponse}
-                            onClick={() => commitDraftToResponse("edit")}
-                            className={[
-                              "inline-flex min-h-[44px] items-center justify-center rounded-xl px-4 py-2 text-sm font-semibold transition",
-                              "select-none active:scale-[0.98] active:opacity-90",
-                              isEditingDraft
-                                ? "bg-red-600 text-white border border-red-600"
-                                : "border border-slate-200 text-slate-700 hover:bg-slate-100",
-                              "disabled:cursor-not-allowed disabled:opacity-60",
-                            ].join(" ")}
-                          >
-                            {isEditingDraft ? "Editing" : "Edit"}
-                          </button>
-                          <button
-                            type="button"
-                            disabled={isSubmittingResponse}
                             onClick={redoDraftTranscript}
-                            className="inline-flex min-h-[44px] items-center justify-center rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+                            className="inline-flex min-h-[53px] sm:min-h-[44px] items-center justify-center rounded-xl border border-slate-200 px-4 py-2.5 sm:py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
                           >
                             Redo
                           </button>
@@ -5309,7 +5245,7 @@ export default function Home() {
                           <span className="font-medium">{imageSummary}</span>
                         </p>
                       )}
-                      <div className="pt-1">
+                      <div className="flex items-center gap-2 pt-1">
                         <button
                           type="button"
                           onClick={() => {
@@ -5324,6 +5260,15 @@ export default function Home() {
                           className="inline-flex items-center justify-center rounded-2xl border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
                         >
                           Remove photo
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setWantsToUploadImage(false);
+                          }}
+                          className="inline-flex items-center justify-center rounded-2xl border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
+                        >
+                          Done
                         </button>
                       </div>
                     </div>
