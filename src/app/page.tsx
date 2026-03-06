@@ -1426,8 +1426,11 @@ export default function Home() {
     // time, which fails when TTS is triggered from a useEffect.
     const ctx = audioContextRef.current;
     if (ctx) {
-      if (ctx.state === "suspended") {
+      if (ctx.state === "suspended" || ctx.state === "interrupted") {
         await ctx.resume();
+      }
+      if (ctx.state !== "running") {
+        throw new Error(`AudioContext not running after resume (${ctx.state})`);
       }
       const arrayBuffer = await audioBlob.arrayBuffer();
       const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
@@ -1518,7 +1521,10 @@ export default function Home() {
       if (!audioContextRef.current) {
         audioContextRef.current = new AudioContext();
       }
-      if (audioContextRef.current.state === "suspended") {
+      if (
+        audioContextRef.current.state === "suspended" ||
+        audioContextRef.current.state === "interrupted"
+      ) {
         void audioContextRef.current.resume();
       }
     } catch (error) {
@@ -1575,6 +1581,45 @@ export default function Home() {
     }
     setIsSpeaking(false);
   };
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const resumeInterruptedAudio = () => {
+      if (isMuted) return;
+
+      const ctx = audioContextRef.current;
+      if (ctx && (ctx.state === "suspended" || ctx.state === "interrupted")) {
+        void ctx.resume().catch((error) => {
+          console.warn("[speech] AudioContext resume failed after interruption:", error);
+        });
+      }
+
+      if ("speechSynthesis" in window && window.speechSynthesis.paused) {
+        try {
+          window.speechSynthesis.resume();
+        } catch (error) {
+          console.warn("[speech] speechSynthesis resume failed after interruption:", error);
+        }
+      }
+    };
+
+    const handleVisibilityOrFocus = () => {
+      if (document.visibilityState === "visible") {
+        resumeInterruptedAudio();
+      }
+    };
+
+    window.addEventListener("focus", handleVisibilityOrFocus);
+    window.addEventListener("pageshow", handleVisibilityOrFocus);
+    document.addEventListener("visibilitychange", handleVisibilityOrFocus);
+
+    return () => {
+      window.removeEventListener("focus", handleVisibilityOrFocus);
+      window.removeEventListener("pageshow", handleVisibilityOrFocus);
+      document.removeEventListener("visibilitychange", handleVisibilityOrFocus);
+    };
+  }, [isMuted]);
 
   // Initialize speech recognition
   useEffect(() => {
@@ -5069,7 +5114,7 @@ export default function Home() {
                                 commitDraftToResponse();
                               }
                             }}
-                            className="inline-flex min-h-[53px] sm:min-h-[44px] items-center justify-center rounded-xl bg-emerald-600 px-4 py-2.5 sm:py-2 text-sm font-semibold text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-emerald-300"
+                            className="inline-flex min-h-[69px] sm:min-h-[57px] items-center justify-center rounded-xl bg-emerald-600 px-4 py-2.5 sm:py-2 text-sm font-semibold text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-emerald-300"
                           >
                             {isSubmittingResponse ? "Sending..." : "Use this"}
                           </button>
