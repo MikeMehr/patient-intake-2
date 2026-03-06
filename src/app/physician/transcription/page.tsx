@@ -620,7 +620,7 @@ export default function PhysicianTranscriptionPage() {
             />
             <div className="flex items-center justify-between">
               <div>
-                <h1 className="text-[1.1rem] font-semibold text-slate-900">Physician Transcription</h1>
+                <h1 className="text-[1.1rem] font-semibold text-slate-900">Transcription</h1>
               </div>
               <button
                 type="button"
