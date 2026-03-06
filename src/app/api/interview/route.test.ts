@@ -3,7 +3,9 @@ import { describe, expect, it } from "vitest";
 import {
   applySensitivePhotoSuppressionToTurn,
   computeFormInterviewPhase,
+  getMvaFollowUpPromptSection,
   getSensitivePhotoContext,
+  isLikelyMvaFollowUpContext,
   isPhotoUploadRequestText,
 } from "./prompt-helpers";
 import {
@@ -150,6 +152,51 @@ describe("interview prompt phase controller", () => {
     });
 
     expect(phase.phase).toBe("form_phase");
+  });
+});
+
+describe("MVA follow-up prompt guidance", () => {
+  it("detects likely MVA follow-up context from chief complaint and ongoing care details", () => {
+    expect(
+      isLikelyMvaFollowUpContext({
+        chiefComplaint: "motor vehicle accident follow up",
+        patientBackground: null,
+        formSummary: null,
+        patientAnswers: [
+          "It has been four months since the accident.",
+          "I am still going to physio twice a week and taking ibuprofen as needed.",
+        ],
+      }),
+    ).toBe(true);
+  });
+
+  it("does not classify an initial MVA assessment as follow-up", () => {
+    expect(
+      isLikelyMvaFollowUpContext({
+        chiefComplaint: "motor vehicle accident",
+        patientBackground: null,
+        formSummary: null,
+        patientAnswers: ["I was rear-ended yesterday and went to the emergency room."],
+      }),
+    ).toBe(false);
+  });
+
+  it("returns open-ended follow-up guidance that avoids first-visit checklists", () => {
+    const guidance = getMvaFollowUpPromptSection({
+      chiefComplaint: "motor vehicle accident follow up",
+      patientBackground: "Four month follow-up after MVA.",
+      formSummary: null,
+      patientAnswers: [
+        "My neck is a bit better but the upper back pain still bothers me.",
+        "I am doing rehab twice a week and using Tylenol for pain control.",
+      ],
+    });
+
+    expect(guidance).toContain("Start with a broad, open-ended follow-up question");
+    expect(guidance).toContain("let the patient direct the interview");
+    expect(guidance).toContain("Do NOT automatically repeat first-visit/admin questions");
+    expect(guidance).toContain("Do NOT automatically ask a broad acute-trauma red-flag bundle");
+    expect(guidance).toContain("rehab or therapy attendance and frequency");
   });
 });
 

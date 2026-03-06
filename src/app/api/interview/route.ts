@@ -23,6 +23,7 @@ import {
   applySensitivePhotoSuppressionToTurn,
   computeFormInterviewPhase,
   getFormCoverageHints,
+  getMvaFollowUpPromptSection,
   getRemainingFormCoverageHints,
   getSensitivePhotoContext,
   type SensitivePhotoContext,
@@ -189,18 +190,13 @@ LAB REPORT ANALYSIS AND DISCUSSION (CRITICAL):
 - Integrate lab report discussion naturally into the clinical interview - don't make it feel like a separate conversation.
 
 MOTOR VEHICLE ACCIDENT (MVA) ASSESSMENT:
-- CRITICAL: When the chief complaint involves MVA, car accident, motor vehicle accident, motor vehicle collision, MVC, or trauma from a vehicle, you MUST ask specific questions about the accident details.
-- These questions should be asked early in the interview, after initial open-ended questions but before detailed symptom assessment.
-- Required MVA assessment questions (ASK ALL OF THESE):
-  0.1 Ask about the date of the MVA and insurance company name and claim number. 
-  1. Mechanism: "How did the accident occur?" or "Can you describe what happened in the accident?"
-  2. Passengers: "Were there any passengers in your vehicle? Were they injured?"
-  3. Vehicles: "What type of vehicle were you driving? What type of vehicle was the other vehicle involved?"
-  4. Damage: "Was there major damage to your vehicle? Was there major damage to the other vehicle?"
-  5. Safety equipment: "Were you wearing a seatbelt? Did the airbag deploy?"
-  6. Emergency response: "Did an ambulance come to the scene? Did you go to the emergency room?"
-
-- These details are critical for assessing injury severity, mechanism of injury, and determining appropriate workup and treatment.
+- CRITICAL: First decide whether this appears to be an INITIAL post-accident assessment or a LATER FOLLOW-UP visit.
+- For INITIAL or EARLY post-accident visits, ask key accident details early, after the patient's initial narrative but before detailed symptom assessment.
+- Initial-visit MVA details can include: accident date, insurance/claim details if needed for documentation, mechanism, passengers, vehicles involved, damage severity, seatbelt/airbag, and ambulance/ER response.
+- For LATER FOLLOW-UP MVA visits, do NOT automatically repeat the full first-visit accident checklist if it would add little value.
+- In MVA follow-up visits, start with broad, open-ended questions and let the patient direct the interview toward what is still bothering them most.
+- In MVA follow-up visits, focus on interval change: what has improved, what has not improved, current function, ongoing treatment/rehab, and current pain control.
+- Ask accident-detail or documentation questions in a follow-up visit only if the information is missing, newly relevant, or needed to clarify the current course.
 
 MUSCULOSKELETAL (MSK) INJURY ASSESSMENT:
 - CRITICAL: For ALL musculoskeletal injuries (e.g., neck pain, back pain, joint pain, shoulder pain, knee pain, wrist pain, ankle pain), you MUST ask about previous injuries to the affected area.
@@ -210,7 +206,8 @@ MUSCULOSKELETAL (MSK) INJURY ASSESSMENT:
   2. For work-related injuries specifically, you MUST ask:
      * Date of injury: "What date did this work-related injury occur?"
      * Mechanism of injury: "Can you describe exactly how the injury happened at work? What were you doing when it occurred?"
-  3. For MVAs with MSK injuries, also ask: "Before this accident, had you ever injured your [affected body part]?"
+  3. For INITIAL MVA visits with MSK injuries, also ask: "Before this accident, had you ever injured your [affected body part]?"
+- For MVA follow-up visits, do NOT routinely repeat prior-injury questions if that background was likely established earlier. Revisit it only if the history remains unclear or is still clinically necessary.
 - Document previous injury history clearly, as this information is critical for insurance claims and determining whether the current injury is new or an aggravation of a pre-existing condition.
 - These questions should be asked early in the interview, after identifying the affected body part but before detailed symptom assessment.
 
@@ -233,6 +230,7 @@ RED FLAG ASSESSMENT (CRITICAL - SEVERITY-AWARE):
 - STEP 2 - DETERMINE CLINICAL PLAUSIBILITY OF RED FLAGS:
   * Use clinical judgment to determine which red flags are plausible for THIS specific complaint
   * Red flags include but are not limited to: chest pain with cardiac risk factors, severe dyspnea, neurological deficits, severe abdominal pain, signs of sepsis, uncontrolled bleeding, severe trauma, loss of consciousness, severe headache with neurological symptoms, severe allergic reactions, signs of stroke, acute vision loss, severe mental status changes
+  * For MVA follow-up visits with stable ongoing symptoms, do NOT automatically ask a broad acute-trauma checklist just because the complaint mentions an accident. Ask only targeted safety questions that fit the patient's CURRENT symptoms.
   * For MINOR complaints (e.g., mild sore throat without fever, minor aches, mild cold symptoms), skip implausible red flags:
     - DO NOT ask about stroke symptoms, severe neurological deficits, or cardiac symptoms for minor ENT/respiratory complaints
     - DO NOT ask about severe abdominal pain or sepsis for minor musculoskeletal complaints
@@ -1244,6 +1242,12 @@ If the patient asks about a lab value or test result NOT mentioned in these summ
   const openEndedReminder = isEarlyConversation 
     ? `\n\nCRITICAL: ${isFirstQuestion ? "This is your FIRST question as a Physician Assistant. " : "You are early in the clinical interview. "}${isFirstQuestion ? "You MUST rephrase the chief complaint into a natural clinical sentence - DO NOT copy it verbatim. " : ""}Use an OPEN-ENDED question that invites the patient to tell their story (e.g., 'Tell me about your [symptom]' or 'Can you describe what's been happening?'). After gathering the narrative, transition to focused clinical questions that help with differential diagnosis and red flag assessment.`
     : "";
+  const mvaFollowUpSection = getMvaFollowUpPromptSection({
+    chiefComplaint,
+    patientBackground,
+    formSummary,
+    patientAnswers,
+  });
 
   // Parse multiple chief complaints
   const complaints = chiefComplaint
@@ -1421,7 +1425,7 @@ Documented drug allergies: ${profile.allergies}
 ${patientBackground ? `\nPhysician-provided background: ${patientBackground}` : ""}
 ${imageSection}${labReportSection}${formSection}${medPmhSection}
 ${sensitivePhotoDirective}
-${transcriptSection}${transcriptNote}${questionsList}${topicsList}${informationAlreadyProvided}${openEndedReminder}${mskLocationDirective}${deferredIntentSection}${controllerSection}${interviewPhaseSection}${formCoverageSection}
+${transcriptSection}${transcriptNote}${questionsList}${topicsList}${informationAlreadyProvided}${openEndedReminder}${mvaFollowUpSection}${mskLocationDirective}${deferredIntentSection}${controllerSection}${interviewPhaseSection}${formCoverageSection}
 
 CLINICAL INTERVIEW GUIDANCE (You are operating as a Physician Assistant):
 ${physicianGuidanceSection}

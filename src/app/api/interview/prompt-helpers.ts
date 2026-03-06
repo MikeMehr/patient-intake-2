@@ -134,6 +134,71 @@ export function getRemainingFormCoverageHints(params: {
     .map((hint) => hint.label);
 }
 
+const MVA_PATTERN =
+  /\b(mva|motor vehicle accident|motor vehicle collision|motor vehicle crash|car accident|mvc)\b/i;
+const FOLLOW_UP_PATTERN =
+  /\b(follow[- ]?up|followup|reassessment|recheck|ongoing|persistent|still bothering|still having|not fully better|not fully resolved)\b/i;
+const INTERVAL_PATTERN =
+  /\b(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s+(?:day|days|week|weeks|month|months|year|years)\b/i;
+const REHAB_PATTERN =
+  /\b(physio|physiotherapy|chiro|chiropract|massage therapy|rehab|therapy|home exercises?|exercise program)\b/i;
+const PAIN_CONTROL_PATTERN =
+  /\b(tylenol|acetaminophen|advil|ibuprofen|naproxen|pain medication|pain medicine|muscle relax|pain control)\b/i;
+const RECOVERY_PATTERN =
+  /\b(improv(?:e|ing|ed|ement)|wors(?:e|ening|ened)|same|unchanged|persistent|still)\b/i;
+
+export function isLikelyMvaFollowUpContext(params: {
+  chiefComplaint: string;
+  patientBackground: string | null;
+  formSummary: string | null;
+  patientAnswers: string[];
+}): boolean {
+  const contextText = [
+    params.chiefComplaint,
+    params.patientBackground ?? "",
+    params.formSummary ?? "",
+    ...params.patientAnswers,
+  ]
+    .join(" ")
+    .toLowerCase();
+
+  const hasMvaContext = MVA_PATTERN.test(contextText);
+  if (!hasMvaContext) {
+    return false;
+  }
+
+  const hasExplicitFollowUp = FOLLOW_UP_PATTERN.test(contextText);
+  const hasIntervalRecoveryContext =
+    INTERVAL_PATTERN.test(contextText) && (REHAB_PATTERN.test(contextText) || PAIN_CONTROL_PATTERN.test(contextText));
+  const hasIntervalStatusContext = INTERVAL_PATTERN.test(contextText) && RECOVERY_PATTERN.test(contextText);
+
+  return hasExplicitFollowUp || hasIntervalRecoveryContext || hasIntervalStatusContext;
+}
+
+export function getMvaFollowUpPromptSection(params: {
+  chiefComplaint: string;
+  patientBackground: string | null;
+  formSummary: string | null;
+  patientAnswers: string[];
+}): string {
+  if (!isLikelyMvaFollowUpContext(params)) {
+    return "";
+  }
+
+  return `
+
+MVA FOLLOW-UP MODE (LIKELY ESTABLISHED ACCIDENT CASE):
+- Context suggests this is a later follow-up rather than the first post-accident visit.
+- Start with a broad, open-ended follow-up question and let the patient direct the interview toward the symptoms or body areas that still matter most.
+- Good follow-up openings include: "How have you been doing since the accident?" or "What symptoms are still bothering you most now?"
+- Do NOT turn this into a rigid checklist if the patient is already giving a clear narrative.
+- Do NOT automatically repeat first-visit/admin questions such as accident date, insurance claim number, passengers, vehicle type, vehicle damage, seatbelt/airbag, ambulance/ER, or prior injury history unless that information is truly missing and clinically necessary now.
+- Do NOT automatically ask a broad acute-trauma red-flag bundle months later just because the complaint mentions an accident. Ask targeted safety questions only if the patient's CURRENT symptoms make them clinically relevant.
+- Prioritize interval history: whether symptoms are improving, worsening, or unchanged; which body areas have improved versus remain symptomatic; current pain/function; rehab or therapy attendance and frequency; current pain-control medications and how often they are used.
+- Ask about recent re-evaluation, imaging, or new investigations only if it is relevant to the patient's current course or would change physician handoff.
+`;
+}
+
 const PHOTO_REQUEST_PHRASES = [
   "upload a photo",
   "share a photo",
