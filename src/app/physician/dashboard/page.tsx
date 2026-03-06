@@ -117,6 +117,7 @@ function mapInvitationFromApi(inv: any): Invitation {
 export default function PhysicianDashboard() {
   const router = useRouter();
   const patientLookupSectionRef = useRef<HTMLDivElement | null>(null);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [sessions, setSessions] = useState<PatientSessionWithChartLink[]>([]);
   const [invitations, setInvitations] = useState<Invitation[]>([]);
   const [loading, setLoading] = useState(true);
@@ -243,6 +244,7 @@ export default function PhysicianDashboard() {
   }, [router]);
 
   const handleLogout = async () => {
+    setMobileMenuOpen(false);
     await fetch("/api/auth/logout", { method: "POST" });
     router.push("/auth/login");
   };
@@ -607,7 +609,42 @@ export default function PhysicianDashboard() {
       <div className="min-h-screen bg-slate-100">
         <div className="max-w-7xl mx-auto px-4 py-8">
         {/* Header */}
-        <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6 mb-6">
+        <div className="relative bg-white rounded-lg shadow-sm border border-slate-200 p-6 mb-6">
+          <div className="absolute left-4 top-4 sm:hidden">
+            <button
+              type="button"
+              aria-label="Open menu"
+              aria-expanded={mobileMenuOpen}
+              onClick={() => setMobileMenuOpen((open) => !open)}
+              className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="h-5 w-5"
+                aria-hidden="true"
+              >
+                <line x1="3" y1="6" x2="21" y2="6" />
+                <line x1="3" y1="12" x2="21" y2="12" />
+                <line x1="3" y1="18" x2="21" y2="18" />
+              </svg>
+            </button>
+            {mobileMenuOpen ? (
+              <div className="absolute left-0 mt-2 w-40 rounded-lg border border-slate-200 bg-white p-1 shadow-md">
+                <button
+                  type="button"
+                  onClick={handleLogout}
+                  className="block w-full rounded-md px-3 py-2 text-left text-sm font-medium text-slate-700 hover:bg-slate-50"
+                >
+                  Sign Out
+                </button>
+              </div>
+            ) : null}
+          </div>
           <Image
             src="/LogoFinal.png"
             alt="Health Assist AI logo"
@@ -622,16 +659,15 @@ export default function PhysicianDashboard() {
                 Physician Dashboard
               </h1>
               {physician && (
-                <p className="text-[0.8rem] sm:text-base text-slate-600 mt-1">
+                <p className="text-[0.64rem] sm:text-[0.8rem] text-slate-600 mt-1">
                   Dr. {physician.firstName} {physician.lastName} - {physician.clinicName}
-                  {physician.clinicAddress ? ` • ${physician.clinicAddress}` : ""}
                 </p>
               )}
             </div>
             <div className="flex items-center gap-2">
               <button
                 onClick={handleOpenTranscription}
-                className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50"
+                className="px-3 py-1.5 sm:px-4 sm:py-2 text-[0.8rem] sm:text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50"
               >
                 Transcribe
               </button>
@@ -643,7 +679,7 @@ export default function PhysicianDashboard() {
               </button>
               <button
                 onClick={handleLogout}
-                className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50"
+                className="hidden sm:inline-flex px-3 py-1.5 sm:px-4 sm:py-2 text-[0.8rem] sm:text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50"
               >
                 Sign Out
               </button>
