@@ -589,6 +589,7 @@ export default function Home() {
   const [isEndingInterview, setIsEndingInterview] = useState(false);
   const [pauseCountdownSeconds, setPauseCountdownSeconds] = useState<number | null>(null);
   const [isMuted, setIsMuted] = useState(false);
+  const [isTranscribing, setIsTranscribing] = useState(false);
   const [cleaningTranscript, setCleaningTranscript] = useState(false);
   const [isSubmittingResponse, setIsSubmittingResponse] = useState(false);
   const [lastSubmittedDraft, setLastSubmittedDraft] = useState<string | null>(null);
@@ -1851,6 +1852,7 @@ export default function Home() {
     const allowDuringReview = options?.allowDuringReview ?? false;
     if (status !== "awaitingPatient") return;
     setMicUiState("starting");
+    setIsTranscribing(false);
     if (isSpeaking) {
       stopSpeaking();
       await new Promise((resolve) => setTimeout(resolve, 120));
@@ -1947,26 +1949,32 @@ export default function Home() {
           }
 
           if (!shouldFinalize) {
+            setIsTranscribing(false);
             return;
           }
 
-          const audioBlob = new Blob(chunks, {
-            type: recorder.mimeType || "audio/webm",
-          });
+          setIsTranscribing(true);
+          try {
+            const audioBlob = new Blob(chunks, {
+              type: recorder.mimeType || "audio/webm",
+            });
 
-          if (!audioBlob.size) {
-            setMicWarning("No speech detected. Please try again.");
-            return;
+            if (!audioBlob.size) {
+              setMicWarning("No speech detected. Please try again.");
+              return;
+            }
+
+            const rawTranscript = await transcribeAudio(audioBlob, language);
+            if (!rawTranscript) {
+              setMicWarning("We could not transcribe your speech. Please try again.");
+              return;
+            }
+
+            appendDraftRaw(rawTranscript);
+            await finalizeDraftTranscript();
+          } finally {
+            setIsTranscribing(false);
           }
-
-          const rawTranscript = await transcribeAudio(audioBlob, language);
-          if (!rawTranscript) {
-            setMicWarning("We could not transcribe your speech. Please try again.");
-            return;
-          }
-
-          appendDraftRaw(rawTranscript);
-          await finalizeDraftTranscript();
         };
 
         recorder.start(250);
@@ -2065,6 +2073,9 @@ export default function Home() {
       finalizeMediaOnStopRef.current = finalizeDraft;
       const recorder = mediaRecorderRef.current;
       if (recorder && recorder.state !== "inactive") {
+        if (finalizeDraft) {
+          setIsTranscribing(true);
+        }
         try {
           recorder.stop();
         } catch {
@@ -2072,6 +2083,7 @@ export default function Home() {
         }
       } else if (finalizeDraft) {
         setMicWarning("No speech detected. Please try again.");
+        setIsTranscribing(false);
       }
       setIsListening(false);
       isListeningRef.current = false;
@@ -3595,6 +3607,8 @@ export default function Home() {
     ? "Listening..."
     : micUiState === "starting"
       ? "Starting microphone..."
+    : isTranscribing
+      ? "Transcribing..."
     : cleaningTranscript
       ? "Processing transcript..."
       : microphoneBlocked
