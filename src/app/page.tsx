@@ -4887,6 +4887,18 @@ export default function Home() {
                     {/* End button and paused status - moved below Listening box */}
                     <div className="flex items-center justify-between gap-3 mt-8 relative z-0">
                       <div className="flex items-center gap-3">
+                        {/* Paused status */}
+                        {status === "paused" && (
+                          <span className="text-sm text-slate-500">
+                            {pauseCountdownSeconds !== null
+                              ? `Paused — ending in ${Math.floor(pauseCountdownSeconds / 60)}:${String(
+                                  pauseCountdownSeconds % 60
+                                ).padStart(2, "0")} unless resumed`
+                              : "Paused"}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-3 justify-end">
                         {/* End button */}
                         {(status === "awaitingPatient" || status === "awaitingAi" || status === "paused") &&
                           !awaitingFinalComments &&
@@ -4898,8 +4910,8 @@ export default function Home() {
                                 endInterview();
                               }
                             }}
-                            className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-white bg-red-600 rounded-md hover:bg-red-700 transition whitespace-nowrap"
-                            title="Ent Interview"
+                            className="flex items-center gap-1 px-2 py-1 text-[0.6rem] font-medium text-white bg-red-600 rounded-md hover:bg-red-700 transition whitespace-nowrap"
+                            title="End Early"
                           >
                             <svg
                               className="w-2 h-2 flex-shrink-0"
@@ -4908,20 +4920,8 @@ export default function Home() {
                             >
                               <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" />
                             </svg>
-                            <span>Ent Interview</span>
+                            <span>End Early</span>
                           </button>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-3">
-                        {/* Paused status */}
-                        {status === "paused" && (
-                          <span className="text-sm text-slate-500">
-                            {pauseCountdownSeconds !== null
-                              ? `Paused — ending in ${Math.floor(pauseCountdownSeconds / 60)}:${String(
-                                  pauseCountdownSeconds % 60
-                                ).padStart(2, "0")} unless resumed`
-                              : "Paused"}
-                          </span>
                         )}
                       </div>
                     </div>
