@@ -8,13 +8,14 @@ import {
   isLikelyMvaFollowUpContext,
   isPhotoUploadRequestText,
 } from "./prompt-helpers";
+import { buildPrompt } from "./prompt-builder";
 import {
   hasBodyPartLocationAnswerSignal,
   hasLocationAnswerSignal,
   hasLocationQuestionIntent,
 } from "./location-signals";
 import { applyMskSecondQuestionOverride } from "./msk-second-question";
-import { buildPrompt, POST } from "./route";
+import { POST } from "./route";
 
 const endpoint = "http://localhost/api/interview";
 const patientProfile = {

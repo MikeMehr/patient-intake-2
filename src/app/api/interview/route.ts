@@ -29,6 +29,7 @@ import {
   type SensitivePhotoContext,
 } from "./prompt-helpers";
 import { applyMskSecondQuestionOverride, getMskDiagramProgress } from "./msk-second-question";
+import { buildPrompt as buildInterviewPrompt } from "./prompt-builder";
 import { buildInterviewState } from "./state-builder";
 
 function attachProgressToTurn(
@@ -638,7 +639,7 @@ export async function POST(request: Request) {
       sex: patientProfile.sex,
       textBlocks: [chiefComplaint, ...transcript.map((message) => message.content)],
     });
-    const prompt = buildPrompt(
+    const prompt = buildInterviewPrompt(
       chiefComplaint,
       patientProfile,
       transcript,
@@ -1130,7 +1131,7 @@ function extractInformationFromAnswers(answers: string[]): {
   };
 }
 
-export function buildPrompt(
+function buildPrompt(
   chiefComplaint: string,
   profile: PatientProfile,
   transcript: InterviewMessage[],
