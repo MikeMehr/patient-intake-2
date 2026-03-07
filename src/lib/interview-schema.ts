@@ -190,6 +190,13 @@ export const interviewRequestSchema = z.object({
 
 export type InterviewRequest = z.infer<typeof interviewRequestSchema>;
 
+export const interviewProgressSchema = z.object({
+  questionsAsked: z.number().int().min(0),
+  approxTotalQuestions: z.number().int().min(0),
+});
+
+export type InterviewProgress = z.infer<typeof interviewProgressSchema>;
+
 const interviewQuestionSchema = z.object({
   type: z.literal("question"),
   question: z
@@ -201,6 +208,7 @@ const interviewQuestionSchema = z.object({
     .min(5, "Explain why you are asking.")
     .max(280)
     .optional(),
+  progress: interviewProgressSchema.optional(),
   requiresLocationMarking: z.boolean().optional(),
   requiresPhotoUpload: z.boolean().optional(),
   deferredIntentHint: z.string().min(3).max(500).optional(),
@@ -208,6 +216,7 @@ const interviewQuestionSchema = z.object({
 
 const interviewSummarySchema = historyResponseSchema.extend({
   type: z.literal("summary"),
+  progress: interviewProgressSchema.optional(),
 });
 
 export const interviewResponseSchema = z.discriminatedUnion("type", [

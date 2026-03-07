@@ -14,7 +14,7 @@ import {
   hasLocationQuestionIntent,
 } from "./location-signals";
 import { applyMskSecondQuestionOverride } from "./msk-second-question";
-import { POST } from "./route";
+import { buildPrompt, POST } from "./route";
 
 const endpoint = "http://localhost/api/interview";
 const patientProfile = {
@@ -62,6 +62,11 @@ describe("POST /api/interview", () => {
     expect(payload.type).toBe("question");
     if (payload.type === "question") {
       expect(payload.question.length).toBeGreaterThan(5);
+      expect(payload.progress).toBeDefined();
+      expect(payload.progress?.questionsAsked).toBe(1);
+      expect(payload.progress?.approxTotalQuestions).toBeGreaterThanOrEqual(
+        payload.progress?.questionsAsked ?? 0,
+      );
     }
   });
 
@@ -94,7 +99,101 @@ describe("POST /api/interview", () => {
     if (payload.type === "summary") {
       expect(payload.summary.length).toBeGreaterThan(10);
       expect(payload.plan.length).toBeGreaterThan(0);
+      expect(payload.progress).toBeDefined();
+      expect(payload.progress?.questionsAsked).toBeGreaterThan(0);
+      expect(payload.progress?.approxTotalQuestions).toBeGreaterThanOrEqual(
+        payload.progress?.questionsAsked ?? 0,
+      );
     }
+  });
+});
+
+describe("dynamic complaint queue prompt guidance", () => {
+  it("adds queued complaints from the transcript and applies the +8 budget modifier", () => {
+    const prompt = buildPrompt(
+      "right knee lump",
+      patientProfile,
+      [
+        { role: "assistant", content: "Tell me about the lump and pain behind your right knee." },
+        {
+          role: "patient",
+          content:
+            "It started a month ago. It is aching 7 out of 10 behind my right knee, worse with bending and driving, and better with icing and naproxen.",
+        },
+        {
+          role: "assistant",
+          content:
+            "Any other symptoms with the knee, such as locking, giving way, numbness, tingling, color change, inability to bear weight, major swelling, or deformity?",
+        },
+        {
+          role: "patient",
+          content: "No to all of those. Also having right elbow pain with lifting or weight-bearing activities.",
+        },
+      ],
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      false,
+      "English",
+      null,
+      {
+        suppressPhotoRequest: false,
+        reason: null,
+        matchedScope: null,
+      },
+    );
+
+    expect(prompt).toContain("DYNAMIC COMPLAINT QUEUE");
+    expect(prompt).toContain("+8-new-complaint");
+    expect(prompt).toContain('Complaint #2: "right elbow pain"');
+  });
+
+  it("requires a brief in-chat acknowledgment when a new concern is queued mid-interview", () => {
+    const prompt = buildPrompt(
+      "prostate issues",
+      patientProfile,
+      [
+        { role: "assistant", content: "Tell me about the prostate symptoms you've been noticing." },
+        {
+          role: "patient",
+          content:
+            "I stopped tamsulosin a week ago. My stream is a bit weaker, and I am getting up at night to urinate.",
+        },
+        {
+          role: "assistant",
+          content:
+            "Since stopping it, have you had urinary retention, blood in the urine, fever, chills, or severe pelvic pain?",
+        },
+        {
+          role: "patient",
+          content:
+            "No. Also I'm worried about diabetes. I was previously diagnosed with prediabetes and my A1C was 5.8.",
+        },
+      ],
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      false,
+      "English",
+      null,
+      {
+        suppressPhotoRequest: false,
+        reason: null,
+        matchedScope: null,
+      },
+    );
+
+    expect(prompt).toContain("NEW CONCERN ACKNOWLEDGMENT (MANDATORY THIS TURN)");
+    expect(prompt).toContain('"blood sugar concern"');
+    expect(prompt).toContain('then ask one focused question only about "prostate issues"');
   });
 });
 

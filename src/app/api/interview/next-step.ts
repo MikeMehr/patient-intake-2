@@ -51,7 +51,7 @@ export function decideNextInterviewStep(state: InterviewState): NextInterviewSte
     };
   }
 
-  if (state.questionCountSoFar === 0) {
+  if (state.complaintProgress.needsOpeningNarrative || state.activeComplaintQuestionCount === 0) {
     return {
       action: "ask_target",
       target: {
@@ -61,7 +61,7 @@ export function decideNextInterviewStep(state: InterviewState): NextInterviewSte
         rationale: "Start with an open-ended, complaint-focused narrative question.",
         promptHint: "Rephrase the chief complaint naturally and invite the patient to tell their story.",
       },
-      reason: "First turn should gather the patient narrative.",
+      reason: "Start the current complaint with an open-ended narrative question.",
     };
   }
 

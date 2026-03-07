@@ -10,9 +10,20 @@ export function mockInterviewStep(
   profile: PatientProfile,
   chiefComplaint: string,
 ): InterviewResponse {
+  const assistantTurns = transcript.filter(
+    (message) => message.role === "assistant",
+  ).length;
   const patientTurns = transcript.filter(
     (message) => message.role === "patient",
   ).length;
+  const progressFor = (willAskQuestion: boolean) => {
+    const completedQuestionTurns = Math.max(assistantTurns, patientTurns);
+    const questionsAsked = completedQuestionTurns + (willAskQuestion ? 1 : 0);
+    return {
+      questionsAsked,
+      approxTotalQuestions: Math.max(7, questionsAsked),
+    };
+  };
 
   const normalizedComplaint = chiefComplaint.toLowerCase();
 
@@ -63,6 +74,7 @@ export function mockInterviewStep(
       type: "question",
       question: questionForComplaint.question,
       rationale: questionForComplaint.rationale,
+      progress: progressFor(true),
     };
   }
 
@@ -71,6 +83,7 @@ export function mockInterviewStep(
       type: "question",
       question: "Have you noticed fevers or chills over the last few days?",
       rationale: "Fever pattern clarifies infectious severity and red flags.",
+      progress: progressFor(true),
     };
   }
 
@@ -79,6 +92,7 @@ export function mockInterviewStep(
       type: "question",
       question: "Any difficulty swallowing saliva, breathing, or opening your mouth?",
       rationale: "Airway compromise symptoms require urgent escalation.",
+      progress: progressFor(true),
     };
   }
 
@@ -87,6 +101,7 @@ export function mockInterviewStep(
       type: "question",
       question: "Have you experienced any associated symptoms like nausea, vomiting, or changes in appetite?",
       rationale: "Associated symptoms help complete the clinical picture and identify red flags.",
+      progress: progressFor(true),
     };
   }
 
@@ -95,6 +110,7 @@ export function mockInterviewStep(
       type: "question",
       question: "Are there any factors that make your symptoms better or worse?",
       rationale: "Identifying triggers and relieving factors aids in diagnosis and management.",
+      progress: progressFor(true),
     };
   }
 
@@ -103,6 +119,7 @@ export function mockInterviewStep(
       type: "question",
       question: "Have you tried any medications or treatments for this, and if so, what was the response?",
       rationale: "Treatment response provides diagnostic clues and informs management.",
+      progress: progressFor(true),
     };
   }
 
@@ -112,6 +129,7 @@ export function mockInterviewStep(
       type: "question",
       question: "Is there anything else about your symptoms or your health that you think might be relevant?",
       rationale: "Final check for any missed red flags or important details.",
+      progress: progressFor(true),
     };
   }
 
@@ -124,6 +142,7 @@ export function mockInterviewStep(
     investigations: mockHistory.investigations,
     assessment: mockHistory.assessment,
     plan: mockHistory.plan,
+    progress: progressFor(false),
   };
 }
 

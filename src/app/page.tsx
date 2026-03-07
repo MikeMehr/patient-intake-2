@@ -3,6 +3,7 @@
 import type { HistoryResponse, PatientUploads } from "@/lib/history-schema";
 import type {
   InterviewMessage,
+  InterviewProgress,
   InterviewResponse,
   PatientProfile,
 } from "@/lib/interview-schema";
@@ -67,6 +68,12 @@ const COMPLETION_REDIRECT_FALLBACK = "https://www.health-assist.org/";
 
 const closingMessageEnglish =
   "We have reached the end of this interview. Thank you for taking the time to answer my questions. You will soon be contacted by your physician to discuss the diagnosis and management.";
+
+function formatElapsedTime(totalSeconds: number) {
+  return `${Math.floor(totalSeconds / 60)}:${(totalSeconds % 60)
+    .toString()
+    .padStart(2, "0")}`;
+}
 
 const closingMessageTranslations: Record<string, string> = {
   es: "Hemos llegado al final de esta entrevista. Gracias por tomarse el tiempo para responder mis preguntas. Su médico se comunicará con usted pronto para hablar sobre el diagnóstico y el plan de manejo.",
@@ -660,9 +667,11 @@ export default function Home() {
   const [selectedDiagramMarkers, setSelectedDiagramMarkers] = useState<DiagramMarkerSelection[]>([]);
   const selectedDiagramMarkersRef = useRef<DiagramMarkerSelection[]>([]);
   const [endedEarly, setEndedEarly] = useState(false);
+  const [showEndInterviewConfirm, setShowEndInterviewConfirm] = useState(false);
   const [interviewStartTime, setInterviewStartTime] = useState<number | null>(null);
   const interviewStartTimeRef = useRef<number | null>(null);
   const [elapsedTime, setElapsedTime] = useState<number>(0);
+  const [interviewProgress, setInterviewProgress] = useState<InterviewProgress | null>(null);
   const cleaningSchema = z.object({ cleaned: z.string().min(1) });
   const sttSchema = z.object({
     text: z.string().optional().default(""),
@@ -2309,6 +2318,7 @@ export default function Home() {
 
     setChiefComplaint(trimmed);
     setDeferredIntentHint(null);
+    setInterviewProgress(null);
     setMessages([]);
     setResult(null);
     setPatientResponse("");
@@ -2934,6 +2944,7 @@ export default function Home() {
     setError(null);
     setEndedEarly(false);
     setIsEndingInterview(false);
+    setInterviewProgress(null);
     setInterviewStartTime(null);
     interviewStartTimeRef.current = null;
     setElapsedTime(0);
@@ -3312,6 +3323,7 @@ export default function Home() {
     setSavingSession(false);
     setSessionSaveError(null);
     setSessionSavePendingHistory(null);
+    setInterviewProgress(null);
     // Keep chief complaint - don't clear it
     setLockedProfile(null);
     setInterviewStartTime(null);
@@ -3440,6 +3452,8 @@ export default function Home() {
   }
 
   async function processTurn(turn: InterviewResponse) {
+    setInterviewProgress(turn.progress ?? null);
+
     if (turn.type === "question") {
       setDeferredIntentHint(turn.deferredIntentHint ?? null);
       // Use the AI question as-is (no added greeting)
@@ -3643,6 +3657,13 @@ export default function Home() {
         ? "Starting..."
         : "Start listening";
   const showListeningDecor = micUiState === "listening" && !micWarning;
+  const elapsedTimeLabel = formatElapsedTime(elapsedTime);
+  const showInterviewProgress =
+    interviewProgress !== null &&
+    status !== "idle" &&
+    status !== "saving" &&
+    status !== "complete" &&
+    status !== "paused";
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-slate-100 px-4 py-10 text-slate-900">
@@ -4331,17 +4352,26 @@ export default function Home() {
                 </p>
               </div>
 
-              <div className="text-xs text-slate-400" aria-live="polite">
+              <div className="text-[0.9rem] text-slate-400" aria-live="polite">
                 <p className="flex flex-wrap items-center gap-1">
-                  <span>Interview status:</span>
-                  <span>{statusCopy[status]}</span>
+                  {showInterviewProgress ? (
+                    <>
+                      <span>Interview progress:</span>
+                      <span>
+                        {interviewProgress.questionsAsked} of ~
+                        {interviewProgress.approxTotalQuestions} questions
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <span>Interview status:</span>
+                      <span>{statusCopy[status]}</span>
+                    </>
+                  )}
                   {interviewStartTime && status !== "idle" && (
                     <>
                       <span aria-hidden="true">•</span>
-                      <span>
-                        ⏱ {Math.floor(elapsedTime / 60)}:
-                        {(elapsedTime % 60).toString().padStart(2, "0")}
-                      </span>
+                      <span>{elapsedTimeLabel}</span>
                     </>
                   )}
                 </p>
@@ -4960,11 +4990,7 @@ export default function Home() {
                           !isEndingInterview && (
                           <button
                             type="button"
-                            onClick={() => {
-                              if (window.confirm("Are you sure you want to end the interview early? Your answers so far will be saved, and a summary will still be prepared for your doctor.")) {
-                                endInterview();
-                              }
-                            }}
+                            onClick={() => setShowEndInterviewConfirm(true)}
                             className="flex items-center gap-1 px-2 py-1 text-[0.6rem] font-medium text-white bg-red-600 rounded-md hover:bg-red-700 transition whitespace-nowrap"
                             title="End Early"
                           >
@@ -5384,6 +5410,45 @@ export default function Home() {
 
         </section>
       </main>
+      {showEndInterviewConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="end-interview-title"
+            aria-describedby="end-interview-description"
+            className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl shadow-slate-900/20"
+          >
+            <p className="text-sm font-semibold text-slate-500">Health Assist AI</p>
+            <h2 id="end-interview-title" className="mt-2 text-xl font-semibold text-slate-900">
+              End interview early?
+            </h2>
+            <p id="end-interview-description" className="mt-3 text-sm leading-6 text-slate-600">
+              Your answers so far will be saved, and a summary will still be prepared for your
+              doctor.
+            </p>
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setShowEndInterviewConfirm(false)}
+                className="rounded-2xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowEndInterviewConfirm(false);
+                  endInterview();
+                }}
+                className="rounded-2xl bg-red-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-700"
+              >
+                End interview
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

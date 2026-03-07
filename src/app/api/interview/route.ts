@@ -29,6 +29,31 @@ import {
   type SensitivePhotoContext,
 } from "./prompt-helpers";
 import { applyMskSecondQuestionOverride, getMskDiagramProgress } from "./msk-second-question";
+import { buildInterviewState } from "./state-builder";
+
+function attachProgressToTurn(
+  turn: InterviewResponse,
+  progress: { questionsAsked: number; approxTotalQuestions: number },
+): InterviewResponse {
+  const computedQuestionsAsked =
+    turn.type === "question" ? progress.questionsAsked + 1 : progress.questionsAsked;
+  const questionsAsked = Math.max(
+    computedQuestionsAsked,
+    turn.progress?.questionsAsked ?? 0,
+  );
+
+  return {
+    ...turn,
+    progress: {
+      questionsAsked,
+      approxTotalQuestions: Math.max(
+        progress.approxTotalQuestions,
+        turn.progress?.approxTotalQuestions ?? 0,
+        questionsAsked,
+      ),
+    },
+  };
+}
 import { hasLocationAnswerSignal, hasLocationQuestionIntent } from "./location-signals";
 
 const systemInstruction = `
@@ -399,6 +424,7 @@ export async function POST(request: Request) {
     physicianId: clientPhysicianId,
     chiefComplaint,
     imageSummary,
+    formSummary,
     medPmhSummary,
     patientBackground,
     forceSummary = false,
@@ -453,6 +479,16 @@ export async function POST(request: Request) {
     return res;
   }
 
+  const interviewState = buildInterviewState({
+    chiefComplaint,
+    patientProfile,
+    transcript,
+    formSummary: formSummary ?? null,
+    patientBackground: patientBackground ?? null,
+    forceSummary,
+    deferredIntentHint: deferredIntentHint ?? null,
+  });
+
   if (shouldMock()) {
     const mockTurn = mockInterviewStep(transcript, patientProfile, chiefComplaint);
     const adjustedMockTurn = applyMskSecondQuestionOverride({
@@ -462,7 +498,9 @@ export async function POST(request: Request) {
       forceSummary,
       languageCode,
     });
-    const res = NextResponse.json(adjustedMockTurn);
+    const res = NextResponse.json(
+      attachProgressToTurn(adjustedMockTurn, interviewState.progress),
+    );
     logRequestMeta("/api/interview", requestId, status, Date.now() - started);
     return res;
   }
@@ -645,8 +683,9 @@ export async function POST(request: Request) {
       languageCode,
     });
     const finalTurn = applySensitivePhotoSuppressionToTurn(adjustedTurn, sensitivePhotoContext);
+    const turnWithProgress = attachProgressToTurn(finalTurn, interviewState.progress);
 
-    const res = NextResponse.json(finalTurn);
+    const res = NextResponse.json(turnWithProgress);
     logRequestMeta("/api/interview", requestId, status, Date.now() - started);
     return res;
   } catch (error: unknown) {
@@ -742,7 +781,11 @@ function classifyComplaint(complaint: string): ComplaintClass {
   if (text.match(/\b(rash|lesion|eczema|hives|wound|ulcer|skin)\b/)) {
     return "Dermatology";
   }
-  if (text.match(/\b(back pain|neck pain|joint pain|ankle|knee|shoulder|wrist|sprain|strain|musculoskeletal)\b/)) {
+  if (
+    text.match(
+      /\b(back pain|neck pain|joint pain|ankle|knee|elbow|shoulder|wrist|sprain|strain|musculoskeletal)\b/,
+    )
+  ) {
     return "MSK";
   }
   return "General";
@@ -1087,7 +1130,7 @@ function extractInformationFromAnswers(answers: string[]): {
   };
 }
 
-function buildPrompt(
+export function buildPrompt(
   chiefComplaint: string,
   profile: PatientProfile,
   transcript: InterviewMessage[],
@@ -1128,6 +1171,15 @@ function buildPrompt(
 
   // Extract information from patient answers
   const patientInformation = extractInformationFromAnswers(patientAnswers);
+  const interviewState = buildInterviewState({
+    chiefComplaint,
+    patientProfile: profile,
+    transcript,
+    formSummary,
+    patientBackground,
+    forceSummary,
+    deferredIntentHint,
+  });
 
   // If transcript is very long (more than 20 messages), keep only the most recent 20
   // This prevents hitting token limits while keeping the most relevant context
@@ -1249,75 +1301,32 @@ If the patient asks about a lab value or test result NOT mentioned in these summ
     patientAnswers,
   });
 
-  // Parse multiple chief complaints
-  const complaints = chiefComplaint
-    .split(/[,\n]| and |; /)
-    .map(c => c.trim())
-    .filter(c => c.length > 0);
-  
+  const complaints = interviewState.complaints;
   const hasMultipleComplaints = complaints.length > 1;
-  const complaintsList = hasMultipleComplaints 
+  const complaintsList = hasMultipleComplaints
     ? `\n\nCHIEF COMPLAINTS (${complaints.length} total):\n${complaints.map((c, i) => `${i + 1}. ${c}`).join("\n")}\n\nCRITICAL: You must address ALL complaints sequentially. Complete all questions for complaint #1 before moving to complaint #2, and so on. Do NOT summarize until ALL complaints are fully explored.`
     : "";
-
-  // Determine which complaint is currently being addressed based on transcript
-  let currentComplaintIndex = 0;
-  const completedComplaints: number[] = [];
-  
-  if (hasMultipleComplaints && transcript.length > 0) {
-    // Analyze transcript to see which complaints have been covered
-    const transcriptText = transcript.map(m => m.content).join(" ").toLowerCase();
-    const coveredComplaints = complaints.map((complaint, idx) => {
-      const complaintKeywords = complaint.toLowerCase().split(/\s+/).filter(w => w.length > 3);
-      const coverage = complaintKeywords.filter(kw => transcriptText.includes(kw)).length;
-      const ratio = complaintKeywords.length > 0 ? coverage / complaintKeywords.length : 0;
-      
-      // Check if enough questions have been asked (at least 8 questions mentioning this complaint)
-      const questionsAboutComplaint = allQuestionsAsked.filter(q => {
-        const qLower = q.toLowerCase();
-        return complaintKeywords.some(kw => qLower.includes(kw));
-      }).length;
-      
-      // A complaint is considered complete if:
-      // 1. At least 50% of keywords mentioned AND
-      // 2. At least 8 questions asked about it AND
-      // 3. Red flags likely assessed (we check for red flag keywords in transcript)
-      const redFlagKeywords = ['chest pain', 'shortness of breath', 'dyspnea', 'neurological', 'weakness', 'numbness', 'severe', 'uncontrolled', 'bleeding', 'trauma', 'loss of consciousness', 'stroke', 'sepsis', 'mva', 'motor vehicle', 'car accident', 'airbag', 'seatbelt', 'ambulance', 'emergency room', 'er', 'work', 'work-related', 'work injury', 'previous injury', 'prior injury', 'previous injuries'];
-      const hasRedFlagAssessment = idx === 0 || redFlagKeywords.some(flag => transcriptText.includes(flag));
-      
-      const isComplete = ratio >= 0.5 && questionsAboutComplaint >= 8 && hasRedFlagAssessment;
-      
-      return { idx, coverage, ratio, questionsAboutComplaint, isComplete };
-    });
-    
-    // Find completed complaints
-    coveredComplaints.forEach(c => {
-      if (c.isComplete && c.idx < complaints.length - 1) {
-        completedComplaints.push(c.idx);
-      }
-    });
-    
-    // Find the last complaint that has been thoroughly covered (>= 50% keywords mentioned)
-    const thoroughlyCovered = coveredComplaints.filter(c => c.ratio >= 0.5);
-    if (thoroughlyCovered.length > 0) {
-      // If the current complaint is complete, move to next
-      const lastThoroughlyCovered = thoroughlyCovered[thoroughlyCovered.length - 1];
-      if (lastThoroughlyCovered.isComplete && lastThoroughlyCovered.idx < complaints.length - 1) {
-        currentComplaintIndex = lastThoroughlyCovered.idx + 1;
-      } else {
-        currentComplaintIndex = lastThoroughlyCovered.idx;
-      }
+  const currentComplaintIndex = interviewState.activeComplaintIndex;
+  const currentComplaint = interviewState.activeComplaint;
+  const remainingComplaints = interviewState.pendingComplaints;
+  const completedComplaintsList = interviewState.completedComplaints;
+  const lastPatientMessageIndex = (() => {
+    for (let index = transcript.length - 1; index >= 0; index -= 1) {
+      if (transcript[index]?.role === "patient") return index;
     }
-  }
-
-  // Build complaint context sections
-  const currentComplaint = complaints[currentComplaintIndex];
-  const remainingComplaints = hasMultipleComplaints 
-    ? complaints.slice(currentComplaintIndex + 1)
-    : [];
-  const completedComplaintsList = hasMultipleComplaints && completedComplaints.length > 0
-    ? completedComplaints.map(idx => complaints[idx])
-    : [];
+    return -1;
+  })();
+  const newlyQueuedComplaints = interviewState.complaintQueue.filter(
+    (item) => item.addedMidInterview && item.firstDetectedAtMessageIndex === lastPatientMessageIndex,
+  );
+  const dynamicComplaintSection =
+    interviewState.newComplaintCount > 0
+      ? `\n\nDYNAMIC COMPLAINT QUEUE:\n- ${interviewState.newComplaintCount} complaint${interviewState.newComplaintCount === 1 ? "" : "s"} were added mid-interview.\n- These complaints must stay queued as pending until the current complaint is complete unless urgent escalation is required.\n- Budget modifier applied: +8 questions per newly added complaint.`
+      : "";
+  const newlyQueuedConcernSection =
+    newlyQueuedComplaints.length > 0
+      ? `\n\nNEW CONCERN ACKNOWLEDGMENT (MANDATORY THIS TURN):\n- The patient just introduced ${newlyQueuedComplaints.length === 1 ? "a new concern" : "new concerns"}: ${newlyQueuedComplaints.map((item) => `"${item.complaint}"`).join(", ")}.\n- Start your next patient-facing message with one brief acknowledgment that you noted ${newlyQueuedComplaints.length === 1 ? "this concern" : "these concerns"}.\n- If "${currentComplaint}" is still the active complaint, briefly acknowledge the newly added concern${newlyQueuedComplaints.length === 1 ? "" : "s"} and say you will return to ${newlyQueuedComplaints.length === 1 ? "it" : "them"} after finishing the current complaint, then ask one focused question only about "${currentComplaint}".\n- If the active complaint has already advanced to one of the newly queued concerns, briefly acknowledge the transition and continue with the next appropriate question for that concern.\n- This brief acknowledgment is allowed even though other complaints normally remain off-limits until the current complaint is complete. Do NOT ask substantive clinical questions about queued concerns until it is their turn unless urgent escalation is required.`
+      : "";
 
   const languageSection = languageName
     ? `\n\nLANGUAGE PREFERENCE: Conduct all patient-facing questions and messages in ${languageName}. If you cannot reliably produce ${languageName}, fall back to English. Do NOT mix languages.`
@@ -1341,15 +1350,22 @@ If the patient asks about a lab value or test result NOT mentioned in these summ
     ? `\n\nDEFERRED CLINICAL INTENT (PRIORITIZE NOW):\n- In the previous turn, the system intentionally used a location-marking question.\n- Your NEXT question should now cover this deferred clinical intent: ${deferredIntentHint}\n- Ask one concise, non-duplicative question that addresses the same intent.\n- Do NOT repeat the location-marking request unless the patient did not provide location information.\n`
     : "";
 
-  const complaintClass = classifyComplaint(currentComplaint || chiefComplaint);
-  const escalation = detectEscalationTriggers({
-    chiefComplaint,
-    currentComplaint: currentComplaint || chiefComplaint,
-    patientProfile: profile,
-    patientAnswers,
-    formSummary,
-  });
-  const budget = computeQuestionBudget(escalation);
+  const complaintClass = interviewState.complaintClass;
+  const escalation = {
+    active: interviewState.escalationReasons.length > 0,
+    reasons: interviewState.escalationReasons,
+    hasRedFlagSignal: interviewState.escalationReasons.includes("red-flag-identified"),
+    hasMultiSystemSymptoms:
+      interviewState.escalationReasons.includes("multi-system-symptoms") || interviewState.newComplaintCount > 0,
+    hasChronicComplexity: interviewState.escalationReasons.includes("chronic-complexity"),
+    isTraumaOrMva: interviewState.escalationReasons.includes("trauma-mva"),
+    hasMedicoLegalDocumentation: false,
+    hasStructuredFormUpload: Boolean(formSummary && formSummary.trim().length > 0),
+  };
+  const budget = {
+    budget: interviewState.questionBudget,
+    modifiers: interviewState.questionBudgetModifiers,
+  };
   const phaseState = computeFormInterviewPhase({
     hasStructuredForm: escalation.hasStructuredFormUpload,
     questionCountSoFar: allQuestionsAsked.length,
@@ -1358,13 +1374,7 @@ If the patient asks about a lab value or test result NOT mentioned in these summ
     hasMultipleComplaints,
   });
   const formCoverageHints = getFormCoverageHints(formSummary);
-  const remainingFormCoverageHints = getRemainingFormCoverageHints({
-    formHints: formCoverageHints,
-    allQuestionsAsked,
-    patientAnswers,
-    topicsCovered,
-    patientMentionedTopics: patientInformation.mentionedTopics,
-  });
+  const remainingFormCoverageHints = interviewState.remainingFormCoverageHints;
 
   const fatigueSignals = detectFatigueSignals(patientAnswers);
   const redFlagChecklist = getScopedRedFlags(complaintClass);
@@ -1373,14 +1383,7 @@ If the patient asks about a lab value or test result NOT mentioned in these summ
     phaseState.hasStructuredForm &&
     phaseState.phase === "form_phase" &&
     remainingFormCoverageHints.length > 0;
-  const shouldEarlyStop =
-    !forceSummary &&
-    (
-      (reachedBudget && !escalation.active && !phaseState.hasStructuredForm) ||
-      (fatigueSignals.active && allQuestionsAsked.length >= 6)
-    ) &&
-    !hasFormCatchUpWork &&
-    !(phaseState.hasStructuredForm && phaseState.phase === "hpi_phase");
+  const shouldEarlyStop = interviewState.shouldEarlyStop;
 
   const redFlagSection = `\n\nRED FLAG ASSESSMENT CHECKLIST for "${currentComplaint}":\nBefore moving to the next complaint or summarizing, ensure you have assessed:\n${redFlagChecklist.map((flag, i) => `  ${i + 1}. ${flag}`).join('\n')}\n\nCRITICAL: If you have NOT asked about these red flags yet, you MUST ask about them before moving on.\nCRITICAL: Bundle related red flags into ONE question (enumerate them) instead of separate questions. Example: “Have you had any of the following: uncontrolled bleeding from mouth/nose; rash, joint pain, or swelling; changes in your voice or hoarseness; difficulty opening your mouth?”`;
   const controllerSection = `\n\nFOCUS CONTROLLER (ENFORCE STRICTLY):\n- Complaint class: ${complaintClass}\n- Scoped red flags only: ask ONLY from this complaint class; do NOT ask unrelated red-flag groups.\n- Questions asked so far: ${allQuestionsAsked.length}\n- Question budget: ${budget.budget === null ? "Unlimited (structured physician form uploaded)" : budget.budget}\n- Budget modifiers: ${budget.modifiers.join(", ")}\n- Escalation active: ${escalation.active ? "yes" : "no"}\n- Escalation reasons: ${escalation.reasons.length > 0 ? escalation.reasons.join(", ") : "none"}\n- Fatigue signals detected: ${fatigueSignals.active ? `yes (${fatigueSignals.signals.join(", ")})` : "no"}\n- Early-stop condition: ${shouldEarlyStop ? "MET — summarize now unless safety-critical data is missing." : "not met"}\n\nRules:\n1) Prioritize relevance over exhaustiveness.\n2) For straightforward complaints, limit to onset/location/duration/severity/key associated symptoms/relevant negatives/risk factors.\n3) Expand depth only when escalation is active.\n4) If early-stop condition is met, stop asking and summarize for physician handoff.`;
@@ -1410,7 +1413,7 @@ If the patient asks about a lab value or test result NOT mentioned in these summ
   const fullPrompt = `
 Chief complaint(s): ${chiefComplaint}
 ${complaintsList}
-${completedComplaintsSection}
+${completedComplaintsSection}${dynamicComplaintSection}${newlyQueuedConcernSection}
 ${currentComplaintNote}
 ${redFlagSection}
 ${doNotAskAboutSection}

@@ -1,3 +1,5 @@
+import type { InterviewProgress } from "@/lib/interview-schema";
+
 export type ComplaintClass =
   | "MSK"
   | "Neuro"
@@ -91,10 +93,22 @@ export type InterviewFactSummary = {
   informationSummary: string;
 };
 
+export type ComplaintStatus = "active" | "pending" | "completed";
+
+export type ComplaintSource = "chief_complaint" | "transcript";
+
 export type ComplaintProgress = {
   complaint: string;
   complaintClass: ComplaintClass;
   protocolId: string;
+  minQuestionCountTarget: number;
+  status: ComplaintStatus;
+  source: ComplaintSource;
+  addedMidInterview: boolean;
+  firstDetectedAtMessageIndex: number | null;
+  questionCountSoFar: number;
+  activeQuestionCountSoFar: number;
+  needsOpeningNarrative: boolean;
   coveredTopics: ProtocolTopicKey[];
   missingRequiredFieldKeys: string[];
   missingRedFlagKeys: string[];
@@ -105,6 +119,8 @@ export type ComplaintProgress = {
 export type InterviewState = {
   chiefComplaint: string;
   complaints: string[];
+  pendingComplaints: string[];
+  complaintQueue: ComplaintProgress[];
   activeComplaint: string;
   activeComplaintIndex: number;
   completedComplaints: string[];
@@ -112,7 +128,13 @@ export type InterviewState = {
   visitStage: VisitStage;
   protocol: ComplaintProtocol;
   complaintProgress: ComplaintProgress;
+  activeComplaintQuestionCount: number;
+  activeComplaintQuestionsAsked: string[];
+  activePatientAnswers: string[];
+  activeCoveredTopics: ProtocolTopicKey[];
+  activePatientFacts: InterviewFactSummary;
   questionCountSoFar: number;
+  totalQuestionCount: number;
   allQuestionsAsked: string[];
   patientAnswers: string[];
   coveredTopics: ProtocolTopicKey[];
@@ -122,9 +144,14 @@ export type InterviewState = {
   missingVirtualExamFields: ProtocolCheck[];
   remainingFormCoverageHints: string[];
   urgency: "routine" | "elevated";
+  questionBudget: number | null;
+  questionBudgetModifiers: string[];
+  escalationReasons: string[];
+  newComplaintCount: number;
   shouldEarlyStop: boolean;
   summaryReady: boolean;
   unresolvedClarification: string | null;
   deferredIntentHint: string | null;
   forceSummary: boolean;
+  progress: InterviewProgress;
 };

@@ -39,8 +39,14 @@ export function buildSummaryPrompt(params: {
     activeComplaint: params.state.activeComplaint,
     complaintClass: params.state.complaintClass,
     encounterStage: params.state.visitStage,
+    pendingComplaints: params.state.pendingComplaints,
     completedComplaints: params.state.completedComplaints,
-    coveredTopics: params.state.coveredTopics,
+    complaintQueue: params.state.complaintQueue.map((item) => ({
+      complaint: item.complaint,
+      status: item.status,
+      addedMidInterview: item.addedMidInterview,
+    })),
+    coveredTopics: params.state.activeCoveredTopics,
     patientFacts: params.state.patientFacts,
     summaryReason: params.state.forceSummary ? "patient_requested_end" : "controller_ready",
   };
@@ -77,6 +83,7 @@ Instructions:
 - Produce the existing summary JSON schema only.
 - Keep the plan focused on physician handoff and follow-up, not treatment advice.
 - Include concise differentials in assessment without sounding definitive.
+- If any complaints remain pending because the summary was forced, call that out clearly in the summary.
 - If this is a late follow-up, emphasize progression, current symptoms, remaining limitations, work status, rehab progress, and new red flags over first-visit accident details.
 `.trim();
 }

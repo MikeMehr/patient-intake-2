@@ -294,7 +294,9 @@ export function classifyComplaint(complaint: string): ComplaintClass {
     return "Dermatology";
   }
   if (
-    text.match(/\b(back pain|neck pain|joint pain|ankle|knee|shoulder|wrist|sprain|strain|musculoskeletal)\b/)
+    text.match(
+      /\b(back pain|neck pain|joint pain|ankle|knee|elbow|shoulder|wrist|sprain|strain|musculoskeletal)\b/,
+    )
   ) {
     return "MSK";
   }

@@ -43,12 +43,21 @@ export function buildQuestionPrompt(params: {
   const control = {
     mode: "question",
     activeComplaint: params.state.activeComplaint,
+    activeComplaintIndex: params.state.activeComplaintIndex,
     complaintClass: params.state.complaintClass,
     encounterStage: params.state.visitStage,
+    pendingComplaints: params.state.pendingComplaints,
     completedComplaints: params.state.completedComplaints,
-    coveredTopics: params.state.coveredTopics,
+    complaintQueue: params.state.complaintQueue.map((item) => ({
+      complaint: item.complaint,
+      status: item.status,
+      addedMidInterview: item.addedMidInterview,
+    })),
+    coveredTopics: params.state.activeCoveredTopics,
     missingRequiredFields: params.state.missingRequiredFields.map((item) => item.label),
     missingRedFlags: params.state.missingRedFlags.map((item) => item.label),
+    questionBudget: params.state.questionBudget,
+    questionBudgetModifiers: params.state.questionBudgetModifiers,
     urgency: params.state.urgency,
     nextAllowedTarget: params.target,
     photoAllowed:

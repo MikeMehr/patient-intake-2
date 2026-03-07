@@ -1,20 +1,27 @@
-import type { PatientProfile, InterviewMessage } from "@/lib/interview-schema";
+import { detectBodyParts } from "@/lib/body-parts";
+import type {
+  InterviewMessage,
+  InterviewProgress,
+  PatientProfile,
+} from "@/lib/interview-schema";
 import {
   computeFormInterviewPhase,
   getFormCoverageHints,
   getRemainingFormCoverageHints,
 } from "./prompt-helpers";
 import { classifyComplaint, getComplaintProtocol } from "./complaint-protocols";
-import { classifyVisitStage } from "./visit-stage";
-import type {
-  ComplaintProgress,
-  InterviewFactSummary,
-  InterviewState,
-  ProtocolCheck,
-  ProtocolTopicKey,
+import type { ComplaintSource, ComplaintStatus } from "./protocol-types";
+import {
+  type ComplaintProgress,
+  type InterviewFactSummary,
+  type InterviewState,
+  type ProtocolCheck,
+  type ProtocolTopicKey,
 } from "./protocol-types";
+import { classifyVisitStage } from "./visit-stage";
 
 const BASE_QUESTION_BUDGET = 15;
+const NEW_COMPLAINT_BUDGET_BONUS = 8;
 const FATIGUE_PHRASES = [
   "i already answered",
   "already answered that",
@@ -23,6 +30,94 @@ const FATIGUE_PHRASES = [
   "you asked that",
   "enough questions",
 ];
+const DYNAMIC_COMPLAINT_CUE_PATTERN =
+  /\b(also|another|additionally|in addition|plus|as well|too|besides|separately|now having|also having)\b/;
+const CONCERN_STYLE_CUE_PATTERN =
+  /\b(regarding|worried about|concerned about|questions? about|what should i do(?: next)? about|what do i do about|help with|guidance about|asking about)\b/;
+const SYMPTOM_CONTEXT_PATTERN =
+  /\b(pain|painful|hurt|hurts|hurting|ache|aching|swelling|swollen|lump|rash|lesion|wound|ulcer|numb|tingling|weakness|stiff|stiffness|cough|shortness of breath|dyspnea|headache|discharge|sore throat|fever|abdomen|abdominal|nausea|vomit)\b/;
+const MARKER_ONLY_PATTERN =
+  /\b(marked|mark|clicked|tapped|placed an x|placed x|diagram|photo|image)\b/;
+const MEDICAL_CONCERN_KEYWORD_PATTERN =
+  /\b(prediabet(?:es|ic)?|diabet(?:es|ic)?|blood sugar|glucose|a1c|hba1c|cholesterol|lipid|triglyceride|blood pressure|hypertension|thyroid|kidney|renal|liver|hepat|anemia|iron|vitamin d|vitamin b12|test result|lab result|labs?)\b/;
+const CONCERN_EXTRACT_PATTERNS = [
+  /\b(?:also\s+)?regarding\s+([^.!?\n]+)/i,
+  /\b(?:i am|i'm|im)?\s*(?:also\s+)?worried about\s+([^.!?\n]+)/i,
+  /\b(?:i am|i'm|im)?\s*(?:also\s+)?concerned about\s+([^.!?\n]+)/i,
+  /\bquestions?\s+about\s+([^.!?\n]+)/i,
+  /\bwhat should i do(?: next)? about\s+([^.!?\n]+)/i,
+  /\bwhat do i do about\s+([^.!?\n]+)/i,
+  /\bhelp with\s+([^.!?\n]+)/i,
+  /\bguidance about\s+([^.!?\n]+)/i,
+];
+const COMPLAINT_KEYWORD_STOPWORDS = new Set([
+  "right",
+  "left",
+  "both",
+  "pain",
+  "with",
+  "from",
+  "that",
+  "this",
+  "have",
+  "having",
+  "also",
+  "behind",
+  "around",
+  "area",
+  "side",
+  "concern",
+  "function",
+  "issue",
+  "issues",
+  "management",
+]);
+const NON_MSK_DYNAMIC_COMPLAINTS = [
+  { pattern: /\bchest pain\b/, label: "chest pain" },
+  { pattern: /\bshortness of breath|dyspnea\b/, label: "shortness of breath" },
+  { pattern: /\bsore throat\b/, label: "sore throat" },
+  { pattern: /\bheadache|migraine\b/, label: "headache" },
+  { pattern: /\babdominal pain|stomach pain\b/, label: "abdominal pain" },
+  { pattern: /\brash|skin lesion|skin wound|hives\b/, label: "rash" },
+];
+const CONDITION_LAB_DYNAMIC_COMPLAINTS = [
+  {
+    pattern:
+      /\b(prediabet(?:es|ic)?|diabet(?:es|ic)?|blood sugar|glucose|a1c|hba1c|sugar management)\b/,
+    label: "blood sugar concern",
+  },
+  { pattern: /\b(blood pressure|hypertension)\b/, label: "blood pressure concern" },
+  { pattern: /\b(cholesterol|lipid|triglyceride)\b/, label: "cholesterol concern" },
+  { pattern: /\b(thyroid|tsh)\b/, label: "thyroid concern" },
+  { pattern: /\b(kidney|renal|creatinine|egfr)\b/, label: "kidney function concern" },
+  { pattern: /\b(liver|hepatic|alt|ast)\b/, label: "liver function concern" },
+  { pattern: /\b(anemia|iron|ferritin|hemoglobin)\b/, label: "anemia or iron concern" },
+];
+
+type ComplaintSeed = {
+  complaint: string;
+  source: ComplaintSource;
+  addedMidInterview: boolean;
+  firstDetectedAtMessageIndex: number | null;
+};
+
+type ComplaintScopeAccumulator = {
+  assistantQuestions: string[];
+  activeAssistantQuestions: string[];
+  patientAnswers: string[];
+};
+
+type EvaluatedComplaintScope = {
+  complaintClass: ReturnType<typeof classifyComplaint>;
+  visitStage: ReturnType<typeof classifyVisitStage>;
+  protocol: ReturnType<typeof getComplaintProtocol>;
+  coveredTopics: Set<ProtocolTopicKey>;
+  patientFacts: InterviewFactSummary;
+  missingRequiredFields: ProtocolCheck[];
+  missingRedFlags: ProtocolCheck[];
+  missingVirtualExamFields: ProtocolCheck[];
+  completed: boolean;
+};
 
 function extractTopics(question: string): ProtocolTopicKey[] {
   const qLower = question.toLowerCase();
@@ -92,34 +187,38 @@ function extractInformationFromAnswers(answers: string[]): InterviewFactSummary 
   if (allAnswersText.match(/\b(\d+\/10|\d+ out of 10|mild|moderate|severe|very severe)\b/i)) {
     mentionedTopics.add("severity");
   }
-  if (allAnswersText.match(/\b(knee|shoulder|back|neck|arm|leg|chest|throat|abdomen|stomach|head)\b/)) {
+  if (
+    allAnswersText.match(
+      /\b(knee|elbow|shoulder|wrist|hand|foot|ankle|back|neck|arm|leg|chest|throat|abdomen|stomach|head)\b/,
+    )
+  ) {
     mentionedTopics.add("location");
   }
   if (allAnswersText.match(/\b(\d+\s*(day|week|month|hour|minute)s?)\b/i)) {
     mentionedTopics.add("duration/onset");
   }
-  if (allAnswersText.match(/\b(sharp|dull|aching|burning|throbbing|pressure)\b/)) {
+  if (allAnswersText.match(/\b(sharp|dull|aching|burning|throbbing|pressure|soft|firm|hard)\b/)) {
     mentionedTopics.add("quality");
   }
   if (allAnswersText.match(/\b(worse|worsens|aggravates|trigger|provokes|after)\b/)) {
     mentionedTopics.add("triggers");
   }
-  if (allAnswersText.match(/\b(better|helps|improves|relief|rest|ice|heat|medication)\b/)) {
+  if (allAnswersText.match(/\b(better|helps|improves|relief|rest|ice|heat|medication|brace)\b/)) {
     mentionedTopics.add("relieving factors");
   }
   if (allAnswersText.match(/\b(nausea|fever|chills|dizziness|cough|congestion|numbness|weakness)\b/)) {
     mentionedTopics.add("associated symptoms");
   }
-  if (allAnswersText.match(/\b(can't move|limited|stiff|range of motion|bend|straighten|flex)\b/)) {
+  if (allAnswersText.match(/\b(can't move|limited|stiff|range of motion|bend|straighten|flex|extend)\b/)) {
     mentionedTopics.add("range of motion");
   }
   if (allAnswersText.match(/\b(tender|tenderness|hurts when touched|painful when pressed)\b/)) {
     mentionedTopics.add("tenderness");
   }
-  if (allAnswersText.match(/\b(swelling|swollen|puffy|bruising)\b/)) {
+  if (allAnswersText.match(/\b(swelling|swollen|puffy|bruising|lump)\b/)) {
     mentionedTopics.add("swelling");
   }
-  if (allAnswersText.match(/\b(redness|red|inflamed)\b/)) {
+  if (allAnswersText.match(/\b(redness|red|inflamed|warmth|warm)\b/)) {
     mentionedTopics.add("redness");
   }
   if (allAnswersText.match(/\b(discharge|pus|drainage|white spots)\b/)) {
@@ -157,7 +256,7 @@ function extractInformationFromAnswers(answers: string[]): InterviewFactSummary 
     mentionedTopics.add("current symptoms");
     mentionedTopics.add("current red flags");
   }
-  if (allAnswersText.match(/\b(limit|limitation|daily activities|sleep|can't do|hard to)\b/)) {
+  if (allAnswersText.match(/\b(limit|limitation|daily activities|sleep|can't do|hard to|driving)\b/)) {
     mentionedTopics.add("function impact");
   }
   if (allAnswersText.match(/\b(work|job|modified duty|off work|return to work)\b/)) {
@@ -183,6 +282,344 @@ function extractInformationFromAnswers(answers: string[]): InterviewFactSummary 
   };
 }
 
+function normalizeText(value: string) {
+  return value.toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+function splitComplaints(chiefComplaint: string) {
+  return chiefComplaint
+    .split(/[,\n]| and |; /)
+    .map((complaint) => complaint.trim())
+    .filter((complaint) => complaint.length > 0);
+}
+
+function getComplaintKeywords(complaint: string) {
+  return normalizeText(complaint)
+    .split(/[^a-z0-9]+/)
+    .filter((word) => word.length > 3 && !COMPLAINT_KEYWORD_STOPWORDS.has(word));
+}
+
+function complaintsAreEquivalent(left: string, right: string) {
+  const leftNormalized = normalizeText(left);
+  const rightNormalized = normalizeText(right);
+  if (!leftNormalized || !rightNormalized) return false;
+  if (leftNormalized === rightNormalized) return true;
+  if (leftNormalized.includes(rightNormalized) || rightNormalized.includes(leftNormalized)) return true;
+
+  const leftParts = new Set(detectBodyParts(left).map((part) => part.part));
+  const rightParts = new Set(detectBodyParts(right).map((part) => part.part));
+  if (leftParts.size > 0 && rightParts.size > 0) {
+    for (const part of leftParts) {
+      if (rightParts.has(part)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  const leftKeywords = new Set(getComplaintKeywords(left));
+  const rightKeywords = new Set(getComplaintKeywords(right));
+  let overlap = 0;
+  for (const keyword of leftKeywords) {
+    if (rightKeywords.has(keyword)) {
+      overlap += 1;
+    }
+  }
+  return overlap >= 2;
+}
+
+function extractConcernPhrases(message: string) {
+  return CONCERN_EXTRACT_PATTERNS.flatMap((pattern) => {
+    const match = message.match(pattern);
+    if (!match?.[1]) return [];
+    return [match[1].trim()];
+  });
+}
+
+function cleanupConcernPhrase(phrase: string) {
+  return phrase
+    .replace(/^(?:my|the|his|her|their|our)\s+/i, "")
+    .replace(/\b(?:management|issue|issues|problem|problems|concern|concerns)\b/gi, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function extractConcernStyleCandidates(message: string): string[] {
+  const lower = message.toLowerCase();
+  if (!CONCERN_STYLE_CUE_PATTERN.test(lower) && !DYNAMIC_COMPLAINT_CUE_PATTERN.test(lower)) {
+    return [];
+  }
+
+  const candidates: string[] = [];
+  CONDITION_LAB_DYNAMIC_COMPLAINTS.forEach((item) => {
+    if (item.pattern.test(lower)) {
+      candidates.push(item.label);
+    }
+  });
+
+  extractConcernPhrases(message).forEach((phrase) => {
+    const cleanedPhrase = cleanupConcernPhrase(phrase);
+    if (!cleanedPhrase) return;
+
+    const lowerPhrase = cleanedPhrase.toLowerCase();
+    if (CONDITION_LAB_DYNAMIC_COMPLAINTS.some((item) => item.pattern.test(lowerPhrase))) {
+      return;
+    }
+
+    const hasBodyPart = detectBodyParts(cleanedPhrase).length > 0;
+    const hasKnownComplaintClass = classifyComplaint(cleanedPhrase) !== "General";
+    const hasMedicalConcernKeyword = MEDICAL_CONCERN_KEYWORD_PATTERN.test(lowerPhrase);
+
+    if (hasBodyPart || hasKnownComplaintClass || hasMedicalConcernKeyword) {
+      candidates.push(cleanedPhrase);
+    }
+  });
+
+  return Array.from(new Set(candidates.map((candidate) => candidate.trim()).filter(Boolean)));
+}
+
+function extractDynamicComplaintCandidates(
+  message: string,
+  patientTurnIndex: number,
+): string[] {
+  const lower = message.toLowerCase();
+  if (patientTurnIndex === 0) return [];
+  const hasSymptomCue = DYNAMIC_COMPLAINT_CUE_PATTERN.test(lower);
+  const hasConcernCue = CONCERN_STYLE_CUE_PATTERN.test(lower);
+  if (!hasSymptomCue && !hasConcernCue) return [];
+
+  const candidates: string[] = [];
+  if (hasSymptomCue && SYMPTOM_CONTEXT_PATTERN.test(lower)) {
+    detectBodyParts(message).forEach((part) => {
+      const side = part.side ? `${part.side} ` : "";
+      if (/\b(lump|mass|bump)\b/.test(lower)) {
+        candidates.push(`${side}${part.name} lump`);
+        return;
+      }
+      if (/\b(rash|lesion|wound|ulcer)\b/.test(lower)) {
+        candidates.push(`${side}${part.name} rash`);
+        return;
+      }
+      candidates.push(`${side}${part.name} pain`);
+    });
+
+    if (candidates.length === 0) {
+      NON_MSK_DYNAMIC_COMPLAINTS.forEach((item) => {
+        if (item.pattern.test(lower)) {
+          candidates.push(item.label);
+        }
+      });
+    }
+  }
+
+  extractConcernStyleCandidates(message).forEach((candidate) => {
+    candidates.push(candidate);
+  });
+
+  return Array.from(new Set(candidates.map((candidate) => candidate.trim()).filter(Boolean)));
+}
+
+function buildComplaintSeeds(chiefComplaint: string, transcript: InterviewMessage[]): ComplaintSeed[] {
+  const seeds: ComplaintSeed[] = splitComplaints(chiefComplaint).map((complaint) => ({
+    complaint,
+    source: "chief_complaint",
+    addedMidInterview: false,
+    firstDetectedAtMessageIndex: null,
+  }));
+
+  const patientMessages = transcript.filter((message) => message.role === "patient");
+  patientMessages.forEach((message, patientTurnIndex) => {
+    const transcriptIndex = transcript.findIndex((item) => item === message);
+    extractDynamicComplaintCandidates(message.content, patientTurnIndex).forEach((candidate) => {
+      const alreadyTracked = seeds.some((seed) => complaintsAreEquivalent(seed.complaint, candidate));
+      if (!alreadyTracked) {
+        seeds.push({
+          complaint: candidate,
+          source: "transcript",
+          addedMidInterview: true,
+          firstDetectedAtMessageIndex: transcriptIndex >= 0 ? transcriptIndex : null,
+        });
+      }
+    });
+  });
+
+  if (seeds.length === 0) {
+    return [
+      {
+        complaint: chiefComplaint,
+        source: "chief_complaint",
+        addedMidInterview: false,
+        firstDetectedAtMessageIndex: null,
+      },
+    ];
+  }
+
+  return seeds;
+}
+
+function messageMentionsComplaint(message: string, complaint: string) {
+  const lowerMessage = message.toLowerCase();
+  const complaintText = complaint.toLowerCase();
+  if (lowerMessage.includes(complaintText)) return true;
+
+  const complaintParts = new Set(detectBodyParts(complaint).map((part) => part.part));
+  const messageParts = new Set(detectBodyParts(message).map((part) => part.part));
+  if (complaintParts.size > 0 && messageParts.size > 0) {
+    for (const part of complaintParts) {
+      if (messageParts.has(part)) {
+        return true;
+      }
+    }
+  }
+
+  const complaintKeywords = getComplaintKeywords(complaint);
+  if (complaintKeywords.length === 0) return false;
+  return complaintKeywords.some((keyword) => lowerMessage.includes(keyword));
+}
+
+function hasMeaningfulNarrative(patientAnswers: string[]) {
+  return patientAnswers.some((answer) => {
+    const lower = answer.toLowerCase().trim();
+    if (!lower) return false;
+    if (MARKER_ONLY_PATTERN.test(lower) && lower.split(/\s+/).length <= 8) {
+      return false;
+    }
+    return lower.split(/\s+/).length >= 4;
+  });
+}
+
+function looksLikeFollowUpAnswer(answer: string) {
+  return /^(yes|no|it|they|there|none|not|soft|firm|hard|aching|sharp|dull|started|about|for|since|\d)/i.test(
+    answer.trim(),
+  );
+}
+
+function isCovered(check: ProtocolCheck, coveredTopics: Set<ProtocolTopicKey>, patientAnswers: string[]) {
+  if (check.key === "open_narrative") {
+    return hasMeaningfulNarrative(patientAnswers);
+  }
+  return check.coverageTopics.some((topic) => coveredTopics.has(topic));
+}
+
+function evaluateComplaintScope(params: {
+  chiefComplaint: string;
+  complaint: string;
+  patientBackground: string | null;
+  formSummary: string | null;
+  scope: ComplaintScopeAccumulator;
+}): EvaluatedComplaintScope {
+  const coveredTopics = new Set<ProtocolTopicKey>();
+  params.scope.assistantQuestions.forEach((question) => {
+    extractTopics(question).forEach((topic) => coveredTopics.add(topic));
+  });
+
+  const patientFacts = extractInformationFromAnswers(params.scope.patientAnswers);
+  patientFacts.mentionedTopics.forEach((topic) => coveredTopics.add(topic));
+
+  const complaintClass = classifyComplaint(params.complaint);
+  const visitStage = classifyVisitStage({
+    chiefComplaint: params.chiefComplaint,
+    activeComplaint: params.complaint,
+    patientBackground: params.patientBackground,
+    formSummary: params.formSummary,
+    patientAnswers: params.scope.patientAnswers,
+  });
+  const protocol = getComplaintProtocol({
+    complaint: params.complaint,
+    complaintClass,
+    visitStage,
+  });
+  const missingRequiredFields = protocol.requiredFields.filter(
+    (check) => !isCovered(check, coveredTopics, params.scope.patientAnswers),
+  );
+  const missingRedFlags = protocol.redFlags.filter(
+    (check) => !isCovered(check, coveredTopics, params.scope.patientAnswers),
+  );
+  const missingVirtualExamFields = protocol.virtualExamFields.filter(
+    (check) => !isCovered(check, coveredTopics, params.scope.patientAnswers),
+  );
+
+  return {
+    complaintClass,
+    visitStage,
+    protocol,
+    coveredTopics,
+    patientFacts,
+    missingRequiredFields,
+    missingRedFlags,
+    missingVirtualExamFields,
+    completed:
+      params.scope.assistantQuestions.length >= protocol.stopConditions.minQuestionCount &&
+      missingRequiredFields.length === 0 &&
+      (!protocol.stopConditions.requireRedFlags || missingRedFlags.length === 0) &&
+      (!protocol.stopConditions.requireVirtualExamWhenApplicable ||
+        protocol.virtualExamFields.length === 0 ||
+        missingVirtualExamFields.length === 0),
+  };
+}
+
+function buildComplaintScopes(params: {
+  chiefComplaint: string;
+  complaintSeeds: ComplaintSeed[];
+  transcript: InterviewMessage[];
+  patientBackground: string | null;
+  formSummary: string | null;
+}) {
+  const scopes = params.complaintSeeds.map<ComplaintScopeAccumulator>(() => ({
+    assistantQuestions: [],
+    activeAssistantQuestions: [],
+    patientAnswers: [],
+  }));
+  let activeComplaintIndex = 0;
+
+  params.transcript.forEach((message) => {
+    const explicitMatches = params.complaintSeeds
+      .map((seed, index) => (messageMentionsComplaint(message.content, seed.complaint) ? index : -1))
+      .filter((index) => index >= 0);
+    const targetIndices =
+      explicitMatches.length > 0
+        ? Array.from(new Set(explicitMatches))
+        : activeComplaintIndex < params.complaintSeeds.length
+          ? [activeComplaintIndex]
+          : [];
+    if (
+      message.role === "patient" &&
+      activeComplaintIndex < params.complaintSeeds.length &&
+      !targetIndices.includes(activeComplaintIndex) &&
+      looksLikeFollowUpAnswer(message.content)
+    ) {
+      targetIndices.push(activeComplaintIndex);
+    }
+
+    targetIndices.forEach((index) => {
+      if (message.role === "assistant") {
+        scopes[index].assistantQuestions.push(message.content.trim());
+        if (index === activeComplaintIndex) {
+          scopes[index].activeAssistantQuestions.push(message.content.trim());
+        }
+      } else {
+        scopes[index].patientAnswers.push(message.content.trim());
+      }
+    });
+
+    while (activeComplaintIndex < params.complaintSeeds.length) {
+      const evaluation = evaluateComplaintScope({
+        chiefComplaint: params.chiefComplaint,
+        complaint: params.complaintSeeds[activeComplaintIndex].complaint,
+        patientBackground: params.patientBackground,
+        formSummary: params.formSummary,
+        scope: scopes[activeComplaintIndex],
+      });
+      if (!evaluation.completed) {
+        break;
+      }
+      activeComplaintIndex += 1;
+    }
+  });
+
+  return { scopes, activeComplaintIndex };
+}
+
 function detectFatigueSignals(patientAnswers: string[]) {
   const lowerAnswers = patientAnswers.map((answer) => answer.toLowerCase().trim()).filter(Boolean);
   const signals: string[] = [];
@@ -205,6 +642,7 @@ function detectEscalationState(params: {
   patientProfile: PatientProfile;
   patientAnswers: string[];
   formSummary: string | null;
+  newComplaintCount: number;
 }) {
   const text = `${params.chiefComplaint} ${params.activeComplaint}`.toLowerCase();
   const answersText = params.patientAnswers.join(" ").toLowerCase();
@@ -216,28 +654,47 @@ function detectEscalationState(params: {
       /\b(loss of consciousness|faint|syncope|hemoptysis|gi bleed|melena|hematemesis|vision loss|focal weakness|severe pain|thunderclap)\b/,
     ),
   );
-  const hasMultiSystemSymptoms = Boolean(
-    `${text} ${answersText}`.match(
-      /\b(chest pain.*shortness of breath|headache.*neurologic|abdominal pain.*vomit|multiple complaints|and also)\b/,
-    ),
-  );
+  const hasMultiSystemSymptoms =
+    params.newComplaintCount > 0 ||
+    Boolean(
+      `${text} ${answersText}`.match(
+        /\b(chest pain.*shortness of breath|headache.*neurologic|abdominal pain.*vomit|multiple complaints|and also)\b/,
+      ),
+    );
   const hasChronicComplexity = Boolean(
     profileText.match(/\b(diabetes|copd|chf|heart failure|ckd|kidney disease|cancer|immunosupp|cirrhosis|anticoagulant|pregnan)\b/),
   );
   const hasStructuredFormUpload = formText.length > 0;
   const isTraumaOrMva = classifyComplaint(params.activeComplaint) === "Trauma";
+  const reasons = [
+    ...(hasRedFlagSignal ? ["red-flag-identified"] : []),
+    ...(hasMultiSystemSymptoms ? ["multi-system-symptoms"] : []),
+    ...(hasChronicComplexity ? ["chronic-complexity"] : []),
+    ...(hasStructuredFormUpload ? ["structured-form-uploaded"] : []),
+    ...(isTraumaOrMva ? ["trauma-mva"] : []),
+    ...(params.newComplaintCount > 0 ? [`dynamic-complaints:${params.newComplaintCount}`] : []),
+  ];
 
   return {
-    active: hasRedFlagSignal || hasMultiSystemSymptoms || hasChronicComplexity || hasStructuredFormUpload || isTraumaOrMva,
+    active:
+      hasRedFlagSignal ||
+      hasMultiSystemSymptoms ||
+      hasChronicComplexity ||
+      hasStructuredFormUpload ||
+      isTraumaOrMva,
     hasRedFlagSignal,
     hasMultiSystemSymptoms,
     hasChronicComplexity,
     hasStructuredFormUpload,
     isTraumaOrMva,
+    reasons,
   };
 }
 
-function computeQuestionBudget(escalation: ReturnType<typeof detectEscalationState>) {
+function computeQuestionBudget(
+  escalation: ReturnType<typeof detectEscalationState>,
+  newComplaintCount: number,
+) {
   if (escalation.hasStructuredFormUpload) {
     return { budget: null, modifiers: ["unlimited-structured-form"] };
   }
@@ -260,81 +717,11 @@ function computeQuestionBudget(escalation: ReturnType<typeof detectEscalationSta
     budget += 15;
     modifiers.push("+15-trauma-mva");
   }
+  if (newComplaintCount > 0) {
+    budget += newComplaintCount * NEW_COMPLAINT_BUDGET_BONUS;
+    modifiers.push(`+${newComplaintCount * NEW_COMPLAINT_BUDGET_BONUS}-new-complaint`);
+  }
   return { budget, modifiers };
-}
-
-function splitComplaints(chiefComplaint: string) {
-  return chiefComplaint
-    .split(/[,\n]| and |; /)
-    .map((complaint) => complaint.trim())
-    .filter((complaint) => complaint.length > 0);
-}
-
-function determineComplaintProgress(params: {
-  complaint: string;
-  transcriptText: string;
-  allQuestionsAsked: string[];
-}): { ratio: number; questionCount: number; completed: boolean } {
-  const complaintKeywords = params.complaint.toLowerCase().split(/\s+/).filter((word) => word.length > 3);
-  const coverage = complaintKeywords.filter((keyword) => params.transcriptText.includes(keyword)).length;
-  const ratio = complaintKeywords.length > 0 ? coverage / complaintKeywords.length : 0;
-  const questionCount = params.allQuestionsAsked.filter((question) =>
-    complaintKeywords.some((keyword) => question.toLowerCase().includes(keyword)),
-  ).length;
-  return {
-    ratio,
-    questionCount,
-    completed: ratio >= 0.5 && questionCount >= 4,
-  };
-}
-
-function resolveActiveComplaint(params: {
-  chiefComplaint: string;
-  transcript: InterviewMessage[];
-  allQuestionsAsked: string[];
-}) {
-  const complaints = splitComplaints(params.chiefComplaint);
-  if (complaints.length <= 1) {
-    return {
-      complaints: complaints.length === 0 ? [params.chiefComplaint] : complaints,
-      activeComplaintIndex: 0,
-      completedComplaints: [],
-    };
-  }
-
-  const transcriptText = params.transcript.map((message) => message.content).join(" ").toLowerCase();
-  const progress = complaints.map((complaint) =>
-    determineComplaintProgress({
-      complaint,
-      transcriptText,
-      allQuestionsAsked: params.allQuestionsAsked,
-    }),
-  );
-
-  let activeComplaintIndex = 0;
-  const completedComplaints: string[] = [];
-  progress.forEach((item, index) => {
-    if (item.completed && index < complaints.length - 1) {
-      completedComplaints.push(complaints[index]);
-    }
-  });
-
-  const lastCoveredIndex = progress.findLastIndex((item) => item.ratio >= 0.5);
-  if (lastCoveredIndex >= 0) {
-    activeComplaintIndex =
-      progress[lastCoveredIndex].completed && lastCoveredIndex < complaints.length - 1
-        ? lastCoveredIndex + 1
-        : lastCoveredIndex;
-  }
-
-  return { complaints, activeComplaintIndex, completedComplaints };
-}
-
-function isCovered(check: ProtocolCheck, coveredTopics: Set<ProtocolTopicKey>, patientAnswers: string[]) {
-  if (check.key === "open_narrative") {
-    return patientAnswers.length > 0;
-  }
-  return check.coverageTopics.some((topic) => coveredTopics.has(topic));
 }
 
 function detectUnresolvedClarification(patientAnswers: string[]) {
@@ -348,34 +735,103 @@ function detectUnresolvedClarification(patientAnswers: string[]) {
   return null;
 }
 
-function buildComplaintProgress(args: {
-  activeComplaint: string;
-  coveredTopics: Set<ProtocolTopicKey>;
-  patientAnswers: string[];
-  protocol: ReturnType<typeof getComplaintProtocol>;
+function buildComplaintProgress(params: {
+  complaintSeed: ComplaintSeed;
+  status: ComplaintStatus;
+  scope: ComplaintScopeAccumulator;
+  evaluation: EvaluatedComplaintScope;
 }): ComplaintProgress {
-  const missingRequiredFields = args.protocol.requiredFields.filter(
-    (check) => !isCovered(check, args.coveredTopics, args.patientAnswers),
+  return {
+    complaint: params.complaintSeed.complaint,
+    complaintClass: params.evaluation.complaintClass,
+    protocolId: params.evaluation.protocol.id,
+    minQuestionCountTarget: params.evaluation.protocol.stopConditions.minQuestionCount,
+    status: params.status,
+    source: params.complaintSeed.source,
+    addedMidInterview: params.complaintSeed.addedMidInterview,
+    firstDetectedAtMessageIndex: params.complaintSeed.firstDetectedAtMessageIndex,
+    questionCountSoFar: params.scope.assistantQuestions.length,
+    activeQuestionCountSoFar: params.scope.activeAssistantQuestions.length,
+    needsOpeningNarrative: params.scope.activeAssistantQuestions.length === 0,
+    coveredTopics: Array.from(params.evaluation.coveredTopics),
+    missingRequiredFieldKeys: params.evaluation.missingRequiredFields.map((item) => item.key),
+    missingRedFlagKeys: params.evaluation.missingRedFlags.map((item) => item.key),
+    missingVirtualExamKeys: params.evaluation.missingVirtualExamFields.map((item) => item.key),
+    completed: params.evaluation.completed,
+  };
+}
+
+function estimateComplaintRemainingQuestions(progress: ComplaintProgress): number {
+  if (progress.completed) {
+    return 0;
+  }
+
+  const minQuestionFloor = Math.max(
+    progress.minQuestionCountTarget - progress.questionCountSoFar,
+    0,
   );
-  const missingRedFlags = args.protocol.redFlags.filter(
-    (check) => !isCovered(check, args.coveredTopics, args.patientAnswers),
+  const unresolvedBucketEstimate =
+    (progress.needsOpeningNarrative ? 1 : 0) +
+    Math.ceil(progress.missingRequiredFieldKeys.length * 0.8) +
+    Math.ceil(progress.missingRedFlagKeys.length / 3) +
+    Math.ceil(progress.missingVirtualExamKeys.length * 0.75);
+
+  return Math.max(minQuestionFloor, unresolvedBucketEstimate);
+}
+
+export function estimateInterviewProgress(state: {
+  complaintQueue: ComplaintProgress[];
+  activeComplaint: string;
+  totalQuestionCount: number;
+  remainingFormCoverageHints: string[];
+  unresolvedClarification: string | null;
+  questionBudget: number | null;
+  summaryReady: boolean;
+  shouldEarlyStop: boolean;
+  forceSummary: boolean;
+}): InterviewProgress {
+  const baseAsked = state.totalQuestionCount;
+  if (state.forceSummary || state.summaryReady || state.shouldEarlyStop) {
+    return {
+      questionsAsked: baseAsked,
+      approxTotalQuestions: baseAsked,
+    };
+  }
+
+  const complaintRemaining = state.complaintQueue.reduce(
+    (total, complaint) => total + estimateComplaintRemainingQuestions(complaint),
+    0,
   );
-  const missingVirtualExamFields = args.protocol.virtualExamFields.filter(
-    (check) => !isCovered(check, args.coveredTopics, args.patientAnswers),
+  const activeComplaint = state.complaintQueue.find(
+    (complaint) => complaint.complaint === state.activeComplaint,
+  );
+  const formCoverageRemaining = Math.ceil(
+    state.remainingFormCoverageHints.length * 0.75,
+  );
+  const clarificationBuffer = state.unresolvedClarification ? 1 : 0;
+  const queueTransitionBuffer =
+    state.complaintQueue.some(
+      (complaint) =>
+        complaint.status === "pending" &&
+        complaint.questionCountSoFar === 0 &&
+        complaint.needsOpeningNarrative,
+    ) && activeComplaint && !activeComplaint.completed
+      ? 1
+      : 0;
+
+  const approxTotalQuestions = Math.max(
+    baseAsked,
+    state.questionBudget ?? 0,
+    baseAsked +
+      complaintRemaining +
+      formCoverageRemaining +
+      clarificationBuffer +
+      queueTransitionBuffer,
   );
 
   return {
-    complaint: args.activeComplaint,
-    complaintClass: args.protocol.complaintClass,
-    protocolId: args.protocol.id,
-    coveredTopics: Array.from(args.coveredTopics),
-    missingRequiredFieldKeys: missingRequiredFields.map((item) => item.key),
-    missingRedFlagKeys: missingRedFlags.map((item) => item.key),
-    missingVirtualExamKeys: missingVirtualExamFields.map((item) => item.key),
-    completed:
-      missingRequiredFields.length === 0 &&
-      missingRedFlags.length === 0 &&
-      missingVirtualExamFields.length === 0,
+    questionsAsked: baseAsked,
+    approxTotalQuestions,
   };
 }
 
@@ -405,36 +861,56 @@ export function buildInterviewState(params: {
   const patientFacts = extractInformationFromAnswers(patientAnswers);
   patientFacts.mentionedTopics.forEach((topic) => topicsCovered.add(topic));
 
-  const complaintResolution = resolveActiveComplaint({
+  const complaintSeeds = buildComplaintSeeds(params.chiefComplaint, params.transcript);
+  const complaintScopes = buildComplaintScopes({
     chiefComplaint: params.chiefComplaint,
+    complaintSeeds,
     transcript: params.transcript,
-    allQuestionsAsked,
-  });
-  const activeComplaint =
-    complaintResolution.complaints[complaintResolution.activeComplaintIndex] ?? params.chiefComplaint;
-  const complaintClass = classifyComplaint(activeComplaint || params.chiefComplaint);
-  const visitStage = classifyVisitStage({
-    chiefComplaint: params.chiefComplaint,
-    activeComplaint,
     patientBackground: params.patientBackground,
     formSummary: params.formSummary,
-    patientAnswers,
   });
-  const protocol = getComplaintProtocol({
-    complaint: activeComplaint,
-    complaintClass,
-    visitStage,
+  const allComplete = complaintScopes.activeComplaintIndex >= complaintSeeds.length;
+  const safeActiveIndex = allComplete
+    ? Math.max(complaintSeeds.length - 1, 0)
+    : complaintScopes.activeComplaintIndex;
+  const complaintQueue = complaintSeeds.map((seed, index) => {
+    const status: ComplaintStatus = allComplete
+      ? "completed"
+      : index < complaintScopes.activeComplaintIndex
+        ? "completed"
+        : index === safeActiveIndex
+          ? "active"
+          : "pending";
+    const evaluation = evaluateComplaintScope({
+      chiefComplaint: params.chiefComplaint,
+      complaint: seed.complaint,
+      patientBackground: params.patientBackground,
+      formSummary: params.formSummary,
+      scope: complaintScopes.scopes[index],
+    });
+    return buildComplaintProgress({
+      complaintSeed: seed,
+      status,
+      scope: complaintScopes.scopes[index],
+      evaluation,
+    });
   });
 
-  const missingRequiredFields = protocol.requiredFields.filter(
-    (check) => !isCovered(check, topicsCovered, patientAnswers),
-  );
-  const missingRedFlags = protocol.redFlags.filter(
-    (check) => !isCovered(check, topicsCovered, patientAnswers),
-  );
-  const missingVirtualExamFields = protocol.virtualExamFields.filter(
-    (check) => !isCovered(check, topicsCovered, patientAnswers),
-  );
+  const activeComplaintProgress = complaintQueue[safeActiveIndex];
+  const activeScope = complaintScopes.scopes[safeActiveIndex] ?? {
+    assistantQuestions: [],
+    activeAssistantQuestions: [],
+    patientAnswers: [],
+  };
+  const activeEvaluation = evaluateComplaintScope({
+    chiefComplaint: params.chiefComplaint,
+    complaint: activeComplaintProgress?.complaint ?? params.chiefComplaint,
+    patientBackground: params.patientBackground,
+    formSummary: params.formSummary,
+    scope: activeScope,
+  });
+  const activeComplaint = activeComplaintProgress?.complaint ?? params.chiefComplaint;
+  const newComplaintCount = complaintQueue.filter((item) => item.addedMidInterview).length;
 
   const escalation = detectEscalationState({
     chiefComplaint: params.chiefComplaint,
@@ -442,8 +918,9 @@ export function buildInterviewState(params: {
     patientProfile: params.patientProfile,
     patientAnswers,
     formSummary: params.formSummary,
+    newComplaintCount,
   });
-  const budget = computeQuestionBudget(escalation);
+  const budget = computeQuestionBudget(escalation, newComplaintCount);
   const phaseState = computeFormInterviewPhase({
     hasStructuredForm: escalation.hasStructuredFormUpload,
     questionCountSoFar: allQuestionsAsked.length,
@@ -453,7 +930,7 @@ export function buildInterviewState(params: {
       hasMultiSystemSymptoms: escalation.hasMultiSystemSymptoms,
       isTraumaOrMva: escalation.isTraumaOrMva,
     },
-    hasMultipleComplaints: complaintResolution.complaints.length > 1,
+    hasMultipleComplaints: complaintQueue.length > 1,
   });
   const formCoverageHints = getFormCoverageHints(params.formSummary);
   const remainingFormCoverageHints = getRemainingFormCoverageHints({
@@ -481,46 +958,57 @@ export function buildInterviewState(params: {
   const summaryReady =
     params.forceSummary ||
     (!unresolvedClarification &&
-      allQuestionsAsked.length >= protocol.stopConditions.minQuestionCount &&
-      missingRequiredFields.length === 0 &&
-      (!protocol.stopConditions.requireRedFlags || missingRedFlags.length === 0) &&
-      (!protocol.stopConditions.requireVirtualExamWhenApplicable ||
-        protocol.virtualExamFields.length === 0 ||
-        missingVirtualExamFields.length === 0) &&
+      allComplete &&
       (!phaseState.hasStructuredForm || remainingFormCoverageHints.length === 0 || shouldEarlyStop));
 
-  return {
+  const interviewState: Omit<InterviewState, "progress"> = {
     chiefComplaint: params.chiefComplaint,
-    complaints: complaintResolution.complaints,
+    complaints: complaintQueue.map((item) => item.complaint),
+    pendingComplaints: complaintQueue
+      .filter((item) => item.status === "pending")
+      .map((item) => item.complaint),
+    complaintQueue,
     activeComplaint,
-    activeComplaintIndex: complaintResolution.activeComplaintIndex,
-    completedComplaints: complaintResolution.completedComplaints,
-    complaintClass,
-    visitStage,
-    protocol,
-    complaintProgress: buildComplaintProgress({
-      activeComplaint,
-      coveredTopics: topicsCovered,
-      patientAnswers,
-      protocol,
-    }),
-    questionCountSoFar: allQuestionsAsked.length,
+    activeComplaintIndex: safeActiveIndex,
+    completedComplaints: complaintQueue
+      .filter((item) => item.status === "completed")
+      .map((item) => item.complaint),
+    complaintClass: activeEvaluation.complaintClass,
+    visitStage: activeEvaluation.visitStage,
+    protocol: activeEvaluation.protocol,
+    complaintProgress: activeComplaintProgress,
+    activeComplaintQuestionCount: activeScope.activeAssistantQuestions.length,
+    activeComplaintQuestionsAsked: activeScope.activeAssistantQuestions,
+    activePatientAnswers: activeScope.patientAnswers,
+    activeCoveredTopics: Array.from(activeEvaluation.coveredTopics),
+    activePatientFacts: activeEvaluation.patientFacts,
+    questionCountSoFar: activeScope.activeAssistantQuestions.length,
+    totalQuestionCount: allQuestionsAsked.length,
     allQuestionsAsked,
     patientAnswers,
     coveredTopics: Array.from(topicsCovered),
     patientFacts,
-    missingRequiredFields,
-    missingRedFlags,
-    missingVirtualExamFields,
+    missingRequiredFields: activeEvaluation.missingRequiredFields,
+    missingRedFlags: activeEvaluation.missingRedFlags,
+    missingVirtualExamFields: activeEvaluation.missingVirtualExamFields,
     remainingFormCoverageHints,
     urgency:
-      escalation.hasRedFlagSignal || (missingRedFlags.length > 0 && allQuestionsAsked.length >= 4)
+      escalation.hasRedFlagSignal || (activeEvaluation.missingRedFlags.length > 0 && allQuestionsAsked.length >= 4)
         ? "elevated"
         : "routine",
+    questionBudget: budget.budget,
+    questionBudgetModifiers: budget.modifiers,
+    escalationReasons: escalation.reasons,
+    newComplaintCount,
     shouldEarlyStop,
     summaryReady,
     unresolvedClarification,
     deferredIntentHint: params.deferredIntentHint,
     forceSummary: params.forceSummary,
+  };
+
+  return {
+    ...interviewState,
+    progress: estimateInterviewProgress(interviewState),
   };
 }
