@@ -3664,6 +3664,17 @@ export default function Home() {
     status !== "saving" &&
     status !== "complete" &&
     status !== "paused";
+  const interviewProgressPercent = showInterviewProgress
+    ? Math.max(
+        0,
+        Math.min(
+          100,
+          interviewProgress.approxTotalQuestions > 0
+            ? (interviewProgress.questionsAsked / interviewProgress.approxTotalQuestions) * 100
+            : 0,
+        ),
+      )
+    : 0;
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-slate-100 px-4 py-10 text-slate-900">
@@ -4375,6 +4386,17 @@ export default function Home() {
                     </>
                   )}
                 </p>
+                {showInterviewProgress && (
+                  <div
+                    className="mt-2 h-2 w-full overflow-hidden rounded-full bg-slate-200"
+                    aria-hidden="true"
+                  >
+                    <div
+                      className="h-full rounded-full bg-slate-500 transition-[width] duration-300 ease-out"
+                      style={{ width: `${interviewProgressPercent}%` }}
+                    />
+                  </div>
+                )}
                 {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
               </div>
 
