@@ -141,6 +141,73 @@ describe("interview controller state", () => {
     expect(state.progress.approxTotalQuestions).toBeGreaterThan(state.totalQuestionCount);
   });
 
+  it("keeps a historical or improving secondary complaint out of the full queue", () => {
+    const state = buildInterviewState({
+      chiefComplaint: "abdominal pain",
+      patientProfile,
+      transcript: [
+        { role: "assistant", content: "Tell me about the abdominal pain." },
+        { role: "patient", content: "It started a month ago and is gradually improving." },
+        {
+          role: "assistant",
+          content: "Did you have any nausea, vomiting, constipation, or other symptoms when it first started?",
+        },
+        {
+          role: "patient",
+          content:
+            "I went to the ER in February and also experienced a headache, but that has pretty much gone away now.",
+        },
+      ],
+      formSummary: null,
+      patientBackground: null,
+      forceSummary: false,
+      deferredIntentHint: null,
+    });
+
+    expect(state.activeComplaint).toBe("abdominal pain");
+    expect(state.pendingComplaints).toEqual([]);
+    expect(state.newComplaintCount).toBe(0);
+    expect(state.questionBudgetModifiers).not.toContain("+8-new-complaint");
+    expect(state.briefSecondaryConcerns.map((item) => item.complaint)).toContain("headache");
+  });
+
+  it("promotes a brief secondary concern into the full queue when the safety answer sounds concerning", () => {
+    const state = buildInterviewState({
+      chiefComplaint: "abdominal pain",
+      patientProfile,
+      transcript: [
+        { role: "assistant", content: "Tell me about the abdominal pain." },
+        { role: "patient", content: "It started a month ago and is gradually improving." },
+        {
+          role: "assistant",
+          content: "Did you have any nausea, vomiting, constipation, or other symptoms when it first started?",
+        },
+        {
+          role: "patient",
+          content:
+            "I went to the ER in February and also experienced a headache, but that was mostly better.",
+        },
+        {
+          role: "assistant",
+          content:
+            "Since that headache happened, did you have any vision changes, weakness, numbness, trouble speaking, fainting, or a sudden severe headache?",
+        },
+        {
+          role: "patient",
+          content: "Yes, it came back and now I have blurry vision with it.",
+        },
+      ],
+      formSummary: null,
+      patientBackground: null,
+      forceSummary: false,
+      deferredIntentHint: null,
+    });
+
+    expect(state.pendingComplaints).toContain("headache");
+    expect(state.newComplaintCount).toBe(1);
+    expect(state.questionBudgetModifiers).toContain("+8-new-complaint");
+  });
+
   it("raises the approximate total when a new complaint is added mid-interview", () => {
     const baselineState = buildInterviewState({
       chiefComplaint: "right knee lump",

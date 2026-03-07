@@ -97,6 +97,11 @@ export type ComplaintStatus = "active" | "pending" | "completed";
 
 export type ComplaintSource = "chief_complaint" | "transcript";
 
+export type BriefSecondaryConcern = {
+  complaint: string;
+  firstDetectedAtMessageIndex: number | null;
+};
+
 export type ComplaintProgress = {
   complaint: string;
   complaintClass: ComplaintClass;
@@ -120,6 +125,7 @@ export type InterviewState = {
   chiefComplaint: string;
   complaints: string[];
   pendingComplaints: string[];
+  briefSecondaryConcerns: BriefSecondaryConcern[];
   complaintQueue: ComplaintProgress[];
   activeComplaint: string;
   activeComplaintIndex: number;

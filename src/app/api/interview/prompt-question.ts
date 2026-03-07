@@ -47,6 +47,7 @@ export function buildQuestionPrompt(params: {
     complaintClass: params.state.complaintClass,
     encounterStage: params.state.visitStage,
     pendingComplaints: params.state.pendingComplaints,
+    briefSecondaryConcerns: params.state.briefSecondaryConcerns,
     completedComplaints: params.state.completedComplaints,
     complaintQueue: params.state.complaintQueue.map((item) => ({
       complaint: item.complaint,
@@ -98,6 +99,7 @@ Instructions:
 - Ask only about nextAllowedTarget.
 - Do not ask about any covered topic unless nextAllowedTarget is a clarification.
 - For late MVA or MSK follow-up, stay progression-focused and avoid first-visit/admin reconstruction questions unless the target explicitly requires them.
+- If briefSecondaryConcerns is non-empty, treat them as brief safety-screen-only concerns rather than full complaints unless the patient's answer makes them sound active or high-risk.
 - If nextAllowedTarget.promptHint is present, use it as guidance for phrasing.
 - Keep the question concise and natural.
 `.trim();

@@ -12,6 +12,7 @@ import {
 import { classifyComplaint, getComplaintProtocol } from "./complaint-protocols";
 import type { ComplaintSource, ComplaintStatus } from "./protocol-types";
 import {
+  type BriefSecondaryConcern,
   type ComplaintProgress,
   type InterviewFactSummary,
   type InterviewState,
@@ -93,12 +94,31 @@ const CONDITION_LAB_DYNAMIC_COMPLAINTS = [
   { pattern: /\b(liver|hepatic|alt|ast)\b/, label: "liver function concern" },
   { pattern: /\b(anemia|iron|ferritin|hemoglobin)\b/, label: "anemia or iron concern" },
 ];
+const RESOLVED_SECONDARY_COMPLAINT_PATTERN =
+  /\b(resolved|completely resolved|gone|gone away|went away|better now|much better|improv(?:ed|ing)|pretty much gone|no longer|not anymore|back to normal|not really a concern|not a concern|not an issue|nothing unusual)\b/;
+const HISTORICAL_SECONDARY_COMPLAINT_PATTERN =
+  /\b(had|had a|experienced|was having|came on|occurred|during|while|at that time|back then|earlier)\b/;
+const ACTIVE_SECONDARY_COMPLAINT_PATTERN =
+  /\b(still|ongoing|current|currently|now|worsening|getting worse|persistent|recurring|again|keeps happening|continu(?:e|es|ing)|has not resolved|hasn't resolved|not improving)\b/;
+const URGENT_SECONDARY_COMPLAINT_PATTERN =
+  /\b(severe|worst|thunderclap|vision changes?|blurry vision|double vision|weakness|numbness|trouble speaking|confusion|faint(?:ed|ing)?|passed out|loss of consciousness|stiff neck|persistent vomiting|can't keep fluids down|shortness of breath|chest pain|vomiting blood|blood in (?:the )?stool|black stools?)\b/;
+const PROMOTE_BRIEF_CONCERN_PATTERN =
+  /\b(yes|yeah|yep|still|ongoing|current|currently|returned|back again|recurring|worse|worsening|severe|worst|\d+\/10|vision changes?|blurry vision|double vision|weakness|numbness|trouble speaking|confusion|faint(?:ed|ing)?|passed out|loss of consciousness|stiff neck|persistent vomiting|can't keep fluids down|shortness of breath|chest pain|blood)\b/;
+const REASSURING_BRIEF_CONCERN_PATTERN =
+  /\b(no|none|resolved|completely resolved|gone|gone away|better|improving|no longer|not anymore|nothing unusual|not really a concern)\b/;
 
 type ComplaintSeed = {
   complaint: string;
   source: ComplaintSource;
   addedMidInterview: boolean;
   firstDetectedAtMessageIndex: number | null;
+};
+
+type DynamicComplaintDisposition = "full_workup" | "brief_safety_screen";
+
+type DynamicComplaintDetection = {
+  complaint: string;
+  disposition: DynamicComplaintDisposition;
 };
 
 type ComplaintScopeAccumulator = {
@@ -390,7 +410,13 @@ function extractDynamicComplaintCandidates(
 
   const candidates: string[] = [];
   if (hasSymptomCue && SYMPTOM_CONTEXT_PATTERN.test(lower)) {
+    if (/\bheadache|migraine\b/.test(lower)) {
+      candidates.push("headache");
+    }
     detectBodyParts(message).forEach((part) => {
+      if (part.part === "head" && /\bheadache|migraine\b/.test(lower)) {
+        return;
+      }
       const side = part.side ? `${part.side} ` : "";
       if (/\b(lump|mass|bump)\b/.test(lower)) {
         candidates.push(`${side}${part.name} lump`);
@@ -419,42 +445,132 @@ function extractDynamicComplaintCandidates(
   return Array.from(new Set(candidates.map((candidate) => candidate.trim()).filter(Boolean)));
 }
 
-function buildComplaintSeeds(chiefComplaint: string, transcript: InterviewMessage[]): ComplaintSeed[] {
+function classifyDynamicComplaintDisposition(message: string, candidate: string): DynamicComplaintDisposition {
+  const lower = message.toLowerCase();
+  const candidateMentionedAsConcern =
+    CONCERN_STYLE_CUE_PATTERN.test(lower) &&
+    (lower.includes(candidate.toLowerCase()) || messageMentionsComplaint(message, candidate));
+
+  if (URGENT_SECONDARY_COMPLAINT_PATTERN.test(lower)) {
+    return "full_workup";
+  }
+
+  if (RESOLVED_SECONDARY_COMPLAINT_PATTERN.test(lower)) {
+    return "brief_safety_screen";
+  }
+
+  if (
+    HISTORICAL_SECONDARY_COMPLAINT_PATTERN.test(lower) &&
+    !ACTIVE_SECONDARY_COMPLAINT_PATTERN.test(lower) &&
+    !candidateMentionedAsConcern
+  ) {
+    return "brief_safety_screen";
+  }
+
+  return "full_workup";
+}
+
+function extractDynamicComplaintDetections(
+  message: string,
+  patientTurnIndex: number,
+): DynamicComplaintDetection[] {
+  return extractDynamicComplaintCandidates(message, patientTurnIndex).map((complaint) => ({
+    complaint,
+    disposition: classifyDynamicComplaintDisposition(message, complaint),
+  }));
+}
+
+function shouldPromoteBriefConcernFromFollowUp(answer: string) {
+  const lower = answer.toLowerCase();
+  return PROMOTE_BRIEF_CONCERN_PATTERN.test(lower) && !REASSURING_BRIEF_CONCERN_PATTERN.test(lower);
+}
+
+function buildComplaintSeeds(chiefComplaint: string, transcript: InterviewMessage[]): {
+  complaintSeeds: ComplaintSeed[];
+  briefSecondaryConcerns: BriefSecondaryConcern[];
+} {
   const seeds: ComplaintSeed[] = splitComplaints(chiefComplaint).map((complaint) => ({
     complaint,
     source: "chief_complaint",
     addedMidInterview: false,
     firstDetectedAtMessageIndex: null,
   }));
+  let briefSecondaryConcerns: BriefSecondaryConcern[] = [];
 
   const patientMessages = transcript.filter((message) => message.role === "patient");
   patientMessages.forEach((message, patientTurnIndex) => {
     const transcriptIndex = transcript.findIndex((item) => item === message);
-    extractDynamicComplaintCandidates(message.content, patientTurnIndex).forEach((candidate) => {
-      const alreadyTracked = seeds.some((seed) => complaintsAreEquivalent(seed.complaint, candidate));
+    const previousAssistant =
+      transcriptIndex > 0 && transcript[transcriptIndex - 1]?.role === "assistant"
+        ? transcript[transcriptIndex - 1]
+        : null;
+
+    briefSecondaryConcerns = briefSecondaryConcerns.filter((concern) => {
+      const shouldPromote =
+        previousAssistant &&
+        messageMentionsComplaint(previousAssistant.content, concern.complaint) &&
+        shouldPromoteBriefConcernFromFollowUp(message.content);
+      if (!shouldPromote) return true;
+
+      const alreadyTracked = seeds.some((seed) => complaintsAreEquivalent(seed.complaint, concern.complaint));
       if (!alreadyTracked) {
         seeds.push({
-          complaint: candidate,
+          complaint: concern.complaint,
           source: "transcript",
           addedMidInterview: true,
           firstDetectedAtMessageIndex: transcriptIndex >= 0 ? transcriptIndex : null,
         });
       }
+      return false;
+    });
+
+    extractDynamicComplaintDetections(message.content, patientTurnIndex).forEach((detection) => {
+      const alreadyTracked = seeds.some((seed) => complaintsAreEquivalent(seed.complaint, detection.complaint));
+      if (alreadyTracked) return;
+
+      if (detection.disposition === "brief_safety_screen") {
+        const alreadyTrackedAsBrief = briefSecondaryConcerns.some((concern) =>
+          complaintsAreEquivalent(concern.complaint, detection.complaint),
+        );
+        if (!alreadyTrackedAsBrief) {
+          briefSecondaryConcerns.push({
+            complaint: detection.complaint,
+            firstDetectedAtMessageIndex: transcriptIndex >= 0 ? transcriptIndex : null,
+          });
+        }
+        return;
+      }
+
+      seeds.push({
+        complaint: detection.complaint,
+        source: "transcript",
+        addedMidInterview: true,
+        firstDetectedAtMessageIndex: transcriptIndex >= 0 ? transcriptIndex : null,
+      });
+      briefSecondaryConcerns = briefSecondaryConcerns.filter(
+        (concern) => !complaintsAreEquivalent(concern.complaint, detection.complaint),
+      );
     });
   });
 
   if (seeds.length === 0) {
-    return [
-      {
-        complaint: chiefComplaint,
-        source: "chief_complaint",
-        addedMidInterview: false,
-        firstDetectedAtMessageIndex: null,
-      },
-    ];
+    return {
+      complaintSeeds: [
+        {
+          complaint: chiefComplaint,
+          source: "chief_complaint",
+          addedMidInterview: false,
+          firstDetectedAtMessageIndex: null,
+        },
+      ],
+      briefSecondaryConcerns,
+    };
   }
 
-  return seeds;
+  return {
+    complaintSeeds: seeds,
+    briefSecondaryConcerns,
+  };
 }
 
 function messageMentionsComplaint(message: string, complaint: string) {
@@ -861,7 +977,10 @@ export function buildInterviewState(params: {
   const patientFacts = extractInformationFromAnswers(patientAnswers);
   patientFacts.mentionedTopics.forEach((topic) => topicsCovered.add(topic));
 
-  const complaintSeeds = buildComplaintSeeds(params.chiefComplaint, params.transcript);
+  const { complaintSeeds, briefSecondaryConcerns } = buildComplaintSeeds(
+    params.chiefComplaint,
+    params.transcript,
+  );
   const complaintScopes = buildComplaintScopes({
     chiefComplaint: params.chiefComplaint,
     complaintSeeds,
@@ -967,6 +1086,7 @@ export function buildInterviewState(params: {
     pendingComplaints: complaintQueue
       .filter((item) => item.status === "pending")
       .map((item) => item.complaint),
+    briefSecondaryConcerns,
     complaintQueue,
     activeComplaint,
     activeComplaintIndex: safeActiveIndex,

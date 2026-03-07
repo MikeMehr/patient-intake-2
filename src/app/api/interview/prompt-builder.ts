@@ -374,11 +374,17 @@ If the patient asks about a lab value or test result NOT mentioned in these summ
   const newlyQueuedComplaints = interviewState.complaintQueue.filter(
     (item) => item.addedMidInterview && item.firstDetectedAtMessageIndex === lastPatientMessageIndex,
   );
+  const newlyBriefSecondaryConcerns = interviewState.briefSecondaryConcerns.filter(
+    (item) => item.firstDetectedAtMessageIndex === lastPatientMessageIndex,
+  );
   const dynamicComplaintSection = interviewState.newComplaintCount > 0
     ? `\n\nDYNAMIC COMPLAINT QUEUE:\n- ${interviewState.newComplaintCount} complaint${interviewState.newComplaintCount === 1 ? "" : "s"} were added mid-interview.\n- These complaints must stay queued as pending until the current complaint is complete unless urgent escalation is required.\n- Budget modifier applied: +8 questions per newly added complaint.`
     : "";
   const newlyQueuedConcernSection = newlyQueuedComplaints.length > 0
     ? `\n\nNEW CONCERN ACKNOWLEDGMENT (MANDATORY THIS TURN):\n- The patient just introduced ${newlyQueuedComplaints.length === 1 ? "a new concern" : "new concerns"}: ${newlyQueuedComplaints.map((item) => `"${item.complaint}"`).join(", ")}.\n- Start your next patient-facing message with one brief acknowledgment that you noted ${newlyQueuedComplaints.length === 1 ? "this concern" : "these concerns"}.\n- If "${currentComplaint}" is still the active complaint, briefly acknowledge the newly added concern${newlyQueuedComplaints.length === 1 ? "" : "s"} and say you will return to ${newlyQueuedComplaints.length === 1 ? "it" : "them"} after finishing the current complaint, then ask one focused question only about "${currentComplaint}".\n- If the active complaint has already advanced to one of the newly queued concerns, briefly acknowledge the transition and continue with the next appropriate question for that concern.\n- This brief acknowledgment is allowed even though other complaints normally remain off-limits until the current complaint is complete. Do NOT ask substantive clinical questions about queued concerns until it is their turn unless urgent escalation is required.`
+    : "";
+  const briefSecondaryConcernSection = newlyBriefSecondaryConcerns.length > 0
+    ? `\n\nBRIEF SECONDARY CONCERN TRIAGE (MANDATORY THIS TURN):\n- The patient mentioned ${newlyBriefSecondaryConcerns.length === 1 ? "a secondary concern" : "secondary concerns"} that sound incidental, historical, improving, or no longer active: ${newlyBriefSecondaryConcerns.map((item) => `"${item.complaint}"`).join(", ")}.\n- Start with one brief acknowledgment that you noted ${newlyBriefSecondaryConcerns.length === 1 ? "it" : "them"}.\n- Ask one concise, bundled safety-screen question only about ${newlyBriefSecondaryConcerns.length === 1 ? "that concern" : "those concerns"} this turn.\n- Keep the entire safety screen to no more than 2-3 brief questions per concern across the whole interview, and only continue if the patient's answer suggests the concern is still active or potentially serious.\n- If the answer is reassuring or the symptom is resolved, immediately return to "${currentComplaint}" on the next turn and do NOT keep revisiting the secondary concern.\n- If the answer suggests ongoing or high-risk symptoms, you may treat that concern as newly active and transition it into the full complaint workflow.`
     : "";
   const languageSection = languageName
     ? `\n\nLANGUAGE PREFERENCE: Conduct all patient-facing questions and messages in ${languageName}. If you cannot reliably produce ${languageName}, fall back to English. Do NOT mix languages.`
@@ -439,12 +445,16 @@ If the patient asks about a lab value or test result NOT mentioned in these summ
   const currentComplaintNote = hasMultipleComplaints && currentComplaintIndex < complaints.length
     ? `\n\n🎯 CURRENT FOCUS (CRITICAL - READ CAREFULLY):\nYou are currently addressing complaint #${currentComplaintIndex + 1}: "${currentComplaint}"\n\nCOMPLETION CRITERIA for this complaint:\n  1. All core symptom characteristics gathered (onset, duration, severity, quality, location, triggers, relieving factors)\n  2. ALL relevant red flags assessed (see checklist below)\n  3. All associated symptoms identified\n  4. Virtual physical exam completed if applicable\n  5. 12-25 focused questions asked\n\n${currentComplaintIndex < complaints.length - 1 ? `ONLY AFTER completing this complaint, you may move to complaint #${currentComplaintIndex + 2}: "${complaints[currentComplaintIndex + 1]}" without announcing the transition.` : "This is the last complaint. After completing it, provide a summary combining ALL complaints."}\n\nCRITICAL: Do NOT mention, ask about, or reference other complaints until this complaint is complete.`
     : `\n\n🎯 CURRENT FOCUS:\nYou are addressing: "${currentComplaint}"\n\nCOMPLETION CRITERIA:\n  1. All core symptom characteristics gathered\n  2. ALL relevant red flags assessed (see checklist below)\n  3. All associated symptoms identified\n  4. Virtual physical exam completed if applicable\n  5. 12-25 focused questions asked`;
+  const secondaryConcernExceptionNote = newlyBriefSecondaryConcerns.length > 0
+    ? `\n\nTEMPORARY EXCEPTION:\nFor this turn only, you may briefly acknowledge and safety-screen ${newlyBriefSecondaryConcerns.map((item) => `"${item.complaint}"`).join(", ")} before returning to "${currentComplaint}". Do not convert this into a full second workup unless the patient's answer sounds ongoing or high-risk.`
+    : "";
 
   const fullPrompt = `
 Chief complaint(s): ${chiefComplaint}
 ${complaintsList}
-${completedComplaintsSection}${dynamicComplaintSection}${newlyQueuedConcernSection}
+${completedComplaintsSection}${dynamicComplaintSection}${newlyQueuedConcernSection}${briefSecondaryConcernSection}
 ${currentComplaintNote}
+${secondaryConcernExceptionNote}
 ${redFlagSection}
 ${doNotAskAboutSection}
 

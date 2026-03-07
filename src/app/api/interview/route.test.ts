@@ -196,6 +196,47 @@ describe("dynamic complaint queue prompt guidance", () => {
     expect(prompt).toContain('"blood sugar concern"');
     expect(prompt).toContain('then ask one focused question only about "prostate issues"');
   });
+
+  it("uses brief safety-screen guidance for an improving secondary concern instead of queueing it", () => {
+    const prompt = buildPrompt(
+      "abdominal pain",
+      patientProfile,
+      [
+        { role: "assistant", content: "Tell me about the abdominal pain." },
+        { role: "patient", content: "It started a month ago and is gradually improving." },
+        {
+          role: "assistant",
+          content: "Did you have any nausea, vomiting, constipation, or other symptoms when it first started?",
+        },
+        {
+          role: "patient",
+          content:
+            "I went to the ER in February and also experienced a headache, but that has pretty much gone away now.",
+        },
+      ],
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      false,
+      "English",
+      null,
+      {
+        suppressPhotoRequest: false,
+        reason: null,
+        matchedScope: null,
+      },
+    );
+
+    expect(prompt).toContain("BRIEF SECONDARY CONCERN TRIAGE (MANDATORY THIS TURN)");
+    expect(prompt).toContain('"headache"');
+    expect(prompt).toContain('Ask one concise, bundled safety-screen question only');
+    expect(prompt).not.toContain("DYNAMIC COMPLAINT QUEUE");
+    expect(prompt).not.toContain("+8-new-complaint");
+  });
 });
 
 describe("interview prompt phase controller", () => {
