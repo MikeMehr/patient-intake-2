@@ -107,7 +107,7 @@ export default function InvitationTokenIntakePage() {
         return;
       }
       setOtpSent(true);
-      setOtpMessage("Verification code sent to your email.");
+      setOtpMessage("Verification code sent to your email. It may take up to 2 minutes to arrive.");
       if (opts.source === "auto") {
         try {
           sessionStorage.setItem(`inviteAutoOtpRequested:${token}`, String(Date.now()));

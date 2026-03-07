@@ -146,9 +146,9 @@ export default function SuperAdminDashboard() {
           <Image
             src="/LogoFinal.png"
             alt="Health Assist AI logo"
-            width={280}
-            height={64}
-            className="mx-auto mb-5 h-[72px] w-[218px] object-cover sm:h-24 sm:w-[289px]"
+            width={196}
+            height={45}
+            className="mx-auto mb-5 h-[50px] w-[153px] object-cover sm:h-[67px] sm:w-[202px]"
             style={{ objectPosition: "78% center" }}
             priority
           />

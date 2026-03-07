@@ -618,6 +618,7 @@ export default function Home() {
   const patientResponseRef = useRef<string>("");
   const pendingHistoryResultRef = useRef<HistoryResponse | null>(null);
   const draftTranscriptRef = useRef<string>("");
+  const draftCommitDedupeRef = useRef<{ draft: string; atMs: number } | null>(null);
   const mutedWhileSpeakingRef = useRef(false);
   const hasRequestedMicPermissionRef = useRef(false);
   const recognitionStartScheduledAtRef = useRef<number | null>(null);
@@ -2152,6 +2153,20 @@ export default function Home() {
     }
   };
 
+  const commitDraftToResponseOnce = (autoSubmit = false) => {
+    const draft = draftTranscriptRef.current.trim();
+    if (!draft) {
+      return;
+    }
+    const now = Date.now();
+    const previous = draftCommitDedupeRef.current;
+    if (previous && previous.draft === draft && now - previous.atMs < 800) {
+      return;
+    }
+    draftCommitDedupeRef.current = { draft, atMs: now };
+    commitDraftToResponse(autoSubmit);
+  };
+
   const redoDraftTranscript = () => {
     resetDraftTranscript("redo");
   };
@@ -2643,7 +2658,11 @@ export default function Home() {
       submittedSuccessfully = true;
     } catch (err) {
       console.error(err);
-      setMessages((current) => current.slice(0, -1));
+      setMessages((current) => {
+        const rolledBack = current.slice(0, -1);
+        messagesRef.current = rolledBack;
+        return rolledBack;
+      });
       setPatientResponse(trimmed);
       setStatus("awaitingPatient");
       statusRef.current = "awaitingPatient";
@@ -3576,6 +3595,8 @@ export default function Home() {
     setEndedEarly(false); // Normal completion, not ended early
     
     // Add closing + final-comments prompt, then wait for patient response before saving.
+    // Use messagesRef to avoid dropping the latest just-submitted patient response.
+    const baseMessages = messagesRef.current.length > 0 ? messagesRef.current : messages;
     const summaryMessage: ChatMessage = { role: "assistant", content: turn.summary };
     const endMessage: ChatMessage = { role: "assistant", content: closingMessageEnglish };
     const finalCommentsPromptMessage: ChatMessage = {
@@ -3583,7 +3604,7 @@ export default function Home() {
       content: finalCommentsPromptEnglish,
     };
     const updatedMessages: ChatMessage[] = [
-      ...messages,
+      ...baseMessages,
       summaryMessage,
       endMessage,
       finalCommentsPromptMessage,
@@ -4830,14 +4851,14 @@ export default function Home() {
                               onPointerDown={(event) => {
                                 event.preventDefault();
                                 if (!isSubmittingResponse && !hasPendingSubmission) {
-                                  commitDraftToResponse(true);
+                                  commitDraftToResponseOnce(true);
                                 }
                               }}
                               onPointerUp={() => {
                               }}
                               onClick={() => {
                                 if (!isSubmittingResponse && !hasPendingSubmission) {
-                                  commitDraftToResponse(true);
+                                  commitDraftToResponseOnce(true);
                                 }
                               }}
                             className="inline-flex min-h-[31px] sm:min-h-[26px] items-center justify-center rounded-full bg-emerald-700 px-2.5 py-1.5 sm:py-1 text-xs font-medium text-white shadow-sm transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-300"
@@ -5142,14 +5163,14 @@ export default function Home() {
                             onPointerDown={(event) => {
                               event.preventDefault();
                               if (!isSubmittingResponse && !hasPendingSubmission) {
-                                commitDraftToResponse();
+                                commitDraftToResponseOnce();
                               }
                             }}
                             onPointerUp={() => {
                             }}
                             onClick={() => {
                               if (!isSubmittingResponse && !hasPendingSubmission) {
-                                commitDraftToResponse();
+                                commitDraftToResponseOnce();
                               }
                             }}
                             className="inline-flex min-h-[90px] sm:min-h-[74px] items-center justify-center rounded-xl bg-emerald-600 px-4 py-2.5 sm:py-2 text-sm font-semibold text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-emerald-300"

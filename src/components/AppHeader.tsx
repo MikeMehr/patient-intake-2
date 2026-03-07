@@ -11,6 +11,9 @@ const getHeaderMaxWidthClass = (pathname: string): string => {
   return "max-w-7xl";
 };
 
+const isAdminOrganizationPage = (pathname: string): boolean =>
+  /^\/admin\/organizations\/[^/]+$/.test(pathname);
+
 export function AppHeader() {
   const pathname = usePathname() || "/";
   const shouldHideHeader =
@@ -27,6 +30,7 @@ export function AppHeader() {
   if (shouldHideHeader) return null;
 
   const maxWidthClass = getHeaderMaxWidthClass(pathname);
+  const useOrganizationHeaderVariant = isAdminOrganizationPage(pathname);
 
   return (
     <header className="w-full">
@@ -35,10 +39,12 @@ export function AppHeader() {
           "mx-auto px-4",
           maxWidthClass,
           // Respect iOS safe-area insets while keeping alignment with gutters.
-          "pt-[calc(env(safe-area-inset-top)+1rem)]",
+          useOrganizationHeaderVariant
+            ? "pt-[calc(env(safe-area-inset-top)+1.75rem)]"
+            : "pt-[calc(env(safe-area-inset-top)+1rem)]",
           "pl-[calc(env(safe-area-inset-left)+1rem)]",
           "pr-[calc(env(safe-area-inset-right)+1rem)]",
-          "pb-3",
+          useOrganizationHeaderVariant ? "pb-2" : "pb-3",
         ].join(" ")}
       >
         <div className="flex justify-center select-none">
@@ -47,7 +53,11 @@ export function AppHeader() {
             alt="Health Assist AI logo"
             width={180}
             height={40}
-            className="h-[51px] w-[156px] object-contain sm:h-[68px] sm:w-[207px]"
+            className={
+              useOrganizationHeaderVariant
+                ? "h-[41px] w-[125px] object-contain sm:h-[54px] sm:w-[166px]"
+                : "h-[51px] w-[156px] object-contain sm:h-[68px] sm:w-[207px]"
+            }
             priority
           />
         </div>

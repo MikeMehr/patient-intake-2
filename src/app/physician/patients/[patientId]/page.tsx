@@ -551,7 +551,7 @@ export default function PatientChartPage() {
                                     <p className="text-sm text-slate-700">
                                       {partLabel.replace(/\b\w/g, (c) => c.toUpperCase())} pain mapping:
                                     </p>
-                                    <div className="relative mt-2 h-72 w-56 overflow-hidden rounded-lg border border-slate-200 bg-white">
+                                    <div className="relative mt-2 h-72 w-72 overflow-hidden rounded-lg border border-slate-200 bg-white">
                                       <img
                                         src={image.src}
                                         alt={`${image.alt} with selected markers`}

@@ -1776,6 +1776,30 @@ function PhysicianViewContent() {
 
   const hpiSections = useMemo(() => getHpiSections(session?.history), [session?.history]);
   const hpiAiSummary = useMemo(() => getHpiAiSummary(hpiSections), [hpiSections]);
+  const completeIntakeTranscript = useMemo(() => {
+    const baseTranscript = Array.isArray(session?.transcript) ? session.transcript : [];
+    const finalComments = stripOptionalNone(
+      session?.history?.patientFinalQuestionsCommentsEnglish?.trim()
+        ? session.history.patientFinalQuestionsCommentsEnglish
+        : session?.history?.patientFinalQuestionsComments || "",
+    );
+
+    if (!finalComments) return baseTranscript;
+
+    const normalize = (value: string) => value.replace(/\s+/g, " ").trim().toLowerCase();
+    const normalizedFinalComments = normalize(finalComments);
+    const hasFinalCommentAlready = baseTranscript.some(
+      (message) => message.role === "patient" && normalize(message.content) === normalizedFinalComments,
+    );
+
+    if (hasFinalCommentAlready) return baseTranscript;
+
+    return [...baseTranscript, { role: "patient", content: finalComments }];
+  }, [
+    session?.transcript,
+    session?.history?.patientFinalQuestionsComments,
+    session?.history?.patientFinalQuestionsCommentsEnglish,
+  ]);
 
   if (loading) {
     return (
@@ -2248,7 +2272,7 @@ function PhysicianViewContent() {
                                 <p className="text-sm text-slate-700">
                                   {partLabel.replace(/\b\w/g, (c) => c.toUpperCase())} pain mapping:
                                 </p>
-                                <div className="relative mt-2 h-72 w-56 overflow-hidden rounded-lg border border-slate-200 bg-white">
+                                <div className="relative mt-2 h-72 w-72 overflow-hidden rounded-lg border border-slate-200 bg-white">
                                   <img
                                     src={image.src}
                                     alt={`${image.alt} with selected markers`}
@@ -3068,14 +3092,13 @@ function PhysicianViewContent() {
             description="Guided Interview Questions & Answers"
             defaultOpen={false}
           >
-            {Array.isArray(session.transcript) ? (
-              session.transcript.length > 0 ? (
+            {completeIntakeTranscript.length > 0 ? (
                 <div>
                   <p className="text-sm font-medium text-slate-700 mb-3">
-                    Guided Interview Questions & Answers ({session.transcript.length} messages)
+                    Guided Interview Questions & Answers ({completeIntakeTranscript.length} messages)
                   </p>
                   <div className="space-y-4 border-t border-slate-200 pt-4">
-                    {session.transcript.map((message, index) => (
+                    {completeIntakeTranscript.map((message, index) => (
                       <div
                         key={index}
                         className={`p-3 rounded-lg ${
@@ -3099,24 +3122,11 @@ function PhysicianViewContent() {
                   No interview transcript available for this session.
                   {process.env.NODE_ENV === "development" && (
                     <div className="mt-2 text-xs text-slate-400 space-y-1">
-                      <div>Debug: transcript is an empty array (length: {session.transcript.length})</div>
+                      <div>Debug: transcript is an empty array (length: {completeIntakeTranscript.length})</div>
                       <div>This session may have been saved before the transcript feature was added, or the interview had no messages.</div>
                     </div>
                   )}
                 </div>
-              )
-            ) : (
-              <div className="text-sm text-slate-500 italic">
-                Transcript data is not available or in an unexpected format.
-                {process.env.NODE_ENV === "development" && (
-                  <div className="mt-2 text-xs text-slate-400 space-y-1">
-                    <div>Debug: transcript type = {typeof session.transcript}, isArray = {Array.isArray(session.transcript) ? "true" : "false"}</div>
-                    <div>Has history: {session.history ? "yes" : "no"}</div>
-                    <div>History keys: {session.history ? Object.keys(session.history).join(", ") : "none"}</div>
-                    <div>History has transcript: {session.history && (session.history as any).transcript ? "yes" : "no"}</div>
-                  </div>
-                )}
-              </div>
             )}
           </CollapsibleSection>
         </div>
