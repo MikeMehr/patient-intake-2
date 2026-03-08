@@ -3652,10 +3652,16 @@ export default function Home() {
   const micStatusClassName = microphoneBlocked ? "text-amber-600" : "text-slate-500";
   const micButtonLabel =
     micUiState === "listening"
-      ? "Stop listening"
+      ? "Stop talking"
       : micUiState === "starting"
         ? "Starting..."
-        : "Start listening";
+        : "Start talking";
+  const micButtonTitle =
+    micUiState === "listening"
+      ? "Click once to stop talking"
+      : micUiState === "starting"
+        ? "Starting..."
+        : "Click once to start talking";
   const showListeningDecor = micUiState === "listening" && !micWarning;
   const elapsedTimeLabel = formatElapsedTime(elapsedTime);
   const showInterviewProgress =
@@ -4363,42 +4369,7 @@ export default function Home() {
                 </p>
               </div>
 
-              <div className="text-[0.9rem] text-slate-400" aria-live="polite">
-                <p className="flex flex-wrap items-center gap-1">
-                  {showInterviewProgress ? (
-                    <>
-                      <span>Interview progress:</span>
-                      <span>
-                        {interviewProgress.questionsAsked} of ~
-                        {interviewProgress.approxTotalQuestions} questions
-                      </span>
-                    </>
-                  ) : (
-                    <>
-                      <span>Interview status:</span>
-                      <span>{statusCopy[status]}</span>
-                    </>
-                  )}
-                  {interviewStartTime && status !== "idle" && (
-                    <>
-                      <span aria-hidden="true">•</span>
-                      <span>{elapsedTimeLabel}</span>
-                    </>
-                  )}
-                </p>
-                {showInterviewProgress && (
-                  <div
-                    className="mt-2 h-2 w-full overflow-hidden rounded-full bg-slate-200"
-                    aria-hidden="true"
-                  >
-                    <div
-                      className="h-full rounded-full bg-slate-500 transition-[width] duration-300 ease-out"
-                      style={{ width: `${interviewProgressPercent}%` }}
-                    />
-                  </div>
-                )}
-                {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
-              </div>
+              {error && <p className="text-xs text-red-600">{error}</p>}
 
               <div className="mt-3 flex flex-wrap gap-3">
                 <button
@@ -4853,6 +4824,41 @@ export default function Home() {
                         </div>
                       </div>
                     )}
+                    <div className="text-[0.9rem] text-slate-400" aria-live="polite">
+                      <p className="flex flex-wrap items-center gap-1">
+                        {showInterviewProgress ? (
+                          <>
+                            <span>Interview progress:</span>
+                            <span>
+                              {interviewProgress.questionsAsked} of ~
+                              {interviewProgress.approxTotalQuestions} questions
+                            </span>
+                          </>
+                        ) : (
+                          <>
+                            <span>Interview status:</span>
+                            <span>{statusCopy[status]}</span>
+                          </>
+                        )}
+                        {interviewStartTime && status !== "idle" && (
+                          <>
+                            <span aria-hidden="true">•</span>
+                            <span>{elapsedTimeLabel}</span>
+                          </>
+                        )}
+                      </p>
+                      {showInterviewProgress && (
+                        <div
+                          className="mt-2 h-2 w-full overflow-hidden rounded-full bg-slate-200"
+                          aria-hidden="true"
+                        >
+                          <div
+                            className="h-full rounded-full bg-slate-500 transition-[width] duration-300 ease-out"
+                            style={{ width: `${interviewProgressPercent}%` }}
+                          />
+                        </div>
+                      )}
+                    </div>
                     {showResponseBox && (
                       <div className="group flex flex-col items-center">
                         <div className="relative w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 transition">
@@ -4953,7 +4959,7 @@ export default function Home() {
                                 ? "bg-amber-500 text-white border border-amber-500 focus-visible:outline-amber-500"
                               : "border border-slate-200 bg-white text-slate-700 focus-visible:outline-emerald-600"
                           } ${isCoarsePointer ? "opacity-100" : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"}`}
-                          title={micButtonLabel}
+                          title={micButtonTitle}
                         >
                           <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 1a3 3 0 00-3 3v6a3 3 0 006 0V4a3 3 0 00-3-3z" />
@@ -5221,7 +5227,7 @@ export default function Home() {
                                 commitDraftToResponseOnce();
                               }
                             }}
-                            className="inline-flex min-h-[90px] sm:min-h-[74px] items-center justify-center rounded-xl bg-emerald-600 px-4 py-2.5 sm:py-2 text-sm font-semibold text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-emerald-300"
+                            className="inline-flex min-h-[108px] sm:min-h-[74px] items-center justify-center rounded-xl bg-emerald-600 px-4 py-2.5 sm:py-2 text-sm font-semibold text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-emerald-300"
                           >
                             {isSubmittingResponse ? "Sending..." : "Use this"}
                           </button>
