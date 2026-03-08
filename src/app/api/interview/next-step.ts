@@ -37,6 +37,15 @@ export function decideNextInterviewStep(state: InterviewState): NextInterviewSte
     };
   }
 
+  if (state.shouldEndEarlyForUnclearHistory) {
+    return {
+      action: "summarize",
+      reason:
+        state.earlyStopReason ??
+        "History confidence dropped below a safe threshold; end early for physician follow-up.",
+    };
+  }
+
   if (state.unresolvedClarification) {
     return {
       action: "clarify",
@@ -48,6 +57,14 @@ export function decideNextInterviewStep(state: InterviewState): NextInterviewSte
         promptHint: state.unresolvedClarification,
       },
       reason: "The last patient response is ambiguous.",
+    };
+  }
+
+  if (state.shouldSummarizeAfterRepeatedRedirection) {
+    return {
+      action: "summarize",
+      reason:
+        "The patient has repeatedly redirected to another queued concern; stop low-yield drilling and hand off to the physician.",
     };
   }
 
@@ -137,7 +154,7 @@ export function decideNextInterviewStep(state: InterviewState): NextInterviewSte
     return {
       action: "summarize",
       reason: state.summaryReady
-        ? "Required information is complete."
+        ? "Information is sufficient for physician handoff."
         : "Early-stop condition was reached without high-priority gaps.",
     };
   }

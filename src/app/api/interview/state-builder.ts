@@ -34,11 +34,13 @@ const FATIGUE_PHRASES = [
 const DYNAMIC_COMPLAINT_CUE_PATTERN =
   /\b(also|another|additionally|in addition|plus|as well|too|besides|separately|now having|also having)\b/;
 const CONCERN_STYLE_CUE_PATTERN =
-  /\b(regarding|worried about|concerned about|questions? about|what should i do(?: next)? about|what do i do about|help with|guidance about|asking about)\b/;
+  /\b(regarding|worried about|concerned about|questions? about|what should i do(?: next)? about|what do i do about|help with|guidance about|asking about|follow[- ]?up(?: visit)? (?:for|regarding|about|on)|following up on|checking on|review(?:ing)? (?:my|the)?|go(?:ing)? over)\b/;
 const SYMPTOM_CONTEXT_PATTERN =
   /\b(pain|painful|hurt|hurts|hurting|ache|aching|swelling|swollen|lump|rash|lesion|wound|ulcer|numb|tingling|weakness|stiff|stiffness|cough|shortness of breath|dyspnea|headache|discharge|sore throat|fever|abdomen|abdominal|nausea|vomit)\b/;
 const MARKER_ONLY_PATTERN =
   /\b(marked|mark|clicked|tapped|placed an x|placed x|diagram|photo|image)\b/;
+const RESULT_FOLLOW_UP_PATTERN =
+  /\b(ultrasound|u\/s|scan|imaging|ct|mri|x-?ray|report|results?|show(?:ed|ing)?|found|revealed|fatty liver)\b/;
 const MEDICAL_CONCERN_KEYWORD_PATTERN =
   /\b(prediabet(?:es|ic)?|diabet(?:es|ic)?|blood sugar|glucose|a1c|hba1c|cholesterol|lipid|triglyceride|blood pressure|hypertension|thyroid|kidney|renal|liver|hepat|anemia|iron|vitamin d|vitamin b12|test result|lab result|labs?)\b/;
 const CONCERN_EXTRACT_PATTERNS = [
@@ -50,6 +52,11 @@ const CONCERN_EXTRACT_PATTERNS = [
   /\bwhat do i do about\s+([^.!?\n]+)/i,
   /\bhelp with\s+([^.!?\n]+)/i,
   /\bguidance about\s+([^.!?\n]+)/i,
+  /\bfollow[- ]?up(?: visit)?\s+(?:for|regarding|about|on)\s+([^.!?\n]+)/i,
+  /\bfollowing up on\s+([^.!?\n]+)/i,
+  /\bchecking on\s+([^.!?\n]+)/i,
+  /\breview(?:ing)?\s+(?:my|the)?\s*([^.!?\n]+(?:results?|report|ultrasound|scan)[^.!?\n]*)/i,
+  /\bgo(?:ing)? over\s+([^.!?\n]+)/i,
 ];
 const COMPLAINT_KEYWORD_STOPWORDS = new Set([
   "right",
@@ -106,6 +113,13 @@ const PROMOTE_BRIEF_CONCERN_PATTERN =
   /\b(yes|yeah|yep|still|ongoing|current|currently|returned|back again|recurring|worse|worsening|severe|worst|\d+\/10|vision changes?|blurry vision|double vision|weakness|numbness|trouble speaking|confusion|faint(?:ed|ing)?|passed out|loss of consciousness|stiff neck|persistent vomiting|can't keep fluids down|shortness of breath|chest pain|blood)\b/;
 const REASSURING_BRIEF_CONCERN_PATTERN =
   /\b(no|none|resolved|completely resolved|gone|gone away|better|improving|no longer|not anymore|nothing unusual|not really a concern)\b/;
+const EXPLICIT_CORRECTION_PATTERN =
+  /\b(i did(?: not|n't) mention|i did(?: not|n't) say|that's not what i said|that is not what i said|i never mentioned|i wasn't talking about|i was not talking about|you misunderstood|you heard me wrong)\b/;
+const COMPLAINT_DENIAL_PATTERN = /\b(no|not|none|never|without)\b/;
+const CLARIFICATION_REQUEST_PATTERN =
+  /\b(could you clarify|can you clarify|help me understand|make sure i understand|i(?: am|'m) not sure i understand|did you mean|what do you mean|may not be understanding|misunderstood)\b/;
+const PENDING_CONCERN_REDIRECT_PATTERN =
+  /\b(can we talk about|talk about|i(?: am|'m)? just asking about|asking about|what about|i want to discuss|i want to talk about|come back to|focus on)\b/;
 
 type ComplaintSeed = {
   complaint: string;
@@ -306,6 +320,16 @@ function normalizeText(value: string) {
   return value.toLowerCase().replace(/\s+/g, " ").trim();
 }
 
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function normalizeConditionConcern(value: string) {
+  const normalized = normalizeText(value);
+  const matchedCondition = CONDITION_LAB_DYNAMIC_COMPLAINTS.find((item) => item.pattern.test(normalized));
+  return matchedCondition?.label ?? null;
+}
+
 function splitComplaints(chiefComplaint: string) {
   return chiefComplaint
     .split(/[,\n]| and |; /)
@@ -324,6 +348,11 @@ function complaintsAreEquivalent(left: string, right: string) {
   const rightNormalized = normalizeText(right);
   if (!leftNormalized || !rightNormalized) return false;
   if (leftNormalized === rightNormalized) return true;
+  const leftConditionConcern = normalizeConditionConcern(left);
+  const rightConditionConcern = normalizeConditionConcern(right);
+  if (leftConditionConcern && rightConditionConcern && leftConditionConcern === rightConditionConcern) {
+    return true;
+  }
   if (leftNormalized.includes(rightNormalized) || rightNormalized.includes(leftNormalized)) return true;
 
   const leftParts = new Set(detectBodyParts(left).map((part) => part.part));
@@ -364,9 +393,31 @@ function cleanupConcernPhrase(phrase: string) {
     .trim();
 }
 
+function escapeRegex(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function getBodyPartNegationTerms(part: ReturnType<typeof detectBodyParts>[number]) {
+  switch (part.part) {
+    case "chest":
+      return ["chest", "breast", "breasts", "breastbone", "sternum"];
+    case "abdomen":
+      return ["abdomen", "abdominal", "stomach", "belly"];
+    default:
+      return [part.name];
+  }
+}
+
+function hasNegatedPainForBodyPart(message: string, part: ReturnType<typeof detectBodyParts>[number]) {
+  const termsPattern = getBodyPartNegationTerms(part).map(escapeRegex).join("|");
+  return new RegExp(
+    `\\b(?:no|not|without|denies|denied|deny|negative for)\\s+(?:\\w+\\s+){0,2}(?:${termsPattern})\\s+pain\\b`,
+  ).test(message);
+}
+
 function extractConcernStyleCandidates(message: string): string[] {
   const lower = message.toLowerCase();
-  if (!CONCERN_STYLE_CUE_PATTERN.test(lower) && !DYNAMIC_COMPLAINT_CUE_PATTERN.test(lower)) {
+  if (!hasExplicitFollowUpConcernCue(lower)) {
     return [];
   }
 
@@ -398,14 +449,22 @@ function extractConcernStyleCandidates(message: string): string[] {
   return Array.from(new Set(candidates.map((candidate) => candidate.trim()).filter(Boolean)));
 }
 
+function hasExplicitFollowUpConcernCue(message: string) {
+  const lower = message.toLowerCase();
+  return (
+    DYNAMIC_COMPLAINT_CUE_PATTERN.test(lower) ||
+    CONCERN_STYLE_CUE_PATTERN.test(lower) ||
+    (RESULT_FOLLOW_UP_PATTERN.test(lower) && MEDICAL_CONCERN_KEYWORD_PATTERN.test(lower))
+  );
+}
+
 function extractDynamicComplaintCandidates(
   message: string,
   patientTurnIndex: number,
 ): string[] {
   const lower = message.toLowerCase();
-  if (patientTurnIndex === 0) return [];
-  const hasSymptomCue = DYNAMIC_COMPLAINT_CUE_PATTERN.test(lower);
-  const hasConcernCue = CONCERN_STYLE_CUE_PATTERN.test(lower);
+  const hasSymptomCue = patientTurnIndex > 0 && DYNAMIC_COMPLAINT_CUE_PATTERN.test(lower);
+  const hasConcernCue = hasExplicitFollowUpConcernCue(lower);
   if (!hasSymptomCue && !hasConcernCue) return [];
 
   const candidates: string[] = [];
@@ -424,6 +483,9 @@ function extractDynamicComplaintCandidates(
       }
       if (/\b(rash|lesion|wound|ulcer)\b/.test(lower)) {
         candidates.push(`${side}${part.name} rash`);
+        return;
+      }
+      if (hasNegatedPainForBodyPart(lower, part)) {
         return;
       }
       candidates.push(`${side}${part.name} pain`);
@@ -447,11 +509,20 @@ function extractDynamicComplaintCandidates(
 
 function classifyDynamicComplaintDisposition(message: string, candidate: string): DynamicComplaintDisposition {
   const lower = message.toLowerCase();
+  const candidateConditionConcern = normalizeConditionConcern(candidate);
   const candidateMentionedAsConcern =
     CONCERN_STYLE_CUE_PATTERN.test(lower) &&
     (lower.includes(candidate.toLowerCase()) || messageMentionsComplaint(message, candidate));
+  const isResultFollowUpConcern =
+    candidateConditionConcern !== null &&
+    RESULT_FOLLOW_UP_PATTERN.test(lower) &&
+    MEDICAL_CONCERN_KEYWORD_PATTERN.test(lower);
 
   if (URGENT_SECONDARY_COMPLAINT_PATTERN.test(lower)) {
+    return "full_workup";
+  }
+
+  if (isResultFollowUpConcern) {
     return "full_workup";
   }
 
@@ -577,6 +648,13 @@ function messageMentionsComplaint(message: string, complaint: string) {
   const lowerMessage = message.toLowerCase();
   const complaintText = complaint.toLowerCase();
   if (lowerMessage.includes(complaintText)) return true;
+  const normalizedConcern = normalizeConditionConcern(complaint);
+  if (normalizedConcern) {
+    const matchedCondition = CONDITION_LAB_DYNAMIC_COMPLAINTS.find((item) => item.label === normalizedConcern);
+    if (matchedCondition?.pattern.test(lowerMessage)) {
+      return true;
+    }
+  }
 
   const complaintParts = new Set(detectBodyParts(complaint).map((part) => part.part));
   const messageParts = new Set(detectBodyParts(message).map((part) => part.part));
@@ -625,10 +703,10 @@ function evaluateComplaintScope(params: {
   scope: ComplaintScopeAccumulator;
 }): EvaluatedComplaintScope {
   const coveredTopics = new Set<ProtocolTopicKey>();
-  params.scope.assistantQuestions.forEach((question) => {
+  params.scope.assistantQuestions.forEach((question, index) => {
+    if (!params.scope.patientAnswers[index]?.trim()) return;
     extractTopics(question).forEach((topic) => coveredTopics.add(topic));
   });
-
   const patientFacts = extractInformationFromAnswers(params.scope.patientAnswers);
   patientFacts.mentionedTopics.forEach((topic) => coveredTopics.add(topic));
 
@@ -665,7 +743,6 @@ function evaluateComplaintScope(params: {
     missingRedFlags,
     missingVirtualExamFields,
     completed:
-      params.scope.assistantQuestions.length >= protocol.stopConditions.minQuestionCount &&
       missingRequiredFields.length === 0 &&
       (!protocol.stopConditions.requireRedFlags || missingRedFlags.length === 0) &&
       (!protocol.stopConditions.requireVirtualExamWhenApplicable ||
@@ -811,6 +888,7 @@ function computeQuestionBudget(
   escalation: ReturnType<typeof detectEscalationState>,
   newComplaintCount: number,
 ) {
+  // Budget remains advisory telemetry only in the controller-first flow.
   if (escalation.hasStructuredFormUpload) {
     return { budget: null, modifiers: ["unlimited-structured-form"] };
   }
@@ -840,15 +918,122 @@ function computeQuestionBudget(
   return { budget, modifiers };
 }
 
-function detectUnresolvedClarification(patientAnswers: string[]) {
+function looksLikeActiveComplaintDenial(answer: string, activeComplaint: string) {
+  const normalizedAnswer = normalizeText(answer);
+  const normalizedComplaint = normalizeText(activeComplaint);
+  if (!normalizedAnswer || !normalizedComplaint) {
+    return false;
+  }
+  if (!COMPLAINT_DENIAL_PATTERN.test(normalizedAnswer)) {
+    return false;
+  }
+
+  const complaintRegex = new RegExp(
+    `\\b(?:no|not|none|never|without)(?:\\s+\\w+){0,4}\\s+${escapeRegExp(normalizedComplaint)}\\b`,
+  );
+  if (complaintRegex.test(normalizedAnswer)) {
+    return true;
+  }
+
+  const complaintKeywords = getComplaintKeywords(activeComplaint);
+  return complaintKeywords.some((keyword) =>
+    new RegExp(
+      `\\b(?:no|not|none|never|without)(?:\\s+\\w+){0,3}\\s+${escapeRegExp(keyword)}\\b`,
+    ).test(normalizedAnswer),
+  );
+}
+
+function detectUnresolvedClarification(patientAnswers: string[], activeComplaint: string) {
   const lastAnswer = patientAnswers.at(-1)?.trim().toLowerCase() ?? "";
   if (!lastAnswer) return null;
   if (
-    /\b(not sure|i don't know|idk|maybe|stuff|things|what do you mean|don't understand)\b/.test(lastAnswer)
+    /\b(not sure|i don't know|idk|maybe|stuff|things|what do you mean|don't understand)\b/.test(lastAnswer) ||
+    EXPLICIT_CORRECTION_PATTERN.test(lastAnswer)
   ) {
     return lastAnswer;
   }
+  if (looksLikeActiveComplaintDenial(lastAnswer, activeComplaint)) {
+    return `whether you are denying ${activeComplaint} and want to focus on another concern instead`;
+  }
   return null;
+}
+
+function countClarificationAttempts(transcript: InterviewMessage[]) {
+  return transcript.filter(
+    (message) =>
+      message.role === "assistant" && CLARIFICATION_REQUEST_PATTERN.test(message.content.toLowerCase()),
+  ).length;
+}
+
+function countExplicitCorrections(patientAnswers: string[], activeComplaint: string) {
+  return patientAnswers.filter((answer) => {
+    const normalized = answer.toLowerCase();
+    return (
+      EXPLICIT_CORRECTION_PATTERN.test(normalized) ||
+      looksLikeActiveComplaintDenial(answer, activeComplaint)
+    );
+  }).length;
+}
+
+function countPendingConcernRedirects(transcript: InterviewMessage[], pendingComplaints: string[]) {
+  if (pendingComplaints.length === 0) {
+    return 0;
+  }
+
+  return transcript.filter((message) => {
+    if (message.role !== "patient") {
+      return false;
+    }
+
+    const normalized = message.content.toLowerCase();
+    if (
+      !PENDING_CONCERN_REDIRECT_PATTERN.test(normalized) &&
+      !hasExplicitFollowUpConcernCue(normalized)
+    ) {
+      return false;
+    }
+
+    return pendingComplaints.some((complaint) => messageMentionsComplaint(message.content, complaint));
+  }).length;
+}
+
+function determineHistoryConfidence(params: {
+  transcript: InterviewMessage[];
+  patientAnswers: string[];
+  unresolvedClarification: string | null;
+  activeComplaint: string;
+}) {
+  const clarificationAttemptCount = countClarificationAttempts(params.transcript);
+  const explicitCorrectionCount = countExplicitCorrections(
+    params.patientAnswers,
+    params.activeComplaint,
+  );
+
+  if (!params.unresolvedClarification) {
+    return {
+      historyConfidence: "clear" as const,
+      clarificationAttemptCount,
+      shouldEndEarlyForUnclearHistory: false,
+      earlyStopReason: null,
+    };
+  }
+
+  if (clarificationAttemptCount >= 1 || explicitCorrectionCount >= 2) {
+    return {
+      historyConfidence: "unsafe_to_continue" as const,
+      clarificationAttemptCount,
+      shouldEndEarlyForUnclearHistory: true,
+      earlyStopReason:
+        "History confidence dropped below a safe threshold after clarification or repeated correction.",
+    };
+  }
+
+  return {
+    historyConfidence: "needs_clarification" as const,
+    clarificationAttemptCount,
+    shouldEndEarlyForUnclearHistory: false,
+    earlyStopReason: null,
+  };
 }
 
 function buildComplaintProgress(params: {
@@ -882,17 +1067,13 @@ function estimateComplaintRemainingQuestions(progress: ComplaintProgress): numbe
     return 0;
   }
 
-  const minQuestionFloor = Math.max(
-    progress.minQuestionCountTarget - progress.questionCountSoFar,
-    0,
-  );
   const unresolvedBucketEstimate =
     (progress.needsOpeningNarrative ? 1 : 0) +
     Math.ceil(progress.missingRequiredFieldKeys.length * 0.8) +
     Math.ceil(progress.missingRedFlagKeys.length / 3) +
     Math.ceil(progress.missingVirtualExamKeys.length * 0.75);
 
-  return Math.max(minQuestionFloor, unresolvedBucketEstimate);
+  return Math.max(unresolvedBucketEstimate, 1);
 }
 
 export function estimateInterviewProgress(state: {
@@ -901,13 +1082,14 @@ export function estimateInterviewProgress(state: {
   totalQuestionCount: number;
   remainingFormCoverageHints: string[];
   unresolvedClarification: string | null;
-  questionBudget: number | null;
   summaryReady: boolean;
   shouldEarlyStop: boolean;
+  shouldEndEarlyForUnclearHistory: boolean;
   forceSummary: boolean;
 }): InterviewProgress {
+  // Progress remains approximate UI telemetry; controller decisions do not depend on it.
   const baseAsked = state.totalQuestionCount;
-  if (state.forceSummary || state.summaryReady || state.shouldEarlyStop) {
+  if (state.forceSummary || state.summaryReady || state.shouldEarlyStop || state.shouldEndEarlyForUnclearHistory) {
     return {
       questionsAsked: baseAsked,
       approxTotalQuestions: baseAsked,
@@ -937,7 +1119,6 @@ export function estimateInterviewProgress(state: {
 
   const approxTotalQuestions = Math.max(
     baseAsked,
-    state.questionBudget ?? 0,
     baseAsked +
       complaintRemaining +
       formCoverageRemaining +
@@ -1061,21 +1242,42 @@ export function buildInterviewState(params: {
   });
 
   const fatigueSignals = detectFatigueSignals(patientAnswers);
-  const reachedBudget = budget.budget !== null && allQuestionsAsked.length >= budget.budget;
   const hasFormCatchUpWork =
     phaseState.hasStructuredForm &&
     phaseState.phase === "form_phase" &&
     remainingFormCoverageHints.length > 0;
+  const pendingComplaints = complaintQueue
+    .filter((item) => item.status === "pending")
+    .map((item) => item.complaint);
+  const repeatedPendingConcernRedirectCount = countPendingConcernRedirects(
+    params.transcript,
+    pendingComplaints,
+  );
+  const shouldSummarizeAfterRepeatedRedirection =
+    !params.forceSummary &&
+    repeatedPendingConcernRedirectCount >= 2 &&
+    pendingComplaints.length > 0 &&
+    activeScope.activeAssistantQuestions.length >= 2 &&
+    !hasFormCatchUpWork;
   const shouldEarlyStop =
     !params.forceSummary &&
-    ((reachedBudget && !escalation.active && !phaseState.hasStructuredForm) ||
-      (fatigueSignals.active && allQuestionsAsked.length >= 6)) &&
+    (fatigueSignals.active && allQuestionsAsked.length >= 6) &&
     !hasFormCatchUpWork &&
     !(phaseState.hasStructuredForm && phaseState.phase === "hpi_phase");
 
-  const unresolvedClarification = detectUnresolvedClarification(patientAnswers);
+  const unresolvedClarification = detectUnresolvedClarification(
+    patientAnswers,
+    activeComplaint,
+  );
+  const historyConfidenceState = determineHistoryConfidence({
+    transcript: params.transcript,
+    patientAnswers,
+    unresolvedClarification,
+    activeComplaint,
+  });
   const summaryReady =
     params.forceSummary ||
+    historyConfidenceState.shouldEndEarlyForUnclearHistory ||
     (!unresolvedClarification &&
       allComplete &&
       (!phaseState.hasStructuredForm || remainingFormCoverageHints.length === 0 || shouldEarlyStop));
@@ -1083,9 +1285,7 @@ export function buildInterviewState(params: {
   const interviewState: Omit<InterviewState, "progress"> = {
     chiefComplaint: params.chiefComplaint,
     complaints: complaintQueue.map((item) => item.complaint),
-    pendingComplaints: complaintQueue
-      .filter((item) => item.status === "pending")
-      .map((item) => item.complaint),
+    pendingComplaints,
     briefSecondaryConcerns,
     complaintQueue,
     activeComplaint,
@@ -1122,6 +1322,12 @@ export function buildInterviewState(params: {
     newComplaintCount,
     shouldEarlyStop,
     summaryReady,
+    historyConfidence: historyConfidenceState.historyConfidence,
+    clarificationAttemptCount: historyConfidenceState.clarificationAttemptCount,
+    shouldEndEarlyForUnclearHistory: historyConfidenceState.shouldEndEarlyForUnclearHistory,
+    repeatedPendingConcernRedirectCount,
+    shouldSummarizeAfterRepeatedRedirection,
+    earlyStopReason: historyConfidenceState.earlyStopReason,
     unresolvedClarification,
     deferredIntentHint: params.deferredIntentHint,
     forceSummary: params.forceSummary,

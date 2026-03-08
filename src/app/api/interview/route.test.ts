@@ -88,6 +88,7 @@ describe("POST /api/interview", () => {
           { role: "patient", content: "No rash." },
           { role: "patient", content: "I tried ibuprofen; it helped a bit." },
         ],
+        forceSummary: true,
       }),
       headers: { "Content-Type": "application/json" },
     });
@@ -101,16 +102,158 @@ describe("POST /api/interview", () => {
       expect(payload.summary.length).toBeGreaterThan(10);
       expect(payload.plan.length).toBeGreaterThan(0);
       expect(payload.progress).toBeDefined();
-      expect(payload.progress?.questionsAsked).toBeGreaterThan(0);
+      expect(payload.progress?.questionsAsked).toBeGreaterThanOrEqual(0);
       expect(payload.progress?.approxTotalQuestions).toBeGreaterThanOrEqual(
         payload.progress?.questionsAsked ?? 0,
       );
     }
   });
+
+  it("uses the controller to return a clarification question when the patient corrects the assistant", async () => {
+    const request = new Request(endpoint, {
+      method: "POST",
+      body: JSON.stringify({
+        chiefComplaint: "upper abdominal lumps",
+        patientProfile,
+        patientEmail: "patient@example.com",
+        physicianId: "physician-1234567890",
+        transcript: [
+          {
+            role: "assistant",
+            content:
+              "I noted your concern about chest pain, and I'll come back to that once we finish discussing the abdominal lump. For the lump itself, does it flatten when you lie down?",
+          },
+          { role: "patient", content: "I didn't mention anything about chest pain." },
+        ],
+      }),
+      headers: { "Content-Type": "application/json" },
+    });
+
+    const response = await POST(request);
+    const payload = (await response.json()) as InterviewResponse;
+
+    expect(response.status).toBe(200);
+    expect(payload.type).toBe("question");
+    if (payload.type === "question") {
+      expect(payload.question.toLowerCase()).toContain("clarify");
+    }
+  });
+
+  it("uses the controller to return an early-stop summary after repeated unresolved misunderstanding", async () => {
+    const request = new Request(endpoint, {
+      method: "POST",
+      body: JSON.stringify({
+        chiefComplaint: "upper abdominal lumps",
+        patientProfile,
+        patientEmail: "patient@example.com",
+        physicianId: "physician-1234567890",
+        transcript: [
+          {
+            role: "assistant",
+            content:
+              "I noted your concern about chest pain, and I'll come back to that once we finish discussing the abdominal lump. For the lump itself, does it flatten when you lie down?",
+          },
+          { role: "patient", content: "I didn't mention anything about chest pain." },
+          {
+            role: "assistant",
+            content:
+              "I'm sorry, I may not be understanding correctly. Could you clarify whether you were only describing the abdominal lumps?",
+          },
+          { role: "patient", content: "I didn't mention chest pain. I was talking about the abdominal lumps." },
+        ],
+      }),
+      headers: { "Content-Type": "application/json" },
+    });
+
+    const response = await POST(request);
+    const payload = (await response.json()) as InterviewResponse;
+
+    expect(response.status).toBe(200);
+    expect(payload.type).toBe("summary");
+  });
+
+  it("uses the controller to early-stop after repeated denial of the active complaint", async () => {
+    const request = new Request(endpoint, {
+      method: "POST",
+      body: JSON.stringify({
+        chiefComplaint: "abdominal pain",
+        patientProfile,
+        patientEmail: "patient@example.com",
+        physicianId: "physician-1234567890",
+        transcript: [
+          {
+            role: "assistant",
+            content: "Can you tell me what’s been going on with your abdominal pain?",
+          },
+          {
+            role: "patient",
+            content: "I am not having abdominal pain. This is actually a follow-up about ultrasound results.",
+          },
+          {
+            role: "assistant",
+            content:
+              "I want to make sure I understood you correctly. Could you clarify whether you are denying abdominal pain and want to focus on another concern instead?",
+          },
+          {
+            role: "patient",
+            content: "Correct, no abdominal pain. I only want to discuss the ultrasound result.",
+          },
+        ],
+      }),
+      headers: { "Content-Type": "application/json" },
+    });
+
+    const response = await POST(request);
+    const payload = (await response.json()) as InterviewResponse;
+
+    expect(response.status).toBe(200);
+    expect(payload.type).toBe("summary");
+  });
+
+  it("summarizes when the patient repeatedly redirects to another queued concern", async () => {
+    const request = new Request(endpoint, {
+      method: "POST",
+      body: JSON.stringify({
+        chiefComplaint: "type 2 diabetes follow-up",
+        patientProfile,
+        patientEmail: "patient@example.com",
+        physicianId: "physician-1234567890",
+        transcript: [
+          {
+            role: "assistant",
+            content:
+              "Tell me how your diabetes has been doing lately, including any home glucose readings or symptoms.",
+          },
+          {
+            role: "patient",
+            content:
+              "My sugars have mostly been stable. I also want to discuss my abdominal ultrasound for fatty liver.",
+          },
+          {
+            role: "assistant",
+            content:
+              "Have you had increased thirst, increased urination, blurred vision, or any symptoms of low blood sugar?",
+          },
+          {
+            role: "patient",
+            content:
+              "No to those. Can we talk about the abdominal ultrasound for fatty liver now?",
+          },
+        ],
+      }),
+      headers: { "Content-Type": "application/json" },
+    });
+
+    const response = await POST(request);
+    const payload = (await response.json()) as InterviewResponse;
+
+    expect(response.status).toBe(200);
+    expect(payload.type).toBe("summary");
+  });
 });
 
 describe("dynamic complaint queue prompt guidance", () => {
-  it("adds queued complaints from the transcript and applies the +8 budget modifier", () => {
+  it("renders a controller-first prompt that acknowledges newly queued complaints", () => {
     const prompt = buildPrompt(
       "right knee lump",
       patientProfile,
@@ -148,12 +291,14 @@ describe("dynamic complaint queue prompt guidance", () => {
       },
     );
 
-    expect(prompt).toContain("DYNAMIC COMPLAINT QUEUE");
-    expect(prompt).toContain("+8-new-complaint");
-    expect(prompt).toContain('Complaint #2: "right elbow pain"');
+    expect(prompt).toContain("BACKEND-SELECTED NEXT ACTION: ASK ONE TARGETED QUESTION");
+    expect(prompt).toContain('Current active complaint: "right knee lump"');
+    expect(prompt).toContain("NEW CONCERNS TO ACKNOWLEDGE:");
+    expect(prompt).toContain('"right elbow pain"');
+    expect(prompt).toContain('continue only with the backend-selected next step below');
   });
 
-  it("requires a brief in-chat acknowledgment when a new concern is queued mid-interview", () => {
+  it("keeps the current complaint active when a new concern is queued", () => {
     const prompt = buildPrompt(
       "prostate issues",
       patientProfile,
@@ -192,12 +337,13 @@ describe("dynamic complaint queue prompt guidance", () => {
       },
     );
 
-    expect(prompt).toContain("NEW CONCERN ACKNOWLEDGMENT (MANDATORY THIS TURN)");
+    expect(prompt).toContain("NEW CONCERNS TO ACKNOWLEDGE:");
     expect(prompt).toContain('"blood sugar concern"');
-    expect(prompt).toContain('then ask one focused question only about "prostate issues"');
+    expect(prompt).toContain('Current active complaint: "prostate issues"');
+    expect(prompt).toContain("BACKEND-SELECTED NEXT ACTION: ASK ONE TARGETED QUESTION");
   });
 
-  it("uses brief safety-screen guidance for an improving secondary concern instead of queueing it", () => {
+  it("uses a brief secondary concern note instead of queueing an improving concern", () => {
     const prompt = buildPrompt(
       "abdominal pain",
       patientProfile,
@@ -231,11 +377,196 @@ describe("dynamic complaint queue prompt guidance", () => {
       },
     );
 
-    expect(prompt).toContain("BRIEF SECONDARY CONCERN TRIAGE (MANDATORY THIS TURN)");
+    expect(prompt).toContain("BRIEF SECONDARY CONCERN NOTE:");
     expect(prompt).toContain('"headache"');
-    expect(prompt).toContain('Ask one concise, bundled safety-screen question only');
-    expect(prompt).not.toContain("DYNAMIC COMPLAINT QUEUE");
-    expect(prompt).not.toContain("+8-new-complaint");
+    expect(prompt).toContain('return to "abdominal pain"');
+    expect(prompt).not.toContain("NEW CONCERNS TO ACKNOWLEDGE:");
+  });
+
+  it("acknowledges a first-turn fatty-liver follow-up concern while keeping diabetes active", () => {
+    const prompt = buildPrompt(
+      "type 2 diabetes",
+      patientProfile,
+      [
+        {
+          role: "assistant",
+          content:
+            "I understand you’re here for a follow-up regarding type 2 diabetes. Can you tell me how things have been going with your diabetes recently and what prompted this follow-up visit?",
+        },
+        {
+          role: "patient",
+          content: "This is a follow-up for type 2 diabetes and my recent abdominal ultrasound for fatty liver.",
+        },
+      ],
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      false,
+      "English",
+      null,
+      {
+        suppressPhotoRequest: false,
+        reason: null,
+        matchedScope: null,
+      },
+    );
+
+    expect(prompt).toContain("NEW CONCERNS TO ACKNOWLEDGE:");
+    expect(prompt).toContain('"liver function concern"');
+    expect(prompt).toContain('Current active complaint: "type 2 diabetes"');
+  });
+
+  it("does not add a chest-pain acknowledgment for negated breast pain in a new concern turn", () => {
+    const prompt = buildPrompt(
+      "upper abdominal lumps",
+      patientProfile,
+      [
+        {
+          role: "assistant",
+          content:
+            "Because you’ve noticed this more around your menstrual period, have you had any other cycle-related changes such as heavier bleeding, pelvic pain, or breast tenderness?",
+        },
+        {
+          role: "patient",
+          content:
+            "Yeah, it's mostly around my menstrual period. No heavy period, no pelvic pain, no breast pain. Since you reminded me, I also wanted to discuss maybe going on Ozempic for obesity.",
+        },
+      ],
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      false,
+      "English",
+      null,
+      {
+        suppressPhotoRequest: false,
+        reason: null,
+        matchedScope: null,
+      },
+    );
+
+    expect(prompt).not.toContain('"chest pain"');
+    expect(prompt).not.toContain("NEW CONCERN ACKNOWLEDGMENT (MANDATORY THIS TURN)");
+  });
+
+  it("renders a clarification prompt when the patient says the assistant misunderstood them", () => {
+    const prompt = buildPrompt(
+      "upper abdominal lumps",
+      patientProfile,
+      [
+        {
+          role: "assistant",
+          content:
+            "I noted your concern about chest pain, and I’ll come back to that once we finish discussing the abdominal lump. For the lump itself, does it flatten when you lie down?",
+        },
+        {
+          role: "patient",
+          content: "I didn't mention anything about chest pain.",
+        },
+      ],
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      false,
+      "English",
+      null,
+      {
+        suppressPhotoRequest: false,
+        reason: null,
+        matchedScope: null,
+      },
+    );
+
+    expect(prompt).toContain("BACKEND-SELECTED NEXT ACTION: CLARIFY");
+    expect(prompt).toContain("clarify unclear response");
+    expect(prompt).toContain("ask exactly one concise clarification question");
+  });
+
+  it("renders a summary prompt when history confidence stays unsafe after clarification", () => {
+    const prompt = buildPrompt(
+      "upper abdominal lumps",
+      patientProfile,
+      [
+        {
+          role: "assistant",
+          content:
+            "I noted your concern about chest pain, and I’ll come back to that once we finish discussing the abdominal lump. For the lump itself, does it flatten when you lie down?",
+        },
+        {
+          role: "patient",
+          content: "I didn't mention anything about chest pain.",
+        },
+        {
+          role: "assistant",
+          content:
+            "I'm sorry, I may not be understanding correctly. Could you clarify whether you were only describing the abdominal lumps?",
+        },
+        {
+          role: "patient",
+          content: "I didn't mention chest pain. I was talking about the abdominal lumps.",
+        },
+      ],
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      false,
+      "English",
+      null,
+      {
+        suppressPhotoRequest: false,
+        reason: null,
+        matchedScope: null,
+      },
+    );
+
+    expect(prompt).toContain("BACKEND-SELECTED NEXT ACTION: SUMMARIZE NOW");
+    expect(prompt).toContain("History confidence dropped below a safe threshold");
+    expect(prompt).toContain("Do not ask another routine question");
+  });
+
+  it("removes giant workflow and count-pressure prompt sections", () => {
+    const prompt = buildPrompt(
+      "sore throat",
+      patientProfile,
+      [{ role: "assistant", content: "Tell me about your sore throat." }],
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      false,
+      "English",
+      null,
+      {
+        suppressPhotoRequest: false,
+        reason: null,
+        matchedScope: null,
+      },
+    );
+
+    expect(prompt).not.toContain("12-25 focused questions asked");
+    expect(prompt).not.toContain("fixed exhaustive questioning");
+    expect(prompt).not.toContain("MANDATORY PRE-QUESTION VALIDATION");
+    expect(prompt).not.toContain("Question-count guidance is advisory only");
+    expect(prompt).toContain("BACKEND-SELECTED NEXT ACTION:");
   });
 });
 

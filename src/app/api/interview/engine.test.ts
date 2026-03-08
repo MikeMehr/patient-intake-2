@@ -136,7 +136,6 @@ describe("interview controller state", () => {
     expect(state.activeComplaint).toBe("right knee lump");
     expect(state.pendingComplaints).toContain("right elbow pain");
     expect(state.newComplaintCount).toBe(1);
-    expect(state.questionBudgetModifiers).toContain("+8-new-complaint");
     expect(state.summaryReady).toBe(false);
     expect(state.progress.approxTotalQuestions).toBeGreaterThan(state.totalQuestionCount);
   });
@@ -167,7 +166,6 @@ describe("interview controller state", () => {
     expect(state.activeComplaint).toBe("abdominal pain");
     expect(state.pendingComplaints).toEqual([]);
     expect(state.newComplaintCount).toBe(0);
-    expect(state.questionBudgetModifiers).not.toContain("+8-new-complaint");
     expect(state.briefSecondaryConcerns.map((item) => item.complaint)).toContain("headache");
   });
 
@@ -205,7 +203,6 @@ describe("interview controller state", () => {
 
     expect(state.pendingComplaints).toContain("headache");
     expect(state.newComplaintCount).toBe(1);
-    expect(state.questionBudgetModifiers).toContain("+8-new-complaint");
   });
 
   it("raises the approximate total when a new complaint is added mid-interview", () => {
@@ -293,8 +290,34 @@ describe("interview controller state", () => {
     expect(state.activeComplaint).toBe("prostate issues");
     expect(state.pendingComplaints).toContain("blood sugar concern");
     expect(state.newComplaintCount).toBe(1);
-    expect(state.questionBudgetModifiers).toContain("+8-new-complaint");
     expect(state.summaryReady).toBe(false);
+  });
+
+  it("queues an abnormal imaging follow-up concern from the first patient reply without duplicating diabetes", () => {
+    const state = buildInterviewState({
+      chiefComplaint: "type 2 diabetes",
+      patientProfile,
+      transcript: [
+        {
+          role: "assistant",
+          content:
+            "I understand you’re here for a follow-up regarding type 2 diabetes. Can you tell me how things have been going with your diabetes recently and what prompted this follow-up visit?",
+        },
+        {
+          role: "patient",
+          content: "This is a follow-up for type 2 diabetes and my recent abdominal ultrasound for fatty liver.",
+        },
+      ],
+      formSummary: null,
+      patientBackground: null,
+      forceSummary: false,
+      deferredIntentHint: null,
+    });
+
+    expect(state.activeComplaint).toBe("type 2 diabetes");
+    expect(state.pendingComplaints).toEqual(["liver function concern"]);
+    expect(state.complaintQueue.map((item) => item.complaint)).not.toContain("blood sugar concern");
+    expect(state.newComplaintCount).toBe(1);
   });
 
   it("queues multiple new concerns in order of appearance", () => {
@@ -327,7 +350,234 @@ describe("interview controller state", () => {
     expect(state.activeComplaint).toBe("sore throat");
     expect(state.pendingComplaints).toEqual(["blood sugar concern", "blood pressure concern"]);
     expect(state.newComplaintCount).toBe(2);
-    expect(state.questionBudgetModifiers).toContain("+16-new-complaint");
+  });
+
+  it("does not synthesize chest pain from a negated breast-pain mention when another concern is introduced", () => {
+    const state = buildInterviewState({
+      chiefComplaint: "upper abdominal lumps",
+      patientProfile,
+      transcript: [
+        {
+          role: "assistant",
+          content:
+            "Because you’ve noticed this more around your menstrual period, have you had any other cycle-related changes such as heavier bleeding, pelvic pain, or breast tenderness?",
+        },
+        {
+          role: "patient",
+          content:
+            "Yeah, it's mostly around my menstrual period. No heavy period, no pelvic pain, no breast pain. Since you reminded me, I also wanted to discuss maybe going on Ozempic for obesity.",
+        },
+      ],
+      formSummary: null,
+      patientBackground: null,
+      forceSummary: false,
+      deferredIntentHint: null,
+    });
+
+    expect(state.pendingComplaints).not.toContain("chest pain");
+    expect(state.complaintQueue.map((item) => item.complaint)).not.toContain("chest pain");
+    expect(state.newComplaintCount).toBe(0);
+  });
+
+  it("treats explicit patient corrections as unresolved clarification", () => {
+    const state = buildInterviewState({
+      chiefComplaint: "upper abdominal lumps",
+      patientProfile,
+      transcript: [
+        {
+          role: "assistant",
+          content:
+            "I noted your concern about chest pain, and I’ll come back to that once we finish discussing the abdominal lump. For the lump itself, does it flatten when you lie down?",
+        },
+        {
+          role: "patient",
+          content: "I didn't mention anything about chest pain.",
+        },
+      ],
+      formSummary: null,
+      patientBackground: null,
+      forceSummary: false,
+      deferredIntentHint: null,
+    });
+
+    const step = decideNextInterviewStep(state);
+
+    expect(state.unresolvedClarification).toContain("didn't mention");
+    expect(step.action).toBe("clarify");
+    expect(step.target?.key).toBe("clarify_last_response");
+  });
+
+  it("treats repeated denial of the active complaint as a clarification and then early-stop signal", () => {
+    const clarificationState = buildInterviewState({
+      chiefComplaint: "abdominal pain",
+      patientProfile,
+      transcript: [
+        {
+          role: "assistant",
+          content: "Can you tell me what’s been going on with your abdominal pain?",
+        },
+        {
+          role: "patient",
+          content: "I am not having abdominal pain. This is actually a follow-up about ultrasound results.",
+        },
+      ],
+      formSummary: null,
+      patientBackground: null,
+      forceSummary: false,
+      deferredIntentHint: null,
+    });
+
+    expect(clarificationState.unresolvedClarification).toContain("denying abdominal pain");
+    expect(decideNextInterviewStep(clarificationState).action).toBe("clarify");
+
+    const summaryState = buildInterviewState({
+      chiefComplaint: "abdominal pain",
+      patientProfile,
+      transcript: [
+        {
+          role: "assistant",
+          content: "Can you tell me what’s been going on with your abdominal pain?",
+        },
+        {
+          role: "patient",
+          content: "I am not having abdominal pain. This is actually a follow-up about ultrasound results.",
+        },
+        {
+          role: "assistant",
+          content:
+            "I want to make sure I understood you correctly. Could you clarify whether you are denying abdominal pain and want to focus on another concern instead?",
+        },
+        {
+          role: "patient",
+          content: "Correct, no abdominal pain. I only want to discuss the ultrasound result.",
+        },
+      ],
+      formSummary: null,
+      patientBackground: null,
+      forceSummary: false,
+      deferredIntentHint: null,
+    });
+
+    expect(summaryState.shouldEndEarlyForUnclearHistory).toBe(true);
+    expect(decideNextInterviewStep(summaryState).action).toBe("summarize");
+  });
+
+  it("ends early when clarification has already been attempted and history confidence stays unsafe", () => {
+    const state = buildInterviewState({
+      chiefComplaint: "upper abdominal lumps",
+      patientProfile,
+      transcript: [
+        {
+          role: "assistant",
+          content:
+            "I noted your concern about chest pain, and I’ll come back to that once we finish discussing the abdominal lump. For the lump itself, does it flatten when you lie down?",
+        },
+        {
+          role: "patient",
+          content: "I didn't mention anything about chest pain.",
+        },
+        {
+          role: "assistant",
+          content:
+            "I'm sorry, I may not be understanding correctly. Could you clarify whether you were only describing the abdominal lumps?",
+        },
+        {
+          role: "patient",
+          content: "I didn't mention chest pain. I was talking about the abdominal lumps.",
+        },
+      ],
+      formSummary: null,
+      patientBackground: null,
+      forceSummary: false,
+      deferredIntentHint: null,
+    });
+
+    const step = decideNextInterviewStep(state);
+
+    expect(state.historyConfidence).toBe("unsafe_to_continue");
+    expect(state.clarificationAttemptCount).toBeGreaterThanOrEqual(1);
+    expect(state.shouldEndEarlyForUnclearHistory).toBe(true);
+    expect(step.action).toBe("summarize");
+  });
+
+  it("summarizes instead of drilling when the patient repeatedly redirects to a queued concern", () => {
+    const state = buildInterviewState({
+      chiefComplaint: "type 2 diabetes follow-up",
+      patientProfile,
+      transcript: [
+        {
+          role: "assistant",
+          content:
+            "Tell me how your diabetes has been doing lately, including any home glucose readings or symptoms.",
+        },
+        {
+          role: "patient",
+          content:
+            "My sugars have mostly been stable. I also want to discuss my abdominal ultrasound for fatty liver.",
+        },
+        {
+          role: "assistant",
+          content:
+            "Have you had increased thirst, increased urination, blurred vision, or any symptoms of low blood sugar?",
+        },
+        {
+          role: "patient",
+          content:
+            "No to those. Can we talk about the abdominal ultrasound for fatty liver now?",
+        },
+      ],
+      formSummary: null,
+      patientBackground: null,
+      forceSummary: false,
+      deferredIntentHint: null,
+    });
+
+    const step = decideNextInterviewStep(state);
+
+    expect(state.pendingComplaints).toContain("liver function concern");
+    expect(state.repeatedPendingConcernRedirectCount).toBeGreaterThanOrEqual(2);
+    expect(state.shouldSummarizeAfterRepeatedRedirection).toBe(true);
+    expect(step.action).toBe("summarize");
+  });
+
+  it("allows straightforward complaints to complete without hitting a numeric question floor", () => {
+    const state = buildInterviewState({
+      chiefComplaint: "sore throat",
+      patientProfile,
+      transcript: [
+        { role: "assistant", content: "Tell me about your sore throat." },
+        {
+          role: "patient",
+          content:
+            "It started 3 days ago, is moderate, hurts when I swallow, and I also have mild congestion but no trouble breathing.",
+        },
+        {
+          role: "assistant",
+          content:
+            "Have you had fever, trouble swallowing saliva, shortness of breath, weakness, numbness, or any other severe symptoms?",
+        },
+        {
+          role: "patient",
+          content: "No fever, no rash, no chest pain, and no trouble swallowing saliva.",
+        },
+        {
+          role: "assistant",
+          content: "Any shortness of breath, weakness, or numbness, and what makes it better or worse?",
+        },
+        {
+          role: "patient",
+          content: "No shortness of breath, weakness, or numbness. Warm tea helps and swallowing makes it worse.",
+        },
+      ],
+      formSummary: null,
+      patientBackground: null,
+      forceSummary: false,
+      deferredIntentHint: null,
+    });
+
+    expect(state.summaryReady).toBe(true);
+    expect(state.historyConfidence).toBe("clear");
+    expect(state.activeComplaintQuestionCount).toBeLessThan(5);
   });
 
   it("starts a newly activated queued complaint with an open narrative and keeps coverage complaint-scoped", () => {

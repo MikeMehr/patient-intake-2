@@ -156,6 +156,12 @@ export type InterviewState = {
   newComplaintCount: number;
   shouldEarlyStop: boolean;
   summaryReady: boolean;
+  historyConfidence: "clear" | "needs_clarification" | "unsafe_to_continue";
+  clarificationAttemptCount: number;
+  shouldEndEarlyForUnclearHistory: boolean;
+  repeatedPendingConcernRedirectCount: number;
+  shouldSummarizeAfterRepeatedRedirection: boolean;
+  earlyStopReason: string | null;
   unresolvedClarification: string | null;
   deferredIntentHint: string | null;
   forceSummary: boolean;
