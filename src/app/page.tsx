@@ -3620,13 +3620,17 @@ export default function Home() {
       ? "Stop talking"
       : micUiState === "starting"
         ? "Starting..."
-        : "Start talking";
+        : isTranscribing
+          ? "Transcribing"
+          : "Start talking";
   const micButtonTitle =
     micUiState === "listening"
       ? "Click once to stop talking"
       : micUiState === "starting"
         ? "Starting..."
-        : "Click once to start talking";
+        : isTranscribing
+          ? "Transcribing..."
+          : "Click once to start talking";
   const showListeningDecor = micUiState === "listening" && !micWarning;
   const elapsedTimeLabel = formatElapsedTime(elapsedTime);
   const showInterviewProgress =
