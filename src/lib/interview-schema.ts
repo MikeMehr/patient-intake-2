@@ -128,7 +128,17 @@ export const interviewRequestSchema = z.object({
   patientEmail: z
     .string()
     .transform((value) => value.trim())
-    .pipe(z.string().email("Valid patient email is required.")),
+    .pipe(
+      z.string().refine(
+        (val) => {
+          const isLocalhost =
+            process.env.NODE_ENV === "development" && /^[^\s@]+@localhost$/i.test(val);
+          const isStandardEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val);
+          return isLocalhost || isStandardEmail;
+        },
+        "Valid patient email is required."
+      )
+    ),
   physicianId: z
     .string()
     .transform((value) => value.trim())

@@ -199,6 +199,18 @@ MVA FOLLOW-UP MODE (LIKELY ESTABLISHED ACCIDENT CASE):
 `;
 }
 
+export function getMvaAdminPromptSection(chiefComplaint: string): string {
+  if (!MVA_PATTERN.test(chiefComplaint)) {
+    return "";
+  }
+
+  return `
+
+MVA HISTORY (WHEN INITIAL VISIT):
+- When clinically appropriate and this is the initial MVA visit (not follow up) include in your history gathering: name of car insurance company, claim number, and exact date of the accident. Integrate these naturally; do not turn them into a rigid checklist.
+`;
+}
+
 const PHOTO_REQUEST_PHRASES = [
   "upload a photo",
   "share a photo",

@@ -13,6 +13,7 @@ import {
   languageOptions,
   normalizeLanguageCode,
 } from "@/lib/speech-language";
+import { lightCleanupTranscript, normalizePunctuation } from "@/lib/speech-transcript";
 import BodyPartDiagram from "@/components/BodyPartDiagram";
 import { getSensitivePhotoContext, isPhotoUploadRequestText } from "@/app/api/interview/prompt-helpers";
 import NextImage from "next/image";
@@ -386,52 +387,6 @@ export default function Home() {
     };
   };
 
-  const normalizePunctuation = (text: string) => {
-    let t = text.trim();
-    // Ensure space after sentence-ending punctuation (e.g. "cough.No" → "cough. No")
-    t = t.replace(/([.!?])([A-Z])/g, "$1 $2");
-    // Add sentence breaks before capitalized pronouns if missing punctuation
-    t = t.replace(/([a-z]) (I|He|She|They|We|You) /g, "$1. $2 ");
-    // Ensure ending punctuation
-    if (t.length && !/[.!?]$/.test(t)) {
-      t = t + ".";
-    }
-    return t;
-  };
-  const lightCleanupTranscript = (text: string) => {
-    let t = text.trim();
-    t = t.replace(/\s+/g, " ");
-    // Remove obvious filler tokens when isolated
-    t = t.replace(/\b(um+|uh+|erm+|ah+)\b/gi, "");
-    // Clean up punctuation artifacts left after filler removal
-    t = t.replace(/,\s*,/g, ",");          // ", ," → ","
-    t = t.replace(/\.\s*,\s*/g, ". ");     // ". , " → ". "
-    t = t.replace(/,\s*\./g, ".");          // ", ." → "."
-    t = t.replace(/\s+/g, " ").trim();
-    // Normalize common number words (1-10)
-    const numberMap: Record<string, string> = {
-      zero: "0",
-      one: "1",
-      two: "2",
-      three: "3",
-      four: "4",
-      five: "5",
-      six: "6",
-      seven: "7",
-      eight: "8",
-      nine: "9",
-      ten: "10",
-    };
-    t = t.replace(/\b(zero|one|two|three|four|five|six|seven|eight|nine|ten)\b/gi, (match) => {
-      const key = match.toLowerCase();
-      return numberMap[key] ?? match;
-    });
-    // Normalize common units
-    t = t.replace(/\bmilligrams?\b/gi, "mg");
-    t = t.replace(/\bmilliliters?\b/gi, "ml");
-    t = t.replace(/\bmicrograms?\b/gi, "mcg");
-    return t;
-  };
   const resetDraftTranscript = (reason: string) => {
     setDraftTranscript("");
     setDraftTranscriptRaw("");
@@ -874,6 +829,12 @@ export default function Home() {
   const showSubmitBanner = hasPendingSubmission || isSubmittingResponse;
   const showResponseBox =
     showReview || status === "awaitingPatient" || isSubmittingResponse || hasPendingSubmission;
+  const isSpeechBusy =
+    micUiState === "starting" ||
+    isListening ||
+    isHolding ||
+    isTranscribing ||
+    cleaningTranscript;
   const showReviewActions =
     (showReview || hasPendingSubmission) &&
     (draftTranscript.trim().length > 0 || hasPendingSubmission);
@@ -3649,7 +3610,11 @@ export default function Home() {
       : microphoneBlocked
         ? "Microphone blocked. Please allow access in browser settings."
         : "Microphone ready";
-  const micStatusClassName = microphoneBlocked ? "text-amber-600" : "text-slate-500";
+  const micStatusClassName = microphoneBlocked
+    ? "text-amber-600"
+    : isTranscribing
+      ? "text-slate-500 animate-pulse"
+      : "text-slate-500";
   const micButtonLabel =
     micUiState === "listening"
       ? "Stop talking"
@@ -4512,24 +4477,24 @@ export default function Home() {
                           ) : (
                             <div
                               className={[
-                                "bg-emerald-600 rounded-2xl rounded-tr-sm px-5 py-3 text-white text-left ml-auto relative group max-w-full",
+                                "bg-gradient-to-t from-[#80D7FF] via-[#C0ECFC] to-[#80D7FF] rounded-2xl rounded-tr-sm px-5 py-3 text-slate-900 text-left ml-auto relative group max-w-full shadow-sm",
                                 // When editing/adding, expand the bubble so the textarea isn't cramped on desktop/tablet.
                                 addingToMessageIndex === index || editingMessageIndex === index
                                   ? "block w-full"
                                   : "inline-block",
                                 // Visual affordance: make it obvious when provider is editing a patient message.
                                 editingMessageIndex === index
-                                  ? "ring-4 ring-red-300 ring-offset-2 ring-offset-slate-50 bg-emerald-700/90 shadow-sm"
+                                  ? "ring-4 ring-red-300 ring-offset-2 ring-offset-slate-50 bg-gradient-to-t from-[#80D7FF] via-[#C0ECFC] to-[#80D7FF] shadow-md"
                                   : "",
                               ].join(" ")}
                             >
                               {addingToMessageIndex === index && !isInterviewComplete ? (
                                 <div className="space-y-2 w-full">
-                                  <p className="text-sm text-emerald-50 mb-2">Original: {message.content}</p>
+                                  <p className="mb-2 text-sm text-slate-900">Original: {message.content}</p>
                                   <textarea
                                     value={addingContent}
                                     onChange={(e) => setAddingContent(e.target.value)}
-                                    className="w-full bg-white text-slate-900 rounded-lg px-3 py-2 text-sm border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500 resize-none min-h-[60px]"
+                                    className="w-full min-h-[60px] resize-none rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-500"
                                     rows={Math.max(minPatientBubbleRows, addingContent.split('\n').length)}
                                     placeholder="Add additional comments..."
                                     autoFocus
@@ -4680,7 +4645,7 @@ export default function Home() {
                                         setEditingMessageIndex(index);
                                         setEditingContent(message.content);
                                       }}
-                                      className="absolute -bottom-2.5 right-3 px-2.5 py-0.5 text-xs font-medium rounded-full bg-emerald-700 hover:bg-emerald-800 text-white shadow-sm border-2 border-white"
+                                      className="absolute -bottom-2.5 right-3 rounded-full border-2 border-white bg-sky-700 px-2.5 py-0.5 text-xs font-medium text-white shadow-sm transition hover:bg-sky-800"
                                       title="Edit this message"
                                     >
                                       Edit
@@ -4853,7 +4818,7 @@ export default function Home() {
                           aria-hidden="true"
                         >
                           <div
-                            className="h-full rounded-full bg-slate-500 transition-[width] duration-300 ease-out"
+                            className="h-full rounded-full bg-gradient-to-t from-[#80D7FF] via-[#C0ECFC] to-[#80D7FF] transition-[width] duration-300 ease-out"
                             style={{ width: `${interviewProgressPercent}%` }}
                           />
                         </div>
@@ -4892,7 +4857,7 @@ export default function Home() {
                             setDraftTranscript(nextValue);
                           }}
                           className={[
-                            "mt-1 w-full resize-none rounded-lg border border-slate-200 bg-white px-2 pt-2 text-sm text-slate-800 outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100",
+                            "mt-1 w-full resize-none rounded-lg border border-slate-200 bg-white px-2 pt-2 text-sm text-slate-800 outline-none transition focus:border-[#80D7FF] focus:ring-2 focus:ring-[#C0ECFC]",
                             "pb-2",
                             "text-left",
                           ].join(" ")}
@@ -4902,24 +4867,25 @@ export default function Home() {
                             <button
                               type="button"
                               disabled={
+                                isSpeechBusy ||
                                 isSubmittingResponse ||
                                 hasPendingSubmission ||
                                 (awaitingFinalComments && finalCommentsChoice !== "yes")
                               }
                               onPointerDown={(event) => {
                                 event.preventDefault();
-                                if (!isSubmittingResponse && !hasPendingSubmission) {
+                                if (!isSpeechBusy && !isSubmittingResponse && !hasPendingSubmission) {
                                   commitDraftToResponseOnce(true);
                                 }
                               }}
                               onPointerUp={() => {
                               }}
                               onClick={() => {
-                                if (!isSubmittingResponse && !hasPendingSubmission) {
+                                if (!isSpeechBusy && !isSubmittingResponse && !hasPendingSubmission) {
                                   commitDraftToResponseOnce(true);
                                 }
                               }}
-                            className="inline-flex min-h-[31px] sm:min-h-[26px] items-center justify-center rounded-full bg-emerald-700 px-2.5 py-1.5 sm:py-1 text-xs font-medium text-white shadow-sm transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-300"
+                            className="inline-flex min-h-[31px] sm:min-h-[26px] items-center justify-center rounded-full bg-gradient-to-t from-[#80D7FF] via-[#C0ECFC] to-[#80D7FF] px-2.5 py-1.5 sm:py-1 text-xs font-medium text-slate-900 shadow-sm transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-60"
                             >
                               Use this
                             </button>
@@ -5141,7 +5107,7 @@ export default function Home() {
                         disabled={status !== "awaitingPatient" || isSpeaking}
                         className={`w-full rounded-2xl border bg-slate-50/60 px-4 py-3 text-base text-slate-900 outline-none transition focus:bg-white disabled:cursor-not-allowed disabled:opacity-70 ${
                           isListening
-                            ? "border-emerald-500 ring-2 ring-emerald-200"
+                            ? "border-[#80D7FF] ring-2 ring-[#C0ECFC]"
                             : "border-slate-200 focus:border-slate-400"
                         }`}
                       />
@@ -5213,21 +5179,21 @@ export default function Home() {
                         <div className="mt-3 flex flex-wrap gap-3">
                           <button
                             type="button"
-                            disabled={isSubmittingResponse}
+                            disabled={isSpeechBusy || isSubmittingResponse}
                             onPointerDown={(event) => {
                               event.preventDefault();
-                              if (!isSubmittingResponse && !hasPendingSubmission) {
+                              if (!isSpeechBusy && !isSubmittingResponse && !hasPendingSubmission) {
                                 commitDraftToResponseOnce();
                               }
                             }}
                             onPointerUp={() => {
                             }}
                             onClick={() => {
-                              if (!isSubmittingResponse && !hasPendingSubmission) {
+                              if (!isSpeechBusy && !isSubmittingResponse && !hasPendingSubmission) {
                                 commitDraftToResponseOnce();
                               }
                             }}
-                            className="inline-flex min-h-[108px] sm:min-h-[74px] items-center justify-center rounded-xl bg-emerald-600 px-4 py-2.5 sm:py-2 text-sm font-semibold text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-emerald-300"
+                            className="inline-flex min-h-[108px] sm:min-h-[74px] items-center justify-center rounded-xl bg-gradient-to-t from-[#80D7FF] via-[#C0ECFC] to-[#80D7FF] px-4 py-2.5 sm:py-2 text-sm font-semibold text-slate-900 transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-60"
                           >
                             {isSubmittingResponse ? "Sending..." : "Use this"}
                           </button>

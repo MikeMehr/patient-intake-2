@@ -15,6 +15,23 @@ function field(
   return { key, label, coverageTopics, promptHint };
 }
 
+export const COMPLAINT_ALIAS_MAPPINGS = [
+  { pattern: /\b(?:dm2|t2dm|type 2 dm|type ii diabetes?)\b/gi, replacement: "type 2 diabetes" },
+  { pattern: /\b(?:dm1|t1dm|type 1 dm|type i diabetes?)\b/gi, replacement: "type 1 diabetes" },
+  { pattern: /\b(?:pre[- ]?dm|predm)\b/gi, replacement: "prediabetes" },
+  { pattern: /\bf\/?u\b/gi, replacement: "follow-up" },
+  { pattern: /\bfollow\s*up\b/gi, replacement: "follow-up" },
+] as const;
+
+export function normalizeComplaintText(complaint: string) {
+  let normalized = complaint.toLowerCase();
+  COMPLAINT_ALIAS_MAPPINGS.forEach(({ pattern, replacement }) => {
+    normalized = normalized.replace(pattern, replacement);
+  });
+
+  return normalized.replace(/\s+/g, " ").trim();
+}
+
 const ACUTE_CORE_FIELDS: ProtocolCheck[] = [
   field("open_narrative", "patient narrative", [], "Start with an open-ended narrative question."),
   field("duration_onset", "onset and timeline", ["duration/onset"]),
@@ -70,6 +87,344 @@ const GENERAL_RED_FLAGS: ProtocolCheck[] = [
   field("respiratory_compromise", "breathing difficulty or instability", ["respiratory"]),
   field("neurologic_change", "acute neurologic change", ["neurological"]),
 ];
+
+function isSoreThroatUriComplaint(complaint: string) {
+  return /\b(sore throat|strep|pharyng|tonsil|uri|upper respiratory|congestion|runny nose|rhinorrhea|sinus|cold)\b/i.test(
+    complaint,
+  );
+}
+
+function isAbdominalPainComplaint(complaint: string) {
+  return /\b(abdominal pain|stomach pain|belly pain|abd pain)\b/i.test(complaint);
+}
+
+function isDiabetesFollowUpComplaint(complaint: string) {
+  return /\b(diabet(?:es|ic)?|prediabet(?:es|ic)?|blood sugar|glucose|a1c|hba1c)\b/i.test(
+    complaint,
+  );
+}
+
+function createMinimalHandoffProtocol(complaintClass: ComplaintClass): ComplaintProtocol {
+  return {
+    id: "minimal-handoff",
+    complaintClass,
+    requiredFields: [
+      field(
+        "open_narrative",
+        "brief patient narrative",
+        [],
+        "Ask one brief question to understand what the patient wants addressed, then hand off if the complaint remains unclear.",
+      ),
+    ],
+    redFlags: [],
+    virtualExamFields: [],
+    photoAppropriate: false,
+    stopConditions: {
+      minQuestionCount: 1,
+      requireRedFlags: false,
+      requireRequiredFields: true,
+      requireVirtualExamWhenApplicable: false,
+    },
+  };
+}
+
+function createSoreThroatUriProtocol(): ComplaintProtocol {
+  return {
+    id: "sore-throat-uri",
+    complaintClass: "Respiratory",
+    requiredFields: [
+      field(
+        "open_narrative",
+        "sore throat or URI narrative",
+        [],
+        "Open with the throat or URI story and what the patient most wants addressed.",
+      ),
+      field(
+        "duration_onset",
+        "onset and timeline",
+        ["duration/onset"],
+        "Clarify when the sore throat or URI symptoms started and how they have evolved.",
+      ),
+      field(
+        "severity",
+        "throat symptom severity",
+        ["severity"],
+        "Ask how severe the throat symptoms are at their worst.",
+      ),
+      field(
+        "throat_red_flags_screen",
+        "airway, swallowing, or deep-neck red-flag screen",
+        ["throat red flags", "respiratory"],
+        "Ask about trouble swallowing liquids, drooling, muffled voice, neck swelling, or breathing difficulty.",
+      ),
+      field(
+        "uri_symptoms",
+        "URI-associated symptoms",
+        ["uri symptoms"],
+        "Ask only about the most relevant associated URI symptoms such as cough, congestion, rhinorrhea, or fever.",
+      ),
+      field(
+        "infectious_context",
+        "infectious exposure or visible throat findings",
+        ["infectious context", "exudate"],
+        "Ask one short high-yield follow-up about sick contacts, strep exposure, or visible throat findings such as white spots or swollen tonsils if that context is still missing.",
+      ),
+    ],
+    redFlags: [],
+    virtualExamFields: [],
+    photoAppropriate: false,
+    stopConditions: {
+      minQuestionCount: 3,
+      requireRedFlags: false,
+      requireRequiredFields: true,
+      requireVirtualExamWhenApplicable: false,
+    },
+  };
+}
+
+function createAbdominalPainProtocol(): ComplaintProtocol {
+  return {
+    id: "abdominal-pain",
+    complaintClass: "GI",
+    requiredFields: [
+      field(
+        "open_narrative",
+        "abdominal pain narrative",
+        [],
+        "Open with where the abdominal pain is, when it started, and how it has changed.",
+      ),
+      field(
+        "location",
+        "abdominal pain location",
+        ["location"],
+        "Clarify the most important abdominal pain location or region if it is still unclear.",
+      ),
+      field(
+        "duration_onset",
+        "onset and timeline",
+        ["duration/onset"],
+        "Clarify when the abdominal pain started and whether it is constant, intermittent, or worsening.",
+      ),
+      field(
+        "severity",
+        "pain severity",
+        ["severity"],
+        "Ask how severe the abdominal pain is at its worst.",
+      ),
+      field(
+        "abdominal_red_flags_screen",
+        "urgent abdominal red-flag screen",
+        ["abdominal red flags"],
+        "Ask about vomiting, inability to keep fluids down, blood in vomit or stool, fainting, jaundice, or rapidly worsening pain.",
+      ),
+      field(
+        "bowel_symptoms",
+        "GI and bowel symptoms",
+        ["bowel symptoms"],
+        "Ask about nausea, vomiting, diarrhea, constipation, appetite, or bowel-pattern change only if still unclear.",
+      ),
+      field(
+        "urinary_symptoms",
+        "urinary symptoms",
+        ["urinary symptoms"],
+        "Ask about dysuria, frequency, urgency, or blood in the urine when not already covered.",
+      ),
+      field(
+        "pregnancy_context",
+        "pregnancy or LMP context",
+        ["pregnancy context"],
+        "If relevant, ask about pregnancy possibility or the last menstrual period.",
+      ),
+      field(
+        "relieving_factors",
+        "relieving factors",
+        ["relieving factors"],
+        "Ask whether anything makes the abdominal pain better if that is still unclear.",
+      ),
+    ],
+    redFlags: [],
+    virtualExamFields: [],
+    photoAppropriate: false,
+    stopConditions: {
+      minQuestionCount: 4,
+      requireRedFlags: false,
+      requireRequiredFields: true,
+      requireVirtualExamWhenApplicable: false,
+    },
+  };
+}
+
+function createDiabetesFollowUpProtocol(): ComplaintProtocol {
+  return {
+    id: "diabetes-follow-up",
+    complaintClass: "General",
+    requiredFields: [
+      field(
+        "open_narrative",
+        "diabetes follow-up narrative",
+        [],
+        "Open with how diabetes has been going lately and what the patient wants to focus on today.",
+      ),
+      field(
+        "duration_onset",
+        "diagnosis timeline",
+        ["duration/onset"],
+        "Clarify when diabetes was diagnosed or how long the patient has been managing it if still unclear.",
+      ),
+      field(
+        "diabetes_treatment",
+        "current diabetes treatment and adherence",
+        ["diabetes treatment"],
+        "Ask about current diabetes medications or treatment and whether they are being taken consistently.",
+      ),
+      field(
+        "glucose_control",
+        "recent A1c or glucose control trend",
+        ["glucose control"],
+        "Ask about the most relevant recent A1c or home glucose trend only if it is still missing.",
+      ),
+      field(
+        "diabetes_red_flags_screen",
+        "symptomatic hypo/hyperglycemia or urgent diabetes complications",
+        ["diabetes red flags"],
+        "Ask about low blood sugar symptoms, severe high blood sugar symptoms, vomiting, confusion, vision loss, or foot infection only if still unclear.",
+      ),
+    ],
+    redFlags: [],
+    virtualExamFields: [],
+    photoAppropriate: false,
+    stopConditions: {
+      minQuestionCount: 3,
+      requireRedFlags: false,
+      requireRequiredFields: true,
+      requireVirtualExamWhenApplicable: false,
+    },
+  };
+}
+
+function classifyComplaintText(text: string): ComplaintClass {
+  if (
+    text.match(
+      /\b(mva|motor vehicle|car accident|collision|fall|workplace injury|assault|sports injury|trauma)\b/,
+    )
+  ) {
+    return "Trauma";
+  }
+  if (
+    text.match(
+      /\b(headache|migraine|weakness|numbness|tingling|vision loss|syncope|faint|dizziness|seizure)\b/,
+    )
+  ) {
+    return "Neuro";
+  }
+  if (text.match(/\b(chest pain|palpitation|heart|angina|pressure)\b/)) {
+    return "Cardio";
+  }
+  if (
+    text.match(/\b(abdominal|stomach|nausea|vomit|diarrhea|constipation|gi bleed|melena|hematemesis)\b/)
+  ) {
+    return "GI";
+  }
+  if (
+    text.match(
+      /\b(sore throat|strep|pharyng|tonsil|uri|upper respiratory|congestion|runny nose|rhinorrhea|sinus|cold)\b/,
+    )
+  ) {
+    return "Respiratory";
+  }
+  if (text.match(/\b(shortness of breath|dyspnea|cough|wheeze|respiratory|hemoptysis)\b/)) {
+    return "Respiratory";
+  }
+  if (text.match(/\b(rash|lesion|eczema|hives|wound|ulcer|skin)\b/)) {
+    return "Dermatology";
+  }
+  if (
+    text.match(
+      /\b(back pain|neck pain|joint pain|ankle|knee|elbow|shoulder|wrist|sprain|strain|musculoskeletal)\b/,
+    )
+  ) {
+    return "MSK";
+  }
+  return "General";
+}
+
+function looksLikeUnclearComplaintShorthand(originalComplaint: string, normalizedComplaint: string) {
+  if (!originalComplaint.trim()) {
+    return false;
+  }
+
+  if (
+    isDiabetesFollowUpComplaint(normalizedComplaint) ||
+    isSoreThroatUriComplaint(normalizedComplaint) ||
+    isAbdominalPainComplaint(normalizedComplaint)
+  ) {
+    return false;
+  }
+
+  if (classifyComplaintText(normalizedComplaint) !== "General") {
+    return false;
+  }
+
+  return /(?:\b[a-z]{1,5}\d[a-z0-9]*\b|\b[a-z]+\/[a-z]+\b|\b[a-z]{2,8}\s*f\/?u\b)/i.test(
+    originalComplaint,
+  );
+}
+
+export function resolveComplaintRouting(params: {
+  complaint: string;
+  visitStage: VisitStage;
+}): {
+  normalizedComplaint: string;
+  complaintClass: ComplaintClass;
+  protocol: ComplaintProtocol;
+  clarificationHint: string | null;
+} {
+  const normalizedComplaint = normalizeComplaintText(params.complaint);
+  const complaintClass = classifyComplaintText(normalizedComplaint);
+
+  if (isDiabetesFollowUpComplaint(normalizedComplaint)) {
+    return {
+      normalizedComplaint,
+      complaintClass: "General",
+      protocol: createDiabetesFollowUpProtocol(),
+      clarificationHint: null,
+    };
+  }
+
+  if (isSoreThroatUriComplaint(normalizedComplaint)) {
+    return {
+      normalizedComplaint,
+      complaintClass,
+      protocol: createSoreThroatUriProtocol(),
+      clarificationHint: null,
+    };
+  }
+
+  if (isAbdominalPainComplaint(normalizedComplaint)) {
+    return {
+      normalizedComplaint,
+      complaintClass,
+      protocol: createAbdominalPainProtocol(),
+      clarificationHint: null,
+    };
+  }
+
+  if (looksLikeUnclearComplaintShorthand(params.complaint, normalizedComplaint)) {
+    return {
+      normalizedComplaint,
+      complaintClass,
+      protocol: createMinimalHandoffProtocol("General"),
+      clarificationHint: `what "${params.complaint}" refers to so I can focus on the right concern`,
+    };
+  }
+
+  return {
+    normalizedComplaint,
+    complaintClass,
+    protocol: createProtocol(complaintClass, params.visitStage),
+    clarificationHint: null,
+  };
+}
 
 function createProtocol(complaintClass: ComplaintClass, visitStage: VisitStage): ComplaintProtocol {
   switch (complaintClass) {
@@ -264,43 +619,7 @@ function createProtocol(complaintClass: ComplaintClass, visitStage: VisitStage):
 }
 
 export function classifyComplaint(complaint: string): ComplaintClass {
-  const text = complaint.toLowerCase();
-  if (
-    text.match(
-      /\b(mva|motor vehicle|car accident|collision|fall|workplace injury|assault|sports injury|trauma)\b/,
-    )
-  ) {
-    return "Trauma";
-  }
-  if (
-    text.match(
-      /\b(headache|migraine|weakness|numbness|tingling|vision loss|syncope|faint|dizziness|seizure)\b/,
-    )
-  ) {
-    return "Neuro";
-  }
-  if (text.match(/\b(chest pain|palpitation|heart|angina|pressure)\b/)) {
-    return "Cardio";
-  }
-  if (
-    text.match(/\b(abdominal|stomach|nausea|vomit|diarrhea|constipation|gi bleed|melena|hematemesis)\b/)
-  ) {
-    return "GI";
-  }
-  if (text.match(/\b(shortness of breath|dyspnea|cough|wheeze|respiratory|hemoptysis)\b/)) {
-    return "Respiratory";
-  }
-  if (text.match(/\b(rash|lesion|eczema|hives|wound|ulcer|skin)\b/)) {
-    return "Dermatology";
-  }
-  if (
-    text.match(
-      /\b(back pain|neck pain|joint pain|ankle|knee|elbow|shoulder|wrist|sprain|strain|musculoskeletal)\b/,
-    )
-  ) {
-    return "MSK";
-  }
-  return "General";
+  return classifyComplaintText(normalizeComplaintText(complaint));
 }
 
 export function getComplaintProtocol(params: {
@@ -308,5 +627,8 @@ export function getComplaintProtocol(params: {
   complaintClass: ComplaintClass;
   visitStage: VisitStage;
 }): ComplaintProtocol {
-  return createProtocol(params.complaintClass, params.visitStage);
+  return resolveComplaintRouting({
+    complaint: params.complaint,
+    visitStage: params.visitStage,
+  }).protocol;
 }

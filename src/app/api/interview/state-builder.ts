@@ -9,7 +9,12 @@ import {
   getFormCoverageHints,
   getRemainingFormCoverageHints,
 } from "./prompt-helpers";
-import { classifyComplaint, getComplaintProtocol } from "./complaint-protocols";
+import {
+  classifyComplaint,
+  getComplaintProtocol,
+  normalizeComplaintText,
+  resolveComplaintRouting,
+} from "./complaint-protocols";
 import type { ComplaintSource, ComplaintStatus } from "./protocol-types";
 import {
   type BriefSecondaryConcern,
@@ -42,7 +47,7 @@ const MARKER_ONLY_PATTERN =
 const RESULT_FOLLOW_UP_PATTERN =
   /\b(ultrasound|u\/s|scan|imaging|ct|mri|x-?ray|report|results?|show(?:ed|ing)?|found|revealed|fatty liver)\b/;
 const MEDICAL_CONCERN_KEYWORD_PATTERN =
-  /\b(prediabet(?:es|ic)?|diabet(?:es|ic)?|blood sugar|glucose|a1c|hba1c|cholesterol|lipid|triglyceride|blood pressure|hypertension|thyroid|kidney|renal|liver|hepat|anemia|iron|vitamin d|vitamin b12|test result|lab result|labs?)\b/;
+  /\b(prediabet(?:es|ic)?|diabet(?:es|ic)?|dm2|t2dm|blood sugar|glucose|a1c|hba1c|cholesterol|lipid|triglyceride|blood pressure|hypertension|thyroid|kidney|renal|liver|hepat|anemia|iron|vitamin d|vitamin b12|test result|lab result|labs?)\b/;
 const CONCERN_EXTRACT_PATTERNS = [
   /\b(?:also\s+)?regarding\s+([^.!?\n]+)/i,
   /\b(?:i am|i'm|im)?\s*(?:also\s+)?worried about\s+([^.!?\n]+)/i,
@@ -83,6 +88,7 @@ const COMPLAINT_KEYWORD_STOPWORDS = new Set([
 const NON_MSK_DYNAMIC_COMPLAINTS = [
   { pattern: /\bchest pain\b/, label: "chest pain" },
   { pattern: /\bshortness of breath|dyspnea\b/, label: "shortness of breath" },
+  { pattern: /\b(cough|coughing)\b/, label: "cough" },
   { pattern: /\bsore throat\b/, label: "sore throat" },
   { pattern: /\bheadache|migraine\b/, label: "headache" },
   { pattern: /\babdominal pain|stomach pain\b/, label: "abdominal pain" },
@@ -91,7 +97,7 @@ const NON_MSK_DYNAMIC_COMPLAINTS = [
 const CONDITION_LAB_DYNAMIC_COMPLAINTS = [
   {
     pattern:
-      /\b(prediabet(?:es|ic)?|diabet(?:es|ic)?|blood sugar|glucose|a1c|hba1c|sugar management)\b/,
+      /\b(prediabet(?:es|ic)?|diabet(?:es|ic)?|dm2|t2dm|blood sugar|glucose|a1c|hba1c|sugar management)\b/,
     label: "blood sugar concern",
   },
   { pattern: /\b(blood pressure|hypertension)\b/, label: "blood pressure concern" },
@@ -120,9 +126,21 @@ const CLARIFICATION_REQUEST_PATTERN =
   /\b(could you clarify|can you clarify|help me understand|make sure i understand|i(?: am|'m) not sure i understand|did you mean|what do you mean|may not be understanding|misunderstood)\b/;
 const PENDING_CONCERN_REDIRECT_PATTERN =
   /\b(can we talk about|talk about|i(?: am|'m)? just asking about|asking about|what about|i want to discuss|i want to talk about|come back to|focus on)\b/;
+const DISTINCT_COUGH_PATTERN =
+  /\b((?:separate|distinct)(?:\s+\w+){0,2}\s+cough|persistent cough|lingering cough|cough(?:\s+\w+){0,4}\s+for\s+\d|cough(?:\s+\w+){0,4}\s+wheez|cough(?:\s+\w+){0,4}\s+shortness of breath|cough(?:\s+\w+){0,4}\s+chest tightness|coughing fits)\b/;
+const MEDICATION_REFILL_PATTERN =
+  /\b(running out of|run out of|almost out of|running low on|need(?:ing)? (?:a )?refill|refill(?: for)?|renew(?:al)?(?: of)?|need more)\b/;
+const SPELLED_DURATION_WORDS =
+  "one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty";
+const MONTH_YEAR_PATTERN =
+  /\b(january|jan|february|feb|march|mar|april|apr|may|june|jun|july|jul|august|aug|september|sept|sep|october|oct|november|nov|december|dec)\s+\d{4}\b/i;
+const SEASON_YEAR_PATTERN = /\b(spring|summer|fall|autumn|winter)\s+\d{4}\b/i;
+const DIAGNOSED_YEAR_PATTERN =
+  /\b(diagnosed|diagnosis|managing(?: since)?|since)\b(?:\s+\w+){0,6}\s+\b\d{4}\b/i;
 
 type ComplaintSeed = {
   complaint: string;
+  originalComplaint: string;
   source: ComplaintSource;
   addedMidInterview: boolean;
   firstDetectedAtMessageIndex: number | null;
@@ -145,6 +163,7 @@ type EvaluatedComplaintScope = {
   complaintClass: ReturnType<typeof classifyComplaint>;
   visitStage: ReturnType<typeof classifyVisitStage>;
   protocol: ReturnType<typeof getComplaintProtocol>;
+  complaintClarificationHint: string | null;
   coveredTopics: Set<ProtocolTopicKey>;
   patientFacts: InterviewFactSummary;
   missingRequiredFields: ProtocolCheck[];
@@ -169,6 +188,27 @@ function extractTopics(question: string): ProtocolTopicKey[] {
     topics.push("relieving factors");
   if (qLower.match(/\b(associated|other symptoms|also|in addition|accompanied)\b/))
     topics.push("associated symptoms");
+  if (
+    qLower.match(
+      /\b(cough|congestion|runny nose|rhinorrhea|sinus|cold symptoms|upper respiratory|uri)\b/,
+    )
+  ) {
+    topics.push("uri symptoms");
+  }
+  if (
+    qLower.match(
+      /\b(sick contacts?|strep exposure|exposure to strep|similar illness|white spots|exudate|tonsil swelling|swollen tonsils)\b/,
+    )
+  ) {
+    topics.push("infectious context");
+  }
+  if (
+    qLower.match(
+      /\b(trouble swallowing|difficulty swallowing|swallow liquids|drooling|muffled voice|neck swelling|stridor|can(?:'|’)t swallow)\b/,
+    )
+  ) {
+    topics.push("throat red flags");
+  }
   if (qLower.match(/\b(range of motion|rom|move|bend|straighten|flex|extend)\b/))
     topics.push("range of motion");
   if (qLower.match(/\b(tenderness|tender|palpation|press|touch)\b/)) topics.push("tenderness");
@@ -199,8 +239,106 @@ function extractTopics(question: string): ProtocolTopicKey[] {
     topics.push("current red flags");
   if (qLower.match(/\b(fever|chills|fatigue|weight loss|appetite)\b/))
     topics.push("constitutional symptoms");
+  if (
+    qLower.match(
+      /\b(nausea|vomit|vomiting|diarrhea|constipation|bowel|stool|appetite|bloody stool|black stool|melena)\b/,
+    )
+  ) {
+    topics.push("bowel symptoms");
+  }
+  if (qLower.match(/\b(urinary|urine|pee|burning|dysuria|frequency|urgency|hematuria)\b/)) {
+    topics.push("urinary symptoms");
+  }
+  if (qLower.match(/\b(pregnan|lmp|last menstrual|period|missed period)\b/)) {
+    topics.push("pregnancy context");
+  }
+  if (
+    qLower.match(
+      /\b(vomiting blood|blood in stool|black stool|melena|hematemesis|faint|syncope|passed out|jaundice|yellow|can(?:'|’)t keep fluids down|unable to keep fluids down|persistent vomiting|rapidly worsening pain)\b/,
+    )
+  ) {
+    topics.push("abdominal red flags");
+  }
+  if (
+    qLower.match(/\b(metformin|insulin|medication|medications|dose|adherence|taking|miss doses)\b/)
+  ) {
+    topics.push("diabetes treatment");
+  }
+  if (qLower.match(/\b(running out|run out|refill|renewal|running low)\b/)) {
+    topics.push("medication refill need");
+  }
+  if (
+    qLower.match(
+      /\b(a1c|hba1c|glucose|blood sugar|home readings|fasting|postprandial|post-prandial|finger-?stick|cgm)\b/,
+    )
+  ) {
+    topics.push("glucose control");
+  }
+  if (qLower.match(/\b(low blood sugar|hypoglyc|shaky|sweaty|sweating|dizziness|feeling faint)\b/)) {
+    topics.push("diabetes hypoglycemia");
+  }
+  if (
+    qLower.match(
+      /\b(high blood sugar|hyperglyc|increased thirst|thirsty|frequent urination|urinating more|polyuria|polydipsia|increased hunger)\b/,
+    )
+  ) {
+    topics.push("diabetes hyperglycemia");
+  }
+  if (qLower.match(/\b(numbness|tingling|burning|loss of sensation|neuropathy)\b/)) {
+    topics.push("diabetes neuropathy");
+  }
+  if (qLower.match(/\b(vision|blurry vision|blurred vision|seeing|glasses)\b/)) {
+    topics.push("diabetes vision");
+  }
+  if (qLower.match(/\b(chest pain|shortness of breath|leg swelling|ankle swelling)\b/)) {
+    topics.push("diabetes chest/sob");
+  }
+  if (qLower.match(/\b(sores|cuts|ulcer|wound|slow healing|infection|infections)\b/)) {
+    topics.push("diabetes sores/infections");
+  }
+  if (qLower.match(/\b(fatigue|tired|low energy)\b/)) {
+    topics.push("diabetes fatigue");
+  }
+  if (qLower.match(/\b(weight loss|weight gain|unintended weight)\b/)) {
+    topics.push("diabetes weight change");
+  }
+  if (qLower.match(/\b(sexual function|erection|erections|libido)\b/)) {
+    topics.push("diabetes sexual function");
+  }
+  if (qLower.match(/\b(nausea|vomiting|bloating|full very quickly|stomach)\b/)) {
+    topics.push("diabetes gi symptoms");
+  }
+  if (qLower.match(/\b(foamy urine|urination|urinate|night to urinate|urinary)\b/)) {
+    topics.push("diabetes urinary symptoms");
+  }
+  if (
+    qLower.match(
+      /\b(low blood sugar|hypoglyc|high blood sugar|hyperglyc|shaky|sweaty|confusion|vomiting|vision loss|foot ulcer|foot wound|foot infection)\b/,
+    )
+  ) {
+    topics.push("diabetes red flags");
+  }
 
   return Array.from(new Set(topics));
+}
+
+function extractTimelineSummary(text: string) {
+  return (
+    text.match(
+      new RegExp(
+        `\\b(?:\\d+|(?:${SPELLED_DURATION_WORDS}))\\s*(?:day|week|month|year|hour|minute)s?\\b`,
+        "i",
+      ),
+    ) ??
+    text.match(MONTH_YEAR_PATTERN) ??
+    text.match(SEASON_YEAR_PATTERN) ??
+    text.match(/\b(?:yesterday|today|tonight|this morning|this afternoon|last night)\b/i) ??
+    text.match(/\b(?:diagnosed|diagnosis|since)\b(?:\s+\w+){0,6}\s+\b\d{4}\b/i)
+  );
+}
+
+function hasTimelineAnswerSignal(text: string) {
+  return Boolean(extractTimelineSummary(text) || DIAGNOSED_YEAR_PATTERN.test(text));
 }
 
 function extractInformationFromAnswers(answers: string[]): InterviewFactSummary {
@@ -210,6 +348,7 @@ function extractInformationFromAnswers(answers: string[]): InterviewFactSummary 
       symptomDetails: [],
       redFlagsMentioned: [],
       informationSummary: "",
+      handoffNeeds: [],
     };
   }
 
@@ -217,18 +356,19 @@ function extractInformationFromAnswers(answers: string[]): InterviewFactSummary 
   const mentionedTopics = new Set<ProtocolTopicKey>();
   const symptomDetails: string[] = [];
   const redFlagsMentioned: string[] = [];
+  const handoffNeeds: string[] = [];
 
   if (allAnswersText.match(/\b(\d+\/10|\d+ out of 10|mild|moderate|severe|very severe)\b/i)) {
     mentionedTopics.add("severity");
   }
   if (
     allAnswersText.match(
-      /\b(knee|elbow|shoulder|wrist|hand|foot|ankle|back|neck|arm|leg|chest|throat|abdomen|stomach|head)\b/,
+      /\b(knee|elbow|shoulder|wrist|hand|foot|ankle|back|neck|arm|leg|chest|throat|abdomen|abdominal|stomach|head)\b/,
     )
   ) {
     mentionedTopics.add("location");
   }
-  if (allAnswersText.match(/\b(\d+\s*(day|week|month|hour|minute)s?)\b/i)) {
+  if (hasTimelineAnswerSignal(allAnswersText)) {
     mentionedTopics.add("duration/onset");
   }
   if (allAnswersText.match(/\b(sharp|dull|aching|burning|throbbing|pressure|soft|firm|hard)\b/)) {
@@ -242,6 +382,24 @@ function extractInformationFromAnswers(answers: string[]): InterviewFactSummary 
   }
   if (allAnswersText.match(/\b(nausea|fever|chills|dizziness|cough|congestion|numbness|weakness)\b/)) {
     mentionedTopics.add("associated symptoms");
+  }
+  if (allAnswersText.match(/\b(cough|congestion|runny nose|rhinorrhea|sinus|cold)\b/)) {
+    mentionedTopics.add("uri symptoms");
+  }
+  if (
+    allAnswersText.match(
+      /\b(sick contacts?|strep exposure|similar illness|white spots|exudate|swollen tonsils|tonsil swelling)\b/,
+    )
+  ) {
+    mentionedTopics.add("infectious context");
+  }
+  if (
+    allAnswersText.match(
+      /\b(trouble swallowing|difficulty swallowing|drooling|muffled voice|neck swelling|stridor|can(?:'|’)t swallow|unable to swallow)\b/,
+    )
+  ) {
+    mentionedTopics.add("throat red flags");
+    redFlagsMentioned.push("throat red flags");
   }
   if (allAnswersText.match(/\b(can't move|limited|stiff|range of motion|bend|straighten|flex|extend)\b/)) {
     mentionedTopics.add("range of motion");
@@ -302,17 +460,117 @@ function extractInformationFromAnswers(answers: string[]): InterviewFactSummary 
   if (allAnswersText.match(/\b(fever|chills|fatigue|weight loss|appetite)\b/)) {
     mentionedTopics.add("constitutional symptoms");
   }
+  if (
+    allAnswersText.match(
+      /\b(nausea|vomiting|vomit|diarrhea|constipation|bowel|stool|bloody stool|black stool|melena|appetite)\b/,
+    )
+  ) {
+    mentionedTopics.add("bowel symptoms");
+  }
+  if (allAnswersText.match(/\b(urinary|urine|dysuria|burning|frequency|urgency|hematuria)\b/)) {
+    mentionedTopics.add("urinary symptoms");
+  }
+  if (allAnswersText.match(/\b(pregnan|lmp|last menstrual|period|missed period)\b/)) {
+    mentionedTopics.add("pregnancy context");
+  }
+  if (
+    allAnswersText.match(
+      /\b(vomiting blood|blood in stool|black stool|melena|hematemesis|faint|syncope|passed out|jaundice|yellow|can(?:'|’)t keep fluids down|unable to keep fluids down|persistent vomiting|rapidly worsening)\b/,
+    )
+  ) {
+    mentionedTopics.add("abdominal red flags");
+    redFlagsMentioned.push("abdominal red flags");
+  }
+  if (
+    allAnswersText.match(/\b(metformin|insulin|ozempic|semaglutide|jardiance|glipizide|medication|adherence)\b/)
+  ) {
+    mentionedTopics.add("diabetes treatment");
+  }
+  if (MEDICATION_REFILL_PATTERN.test(allAnswersText)) {
+    mentionedTopics.add("medication refill need");
+    const medicationMatch = allAnswersText.match(
+      /\b(?:running out of|run out of|almost out of|running low on|need(?:ing)? (?:a )?refill(?: for)?|renew(?:al)?(?: of)?|need more)\s+([a-z0-9 -]+)/i,
+    );
+    handoffNeeds.push(
+      medicationMatch?.[1]
+        ? `Needs refill or prescription review for ${medicationMatch[1].trim()}.`
+        : "Needs medication refill or prescription review.",
+    );
+  }
+  if (
+    allAnswersText.match(
+      /\b(a1c|hba1c|glucose|blood sugar|fasting|postprandial|post-prandial|finger-?stick|cgm)\b/,
+    )
+  ) {
+    mentionedTopics.add("glucose control");
+  }
+  if (allAnswersText.match(/\b(low blood sugar|hypoglyc|shakiness|sweating|dizziness|feeling faint)\b/)) {
+    mentionedTopics.add("diabetes hypoglycemia");
+  }
+  if (
+    allAnswersText.match(
+      /\b(high blood sugar|hyperglyc|increased thirst|thirsty|frequent urination|urinating more|polyuria|polydipsia|increased hunger)\b/,
+    )
+  ) {
+    mentionedTopics.add("diabetes hyperglycemia");
+  }
+  if (allAnswersText.match(/\b(numbness|tingling|burning|loss of sensation|neuropathy)\b/)) {
+    mentionedTopics.add("diabetes neuropathy");
+  }
+  if (allAnswersText.match(/\b(vision|blurry vision|blurred vision|seeing|glasses)\b/)) {
+    mentionedTopics.add("diabetes vision");
+  }
+  if (allAnswersText.match(/\b(chest pain|shortness of breath|leg swelling|ankle swelling)\b/)) {
+    mentionedTopics.add("diabetes chest/sob");
+  }
+  if (allAnswersText.match(/\b(sores|cuts|ulcer|wound|slow healing|infection|infections)\b/)) {
+    mentionedTopics.add("diabetes sores/infections");
+  }
+  if (allAnswersText.match(/\b(fatigue|tired|low energy)\b/)) {
+    mentionedTopics.add("diabetes fatigue");
+  }
+  if (allAnswersText.match(/\b(weight loss|weight gain|unintended weight)\b/)) {
+    mentionedTopics.add("diabetes weight change");
+  }
+  if (allAnswersText.match(/\b(sexual function|erection|erections|libido)\b/)) {
+    mentionedTopics.add("diabetes sexual function");
+  }
+  if (allAnswersText.match(/\b(nausea|vomiting|bloating|full very quickly|stomach)\b/)) {
+    mentionedTopics.add("diabetes gi symptoms");
+  }
+  if (allAnswersText.match(/\b(foamy urine|urination|urinate|night to urinate|urinary)\b/)) {
+    mentionedTopics.add("diabetes urinary symptoms");
+  }
+  if (
+    allAnswersText.match(
+      /\b(low blood sugar|hypoglyc|high blood sugar|hyperglyc|shakiness|sweating|confusion|vomiting|vision loss|foot ulcer|foot wound|foot infection)\b/,
+    )
+  ) {
+    mentionedTopics.add("diabetes red flags");
+    redFlagsMentioned.push("diabetes red flags");
+  }
 
-  const durationMatch = allAnswersText.match(/\b(\d+\s*(day|week|month|hour|minute)s?)\b/i);
+  const durationMatch = extractTimelineSummary(allAnswersText);
   if (durationMatch) symptomDetails.push(`Duration: ${durationMatch[0]}`);
   const severityMatch = allAnswersText.match(/\b(\d+\/10|\d+ out of 10|mild|moderate|severe)\b/i);
   if (severityMatch) symptomDetails.push(`Severity: ${severityMatch[0]}`);
+  if (MEDICATION_REFILL_PATTERN.test(allAnswersText)) {
+    const medicationMatch = allAnswersText.match(
+      /\b(?:running out of|run out of|almost out of|running low on|need(?:ing)? (?:a )?refill(?: for)?|renew(?:al)?(?: of)?|need more)\s+([a-z0-9 -]+)/i,
+    );
+    symptomDetails.push(
+      medicationMatch?.[1]
+        ? `Handoff need: running out of ${medicationMatch[1].trim()}`
+        : "Handoff need: medication refill requested",
+    );
+  }
 
   return {
     mentionedTopics: Array.from(mentionedTopics),
     symptomDetails,
     redFlagsMentioned,
-    informationSummary: symptomDetails.join("; "),
+    informationSummary: symptomDetails.concat(handoffNeeds).join("; "),
+    handoffNeeds,
   };
 }
 
@@ -325,27 +583,39 @@ function escapeRegExp(value: string) {
 }
 
 function normalizeConditionConcern(value: string) {
-  const normalized = normalizeText(value);
+  const normalized = normalizeComplaintText(value);
   const matchedCondition = CONDITION_LAB_DYNAMIC_COMPLAINTS.find((item) => item.pattern.test(normalized));
   return matchedCondition?.label ?? null;
 }
 
 function splitComplaints(chiefComplaint: string) {
-  return chiefComplaint
+  const complaints = chiefComplaint
     .split(/[,\n]| and |; /)
     .map((complaint) => complaint.trim())
     .filter((complaint) => complaint.length > 0);
+
+  if (complaints.length <= 1) {
+    return complaints;
+  }
+
+  const uriComponentPattern =
+    /\b(sore throat|cough|coughing|congestion|runny nose|rhinorrhea|sinus|uri|upper respiratory|cold)\b/i;
+  if (complaints.every((complaint) => uriComponentPattern.test(complaint))) {
+    return [chiefComplaint.trim()];
+  }
+
+  return complaints;
 }
 
 function getComplaintKeywords(complaint: string) {
-  return normalizeText(complaint)
+  return normalizeComplaintText(complaint)
     .split(/[^a-z0-9]+/)
     .filter((word) => word.length > 3 && !COMPLAINT_KEYWORD_STOPWORDS.has(word));
 }
 
 function complaintsAreEquivalent(left: string, right: string) {
-  const leftNormalized = normalizeText(left);
-  const rightNormalized = normalizeText(right);
+  const leftNormalized = normalizeComplaintText(left);
+  const rightNormalized = normalizeComplaintText(right);
   if (!leftNormalized || !rightNormalized) return false;
   if (leftNormalized === rightNormalized) return true;
   const leftConditionConcern = normalizeConditionConcern(left);
@@ -432,17 +702,18 @@ function extractConcernStyleCandidates(message: string): string[] {
     const cleanedPhrase = cleanupConcernPhrase(phrase);
     if (!cleanedPhrase) return;
 
-    const lowerPhrase = cleanedPhrase.toLowerCase();
+    const normalizedPhrase = normalizeComplaintText(cleanedPhrase);
+    const lowerPhrase = normalizedPhrase.toLowerCase();
     if (CONDITION_LAB_DYNAMIC_COMPLAINTS.some((item) => item.pattern.test(lowerPhrase))) {
       return;
     }
 
-    const hasBodyPart = detectBodyParts(cleanedPhrase).length > 0;
-    const hasKnownComplaintClass = classifyComplaint(cleanedPhrase) !== "General";
+    const hasBodyPart = detectBodyParts(normalizedPhrase).length > 0;
+    const hasKnownComplaintClass = classifyComplaint(normalizedPhrase) !== "General";
     const hasMedicalConcernKeyword = MEDICAL_CONCERN_KEYWORD_PATTERN.test(lowerPhrase);
 
     if (hasBodyPart || hasKnownComplaintClass || hasMedicalConcernKeyword) {
-      candidates.push(cleanedPhrase);
+      candidates.push(normalizedPhrase);
     }
   });
 
@@ -469,6 +740,9 @@ function extractDynamicComplaintCandidates(
 
   const candidates: string[] = [];
   if (hasSymptomCue && SYMPTOM_CONTEXT_PATTERN.test(lower)) {
+    if (DISTINCT_COUGH_PATTERN.test(lower)) {
+      candidates.push("cough");
+    }
     if (/\bheadache|migraine\b/.test(lower)) {
       candidates.push("headache");
     }
@@ -561,7 +835,8 @@ function buildComplaintSeeds(chiefComplaint: string, transcript: InterviewMessag
   briefSecondaryConcerns: BriefSecondaryConcern[];
 } {
   const seeds: ComplaintSeed[] = splitComplaints(chiefComplaint).map((complaint) => ({
-    complaint,
+    complaint: normalizeComplaintText(complaint),
+    originalComplaint: complaint,
     source: "chief_complaint",
     addedMidInterview: false,
     firstDetectedAtMessageIndex: null,
@@ -586,7 +861,8 @@ function buildComplaintSeeds(chiefComplaint: string, transcript: InterviewMessag
       const alreadyTracked = seeds.some((seed) => complaintsAreEquivalent(seed.complaint, concern.complaint));
       if (!alreadyTracked) {
         seeds.push({
-          complaint: concern.complaint,
+          complaint: normalizeComplaintText(concern.complaint),
+          originalComplaint: concern.complaint,
           source: "transcript",
           addedMidInterview: true,
           firstDetectedAtMessageIndex: transcriptIndex >= 0 ? transcriptIndex : null,
@@ -613,7 +889,8 @@ function buildComplaintSeeds(chiefComplaint: string, transcript: InterviewMessag
       }
 
       seeds.push({
-        complaint: detection.complaint,
+        complaint: normalizeComplaintText(detection.complaint),
+        originalComplaint: detection.complaint,
         source: "transcript",
         addedMidInterview: true,
         firstDetectedAtMessageIndex: transcriptIndex >= 0 ? transcriptIndex : null,
@@ -628,7 +905,8 @@ function buildComplaintSeeds(chiefComplaint: string, transcript: InterviewMessag
     return {
       complaintSeeds: [
         {
-          complaint: chiefComplaint,
+          complaint: normalizeComplaintText(chiefComplaint),
+          originalComplaint: chiefComplaint,
           source: "chief_complaint",
           addedMidInterview: false,
           firstDetectedAtMessageIndex: null,
@@ -645,8 +923,8 @@ function buildComplaintSeeds(chiefComplaint: string, transcript: InterviewMessag
 }
 
 function messageMentionsComplaint(message: string, complaint: string) {
-  const lowerMessage = message.toLowerCase();
-  const complaintText = complaint.toLowerCase();
+  const lowerMessage = normalizeComplaintText(message);
+  const complaintText = normalizeComplaintText(complaint);
   if (lowerMessage.includes(complaintText)) return true;
   const normalizedConcern = normalizeConditionConcern(complaint);
   if (normalizedConcern) {
@@ -692,12 +970,139 @@ function isCovered(check: ProtocolCheck, coveredTopics: Set<ProtocolTopicKey>, p
   if (check.key === "open_narrative") {
     return hasMeaningfulNarrative(patientAnswers);
   }
+  if (check.key === "diabetes_red_flags_screen") {
+    return isDiabetesRedFlagsCovered(coveredTopics, patientAnswers);
+  }
   return check.coverageTopics.some((topic) => coveredTopics.has(topic));
+}
+
+function isCheckApplicable(check: ProtocolCheck, patientProfile: PatientProfile) {
+  if (check.key !== "pregnancy_context") {
+    return true;
+  }
+
+  const pregnancyRelevantSex =
+    patientProfile.sex === "female" || patientProfile.sex === "nonbinary";
+  return pregnancyRelevantSex && patientProfile.age >= 12 && patientProfile.age <= 55;
+}
+
+function shouldAskSoreThroatInfectiousContext(
+  complaint: string,
+  coveredTopics: Set<ProtocolTopicKey>,
+  patientAnswers: string[],
+) {
+  if (!/\b(sore throat|strep|pharyng|tonsil)\b/i.test(complaint)) {
+    return false;
+  }
+
+  if (coveredTopics.has("infectious context") || coveredTopics.has("exudate")) {
+    return false;
+  }
+
+  const answersText = patientAnswers.join(" ").toLowerCase();
+  const hasFever = /\b(fever|febrile|temperature)\b/.test(answersText);
+  const hasNegatedUriFeatures =
+    /\b(no|denies|without)\s+(?:\w+\s+){0,2}(cough|congestion|runny nose|rhinorrhea|cold)\b/.test(
+      answersText,
+    );
+  const hasUriFeatures =
+    /\b(cough|congestion|runny nose|rhinorrhea|cold)\b/.test(answersText) && !hasNegatedUriFeatures;
+  const hasThroatFocusedSymptoms =
+    /\b(painful swallowing|trouble swallowing|difficulty swallowing|swallow)\b/.test(answersText);
+
+  return hasFever && hasThroatFocusedSymptoms && !hasUriFeatures;
+}
+
+const DIABETES_DUPLICATE_DOMAIN_TOPICS: ProtocolTopicKey[] = [
+  "diabetes hypoglycemia",
+  "diabetes hyperglycemia",
+  "diabetes neuropathy",
+  "diabetes vision",
+  "diabetes chest/sob",
+  "diabetes sores/infections",
+  "diabetes fatigue",
+  "diabetes weight change",
+  "diabetes sexual function",
+  "diabetes gi symptoms",
+  "diabetes urinary symptoms",
+];
+
+function hasPositiveUnnegatedSignal(text: string, signalPattern: RegExp, negationPattern: RegExp) {
+  return text.split(/[.!?;\n]/).some((chunk) => signalPattern.test(chunk) && !negationPattern.test(chunk));
+}
+
+function isDiabetesRedFlagsCovered(
+  coveredTopics: Set<ProtocolTopicKey>,
+  patientAnswers: string[],
+) {
+  if (coveredTopics.has("diabetes red flags")) {
+    return true;
+  }
+
+  const coveredDomainCount = DIABETES_DUPLICATE_DOMAIN_TOPICS.filter((topic) =>
+    coveredTopics.has(topic),
+  ).length;
+  if (coveredDomainCount >= 2) {
+    return true;
+  }
+
+  const answersText = patientAnswers.join(" ").toLowerCase();
+  return /\b(no symptoms|none|none whatsoever|not at all|things seem to be okay|overall well controlled)\b/.test(
+    answersText,
+  );
+}
+
+function hasPositiveUrgentDiabetesConcern(patientAnswers: string[]) {
+  const answersText = patientAnswers.join(" ").toLowerCase();
+  return hasPositiveUnnegatedSignal(
+    answersText,
+    /\b(low blood sugar|hypoglyc|shakiness|sweating|confusion|increased thirst|frequent urination|vomiting|vision loss|foot ulcer|foot wound|foot infection|chest pain|shortness of breath)\b/,
+    /\b(no|denies|without|none|not)\s+(?:\w+\s+){0,3}(low blood sugar|hypoglyc|shakiness|sweating|confusion|increased thirst|frequent urination|vomiting|vision loss|foot ulcer|foot wound|foot infection|chest pain|shortness of breath)\b/,
+  );
+}
+
+function hasRecentA1c(patientAnswers: string[]) {
+  const answersText = patientAnswers.join(" ").toLowerCase();
+  return /\b(a1c|hba1c)\b/.test(answersText);
+}
+
+function hasHomeGlucosePattern(patientAnswers: string[]) {
+  const answersText = patientAnswers.join(" ").toLowerCase();
+  return /\b(fasting|postprandial|post-prandial|finger-?stick|cgm|home (?:glucose|readings)|check(?:ing)? .*?(?:week|day)|blood sugar|glucose)\b/.test(
+    answersText,
+  );
+}
+
+function shouldSummarizeStableDiabetesEarly(params: {
+  protocolId: string;
+  coveredTopics: Set<ProtocolTopicKey>;
+  patientAnswers: string[];
+}) {
+  if (params.protocolId !== "diabetes-follow-up") {
+    return false;
+  }
+
+  const diagnosisCovered = params.coveredTopics.has("duration/onset");
+  const treatmentCovered = params.coveredTopics.has("diabetes treatment");
+  const a1cCovered = hasRecentA1c(params.patientAnswers);
+  const glucosePatternCovered = hasHomeGlucosePattern(params.patientAnswers);
+  const redFlagsCovered = isDiabetesRedFlagsCovered(params.coveredTopics, params.patientAnswers);
+
+  return (
+    diagnosisCovered &&
+    treatmentCovered &&
+    a1cCovered &&
+    glucosePatternCovered &&
+    redFlagsCovered &&
+    !hasPositiveUrgentDiabetesConcern(params.patientAnswers)
+  );
 }
 
 function evaluateComplaintScope(params: {
   chiefComplaint: string;
   complaint: string;
+  originalComplaint: string;
+  patientProfile: PatientProfile;
   patientBackground: string | null;
   formSummary: string | null;
   scope: ComplaintScopeAccumulator;
@@ -718,25 +1123,44 @@ function evaluateComplaintScope(params: {
     formSummary: params.formSummary,
     patientAnswers: params.scope.patientAnswers,
   });
-  const protocol = getComplaintProtocol({
-    complaint: params.complaint,
-    complaintClass,
+  const routing = resolveComplaintRouting({
+    complaint: params.originalComplaint,
     visitStage,
   });
-  const missingRequiredFields = protocol.requiredFields.filter(
+  const protocol = routing.protocol;
+  const applicableRequiredFields = protocol.requiredFields.filter((check) =>
+    isCheckApplicable(check, params.patientProfile),
+  );
+  const applicableRedFlags = protocol.redFlags.filter((check) =>
+    isCheckApplicable(check, params.patientProfile),
+  );
+  const applicableVirtualExamFields = protocol.virtualExamFields.filter((check) =>
+    isCheckApplicable(check, params.patientProfile),
+  );
+  const missingRequiredFields = applicableRequiredFields.filter(
+    (check) => !isCovered(check, coveredTopics, params.scope.patientAnswers),
+  ).filter((check) => {
+    if (check.key !== "infectious_context") {
+      return true;
+    }
+    return shouldAskSoreThroatInfectiousContext(
+      params.complaint,
+      coveredTopics,
+      params.scope.patientAnswers,
+    );
+  });
+  const missingRedFlags = applicableRedFlags.filter(
     (check) => !isCovered(check, coveredTopics, params.scope.patientAnswers),
   );
-  const missingRedFlags = protocol.redFlags.filter(
-    (check) => !isCovered(check, coveredTopics, params.scope.patientAnswers),
-  );
-  const missingVirtualExamFields = protocol.virtualExamFields.filter(
+  const missingVirtualExamFields = applicableVirtualExamFields.filter(
     (check) => !isCovered(check, coveredTopics, params.scope.patientAnswers),
   );
 
   return {
-    complaintClass,
+    complaintClass: routing.complaintClass,
     visitStage,
     protocol,
+    complaintClarificationHint: routing.clarificationHint,
     coveredTopics,
     patientFacts,
     missingRequiredFields,
@@ -746,7 +1170,7 @@ function evaluateComplaintScope(params: {
       missingRequiredFields.length === 0 &&
       (!protocol.stopConditions.requireRedFlags || missingRedFlags.length === 0) &&
       (!protocol.stopConditions.requireVirtualExamWhenApplicable ||
-        protocol.virtualExamFields.length === 0 ||
+        applicableVirtualExamFields.length === 0 ||
         missingVirtualExamFields.length === 0),
   };
 }
@@ -755,6 +1179,7 @@ function buildComplaintScopes(params: {
   chiefComplaint: string;
   complaintSeeds: ComplaintSeed[];
   transcript: InterviewMessage[];
+  patientProfile: PatientProfile;
   patientBackground: string | null;
   formSummary: string | null;
 }) {
@@ -799,6 +1224,8 @@ function buildComplaintScopes(params: {
       const evaluation = evaluateComplaintScope({
         chiefComplaint: params.chiefComplaint,
         complaint: params.complaintSeeds[activeComplaintIndex].complaint,
+        originalComplaint: params.complaintSeeds[activeComplaintIndex].originalComplaint,
+        patientProfile: params.patientProfile,
         patientBackground: params.patientBackground,
         formSummary: params.formSummary,
         scope: scopes[activeComplaintIndex],
@@ -844,7 +1271,7 @@ function detectEscalationState(params: {
 
   const hasRedFlagSignal = Boolean(
     `${text} ${answersText}`.match(
-      /\b(loss of consciousness|faint|syncope|hemoptysis|gi bleed|melena|hematemesis|vision loss|focal weakness|severe pain|thunderclap)\b/,
+      /\b(loss of consciousness|faint|syncope|hemoptysis|gi bleed|melena|hematemesis|vision loss|focal weakness|severe pain|thunderclap|stridor|drooling|unable to swallow|can't swallow|persistent vomiting|jaundice|confusion|foot ulcer|foot infection)\b/,
     ),
   );
   const hasMultiSystemSymptoms =
@@ -1044,6 +1471,7 @@ function buildComplaintProgress(params: {
 }): ComplaintProgress {
   return {
     complaint: params.complaintSeed.complaint,
+    originalComplaint: params.complaintSeed.originalComplaint,
     complaintClass: params.evaluation.complaintClass,
     protocolId: params.evaluation.protocol.id,
     minQuestionCountTarget: params.evaluation.protocol.stopConditions.minQuestionCount,
@@ -1166,6 +1594,7 @@ export function buildInterviewState(params: {
     chiefComplaint: params.chiefComplaint,
     complaintSeeds,
     transcript: params.transcript,
+    patientProfile: params.patientProfile,
     patientBackground: params.patientBackground,
     formSummary: params.formSummary,
   });
@@ -1184,6 +1613,8 @@ export function buildInterviewState(params: {
     const evaluation = evaluateComplaintScope({
       chiefComplaint: params.chiefComplaint,
       complaint: seed.complaint,
+      originalComplaint: seed.originalComplaint,
+      patientProfile: params.patientProfile,
       patientBackground: params.patientBackground,
       formSummary: params.formSummary,
       scope: complaintScopes.scopes[index],
@@ -1205,6 +1636,8 @@ export function buildInterviewState(params: {
   const activeEvaluation = evaluateComplaintScope({
     chiefComplaint: params.chiefComplaint,
     complaint: activeComplaintProgress?.complaint ?? params.chiefComplaint,
+    originalComplaint: activeComplaintProgress?.originalComplaint ?? params.chiefComplaint,
+    patientProfile: params.patientProfile,
     patientBackground: params.patientBackground,
     formSummary: params.formSummary,
     scope: activeScope,
@@ -1259,6 +1692,9 @@ export function buildInterviewState(params: {
     pendingComplaints.length > 0 &&
     activeScope.activeAssistantQuestions.length >= 2 &&
     !hasFormCatchUpWork;
+  const shouldEscalateSoreThroatRedFlags =
+    activeEvaluation.protocol.id === "sore-throat-uri" &&
+    activeEvaluation.patientFacts.redFlagsMentioned.includes("throat red flags");
   const shouldEarlyStop =
     !params.forceSummary &&
     (fatigueSignals.active && allQuestionsAsked.length >= 6) &&
@@ -1275,8 +1711,17 @@ export function buildInterviewState(params: {
     unresolvedClarification,
     activeComplaint,
   });
+  const shouldSummarizeStableDiabetes =
+    !params.forceSummary &&
+    shouldSummarizeStableDiabetesEarly({
+      protocolId: activeEvaluation.protocol.id,
+      coveredTopics: activeEvaluation.coveredTopics,
+      patientAnswers: activeScope.patientAnswers,
+    });
   const summaryReady =
     params.forceSummary ||
+    shouldEscalateSoreThroatRedFlags ||
+    shouldSummarizeStableDiabetes ||
     historyConfidenceState.shouldEndEarlyForUnclearHistory ||
     (!unresolvedClarification &&
       allComplete &&
@@ -1302,12 +1747,14 @@ export function buildInterviewState(params: {
     activePatientAnswers: activeScope.patientAnswers,
     activeCoveredTopics: Array.from(activeEvaluation.coveredTopics),
     activePatientFacts: activeEvaluation.patientFacts,
+    activeHandoffNeeds: activeEvaluation.patientFacts.handoffNeeds,
     questionCountSoFar: activeScope.activeAssistantQuestions.length,
     totalQuestionCount: allQuestionsAsked.length,
     allQuestionsAsked,
     patientAnswers,
     coveredTopics: Array.from(topicsCovered),
     patientFacts,
+    handoffNeeds: patientFacts.handoffNeeds,
     missingRequiredFields: activeEvaluation.missingRequiredFields,
     missingRedFlags: activeEvaluation.missingRedFlags,
     missingVirtualExamFields: activeEvaluation.missingVirtualExamFields,
@@ -1329,6 +1776,7 @@ export function buildInterviewState(params: {
     shouldSummarizeAfterRepeatedRedirection,
     earlyStopReason: historyConfidenceState.earlyStopReason,
     unresolvedClarification,
+    complaintClarificationHint: activeEvaluation.complaintClarificationHint,
     deferredIntentHint: params.deferredIntentHint,
     forceSummary: params.forceSummary,
   };

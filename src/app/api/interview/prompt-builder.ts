@@ -1,10 +1,12 @@
 import { logDebug } from "@/lib/secure-logger";
 import type { InterviewMessage, PatientProfile } from "@/lib/interview-schema";
-import type { NextInterviewStep } from "./next-step";
-import { decideNextInterviewStep } from "./next-step";
 import type { InterviewState } from "./protocol-types";
-import type { SensitivePhotoContext } from "./prompt-helpers";
+import {
+  getMvaAdminPromptSection,
+  type SensitivePhotoContext,
+} from "./prompt-helpers";
 import { buildInterviewState } from "./state-builder";
+import { getBodyDiagramPromptSection } from "@/lib/body-diagram-images";
 
 function formatTranscript(transcript: InterviewMessage[]) {
   return transcript
@@ -39,7 +41,7 @@ function buildQueuedConcernInstruction(state: InterviewState, transcript: Interv
     return `\nNEW CONCERNS TO ACKNOWLEDGE:
 - Briefly acknowledge: ${newlyQueuedComplaints.map((item) => `"${item.complaint}"`).join(", ")}.
 - Say you will return to ${newlyQueuedComplaints.length === 1 ? "that concern" : "those concerns"} after finishing "${state.activeComplaint}".
-- After the acknowledgment, continue only with the backend-selected next step below.`;
+- After the acknowledgment, continue with the next appropriate question.`;
   }
 
   if (newlyBriefSecondaryConcerns.length > 0) {
@@ -49,53 +51,6 @@ function buildQueuedConcernInstruction(state: InterviewState, transcript: Interv
   }
 
   return "";
-}
-
-function buildActionBlock(nextStep: NextInterviewStep, state: InterviewState) {
-  switch (nextStep.action) {
-    case "clarify":
-      return `BACKEND-SELECTED NEXT ACTION: CLARIFY
-- Reason: ${nextStep.reason}
-- Complaint focus: "${state.activeComplaint}"
-- Clarification target: ${nextStep.target?.label ?? "clarify unclear response"}
-- Clarification hint: ${nextStep.target?.promptHint ?? state.unresolvedClarification ?? ""}
-- Task: Briefly acknowledge the misunderstanding, then ask exactly one concise clarification question. Do not move to a different topic yet.`;
-    case "ask_target":
-      return `BACKEND-SELECTED NEXT ACTION: ASK ONE TARGETED QUESTION
-- Reason: ${nextStep.reason}
-- Complaint focus: "${state.activeComplaint}"
-- Target category: ${nextStep.target?.category ?? "required_field"}
-- Target label: ${nextStep.target?.label ?? "required history item"}
-- Clinical rationale: ${nextStep.target?.rationale ?? "Gather the next most important missing history item."}
-- Prompt hint: ${nextStep.target?.promptHint ?? ""}
-- Task: Ask exactly one patient-facing question that addresses only this selected target. Do not choose a different workflow step on your own.`;
-    case "summarize":
-    case "escalate":
-    default:
-      return `BACKEND-SELECTED NEXT ACTION: SUMMARIZE NOW
-- Reason: ${nextStep.reason}
-- Complaint focus: "${state.activeComplaint}"
-- Task: Do not ask another routine question. Provide a physician-handoff summary based only on established history.`;
-  }
-}
-
-function buildOutputContract(nextStep: NextInterviewStep) {
-  if (nextStep.action === "summarize" || nextStep.action === "escalate") {
-    return `OUTPUT CONTRACT:
-- Return valid JSON only.
-- Return a summary object shaped like:
-{"type":"summary","positives":["..."],"negatives":["..."],"summary":"...","investigations":["..."],"assessment":"...","plan":["..."]}
-- Preserve uncertainty when history is incomplete.
-- Do not give treatment or medication advice to the patient.`;
-  }
-
-  return `OUTPUT CONTRACT:
-- Return valid JSON only.
-- Return a question object shaped like:
-{"type":"question","question":"...","rationale":"...","requiresPhotoUpload":false}
-- Ask exactly one question.
-- Keep the rationale brief and clinical.
-- Set "requiresPhotoUpload": true only when the question explicitly asks for an image upload.`;
 }
 
 export function buildPrompt(
@@ -118,7 +73,6 @@ export function buildPrompt(
     matchedScope: null,
   },
   precomputedState?: InterviewState,
-  precomputedNextStep?: NextInterviewStep,
 ): string {
   const interviewState =
     precomputedState ??
@@ -131,7 +85,6 @@ export function buildPrompt(
       forceSummary,
       deferredIntentHint,
     });
-  const nextStep = precomputedNextStep ?? decideNextInterviewStep(interviewState);
 
   const recentTranscript = transcript.length > 12 ? transcript.slice(-12) : transcript;
   const recentQuestions = interviewState.allQuestionsAsked.slice(-8);
@@ -156,7 +109,7 @@ ${previousLabReportSummary ? `Previous summary: ${previousLabReportSummary}` : "
 - Use only these provided lab/imaging summaries. Do not invent missing results.`
       : "LAB CONTEXT:\nNo physician-provided lab summary.";
   const formSection = formSummary
-    ? `FORM CONTEXT:\n${formSummary}\n- Only gather form details when the backend-selected next step points to them.`
+    ? `FORM CONTEXT:\n${formSummary}\n- Gather form details when relevant to the complaint.`
     : "";
   const guidanceSection = interviewGuidance
     ? `PHYSICIAN GUIDANCE:\n${interviewGuidance}`
@@ -174,17 +127,27 @@ ${previousLabReportSummary ? `Previous summary: ${previousLabReportSummary}` : "
 - Set "requiresPhotoUpload": false.`
     : "";
 
-  const fullPrompt = `
-You are phrasing one backend-selected interview step for a Physician Assistant.
+  const bodyDiagramSection = getBodyDiagramPromptSection(
+    profile.sex === "male" ? "male" : profile.sex === "female" ? "female" : undefined,
+  );
 
-GLOBAL RULES:
-- The backend has already chosen the next workflow action. Do not invent a different workflow step.
-- Stay on the active complaint unless the backend-selected action is to summarize.
-- Listen carefully to patient corrections and redirections.
-- Be natural, concise, and conversational, not checklist-like.
-- Avoid repeating or rephrasing recent questions unless the backend-selected action is clarification.
-- Do not give treatment advice, medication instructions, or diagnoses to the patient.
+  const mvaAdminSection = getMvaAdminPromptSection(chiefComplaint);
+
+  const taskInstruction = forceSummary
+    ? "Provide a physician-handoff summary based on the established history. Do not ask another question."
+    : "Either (a) ask the next most appropriate question to continue gathering history, or (b) provide a physician-handoff summary if the history is sufficient for handoff.";
+
+  const fullPrompt = `
+You are a Physician Assistant conducting a medical history. You decide what to ask next and when the history is sufficient to summarize. Do not provide treatment recommendations, medication instructions, dosing advice, or diagnosis to the patient.
+
+RULES:
+- Be natural and concise. You may group related questions together to ask fewer questions. This reduces patient fatigue.
 - Conduct patient-facing text in ${languageName}. Keep clinician summary fields in English.
+- Stay on the active complaint unless the patient redirects.
+- Listen carefully to patient corrections and redirections.
+- As much as possible, make it feel like a physician-assistant–patient conversation.
+
+TASK: ${taskInstruction}
 
 ACTIVE COMPLAINT:
 - Chief complaint text: "${chiefComplaint}"
@@ -193,7 +156,7 @@ ACTIVE COMPLAINT:
 ${pendingComplaints}
 - Completed complaints:
 ${completedComplaints}
-- Active covered topics: ${activeCoveredTopics}
+- Active covered topics (for reference): ${activeCoveredTopics}
 - Active complaint facts:
 ${activeFacts}
 ${buildQueuedConcernInstruction(interviewState, transcript)}
@@ -215,27 +178,35 @@ ${formSection}
 ${guidanceSection}
 ${sensitivePhotoDirective}
 
+${bodyDiagramSection}
+${mvaAdminSection}
+
 RECENT TRANSCRIPT:
 ${recentTranscript.length > 0 ? formatTranscript(recentTranscript) : "No prior transcript."}
 
 RECENT ASSISTANT QUESTIONS TO AVOID REPEATING:
 ${formatRecentQuestions(recentQuestions)}
 
-${buildActionBlock(nextStep, interviewState)}
+PROGRESS (you control the patient-facing progress bar; use these values exactly):
+- Assistant question prompts asked so far: ${interviewState.allQuestionsAsked.length}. Each assistant message = 1 question (do NOT count bullet points or sub-questions within a message).
+- progress.questionsAsked = ${interviewState.allQuestionsAsked.length} (the count above; do NOT include the current question if type is "question").
+- progress.approxTotalQuestions = when type is "summary", set equal to questionsAsked (interview complete). When type is "question", your estimate of total question prompts this interview will need (typically 5-15; consider how much history is gathered, complaint complexity, and pending topics). Count in question prompts (assistant turns), not bullet points.
 
-STYLE INSTRUCTIONS:
-- If asking a question, ask exactly one question.
-- If the selected target is "open narrative", rephrase the complaint naturally instead of repeating it verbatim.
-- If clarifying, briefly acknowledge the misunderstanding before asking the clarification question.
-- If summarizing, do not ask more questions.
-- If multiple complaints exist, do not drift into other complaints beyond the brief acknowledgment instructions above.
-
-${buildOutputContract(nextStep)}
+OUTPUT CONTRACT:
+- Return valid JSON only. Include "progress" in every response to drive the patient-facing progress bar.
+- If asking a question: {"type":"question","question":"...","rationale":"...","requiresPhotoUpload":false,"requiresLocationMarking":false,"progress":{"questionsAsked":N,"approxTotalQuestions":M}}
+  - Ask one or more related questions when grouping flows naturally.
+  - Keep the rationale brief and clinical.
+  - Set "requiresPhotoUpload": true only when the question explicitly asks for an image upload.
+  - Set "requiresLocationMarking": true when the question asks the patient to mark pain location on a body diagram.
+- If providing a summary: {"type":"summary","positives":["..."],"negatives":["..."],"summary":"...","investigations":["..."],"assessment":"...","plan":["..."],"progress":{"questionsAsked":N,"approxTotalQuestions":N}}
+  - Preserve uncertainty when history is incomplete.
+  - Do not give treatment or medication advice to the patient.
   `.trim();
 
-  logDebug("[buildPrompt] compact prompt metadata", {
-    nextAction: nextStep.action,
+  logDebug("[buildPrompt] LLM-led prompt metadata", {
     activeComplaint: interviewState.activeComplaint,
+    forceSummary,
     promptLength: fullPrompt.length,
   });
 

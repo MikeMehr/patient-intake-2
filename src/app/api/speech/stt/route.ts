@@ -4,6 +4,9 @@ import { getAzureSpeechConfig } from "@/lib/azure-speech";
 import { getSpeechLocale, normalizeLanguageCode } from "@/lib/speech-language";
 import { assertSafeOutboundUrl } from "@/lib/outbound-url";
 
+// Allow longer timeouts for large audio upload + Azure transcription
+export const maxDuration = 60;
+
 type AzureSpeechResponse = {
   RecognitionStatus?: string;
   DisplayText?: string;
@@ -34,13 +37,14 @@ export async function POST(request: NextRequest) {
     formData = await request.formData();
   } catch (error) {
     status = 400;
-    const message = error instanceof Error ? error.message : "";
-    const isLikelyTooLarge = /\btoo large\b|\blimit\b|\bentity\b|\bpayload\b|\bsize\b/i.test(message);
+    const message = error instanceof Error ? error.message : String(error);
+    const isLikelyTooLarge = /\btoo large\b|\blimit\b|\bentity\b|\bpayload\b|\bsize\b|\blength\b|\bexceeded\b/i.test(message);
+    console.error("[speech/stt] formData parse failed:", message, error);
     const res = NextResponse.json(
       {
         error: isLikelyTooLarge
           ? "Audio upload is too large. Keep each clip under 100MB."
-          : "Invalid form data.",
+          : "Invalid form data. Ensure the request contains an audio file and is under the platform size limit.",
         details: process.env.NODE_ENV === "development" ? message || undefined : undefined,
       },
       { status },

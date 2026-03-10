@@ -35,16 +35,38 @@ export type ProtocolTopicKey =
   | "triggers"
   | "relieving factors"
   | "associated symptoms"
+  | "uri symptoms"
+  | "infectious context"
+  | "throat red flags"
   | "range of motion"
   | "tenderness"
   | "swelling"
   | "redness"
   | "exudate"
   | "constitutional symptoms"
+  | "bowel symptoms"
+  | "urinary symptoms"
+  | "pregnancy context"
+  | "abdominal red flags"
   | "respiratory"
   | "cardiac symptoms"
   | "neurological"
   | "loss of consciousness"
+  | "diabetes treatment"
+  | "glucose control"
+  | "diabetes red flags"
+  | "diabetes hypoglycemia"
+  | "diabetes hyperglycemia"
+  | "diabetes neuropathy"
+  | "diabetes vision"
+  | "diabetes chest/sob"
+  | "diabetes sores/infections"
+  | "diabetes fatigue"
+  | "diabetes weight change"
+  | "diabetes sexual function"
+  | "diabetes gi symptoms"
+  | "diabetes urinary symptoms"
+  | "medication refill need"
   | "accident details"
   | "accident response"
   | "previous injuries"
@@ -91,6 +113,7 @@ export type InterviewFactSummary = {
   symptomDetails: string[];
   redFlagsMentioned: string[];
   informationSummary: string;
+  handoffNeeds: string[];
 };
 
 export type ComplaintStatus = "active" | "pending" | "completed";
@@ -104,6 +127,7 @@ export type BriefSecondaryConcern = {
 
 export type ComplaintProgress = {
   complaint: string;
+  originalComplaint: string;
   complaintClass: ComplaintClass;
   protocolId: string;
   minQuestionCountTarget: number;
@@ -139,12 +163,14 @@ export type InterviewState = {
   activePatientAnswers: string[];
   activeCoveredTopics: ProtocolTopicKey[];
   activePatientFacts: InterviewFactSummary;
+  activeHandoffNeeds: string[];
   questionCountSoFar: number;
   totalQuestionCount: number;
   allQuestionsAsked: string[];
   patientAnswers: string[];
   coveredTopics: ProtocolTopicKey[];
   patientFacts: InterviewFactSummary;
+  handoffNeeds: string[];
   missingRequiredFields: ProtocolCheck[];
   missingRedFlags: ProtocolCheck[];
   missingVirtualExamFields: ProtocolCheck[];
@@ -163,6 +189,7 @@ export type InterviewState = {
   shouldSummarizeAfterRepeatedRedirection: boolean;
   earlyStopReason: string | null;
   unresolvedClarification: string | null;
+  complaintClarificationHint: string | null;
   deferredIntentHint: string | null;
   forceSummary: boolean;
   progress: InterviewProgress;

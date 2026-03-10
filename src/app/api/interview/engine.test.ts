@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { decideNextInterviewStep } from "./next-step";
 import { buildInterviewState } from "./state-builder";
 
 const patientProfile = {
@@ -13,7 +12,7 @@ const patientProfile = {
 } as const;
 
 describe("interview controller state", () => {
-  it("avoids re-targeting onset when the patient already provided it in an acute sore throat flow", () => {
+  it("captures duration/onset and associated symptoms when patient provides them in acute sore throat flow", () => {
     const state = buildInterviewState({
       chiefComplaint: "3 days of sore throat",
       patientProfile,
@@ -30,13 +29,8 @@ describe("interview controller state", () => {
       deferredIntentHint: null,
     });
 
-    const step = decideNextInterviewStep(state);
-
     expect(state.coveredTopics).toContain("duration/onset");
     expect(state.coveredTopics).toContain("associated symptoms");
-    expect(step.action).toBe("ask_target");
-    expect(step.target?.key).not.toBe("duration_onset");
-    expect(step.target?.key).not.toBe("associated_symptoms");
   });
 
   it("classifies a months-later MVA reassessment as late follow-up", () => {
@@ -61,32 +55,6 @@ describe("interview controller state", () => {
     expect(state.protocol.id).toBe("trauma-follow-up");
   });
 
-  it("suppresses first-visit accident reconstruction targets during late MVA follow-up", () => {
-    const state = buildInterviewState({
-      chiefComplaint: "motor vehicle accident follow up",
-      patientProfile,
-      transcript: [
-        { role: "assistant", content: "How have you been doing since the accident?" },
-        {
-          role: "patient",
-          content:
-            "It has been four months since the accident. My neck is improving but my lower back pain is still 6/10. I am still off work and doing physio twice a week.",
-        },
-      ],
-      formSummary: null,
-      patientBackground: "Four month follow-up after MVA.",
-      forceSummary: false,
-      deferredIntentHint: null,
-    });
-
-    const step = decideNextInterviewStep(state);
-
-    expect(step.action).toBe("ask_target");
-    expect(step.target?.key).not.toBe("accident_details");
-    expect(step.target?.key).not.toBe("accident_response");
-    expect(step.target?.key).not.toBe("previous_injuries");
-  });
-
   it("does not mark summary ready when acute required fields and red flags are still missing", () => {
     const state = buildInterviewState({
       chiefComplaint: "sore throat",
@@ -102,9 +70,174 @@ describe("interview controller state", () => {
     });
 
     expect(state.summaryReady).toBe(false);
+    expect(state.protocol.id).toBe("sore-throat-uri");
     expect(state.missingRequiredFields.length).toBeGreaterThan(0);
-    expect(state.missingRedFlags.length).toBeGreaterThan(0);
+    expect(state.missingRequiredFields.map((field) => field.key)).toContain("throat_red_flags_screen");
     expect(state.progress.approxTotalQuestions).toBeGreaterThan(state.progress.questionsAsked);
+  });
+
+  it("uses the sore throat protocol and tracks throat red-flag screen in missing fields", () => {
+    const state = buildInterviewState({
+      chiefComplaint: "sore throat",
+      patientProfile,
+      transcript: [
+        { role: "assistant", content: "Tell me about your sore throat." },
+        {
+          role: "patient",
+          content: "It started 2 days ago, is 6 out of 10, and I have congestion and a mild cough.",
+        },
+      ],
+      formSummary: null,
+      patientBackground: null,
+      forceSummary: false,
+      deferredIntentHint: null,
+    });
+
+    expect(state.protocol.id).toBe("sore-throat-uri");
+    expect(state.missingRequiredFields.map((f) => f.key)).toContain("throat_red_flags_screen");
+  });
+
+  it("keeps sore throat with cough and congestion as one compact URI complaint", () => {
+    const state = buildInterviewState({
+      chiefComplaint: "sore throat and cough",
+      patientProfile,
+      transcript: [
+        { role: "assistant", content: "Tell me about your sore throat and cough." },
+        {
+          role: "patient",
+          content:
+            "It started 3 days ago with mild sore throat, cough, and congestion, and I can drink liquids with no breathing trouble.",
+        },
+      ],
+      formSummary: null,
+      patientBackground: null,
+      forceSummary: false,
+      deferredIntentHint: null,
+    });
+
+    expect(state.complaints).toEqual(["sore throat and cough"]);
+    expect(state.pendingComplaints).toEqual([]);
+    expect(state.protocol.id).toBe("sore-throat-uri");
+  });
+
+  it("stops early for a straightforward sore throat once focused core history is covered", () => {
+    const state = buildInterviewState({
+      chiefComplaint: "sore throat",
+      patientProfile,
+      transcript: [
+        { role: "assistant", content: "Tell me about your sore throat." },
+        {
+          role: "patient",
+          content:
+            "It started 3 days ago, is 5 out of 10, with cough and congestion but no drooling, no trouble breathing, and no trouble swallowing liquids.",
+        },
+      ],
+      formSummary: null,
+      patientBackground: null,
+      forceSummary: false,
+      deferredIntentHint: null,
+    });
+
+    expect(state.protocol.id).toBe("sore-throat-uri");
+    expect(state.summaryReady).toBe(true);
+    expect(state.activeComplaintQuestionCount).toBeLessThanOrEqual(1);
+  });
+
+  it("keeps infectious context in missing fields when fever is present without URI symptoms", () => {
+    const state = buildInterviewState({
+      chiefComplaint: "sore throat",
+      patientProfile,
+      transcript: [
+        { role: "assistant", content: "Tell me about your sore throat." },
+        {
+          role: "patient",
+          content:
+            "It started 2 days ago, is 7 out of 10, with fever and painful swallowing, but no cough, no runny nose, no drooling, no trouble breathing, and no muffled voice.",
+        },
+      ],
+      formSummary: null,
+      patientBackground: null,
+      forceSummary: false,
+      deferredIntentHint: null,
+    });
+
+    expect(state.protocol.id).toBe("sore-throat-uri");
+    expect(state.missingRequiredFields.map((f) => f.key)).toContain("infectious_context");
+  });
+
+  it("stops early for a coherent viral URI story without reopening a cough narrative", () => {
+    const state = buildInterviewState({
+      chiefComplaint: "sore throat and cough",
+      patientProfile,
+      transcript: [
+        { role: "assistant", content: "Tell me about your sore throat and cough." },
+        {
+          role: "patient",
+          content:
+            "It started 3 days ago, is mild, with cough and congestion, and I can drink liquids with no drooling or breathing trouble.",
+        },
+      ],
+      formSummary: null,
+      patientBackground: null,
+      forceSummary: false,
+      deferredIntentHint: null,
+    });
+
+    expect(state.summaryReady).toBe(true);
+    expect(state.pendingComplaints).toEqual([]);
+  });
+
+  it("keeps mild viral sore throat short after one focused URI follow-up", () => {
+    const state = buildInterviewState({
+      chiefComplaint: "sore throat",
+      patientProfile,
+      transcript: [
+        { role: "assistant", content: "Tell me about your sore throat." },
+        {
+          role: "patient",
+          content:
+            "It started 3 days ago, is mild, and I have cough and congestion but no drooling, no trouble breathing, and I can drink liquids.",
+        },
+        {
+          role: "assistant",
+          content:
+            "Have you had any fever, sick contacts, or noticed white spots or swollen tonsils in your throat?",
+        },
+        {
+          role: "patient",
+          content: "No fever, no sick contacts, and I have not seen white spots.",
+        },
+      ],
+      formSummary: null,
+      patientBackground: null,
+      forceSummary: false,
+      deferredIntentHint: null,
+    });
+
+    expect(state.summaryReady).toBe(true);
+    expect(state.activeComplaintQuestionCount).toBeLessThanOrEqual(2);
+  });
+
+  it("still prioritizes rapid escalation for sore throat red flags", () => {
+    const state = buildInterviewState({
+      chiefComplaint: "sore throat",
+      patientProfile,
+      transcript: [
+        { role: "assistant", content: "Tell me about your sore throat." },
+        {
+          role: "patient",
+          content:
+            "It started today, is severe, and I have drooling with trouble breathing and trouble swallowing liquids.",
+        },
+      ],
+      formSummary: null,
+      patientBackground: null,
+      forceSummary: false,
+      deferredIntentHint: null,
+    });
+
+    expect(state.protocol.id).toBe("sore-throat-uri");
+    expect(state.activePatientFacts.redFlagsMentioned.length).toBeGreaterThan(0);
   });
 
   it("queues a mid-interview complaint and adds the +8 budget modifier without abandoning the active complaint", () => {
@@ -167,6 +300,53 @@ describe("interview controller state", () => {
     expect(state.pendingComplaints).toEqual([]);
     expect(state.newComplaintCount).toBe(0);
     expect(state.briefSecondaryConcerns.map((item) => item.complaint)).toContain("headache");
+  });
+
+  it("uses the abdominal pain protocol and prioritizes urgent abdominal screening early", () => {
+    const state = buildInterviewState({
+      chiefComplaint: "abdominal pain",
+      patientProfile,
+      transcript: [
+        { role: "assistant", content: "Tell me about the abdominal pain." },
+        {
+          role: "patient",
+          content: "It is right lower abdominal pain since yesterday, 7 out of 10, with some nausea.",
+        },
+      ],
+      formSummary: null,
+      patientBackground: null,
+      forceSummary: false,
+      deferredIntentHint: null,
+    });
+
+    expect(state.protocol.id).toBe("abdominal-pain");
+    expect(state.missingRequiredFields.map((f) => f.key)).toContain("abdominal_red_flags_screen");
+  });
+
+  it("does not require pregnancy context for a male abdominal pain history", () => {
+    const maleProfile = {
+      ...patientProfile,
+      sex: "male" as const,
+    };
+    const state = buildInterviewState({
+      chiefComplaint: "abdominal pain",
+      patientProfile: maleProfile,
+      transcript: [
+        { role: "assistant", content: "Tell me about the abdominal pain." },
+        {
+          role: "patient",
+          content:
+            "It started yesterday in the lower abdomen, 6 out of 10, with nausea, no urinary symptoms, no vomiting blood, no black stool, and resting helps.",
+        },
+      ],
+      formSummary: null,
+      patientBackground: null,
+      forceSummary: false,
+      deferredIntentHint: null,
+    });
+
+    expect(state.protocol.id).toBe("abdominal-pain");
+    expect(state.missingRequiredFields.map((field) => field.key)).not.toContain("pregnancy_context");
   });
 
   it("promotes a brief secondary concern into the full queue when the safety answer sounds concerning", () => {
@@ -320,6 +500,339 @@ describe("interview controller state", () => {
     expect(state.newComplaintCount).toBe(1);
   });
 
+  it("uses a diabetes-specific follow-up protocol instead of generic acute targets", () => {
+    const state = buildInterviewState({
+      chiefComplaint: "type 2 diabetes follow-up",
+      patientProfile,
+      transcript: [
+        {
+          role: "assistant",
+          content: "Tell me how your diabetes has been going lately.",
+        },
+        {
+          role: "patient",
+          content: "I was diagnosed 2 years ago, I take metformin regularly, and my A1c was 5.7 last month.",
+        },
+      ],
+      formSummary: null,
+      patientBackground: null,
+      forceSummary: false,
+      deferredIntentHint: null,
+    });
+
+    expect(state.protocol.id).toBe("diabetes-follow-up");
+    expect(state.missingRequiredFields.map((field) => field.key)).not.toContain("triggers");
+    expect(state.missingRequiredFields.map((field) => field.key)).not.toContain("relieving_factors");
+    expect(state.missingRequiredFields.map((field) => field.key)).toContain("diabetes_red_flags_screen");
+  });
+
+  it("routes DM2 f/u directly into the diabetes follow-up protocol", () => {
+    const state = buildInterviewState({
+      chiefComplaint: "DM2 f/u",
+      patientProfile,
+      transcript: [],
+      formSummary: null,
+      patientBackground: null,
+      forceSummary: false,
+      deferredIntentHint: null,
+    });
+
+    expect(state.activeComplaint).toBe("type 2 diabetes follow-up");
+    expect(state.protocol.id).toBe("diabetes-follow-up");
+    expect(state.complaintClarificationHint).toBeNull();
+    expect(state.missingRequiredFields.map((f) => f.key)).toContain("open_narrative");
+  });
+
+  it("routes T2DM follow-up directly into the diabetes follow-up protocol", () => {
+    const state = buildInterviewState({
+      chiefComplaint: "T2DM follow-up",
+      patientProfile,
+      transcript: [],
+      formSummary: null,
+      patientBackground: null,
+      forceSummary: false,
+      deferredIntentHint: null,
+    });
+
+    expect(state.activeComplaint).toBe("type 2 diabetes follow-up");
+    expect(state.protocol.id).toBe("diabetes-follow-up");
+    expect(state.complaintClarificationHint).toBeNull();
+  });
+
+  it("treats spelled-out diabetes duration as diagnosis timeline coverage", () => {
+    const state = buildInterviewState({
+      chiefComplaint: "type 2 diabetes follow-up",
+      patientProfile,
+      transcript: [
+        { role: "assistant", content: "Tell me how your diabetes has been going lately." },
+        {
+          role: "patient",
+          content:
+            "Overall it has been well controlled. I was diagnosed about five years ago, take metformin regularly, and my A1C was 5.7.",
+        },
+      ],
+      formSummary: null,
+      patientBackground: null,
+      forceSummary: false,
+      deferredIntentHint: null,
+    });
+
+    expect(state.activeCoveredTopics).toContain("duration/onset");
+    expect(state.missingRequiredFields.map((field) => field.key)).not.toContain("duration_onset");
+  });
+
+  it("treats season-year diabetes diagnosis as timeline coverage", () => {
+    const state = buildInterviewState({
+      chiefComplaint: "type 2 diabetes follow-up",
+      patientProfile,
+      transcript: [
+        { role: "assistant", content: "When were you first diagnosed with type 2 diabetes?" },
+        { role: "patient", content: "I think it was summer 2021." },
+      ],
+      formSummary: null,
+      patientBackground: null,
+      forceSummary: false,
+      deferredIntentHint: null,
+    });
+
+    expect(state.activeCoveredTopics).toContain("duration/onset");
+    expect(state.missingRequiredFields.map((field) => field.key)).not.toContain("duration_onset");
+  });
+
+  it("treats month-year diabetes diagnosis as timeline coverage", () => {
+    const state = buildInterviewState({
+      chiefComplaint: "type 2 diabetes follow-up",
+      patientProfile,
+      transcript: [
+        { role: "assistant", content: "When were you first diagnosed with type 2 diabetes?" },
+        { role: "patient", content: "June 2021." },
+      ],
+      formSummary: null,
+      patientBackground: null,
+      forceSummary: false,
+      deferredIntentHint: null,
+    });
+
+    expect(state.activeCoveredTopics).toContain("duration/onset");
+    expect(state.missingRequiredFields.map((field) => field.key)).not.toContain("duration_onset");
+  });
+
+  it("stops early for stable diabetes follow-up once focused control and red-flag history are covered", () => {
+    const state = buildInterviewState({
+      chiefComplaint: "type 2 diabetes follow-up",
+      patientProfile,
+      transcript: [
+        {
+          role: "assistant",
+          content: "Tell me how your diabetes has been going lately.",
+        },
+        {
+          role: "patient",
+          content:
+            "I was diagnosed 2 years ago, take metformin regularly, my A1c was 5.7 last month, and I have had no low blood sugar, no increased thirst, no vomiting, no confusion, and no foot wounds.",
+        },
+      ],
+      formSummary: null,
+      patientBackground: null,
+      forceSummary: false,
+      deferredIntentHint: null,
+    });
+
+    expect(state.protocol.id).toBe("diabetes-follow-up");
+    expect(state.summaryReady).toBe(true);
+    expect(state.activeComplaintQuestionCount).toBeLessThanOrEqual(1);
+  });
+
+  it("summarizes stable diabetes very early after a rich first answer for DM2 follow-up", () => {
+    const state = buildInterviewState({
+      chiefComplaint: "DM2 f/u",
+      patientProfile,
+      transcript: [
+        {
+          role: "assistant",
+          content:
+            "Can you tell me how your diabetes has been going since your last check, including any concerns or changes you've noticed?",
+        },
+        {
+          role: "patient",
+          content:
+            "My diabetes has been overall well controlled for 5 years. My last A1C was 5.9 two months ago. I take metformin 1000 mg twice a day regularly. I check my blood sugar once or twice a week and fasting is usually 5.5 to 6. I have no low blood sugar, no thirst, no vomiting, no confusion, and no foot wounds.",
+        },
+      ],
+      formSummary: null,
+      patientBackground: null,
+      forceSummary: false,
+      deferredIntentHint: null,
+    });
+
+    expect(state.protocol.id).toBe("diabetes-follow-up");
+    expect(state.summaryReady).toBe(true);
+    expect(state.activeComplaintQuestionCount).toBeLessThanOrEqual(1);
+  });
+
+  it("does not keep targeting diagnosis timeline after natural-language diabetes history answers", () => {
+    const state = buildInterviewState({
+      chiefComplaint: "type 2 diabetes follow-up",
+      patientProfile,
+      transcript: [
+        {
+          role: "assistant",
+          content: "Can you tell me how things have been going with your type 2 diabetes since your last check-in?",
+        },
+        {
+          role: "patient",
+          content:
+            "Overall, it has been well controlled. My last blood work was about two months ago, and my A1C was about 5.7. I am on metformin 1000 mg twice a day, which I take regularly. My fasting blood sugar ranges from 5.5 to 6.5. Overall, I have been doing well. I need a refill on my metformin.",
+        },
+        {
+          role: "assistant",
+          content: "When were you first diagnosed with type 2 diabetes?",
+        },
+        {
+          role: "patient",
+          content:
+            "I was diagnosed about five years ago. Initially, my blood sugar was high, but it has come down, and in the last few years it has been really good. I was wondering if I should get another blood test.",
+        },
+        {
+          role: "assistant",
+          content:
+            "Thanks-you mentioned it was about five years ago; do you remember roughly what year you were first diagnosed with type 2 diabetes?",
+        },
+        { role: "patient", content: "I think it was summer 2021." },
+        {
+          role: "assistant",
+          content:
+            "Thanks-just to confirm, what month and year were you diagnosed with type 2 diabetes?",
+        },
+        { role: "patient", content: "June 2021" },
+      ],
+      formSummary: null,
+      patientBackground: null,
+      forceSummary: false,
+      deferredIntentHint: null,
+    });
+
+    expect(state.activeCoveredTopics).toContain("duration/onset");
+    expect(state.missingRequiredFields.map((f) => f.key)).not.toContain("duration_onset");
+  });
+
+  it("captures refill need as a handoff item without prolonging stable diabetes follow-up", () => {
+    const state = buildInterviewState({
+      chiefComplaint: "T2DM follow-up",
+      patientProfile,
+      transcript: [
+        {
+          role: "assistant",
+          content:
+            "Can you tell me how your diabetes has been going since your last check, including any concerns or changes you've noticed?",
+        },
+        {
+          role: "patient",
+          content:
+            "I was diagnosed about 5 years ago. My A1C was 5.9 two months ago. I take metformin 1000 mg twice a day regularly. I check fasting sugars once or twice a week and they are around 5.5 to 6. I have no low blood sugar, no increased thirst, no vomiting, and no foot wounds. I am running out of metformin.",
+        },
+      ],
+      formSummary: null,
+      patientBackground: null,
+      forceSummary: false,
+      deferredIntentHint: null,
+    });
+
+    expect(state.protocol.id).toBe("diabetes-follow-up");
+    expect(state.activeHandoffNeeds.join(" ").toLowerCase()).toContain("metformin");
+    expect(state.activePatientFacts.informationSummary).toContain("running out of metformin");
+    expect(state.summaryReady).toBe(true);
+  });
+
+  it("does not recycle repeated negative diabetes domains once they were already answered", () => {
+    const state = buildInterviewState({
+      chiefComplaint: "type 2 diabetes follow-up",
+      patientProfile,
+      transcript: [
+        { role: "assistant", content: "Tell me how your diabetes has been going lately." },
+        {
+          role: "patient",
+          content:
+            "I was diagnosed 5 years ago, take metformin regularly, my A1C was 5.9 two months ago, and fasting sugars are 5.5 to 6.",
+        },
+        {
+          role: "assistant",
+          content:
+            "Have you noticed any numbness or tingling in your feet, any vision changes, or any slow-healing sores or infections?",
+        },
+        {
+          role: "patient",
+          content: "No numbness, no vision changes, and no sores or infections.",
+        },
+      ],
+      formSummary: null,
+      patientBackground: null,
+      forceSummary: false,
+      deferredIntentHint: null,
+    });
+
+    expect(state.activeCoveredTopics).toContain("diabetes neuropathy");
+    expect(state.activeCoveredTopics).toContain("diabetes vision");
+    expect(state.activeCoveredTopics).toContain("diabetes sores/infections");
+    expect(state.summaryReady).toBe(true);
+  });
+
+  it("normalizes mid-interview diabetes shorthand concerns into the diabetes follow-up path", () => {
+    const state = buildInterviewState({
+      chiefComplaint: "sore throat",
+      patientProfile,
+      transcript: [
+        { role: "assistant", content: "Tell me about your sore throat." },
+        {
+          role: "patient",
+          content: "It started yesterday and hurts to swallow. Also DM2 f/u and I need my sugars reviewed.",
+        },
+      ],
+      formSummary: null,
+      patientBackground: null,
+      forceSummary: false,
+      deferredIntentHint: null,
+    });
+
+    expect(state.pendingComplaints).toContain("blood sugar concern");
+  });
+
+  it("uses minimal-handoff protocol and sets clarification hint for unclear shorthand", () => {
+    const state = buildInterviewState({
+      chiefComplaint: "xyz f/u",
+      patientProfile,
+      transcript: [],
+      formSummary: null,
+      patientBackground: null,
+      forceSummary: false,
+      deferredIntentHint: null,
+    });
+
+    expect(state.protocol.id).toBe("minimal-handoff");
+    expect(state.complaintClarificationHint).toContain("xyz f/u");
+  });
+
+  it("uses minimal-handoff protocol after one unclear shorthand clarification", () => {
+    const state = buildInterviewState({
+      chiefComplaint: "xyz f/u",
+      patientProfile,
+      transcript: [
+        {
+          role: "assistant",
+          content:
+            'I want to make sure I understood you correctly. Could you clarify what "xyz f/u" refers to so I can focus on the right concern?',
+        },
+        { role: "patient", content: "I'm not sure." },
+      ],
+      formSummary: null,
+      patientBackground: null,
+      forceSummary: false,
+      deferredIntentHint: null,
+    });
+
+    expect(state.protocol.id).toBe("minimal-handoff");
+  });
+
   it("queues multiple new concerns in order of appearance", () => {
     const state = buildInterviewState({
       chiefComplaint: "sore throat",
@@ -350,6 +863,39 @@ describe("interview controller state", () => {
     expect(state.activeComplaint).toBe("sore throat");
     expect(state.pendingComplaints).toEqual(["blood sugar concern", "blood pressure concern"]);
     expect(state.newComplaintCount).toBe(2);
+  });
+
+  it("branches cough separately only when it appears later as a distinct new concern", () => {
+    const state = buildInterviewState({
+      chiefComplaint: "sore throat",
+      patientProfile,
+      transcript: [
+        { role: "assistant", content: "Tell me about your sore throat." },
+        {
+          role: "patient",
+          content:
+            "It started 2 days ago, is moderate, and I have no trouble swallowing liquids or breathing.",
+        },
+        {
+          role: "assistant",
+          content: "Any cough, congestion, or runny nose with it?",
+        },
+        {
+          role: "patient",
+          content:
+            "No URI symptoms with the sore throat. Also now having a separate cough for 3 weeks.",
+        },
+      ],
+      formSummary: null,
+      patientBackground: null,
+      forceSummary: false,
+      deferredIntentHint: null,
+    });
+
+    expect(state.complaints).toContain("cough");
+    expect(state.newComplaintCount).toBeGreaterThanOrEqual(1);
+    expect(state.activeComplaint).toBe("cough");
+    expect(state.missingRequiredFields.length).toBeGreaterThan(0);
   });
 
   it("does not synthesize chest pain from a negated breast-pain mention when another concern is introduced", () => {
@@ -400,11 +946,7 @@ describe("interview controller state", () => {
       deferredIntentHint: null,
     });
 
-    const step = decideNextInterviewStep(state);
-
     expect(state.unresolvedClarification).toContain("didn't mention");
-    expect(step.action).toBe("clarify");
-    expect(step.target?.key).toBe("clarify_last_response");
   });
 
   it("treats repeated denial of the active complaint as a clarification and then early-stop signal", () => {
@@ -428,7 +970,6 @@ describe("interview controller state", () => {
     });
 
     expect(clarificationState.unresolvedClarification).toContain("denying abdominal pain");
-    expect(decideNextInterviewStep(clarificationState).action).toBe("clarify");
 
     const summaryState = buildInterviewState({
       chiefComplaint: "abdominal pain",
@@ -459,7 +1000,6 @@ describe("interview controller state", () => {
     });
 
     expect(summaryState.shouldEndEarlyForUnclearHistory).toBe(true);
-    expect(decideNextInterviewStep(summaryState).action).toBe("summarize");
   });
 
   it("ends early when clarification has already been attempted and history confidence stays unsafe", () => {
@@ -492,12 +1032,9 @@ describe("interview controller state", () => {
       deferredIntentHint: null,
     });
 
-    const step = decideNextInterviewStep(state);
-
     expect(state.historyConfidence).toBe("unsafe_to_continue");
     expect(state.clarificationAttemptCount).toBeGreaterThanOrEqual(1);
     expect(state.shouldEndEarlyForUnclearHistory).toBe(true);
-    expect(step.action).toBe("summarize");
   });
 
   it("summarizes instead of drilling when the patient repeatedly redirects to a queued concern", () => {
@@ -532,12 +1069,9 @@ describe("interview controller state", () => {
       deferredIntentHint: null,
     });
 
-    const step = decideNextInterviewStep(state);
-
     expect(state.pendingComplaints).toContain("liver function concern");
     expect(state.repeatedPendingConcernRedirectCount).toBeGreaterThanOrEqual(2);
     expect(state.shouldSummarizeAfterRepeatedRedirection).toBe(true);
-    expect(step.action).toBe("summarize");
   });
 
   it("allows straightforward complaints to complete without hitting a numeric question floor", () => {
@@ -628,14 +1162,59 @@ describe("interview controller state", () => {
       forceSummary: false,
       deferredIntentHint: null,
     });
-    const step = decideNextInterviewStep(state);
-
     expect(state.completedComplaints).toContain("right knee lump");
     expect(state.activeComplaint).toBe("right elbow pain");
     expect(state.activeComplaintQuestionCount).toBe(0);
     expect(state.activeCoveredTopics).not.toContain("severity");
     expect(state.summaryReady).toBe(false);
-    expect(step.action).toBe("ask_target");
-    expect(step.target?.key).toBe("open_narrative");
+    expect(state.missingRequiredFields.length).toBeGreaterThan(0);
+  });
+
+  it("tracks duration_onset and combinable fields in missing required fields for knee pain", () => {
+    const state = buildInterviewState({
+      chiefComplaint: "2 days of right knee pain",
+      patientProfile,
+      transcript: [
+        { role: "assistant", content: "Tell me about the knee pain you have been having." },
+        { role: "patient", content: "I have pain in my right knee." },
+      ],
+      formSummary: null,
+      patientBackground: null,
+      forceSummary: false,
+      deferredIntentHint: null,
+    });
+
+    expect(state.missingRequiredFields.map((f) => f.key)).toContain("duration_onset");
+    const durationIdx = state.missingRequiredFields.findIndex((f) => f.key === "duration_onset");
+    expect(durationIdx).toBeGreaterThanOrEqual(0);
+  });
+
+  it("marks multiple topics covered when patient answers a combined question", () => {
+    const state = buildInterviewState({
+      chiefComplaint: "right elbow pain",
+      patientProfile,
+      transcript: [
+        { role: "assistant", content: "Tell me about your elbow pain." },
+        { role: "patient", content: "It is in my right elbow." },
+        {
+          role: "assistant",
+          content:
+            "How long have you had the pain, how severe is it, and what makes it worse?",
+        },
+        {
+          role: "patient",
+          content:
+            "About 3 days, it is moderate maybe 5 out of 10, and bending or lifting makes it worse.",
+        },
+      ],
+      formSummary: null,
+      patientBackground: null,
+      forceSummary: false,
+      deferredIntentHint: null,
+    });
+
+    expect(state.activeCoveredTopics).toContain("duration/onset");
+    expect(state.activeCoveredTopics).toContain("severity");
+    expect(state.activeCoveredTopics).toContain("triggers");
   });
 });

@@ -33,6 +33,13 @@ AI-assisted medical history taking built with Next.js App Router. Clinicians cap
 2. Answer each AI-generated follow-up question in the chat panel. The assistant keeps going until it has enough information for a safe summary.
 3. Review the structured positives, negatives, investigations, assessment, plan, and paragraph summary in the findings panel. Use reset to begin a new intake.
 
+### Dev Interview Harness
+To test guided interviews locally without invitation/OTP verification:
+1. Add `ENABLE_DEV_INTERVIEW_HARNESS=true` to `.env.local`
+2. Visit `http://localhost:3000/dev/interview`
+3. Optionally set physician slug; leave empty to use first physician in DB
+4. Click "Launch guided interview" — session will be created and you'll be redirected to the normal intake flow. Save/completion works as usual.
+
 ### Testing & linting
 ```bash
 npm run test   # vitest run (uses mock mode automatically)

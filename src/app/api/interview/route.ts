@@ -21,135 +21,125 @@ import {
   applySensitivePhotoSuppressionToTurn,
   getSensitivePhotoContext,
 } from "./prompt-helpers";
-import { applyMskSecondQuestionOverride } from "./msk-second-question";
 import { buildPrompt as buildInterviewPrompt } from "./prompt-builder";
-import { decideNextInterviewStep, type NextInterviewStep } from "./next-step";
 import { buildInterviewState } from "./state-builder";
+
+const APPROX_TOTAL_QUESTIONS_MIN = 1;
+const APPROX_TOTAL_QUESTIONS_MAX = 50;
+
+function isLlmProgressValid(
+  p: { questionsAsked: number; approxTotalQuestions: number } | undefined,
+): p is { questionsAsked: number; approxTotalQuestions: number } {
+  if (!p || typeof p.questionsAsked !== "number" || typeof p.approxTotalQuestions !== "number") {
+    return false;
+  }
+  if (p.questionsAsked < 0 || !Number.isInteger(p.questionsAsked)) {
+    return false;
+  }
+  if (p.approxTotalQuestions < p.questionsAsked) {
+    return false;
+  }
+  if (
+    p.approxTotalQuestions < APPROX_TOTAL_QUESTIONS_MIN ||
+    p.approxTotalQuestions > APPROX_TOTAL_QUESTIONS_MAX
+  ) {
+    return false;
+  }
+  return true;
+}
 
 function attachProgressToTurn(
   turn: InterviewResponse,
-  progress: { questionsAsked: number; approxTotalQuestions: number },
+  serverProgress: { questionsAsked: number; approxTotalQuestions: number },
 ): InterviewResponse {
-  const computedQuestionsAsked =
-    turn.type === "question" ? progress.questionsAsked + 1 : progress.questionsAsked;
-  const questionsAsked = Math.max(
-    computedQuestionsAsked,
-    turn.progress?.questionsAsked ?? 0,
-  );
+  const llmProgress = turn.progress;
+  const useLlmProgress = isLlmProgressValid(llmProgress);
+
+  let questionsAsked: number;
+  let approxTotalQuestions: number;
+
+  if (useLlmProgress) {
+    if (turn.type === "question") {
+      questionsAsked = llmProgress.questionsAsked + 1;
+      approxTotalQuestions = llmProgress.approxTotalQuestions;
+    } else {
+      questionsAsked = llmProgress.questionsAsked;
+      approxTotalQuestions = llmProgress.approxTotalQuestions;
+    }
+  } else {
+    questionsAsked =
+      turn.type === "question"
+        ? serverProgress.questionsAsked + 1
+        : serverProgress.questionsAsked;
+    approxTotalQuestions = Math.max(
+      serverProgress.approxTotalQuestions,
+      questionsAsked,
+    );
+  }
 
   return {
     ...turn,
     progress: {
       questionsAsked,
-      approxTotalQuestions: Math.max(
-        progress.approxTotalQuestions,
-        turn.progress?.approxTotalQuestions ?? 0,
-        questionsAsked,
-      ),
+      approxTotalQuestions,
     },
   };
 }
 
-function buildFallbackQuestion(nextStep: NextInterviewStep, complaint: string): InterviewResponse {
-  const promptHint = nextStep.target?.promptHint?.trim();
-  const question =
-    nextStep.action === "clarify"
-      ? `I want to make sure I understood you correctly. Could you clarify ${promptHint || "what you meant"}?`
-      : nextStep.target?.key === "open_narrative"
-        ? `Can you tell me more about your ${complaint}?`
-        : promptHint
-          ? `${promptHint.endsWith("?") ? promptHint : `${promptHint}?`}`
-          : `Can you tell me more about your ${complaint}?`;
-
+function validateInterviewTurnFormat(turn: InterviewResponse): InterviewResponse {
+  if (turn.type === "question") {
+    return {
+      type: "question",
+      question: typeof turn.question === "string" && turn.question.trim() ? turn.question.trim() : "Can you tell me more about your concern?",
+      rationale: typeof turn.rationale === "string" ? turn.rationale : "Gather patient history.",
+      requiresPhotoUpload: turn.requiresPhotoUpload === true,
+      requiresLocationMarking: turn.requiresLocationMarking === true,
+      deferredIntentHint: turn.deferredIntentHint,
+      ...(turn.progress && { progress: turn.progress }),
+    };
+  }
+  if (turn.type === "summary") {
+    return turn;
+  }
   return {
     type: "question",
-    question,
-    rationale:
-      nextStep.target?.rationale ??
-      (nextStep.action === "clarify"
-        ? "Clarify the patient's last response before moving on."
-        : "Gather the next required history item for the active complaint."),
+    question: "Can you tell me more about your concern?",
+    rationale: "Fallback after invalid response format.",
     requiresPhotoUpload: false,
   };
 }
 
-function buildFallbackSummary(
-  nextStep: NextInterviewStep,
+function buildMockTurn(
   chiefComplaint: string,
+  forceSummary: boolean,
   state: ReturnType<typeof buildInterviewState>,
 ): InterviewResponse {
-  const factSummary = state.activePatientFacts.informationSummary || "History remains limited.";
-  const summary =
-    nextStep.reason.includes("safe threshold") || state.shouldEndEarlyForUnclearHistory
-      ? `Interview ended early for physician follow-up while discussing ${state.activeComplaint}. ${factSummary}`
-      : `History gathered for ${chiefComplaint}. ${factSummary}`;
-
+  if (forceSummary) {
+    return {
+      type: "summary",
+      positives: [...mockHistory.positives, ...state.activeHandoffNeeds],
+      negatives: mockHistory.negatives,
+      physicalFindings: mockHistory.physicalFindings || [],
+      summary: `${mockHistory.summary} Active complaint: ${state.activeComplaint}.${state.activeHandoffNeeds.length > 0 ? ` Handoff needs: ${state.activeHandoffNeeds.join("; ")}` : ""}`,
+      investigations: mockHistory.investigations,
+      assessment: mockHistory.assessment,
+      plan: [...mockHistory.plan, ...state.activeHandoffNeeds.map((need) => `Address handoff need: ${need}`)],
+    };
+  }
   return {
-    type: "summary",
-    positives: [state.activeComplaint],
-    negatives: [state.unresolvedClarification ? "History remained partially unclear" : "No additional urgent details established"],
-    physicalFindings: [],
-    summary,
-    investigations: [],
-    assessment:
-      nextStep.reason.includes("safe threshold") || state.shouldEndEarlyForUnclearHistory
-        ? "History confidence was insufficient for continued routine questioning; physician follow-up is needed."
-        : "History appears sufficient for physician handoff based on the established interview state.",
-    plan: [
-      nextStep.reason.includes("safe threshold") || state.shouldEndEarlyForUnclearHistory
-        ? "Review history directly with the physician because clarification remained unsafe to continue."
-        : "Continue with physician review and follow-up planning.",
-    ],
-    interviewEndedEarly: nextStep.reason.includes("safe threshold") || state.shouldEndEarlyForUnclearHistory,
+    type: "question",
+    question: `Can you tell me more about your ${chiefComplaint || "concern"}?`,
+    rationale: "Open narrative to begin history-taking.",
+    requiresPhotoUpload: false,
   };
 }
 
-function enforceControllerAction(
-  turn: InterviewResponse,
-  nextStep: NextInterviewStep,
-  chiefComplaint: string,
-  state: ReturnType<typeof buildInterviewState>,
-): InterviewResponse {
-  const expectsSummary = nextStep.action === "summarize" || nextStep.action === "escalate";
-  if (expectsSummary) {
-    return turn.type === "summary" ? turn : buildFallbackSummary(nextStep, chiefComplaint, state);
-  }
-
-  return turn.type === "question" ? turn : buildFallbackQuestion(nextStep, state.activeComplaint);
-}
-
-function buildMockTurnFromNextStep(
-  nextStep: NextInterviewStep,
-  chiefComplaint: string,
-  state: ReturnType<typeof buildInterviewState>,
-): InterviewResponse {
-  if (nextStep.action === "summarize" || nextStep.action === "escalate") {
-    const fallbackSummary = buildFallbackSummary(nextStep, chiefComplaint, state);
-    return {
-      type: "summary",
-      positives: mockHistory.positives,
-      negatives: mockHistory.negatives,
-      physicalFindings: mockHistory.physicalFindings || [],
-      summary: `${mockHistory.summary} Active complaint: ${state.activeComplaint}.`,
-      investigations: mockHistory.investigations,
-      assessment: mockHistory.assessment,
-      plan: mockHistory.plan,
-      interviewEndedEarly: fallbackSummary.type === "summary" ? fallbackSummary.interviewEndedEarly : undefined,
-    };
-  }
-
-  return buildFallbackQuestion(nextStep, state.activeComplaint);
-}
-
 const systemInstruction = `
-You are a Physician Assistant phrasing one backend-selected interview step.
+You are a Physician Assistant conducting a medical history. You decide what to ask and when to summarize.
 
 NON-NEGOTIABLE SAFETY RULES:
 - Do not provide treatment recommendations, medication instructions, dosing advice, or diagnosis to the patient.
-- Stay within the backend-selected action and complaint focus.
 - If the patient corrects or redirects the history, acknowledge it briefly and adapt naturally.
-- Ask only one concise question when the requested output type is "question".
-- Do not repeat already-answered questions unless the backend-selected step is clarification.
 - Do not introduce unrelated complaints on your own.
 - If a photo was already reviewed, do not ask for another unless the prompt explicitly requires it.
 - Return valid JSON only in the requested schema.
@@ -157,6 +147,8 @@ NON-NEGOTIABLE SAFETY RULES:
 
 const shouldMock = () =>
   process.env.MOCK_AI === "true" || process.env.NODE_ENV === "test";
+
+export { attachProgressToTurn };
 
 export async function POST(request: Request) {
   const requestId = getRequestId(request.headers);
@@ -278,19 +270,11 @@ export async function POST(request: Request) {
     forceSummary,
     deferredIntentHint: deferredIntentHint ?? null,
   });
-  const nextStep = decideNextInterviewStep(interviewState);
 
   if (shouldMock()) {
-    const mockTurn = buildMockTurnFromNextStep(nextStep, chiefComplaint, interviewState);
-    const adjustedMockTurn = applyMskSecondQuestionOverride({
-      turn: mockTurn,
-      transcript,
-      chiefComplaint,
-      forceSummary,
-      languageCode,
-    });
+    const mockTurn = buildMockTurn(chiefComplaint, forceSummary, interviewState);
     const res = NextResponse.json(
-      attachProgressToTurn(adjustedMockTurn, interviewState.progress),
+      attachProgressToTurn(mockTurn, interviewState.progress),
     );
     logRequestMeta("/api/interview", requestId, status, Date.now() - started);
     return res;
@@ -451,7 +435,6 @@ export async function POST(request: Request) {
       deferredIntentHint ?? null,
       sensitivePhotoContext,
       interviewState,
-      nextStep,
     );
 
     const languageInstruction = `LANGUAGE: For all patient-facing questions and messages (the conversation), respond ONLY in ${languageName}. Do NOT include English translations or mixed language unless ${languageName} is English. If you cannot reliably produce ${languageName}, fall back to English. Keep summaries/assessment/plan in English for the clinician. Preserve medical accuracy.`;
@@ -467,20 +450,9 @@ export async function POST(request: Request) {
 
     const textPayload = completion.choices?.[0]?.message?.content?.trim() || "";
 
-    const turn = enforceControllerAction(
-      enforceAssistiveLanguageOnInterviewTurn(parseInterviewTurn(textPayload)) as InterviewResponse,
-      nextStep,
-      chiefComplaint,
-      interviewState,
-    );
-    const adjustedTurn = applyMskSecondQuestionOverride({
-      turn: turn as InterviewResponse,
-      transcript,
-      chiefComplaint,
-      forceSummary,
-      languageCode,
-    });
-    const finalTurn = applySensitivePhotoSuppressionToTurn(adjustedTurn, sensitivePhotoContext);
+    const parsedTurn = enforceAssistiveLanguageOnInterviewTurn(parseInterviewTurn(textPayload)) as InterviewResponse;
+    const validatedTurn = validateInterviewTurnFormat(parsedTurn);
+    const finalTurn = applySensitivePhotoSuppressionToTurn(validatedTurn, sensitivePhotoContext);
     const turnWithProgress = attachProgressToTurn(finalTurn, interviewState.progress);
 
     const res = NextResponse.json(turnWithProgress);

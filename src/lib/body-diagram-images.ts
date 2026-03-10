@@ -2,6 +2,34 @@ import type { BodyPart } from "@/lib/body-parts";
 
 export type BodyDiagramSex = "female" | "male";
 
+/**
+ * Returns a prompt-friendly description of available body part diagrams for the LLM.
+ * Used in the interview prompt so the LLM knows diagrams exist and can ask patients to mark pain location.
+ */
+export function getBodyDiagramPromptSection(sex?: BodyDiagramSex): string {
+  const chestDiagram =
+    sex === "male"
+      ? "/Images/Male Breast.png"
+      : sex === "female"
+        ? "/Images/Female Breast.png"
+        : "/Images/trunk front .png (or Male/Female Breast.png based on patient sex)";
+
+  return `BODY PART DIAGRAMS (available for patient to mark pain location):
+- Knee: /Images/knee.png
+- Lower leg: /Images/lower leg.png
+- Ankle, foot: /Images/ankle.png, /Images/foot.png, /Images/Sole.png
+- Hip, upper leg: /Images/Hip Upper Leg.png
+- Shoulder: /Images/Shoulder.png
+- Elbow, forearm: /Images/Forearm Elbow.png
+- Hand, wrist: /Images/Hand Wrist.png
+- Neck, head, face: /Images/Head Face Neck.png
+- Back (thoracic/lumbar): /Images/Thoracic Lumbar Spine.png
+- Chest: ${chestDiagram}
+- Abdomen: /Images/trunk front .png
+
+You may ask the patient to mark their pain location on the relevant diagram when clinically appropriate. When you do, your question should mention the diagram/photo and ask them to mark where it hurts. Set "requiresLocationMarking": true when the question asks for diagram marking.`;
+}
+
 export function getBodyDiagramImage(
   bodyPart: BodyPart,
   side?: "left" | "right",

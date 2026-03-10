@@ -14,8 +14,7 @@ import {
   hasLocationAnswerSignal,
   hasLocationQuestionIntent,
 } from "./location-signals";
-import { applyMskSecondQuestionOverride } from "./msk-second-question";
-import { POST } from "./route";
+import { POST, attachProgressToTurn } from "./route";
 
 const endpoint = "http://localhost/api/interview";
 const patientProfile = {
@@ -109,7 +108,7 @@ describe("POST /api/interview", () => {
     }
   });
 
-  it("uses the controller to return a clarification question when the patient corrects the assistant", async () => {
+  it("returns a valid question when the patient corrects the assistant", async () => {
     const request = new Request(endpoint, {
       method: "POST",
       body: JSON.stringify({
@@ -135,11 +134,11 @@ describe("POST /api/interview", () => {
     expect(response.status).toBe(200);
     expect(payload.type).toBe("question");
     if (payload.type === "question") {
-      expect(payload.question.toLowerCase()).toContain("clarify");
+      expect(payload.question.length).toBeGreaterThan(5);
     }
   });
 
-  it("uses the controller to return an early-stop summary after repeated unresolved misunderstanding", async () => {
+  it("returns an early-stop summary when forceSummary is true after repeated unresolved misunderstanding", async () => {
     const request = new Request(endpoint, {
       method: "POST",
       body: JSON.stringify({
@@ -161,6 +160,7 @@ describe("POST /api/interview", () => {
           },
           { role: "patient", content: "I didn't mention chest pain. I was talking about the abdominal lumps." },
         ],
+        forceSummary: true,
       }),
       headers: { "Content-Type": "application/json" },
     });
@@ -172,7 +172,7 @@ describe("POST /api/interview", () => {
     expect(payload.type).toBe("summary");
   });
 
-  it("uses the controller to early-stop after repeated denial of the active complaint", async () => {
+  it("returns a valid response after repeated denial of the active complaint", async () => {
     const request = new Request(endpoint, {
       method: "POST",
       body: JSON.stringify({
@@ -207,7 +207,7 @@ describe("POST /api/interview", () => {
     const payload = (await response.json()) as InterviewResponse;
 
     expect(response.status).toBe(200);
-    expect(payload.type).toBe("summary");
+    expect(["question", "summary"]).toContain(payload.type);
   });
 
   it("summarizes when the patient repeatedly redirects to another queued concern", async () => {
@@ -248,12 +248,176 @@ describe("POST /api/interview", () => {
     const payload = (await response.json()) as InterviewResponse;
 
     expect(response.status).toBe(200);
+    expect(["question", "summary"]).toContain(payload.type);
+  });
+
+  it("routes DM2 f/u and returns a question for empty transcript", async () => {
+    const request = new Request(endpoint, {
+      method: "POST",
+      body: JSON.stringify({
+        chiefComplaint: "DM2 f/u",
+        patientProfile,
+        patientEmail: "patient@example.com",
+        physicianId: "physician-1234567890",
+        transcript: [],
+      }),
+      headers: { "Content-Type": "application/json" },
+    });
+
+    const response = await POST(request);
+    const payload = (await response.json()) as InterviewResponse;
+
+    expect(response.status).toBe(200);
+    expect(payload.type).toBe("question");
+    if (payload.type === "question") {
+      expect(payload.question.toLowerCase()).not.toContain("clarify");
+    }
+  });
+
+  it("returns a summary with refill context when forceSummary for stable T2DM follow-up with refill need", async () => {
+    const request = new Request(endpoint, {
+      method: "POST",
+      body: JSON.stringify({
+        chiefComplaint: "T2DM follow-up",
+        patientProfile,
+        patientEmail: "patient@example.com",
+        physicianId: "physician-1234567890",
+        transcript: [
+          {
+            role: "assistant",
+            content:
+              "Can you tell me how your diabetes has been going since your last check, including any concerns or changes you've noticed?",
+          },
+          {
+            role: "patient",
+            content:
+              "I was diagnosed about 5 years ago. My A1C was 5.9 two months ago. I take metformin 1000 mg twice a day regularly. I check fasting sugars once or twice a week and they are around 5.5 to 6. I have no low blood sugar, no increased thirst, no vomiting, and no foot wounds. I am running out of metformin.",
+          },
+        ],
+        forceSummary: true,
+      }),
+      headers: { "Content-Type": "application/json" },
+    });
+
+    const response = await POST(request);
+    const payload = (await response.json()) as InterviewResponse;
+
+    expect(response.status).toBe(200);
     expect(payload.type).toBe("summary");
+    if (payload.type === "summary") {
+      expect(payload.summary.toLowerCase()).toContain("handoff needs");
+      expect(payload.summary.toLowerCase()).toContain("metformin");
+      expect(payload.plan.join(" ").toLowerCase()).toContain("handoff need");
+    }
+  });
+
+  it("does not loop on diagnosis confirmation after natural-language diabetes timing is already established", async () => {
+    const request = new Request(endpoint, {
+      method: "POST",
+      body: JSON.stringify({
+        chiefComplaint: "type 2 diabetes follow-up",
+        patientProfile,
+        patientEmail: "patient@example.com",
+        physicianId: "physician-1234567890",
+        transcript: [
+          {
+            role: "assistant",
+            content: "Can you tell me how things have been going with your type 2 diabetes since your last check-in?",
+          },
+          {
+            role: "patient",
+            content:
+              "Overall, it has been well controlled. My last blood work was about two months ago, and my A1C was about 5.7. I am on metformin 1000 mg twice a day, which I take regularly. My fasting blood sugar ranges from 5.5 to 6.5. Overall, I have been doing well. I need a refill on my metformin.",
+          },
+          {
+            role: "assistant",
+            content: "When were you first diagnosed with type 2 diabetes?",
+          },
+          {
+            role: "patient",
+            content:
+              "I was diagnosed about five years ago. Initially, my blood sugar was high, but it has come down, and in the last few years it has been really good.",
+          },
+          {
+            role: "assistant",
+            content:
+              "Thanks-you mentioned it was about five years ago; do you remember roughly what year you were first diagnosed with type 2 diabetes?",
+          },
+          { role: "patient", content: "I think it was summer 2021." },
+          {
+            role: "assistant",
+            content:
+              "Thanks-just to confirm, what month and year were you diagnosed with type 2 diabetes?",
+          },
+          { role: "patient", content: "June 2021" },
+        ],
+      }),
+      headers: { "Content-Type": "application/json" },
+    });
+
+    const response = await POST(request);
+    const payload = (await response.json()) as InterviewResponse;
+
+    expect(response.status).toBe(200);
+    if (payload.type === "question") {
+      expect(payload.question.toLowerCase()).not.toContain("diagnosed");
+      expect(payload.question.toLowerCase()).not.toContain("month and year");
+      expect(payload.question.toLowerCase()).not.toContain("what year");
+    }
+  });
+
+  it("returns valid responses for unclear shorthand flow", async () => {
+    const firstRequest = new Request(endpoint, {
+      method: "POST",
+      body: JSON.stringify({
+        chiefComplaint: "xyz f/u",
+        patientProfile,
+        patientEmail: "patient@example.com",
+        physicianId: "physician-1234567890",
+        transcript: [],
+      }),
+      headers: { "Content-Type": "application/json" },
+    });
+
+    const firstResponse = await POST(firstRequest);
+    const firstPayload = (await firstResponse.json()) as InterviewResponse;
+
+    expect(firstResponse.status).toBe(200);
+    expect(firstPayload.type).toBe("question");
+    if (firstPayload.type === "question") {
+      expect(firstPayload.question.length).toBeGreaterThan(5);
+    }
+
+    const secondRequest = new Request(endpoint, {
+      method: "POST",
+      body: JSON.stringify({
+        chiefComplaint: "xyz f/u",
+        patientProfile,
+        patientEmail: "patient@example.com",
+        physicianId: "physician-1234567890",
+        transcript: [
+          {
+            role: "assistant",
+            content:
+              'I want to make sure I understood you correctly. Could you clarify what "xyz f/u" refers to so I can focus on the right concern?',
+          },
+          { role: "patient", content: "I'm not sure." },
+        ],
+        forceSummary: true,
+      }),
+      headers: { "Content-Type": "application/json" },
+    });
+
+    const secondResponse = await POST(secondRequest);
+    const secondPayload = (await secondResponse.json()) as InterviewResponse;
+
+    expect(secondResponse.status).toBe(200);
+    expect(secondPayload.type).toBe("summary");
   });
 });
 
 describe("dynamic complaint queue prompt guidance", () => {
-  it("renders a controller-first prompt that acknowledges newly queued complaints", () => {
+  it("renders an LLM-led prompt that acknowledges newly queued complaints", () => {
     const prompt = buildPrompt(
       "right knee lump",
       patientProfile,
@@ -291,11 +455,11 @@ describe("dynamic complaint queue prompt guidance", () => {
       },
     );
 
-    expect(prompt).toContain("BACKEND-SELECTED NEXT ACTION: ASK ONE TARGETED QUESTION");
+    expect(prompt).toContain("You decide what to ask next");
     expect(prompt).toContain('Current active complaint: "right knee lump"');
     expect(prompt).toContain("NEW CONCERNS TO ACKNOWLEDGE:");
     expect(prompt).toContain('"right elbow pain"');
-    expect(prompt).toContain('continue only with the backend-selected next step below');
+    expect(prompt).toContain("TASK:");
   });
 
   it("keeps the current complaint active when a new concern is queued", () => {
@@ -340,7 +504,7 @@ describe("dynamic complaint queue prompt guidance", () => {
     expect(prompt).toContain("NEW CONCERNS TO ACKNOWLEDGE:");
     expect(prompt).toContain('"blood sugar concern"');
     expect(prompt).toContain('Current active complaint: "prostate issues"');
-    expect(prompt).toContain("BACKEND-SELECTED NEXT ACTION: ASK ONE TARGETED QUESTION");
+    expect(prompt).toContain("You decide what to ask next");
   });
 
   it("uses a brief secondary concern note instead of queueing an improving concern", () => {
@@ -457,7 +621,7 @@ describe("dynamic complaint queue prompt guidance", () => {
     expect(prompt).not.toContain("NEW CONCERN ACKNOWLEDGMENT (MANDATORY THIS TURN)");
   });
 
-  it("renders a clarification prompt when the patient says the assistant misunderstood them", () => {
+  it("renders an LLM-led prompt when the patient says the assistant misunderstood them", () => {
     const prompt = buildPrompt(
       "upper abdominal lumps",
       patientProfile,
@@ -489,12 +653,12 @@ describe("dynamic complaint queue prompt guidance", () => {
       },
     );
 
-    expect(prompt).toContain("BACKEND-SELECTED NEXT ACTION: CLARIFY");
-    expect(prompt).toContain("clarify unclear response");
-    expect(prompt).toContain("ask exactly one concise clarification question");
+    expect(prompt).toContain("Listen carefully to patient corrections and redirections");
+    expect(prompt).toContain("TASK:");
+    expect(prompt).toContain("Either (a) ask the next most appropriate question");
   });
 
-  it("renders a summary prompt when history confidence stays unsafe after clarification", () => {
+  it("renders an LLM-led prompt when history confidence stays unsafe after clarification", () => {
     const prompt = buildPrompt(
       "upper abdominal lumps",
       patientProfile,
@@ -535,9 +699,9 @@ describe("dynamic complaint queue prompt guidance", () => {
       },
     );
 
-    expect(prompt).toContain("BACKEND-SELECTED NEXT ACTION: SUMMARIZE NOW");
-    expect(prompt).toContain("History confidence dropped below a safe threshold");
-    expect(prompt).toContain("Do not ask another routine question");
+    expect(prompt).toContain("You decide what to ask next");
+    expect(prompt).toContain("Either (a) ask the next most appropriate question");
+    expect(prompt).toContain("or (b) provide a physician-handoff summary");
   });
 
   it("removes giant workflow and count-pressure prompt sections", () => {
@@ -566,7 +730,7 @@ describe("dynamic complaint queue prompt guidance", () => {
     expect(prompt).not.toContain("fixed exhaustive questioning");
     expect(prompt).not.toContain("MANDATORY PRE-QUESTION VALIDATION");
     expect(prompt).not.toContain("Question-count guidance is advisory only");
-    expect(prompt).toContain("BACKEND-SELECTED NEXT ACTION:");
+    expect(prompt).toContain("You decide what to ask next");
   });
 });
 
@@ -719,311 +883,6 @@ describe("MSK location topic extraction", () => {
   });
 });
 
-describe("MSK hard override checkpoints", () => {
-  it("forces MSK second question to location-marking prompt", () => {
-    const turn: InterviewResponse = {
-      type: "question",
-      question: "Do you have swelling around the right knee?",
-      rationale: "To assess for inflammatory process.",
-    };
-    const transcript = [
-      { role: "assistant", content: "Tell me what happened to your knee." },
-      { role: "patient", content: "I fell on it yesterday." },
-    ] as const;
-
-    const result = applyMskSecondQuestionOverride({
-      turn,
-      transcript: [...transcript],
-      chiefComplaint: "2 days of right knee pain after fall",
-      forceSummary: false,
-      languageCode: "en",
-    });
-
-    expect(result.type).toBe("question");
-    if (result.type === "question") {
-      expect(result.requiresLocationMarking).toBe(true);
-      expect(result.question.toLowerCase()).toContain("diagram/photo");
-      expect(result.deferredIntentHint?.toLowerCase()).toContain("swelling");
-    }
-  });
-
-  it("forces checkpoint at upcoming fifth question for transcript-detected MVA neck and lower back injuries", () => {
-    const turn: InterviewResponse = {
-      type: "question",
-      question: "Any bowel or bladder changes?",
-      rationale: "Assess cauda equina red flags.",
-    };
-    const transcript = [
-      { role: "assistant", content: "Tell me what happened in the collision." },
-      { role: "patient", content: "I was rear-ended and now my neck and lower back hurt." },
-      { role: "assistant", content: "Any numbness or weakness?" },
-      { role: "patient", content: "No." },
-      { role: "assistant", content: "Were airbags deployed?" },
-      { role: "patient", content: "No airbags." },
-      { role: "assistant", content: "Any prior injuries?" },
-      { role: "patient", content: "No." },
-    ] as const;
-
-    const result = applyMskSecondQuestionOverride({
-      turn,
-      transcript: [...transcript],
-      chiefComplaint: "motor vehicle accident",
-      forceSummary: false,
-      languageCode: "en",
-    });
-
-    expect(result.type).toBe("question");
-    if (result.type === "question") {
-      expect(result.requiresLocationMarking).toBe(true);
-      expect(result.question.toLowerCase()).toContain("neck");
-      expect(result.question.toLowerCase()).toContain("lower back");
-    }
-  });
-
-  it("keeps forcing checkpoints for remaining unmarked parts only", () => {
-    const turn: InterviewResponse = {
-      type: "question",
-      question: "How severe is your pain today?",
-      rationale: "Assess symptom severity trend.",
-    };
-    const transcript = [
-      { role: "assistant", content: "Tell me what happened in the collision." },
-      { role: "patient", content: "I have neck and lower back pain after being rear-ended." },
-      { role: "assistant", content: "Any numbness or weakness?" },
-      { role: "patient", content: "No." },
-      { role: "assistant", content: "Did airbags deploy?" },
-      { role: "patient", content: "No." },
-      { role: "assistant", content: "Any previous injuries?" },
-      { role: "patient", content: "I marked the painful spot on the neck diagram." },
-    ] as const;
-
-    const result = applyMskSecondQuestionOverride({
-      turn,
-      transcript: [...transcript],
-      chiefComplaint: "motor vehicle accident",
-      forceSummary: false,
-      languageCode: "en",
-    });
-
-    expect(result.type).toBe("question");
-    if (result.type === "question") {
-      expect(result.requiresLocationMarking).toBe(true);
-      expect(result.question.toLowerCase()).toContain("lower back");
-      expect(result.question.toLowerCase()).not.toContain("neck");
-    }
-  });
-
-  it("does not force at checkpoints once all required parts are marked", () => {
-    const turn: InterviewResponse = {
-      type: "question",
-      question: "How has this affected your sleep?",
-      rationale: "Assess functional impact.",
-    };
-    const transcript = [
-      { role: "assistant", content: "Tell me what happened in the collision." },
-      { role: "patient", content: "I have neck and lower back pain after being rear-ended." },
-      { role: "assistant", content: "Any numbness or weakness?" },
-      { role: "patient", content: "No." },
-      { role: "assistant", content: "Did airbags deploy?" },
-      { role: "patient", content: "No." },
-      { role: "assistant", content: "Any previous injuries?" },
-      { role: "patient", content: "I marked the painful spot on the neck diagram." },
-      { role: "patient", content: "I marked the painful spot on the lower back diagram." },
-    ] as const;
-
-    const result = applyMskSecondQuestionOverride({
-      turn,
-      transcript: [...transcript],
-      chiefComplaint: "motor vehicle accident",
-      forceSummary: false,
-      languageCode: "en",
-    });
-
-    expect(result).toEqual(turn);
-  });
-
-  it("does not infer neck pain from assistant prompts or negated patient response", () => {
-    const turn: InterviewResponse = {
-      type: "question",
-      question: "Any instability when walking?",
-      rationale: "Check ankle mechanical instability.",
-    };
-    const transcript = [
-      { role: "assistant", content: "I understand you were in a motor vehicle accident. What happened?" },
-      {
-        role: "patient",
-        content:
-          "I was rear-ended and now I have right ankle pain and low back pain.",
-      },
-      {
-        role: "assistant",
-        content:
-          "Looking at the diagram/photo of your lower back and ankle, please mark exactly where it hurts.",
-      },
-      { role: "patient", content: "I marked the painful spot on the lower back diagram." },
-      {
-        role: "assistant",
-        content:
-          "Since the accident, have you had any of the following: loss of consciousness, numbness, tingling, weakness, or neck pain?",
-      },
-      { role: "patient", content: "I'm not having any neck pain." },
-      { role: "assistant", content: "How would you describe the right ankle pain?" },
-      { role: "patient", content: "Aching, with some swelling on the outside." },
-    ] as const;
-
-    const result = applyMskSecondQuestionOverride({
-      turn,
-      transcript: [...transcript],
-      chiefComplaint: "motor vehicle accident",
-      forceSummary: false,
-      languageCode: "en",
-    });
-
-    expect(result.type).toBe("question");
-    if (result.type === "question") {
-      expect(result.requiresLocationMarking).toBe(true);
-      expect(result.question.toLowerCase()).toContain("ankle");
-      expect(result.question.toLowerCase()).not.toContain("neck");
-      expect(result.question.toLowerCase()).not.toContain("lower back");
-    }
-  });
-
-  it("does not add foot from non-symptom accident details", () => {
-    const turn: InterviewResponse = {
-      type: "question",
-      question: "Any numbness or tingling down the legs?",
-      rationale: "Assess lumbar radicular symptoms.",
-    };
-    const transcript = [
-      { role: "assistant", content: "Can you describe your symptoms?" },
-      { role: "patient", content: "I have neck pain and right lower back pain." },
-      {
-        role: "assistant",
-        content:
-          "A few details about the accident itself: was there significant damage to your vehicle, did airbags deploy, and was there an ambulance?",
-      },
-      {
-        role: "patient",
-        content:
-          "My insurance is ICBC claim F-250. Minor rear damage. No police or ambulance. Seat belt on, no airbags.",
-      },
-      { role: "assistant", content: "How is your low back motion?" },
-      {
-        role: "patient",
-        content:
-          "Pain is in the right lower back and neck. Tender to touch and worse with flexion at end range.",
-      },
-      { role: "assistant", content: "Any prior injuries?" },
-      { role: "patient", content: "No previous injuries." },
-    ] as const;
-
-    const result = applyMskSecondQuestionOverride({
-      turn,
-      transcript: [...transcript],
-      chiefComplaint: "motor vehicle accident",
-      forceSummary: false,
-      languageCode: "en",
-    });
-
-    expect(result.type).toBe("question");
-    if (result.type === "question") {
-      expect(result.requiresLocationMarking).toBe(true);
-      expect(result.question.toLowerCase()).toContain("neck");
-      expect(result.question.toLowerCase()).toContain("lower back");
-      expect(result.question.toLowerCase()).not.toContain("foot");
-    }
-  });
-
-  it("still keeps foot when explicitly reported in symptom context", () => {
-    const turn: InterviewResponse = {
-      type: "question",
-      question: "Do you have pain when bearing weight?",
-      rationale: "Assess severity of foot injury.",
-    };
-    const transcript = [
-      { role: "assistant", content: "Tell me about your injury." },
-      { role: "patient", content: "I have neck pain and pain on top of my right foot after the crash." },
-    ] as const;
-
-    const result = applyMskSecondQuestionOverride({
-      turn,
-      transcript: [...transcript],
-      chiefComplaint: "motor vehicle accident",
-      forceSummary: false,
-      languageCode: "en",
-    });
-
-    expect(result.type).toBe("question");
-    if (result.type === "question") {
-      expect(result.requiresLocationMarking).toBe(true);
-      expect(result.question.toLowerCase()).toContain("neck");
-      expect(result.question.toLowerCase()).toContain("foot");
-    }
-  });
-
-  it("does not force override on non-msk complaints", () => {
-    const turn: InterviewResponse = {
-      type: "question",
-      question: "Have you had fever or chills?",
-      rationale: "Evaluate infectious symptoms.",
-    };
-    const transcript = [
-      { role: "assistant", content: "Tell me about your sore throat." },
-      { role: "patient", content: "It started three days ago." },
-    ] as const;
-
-    const result = applyMskSecondQuestionOverride({
-      turn,
-      transcript: [...transcript],
-      chiefComplaint: "3 days of sore throat",
-      forceSummary: false,
-      languageCode: "en",
-    });
-
-    expect(result).toEqual(turn);
-  });
-
-  it("does not force back diagram when patient says pain comes back for headache", () => {
-    const turn: InterviewResponse = {
-      type: "question",
-      question: "Do you have nausea with the headache?",
-      rationale: "Assess migraine-associated symptoms.",
-    };
-    const transcript = [
-      { role: "assistant", content: "When did the headache start?" },
-      { role: "patient", content: "About 3 days ago. Advil helps with pain but it tends to come back." },
-    ] as const;
-
-    const result = applyMskSecondQuestionOverride({
-      turn,
-      transcript: [...transcript],
-      chiefComplaint: "3 days of headache",
-      forceSummary: false,
-      languageCode: "en",
-    });
-
-    expect(result).toEqual(turn);
-  });
-
-  it("does not force override outside checkpoint turns", () => {
-    const turn: InterviewResponse = {
-      type: "question",
-      question: "Does your knee lock or give way?",
-      rationale: "Assess mechanical instability.",
-    };
-
-    const result = applyMskSecondQuestionOverride({
-      turn,
-      transcript: [],
-      chiefComplaint: "right knee pain",
-      forceSummary: false,
-      languageCode: "en",
-    });
-
-    expect(result).toEqual(turn);
-  });
-});
-
 describe("sensitive photo suppression safeguards", () => {
   it("suppresses female breast rash/lesion/lump photo requests", () => {
     const context = getSensitivePhotoContext({
@@ -1089,6 +948,88 @@ describe("sensitive photo suppression safeguards", () => {
 
     expect(context.suppressPhotoRequest).toBe(false);
     expect(guarded).toEqual(turn);
+  });
+});
+
+describe("attachProgressToTurn (LLM progress control)", () => {
+  const serverProgress = { questionsAsked: 3, approxTotalQuestions: 15 };
+
+  it("uses valid LLM progress for question turns (questionsAsked + 1, approxTotalQuestions from LLM)", () => {
+    const turn: InterviewResponse = {
+      type: "question",
+      question: "Any fever or chills?",
+      rationale: "Assess for infection.",
+      progress: { questionsAsked: 4, approxTotalQuestions: 10 },
+    };
+
+    const result = attachProgressToTurn(turn, serverProgress);
+
+    expect(result.progress).toBeDefined();
+    expect(result.progress?.questionsAsked).toBe(5);
+    expect(result.progress?.approxTotalQuestions).toBe(10);
+  });
+
+  it("uses valid LLM progress for summary turns (both equal when interview complete)", () => {
+    const turn: InterviewResponse = {
+      type: "summary",
+      positives: ["Mild sore throat"],
+      negatives: ["No fever"],
+      summary: "Patient presents with sore throat.",
+      investigations: [],
+      assessment: "Likely viral URI.",
+      plan: ["Supportive care"],
+      progress: { questionsAsked: 5, approxTotalQuestions: 5 },
+    };
+
+    const result = attachProgressToTurn(turn, serverProgress);
+
+    expect(result.progress).toBeDefined();
+    expect(result.progress?.questionsAsked).toBe(5);
+    expect(result.progress?.approxTotalQuestions).toBe(5);
+  });
+
+  it("falls back to server progress when LLM omits progress", () => {
+    const turn: InterviewResponse = {
+      type: "question",
+      question: "Any fever or chills?",
+      rationale: "Assess for infection.",
+    };
+
+    const result = attachProgressToTurn(turn, serverProgress);
+
+    expect(result.progress).toBeDefined();
+    expect(result.progress?.questionsAsked).toBe(4);
+    expect(result.progress?.approxTotalQuestions).toBeGreaterThanOrEqual(15);
+  });
+
+  it("falls back to server progress when LLM progress is invalid (approxTotalQuestions < questionsAsked)", () => {
+    const turn: InterviewResponse = {
+      type: "question",
+      question: "Any fever?",
+      rationale: "Assess.",
+      progress: { questionsAsked: 5, approxTotalQuestions: 3 },
+    };
+
+    const result = attachProgressToTurn(turn, serverProgress);
+
+    expect(result.progress).toBeDefined();
+    expect(result.progress?.questionsAsked).toBe(4);
+    expect(result.progress?.approxTotalQuestions).toBeGreaterThanOrEqual(15);
+  });
+
+  it("falls back to server progress when approxTotalQuestions is out of bounds", () => {
+    const turn: InterviewResponse = {
+      type: "question",
+      question: "Any fever?",
+      rationale: "Assess.",
+      progress: { questionsAsked: 2, approxTotalQuestions: 100 },
+    };
+
+    const result = attachProgressToTurn(turn, serverProgress);
+
+    expect(result.progress).toBeDefined();
+    expect(result.progress?.questionsAsked).toBe(4);
+    expect(result.progress?.approxTotalQuestions).toBeGreaterThanOrEqual(15);
   });
 });
 
