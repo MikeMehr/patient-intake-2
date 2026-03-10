@@ -278,6 +278,68 @@ export function getSensitivePhotoContext(params: {
   };
 }
 
+const APPROX_TOTAL_QUESTIONS_MIN = 1;
+const APPROX_TOTAL_QUESTIONS_MAX = 50;
+
+function isLlmProgressValid(
+  p: { questionsAsked: number; approxTotalQuestions: number } | undefined,
+): p is { questionsAsked: number; approxTotalQuestions: number } {
+  if (!p || typeof p.questionsAsked !== "number" || typeof p.approxTotalQuestions !== "number") {
+    return false;
+  }
+  if (p.questionsAsked < 0 || !Number.isInteger(p.questionsAsked)) {
+    return false;
+  }
+  if (p.approxTotalQuestions < p.questionsAsked) {
+    return false;
+  }
+  if (
+    p.approxTotalQuestions < APPROX_TOTAL_QUESTIONS_MIN ||
+    p.approxTotalQuestions > APPROX_TOTAL_QUESTIONS_MAX
+  ) {
+    return false;
+  }
+  return true;
+}
+
+export function attachProgressToTurn(
+  turn: InterviewResponse,
+  serverProgress: { questionsAsked: number; approxTotalQuestions: number },
+): InterviewResponse {
+  const llmProgress = turn.progress;
+  const useLlmProgress = isLlmProgressValid(llmProgress);
+
+  let questionsAsked: number;
+  let approxTotalQuestions: number;
+
+  if (useLlmProgress) {
+    if (turn.type === "question") {
+      questionsAsked = llmProgress.questionsAsked + 1;
+      approxTotalQuestions = llmProgress.approxTotalQuestions;
+    } else {
+      questionsAsked = llmProgress.questionsAsked;
+      approxTotalQuestions = llmProgress.approxTotalQuestions;
+    }
+  } else {
+    questionsAsked =
+      turn.type === "question"
+        ? serverProgress.questionsAsked + 1
+        : serverProgress.questionsAsked;
+    approxTotalQuestions = Math.max(
+      serverProgress.approxTotalQuestions,
+      questionsAsked,
+    );
+  }
+
+  return {
+    ...turn,
+    progress: {
+      questionsAsked,
+      approxTotalQuestions,
+    },
+  };
+}
+
 export function applySensitivePhotoSuppressionToTurn(
   turn: InterviewResponse,
   context: SensitivePhotoContext,

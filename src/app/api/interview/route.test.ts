@@ -14,7 +14,8 @@ import {
   hasLocationAnswerSignal,
   hasLocationQuestionIntent,
 } from "./location-signals";
-import { POST, attachProgressToTurn } from "./route";
+import { attachProgressToTurn } from "./prompt-helpers";
+import { POST } from "./route";
 
 const endpoint = "http://localhost/api/interview";
 const patientProfile = {
