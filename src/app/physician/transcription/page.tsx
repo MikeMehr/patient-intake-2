@@ -118,6 +118,7 @@ export default function PhysicianTranscriptionPage() {
   const [historyItems, setHistoryItems] = useState<TranscriptionListItem[]>([]);
   const [deletingSnapshotId, setDeletingSnapshotId] = useState<string | null>(null);
   const [deletingAllSnapshots, setDeletingAllSnapshots] = useState(false);
+  const [showStartNewConfirm, setShowStartNewConfirm] = useState(false);
 
   const hasNewPatientIdentity = useMemo(
     () => newPatientFullName.trim().length >= 3 && /^\d{4}-\d{2}-\d{2}$/.test(newPatientDob.trim()),
@@ -740,17 +741,45 @@ export default function PhysicianTranscriptionPage() {
                 </div>
                 {activeWorkflowTab === "capture" && (
                   <>
-                    <div className="flex items-center gap-3">
-                      <button
-                        type="button"
-                        onClick={isRecording ? stopRecording : startRecording}
-                        disabled={transcriptLoading}
-                        className={`px-4 py-2 text-sm font-medium text-white rounded-lg ${
-                          isRecording ? "bg-red-600 hover:bg-red-700" : "bg-slate-900 hover:bg-slate-800"
-                        } disabled:bg-slate-400`}
-                      >
-                        {isRecording ? "Stop transcription" : "Start transcription"}
-                      </button>
+                    <div className="flex flex-wrap items-center gap-3">
+                      {isRecording ? (
+                        <button
+                          type="button"
+                          onClick={stopRecording}
+                          disabled={transcriptLoading}
+                          className="px-4 py-2 text-sm font-medium text-white rounded-lg bg-red-600 hover:bg-red-700 disabled:bg-slate-400"
+                        >
+                          Stop transcription
+                        </button>
+                      ) : transcript.trim().length > 0 && !soapVersionId ? (
+                        <>
+                          <button
+                            type="button"
+                            onClick={startRecording}
+                            disabled={transcriptLoading}
+                            className="px-4 py-2 text-sm font-medium text-white rounded-lg bg-slate-900 hover:bg-slate-800 disabled:bg-slate-400"
+                          >
+                            Resume
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setShowStartNewConfirm(true)}
+                            disabled={transcriptLoading}
+                            className="px-4 py-2 text-sm font-medium text-white rounded-lg bg-slate-900 hover:bg-slate-800 disabled:bg-slate-400"
+                          >
+                            Start New
+                          </button>
+                        </>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={startRecording}
+                          disabled={transcriptLoading}
+                          className="px-4 py-2 text-sm font-medium text-white rounded-lg bg-slate-900 hover:bg-slate-800 disabled:bg-slate-400"
+                        >
+                          Start transcription
+                        </button>
+                      )}
                       {transcriptLoading && <span className="text-sm text-slate-600">Transcribing...</span>}
                     </div>
                     {recordingError && <p className="text-sm text-red-700">{recordingError}</p>}
@@ -878,6 +907,35 @@ export default function PhysicianTranscriptionPage() {
           </div>
         </div>
       </div>
+      {showStartNewConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50">
+          <div className="mx-4 max-w-sm rounded-xl border border-slate-200 bg-white p-6 shadow-xl">
+            <p className="text-sm text-slate-800">
+              Are you sure you want to start new? The current transcript will be deleted.
+            </p>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setShowStartNewConfirm(false)}
+                className="px-3 py-1.5 text-sm font-medium text-slate-700 rounded-lg border border-slate-300 bg-white hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowStartNewConfirm(false);
+                  setTranscript("");
+                  startRecording();
+                }}
+                className="px-3 py-1.5 text-sm font-medium text-white rounded-lg bg-slate-900 hover:bg-slate-800"
+              >
+                Okay
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }
