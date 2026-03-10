@@ -840,7 +840,11 @@ export default function PhysicianTranscriptionPage() {
                       {actionLoading ? "Generating..." : "Generate SOAP"}
                     </button>
                     {generateDisabledReason && (
-                      <p className="text-xs text-slate-500">{generateDisabledReason}</p>
+                      <p
+                        className={`text-xs ${generateDisabledReason === "Enter patient name and DOB." ? "text-red-600" : "text-slate-500"}`}
+                      >
+                        {generateDisabledReason}
+                      </p>
                     )}
                   </>
                 )}
