@@ -118,13 +118,14 @@ jobs:
           name: node-app
           path: .
 
-      # Uses: AZURE_CLIENT_ID, AZUREAPPSERVICE_TENANTID_*, AZUREAPPSERVICE_SUBSCRIPTIONID_*
+      # Uses AZURE_CREDENTIALS: JSON with clientId, clientSecret, tenantId, subscriptionId
+      # Create in GitHub: Settings > Secrets > New repository secret > AZURE_CREDENTIALS
+      # Value (from Azure Portal): {"clientId":"<app-client-id>","clientSecret":"<secret>","tenantId":"<tenant-id>","subscriptionId":"<subscription-id>"}
+      # Get clientSecret from: App registrations > your app > Certificates & secrets > New client secret
       - name: Login to Azure
         uses: azure/login@v2
         with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_15A4C1032CB7486888841881E44EEC12 }}
-          subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_BBD8350A7C5842A888F68806AAD1097B }}
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
 
       - name: Deploy to Azure Web App
         uses: azure/webapps-deploy@v3
