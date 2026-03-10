@@ -98,9 +98,12 @@ export default function PhysicianTranscriptionPage() {
   const [recordingError, setRecordingError] = useState<string | null>(null);
   const [transcriptLoading, setTranscriptLoading] = useState(false);
   const [transcript, setTranscript] = useState("");
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const mediaChunksRef = useRef<Blob[]>([]);
   const mediaStreamRef = useRef<MediaStream | null>(null);
+  const timerIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const recordingStartTimeRef = useRef<number | null>(null);
 
   const [soapVersionId, setSoapVersionId] = useState<string | null>(null);
   const [encounterId, setEncounterId] = useState<string | null>(null);
@@ -162,8 +165,35 @@ export default function PhysicianTranscriptionPage() {
       if (mediaStreamRef.current) {
         mediaStreamRef.current.getTracks().forEach((t) => t.stop());
       }
+      if (timerIntervalRef.current) {
+        clearInterval(timerIntervalRef.current);
+      }
     };
   }, []);
+
+  useEffect(() => {
+    if (isRecording) {
+      recordingStartTimeRef.current = Date.now();
+      setRecordingSeconds(0);
+      timerIntervalRef.current = setInterval(() => {
+        if (recordingStartTimeRef.current !== null) {
+          setRecordingSeconds(Math.floor((Date.now() - recordingStartTimeRef.current) / 1000));
+        }
+      }, 1000);
+    }
+    return () => {
+      if (timerIntervalRef.current) {
+        clearInterval(timerIntervalRef.current);
+        timerIntervalRef.current = null;
+      }
+    };
+  }, [isRecording]);
+
+  function formatRecordingTime(seconds: number): string {
+    const mm = String(Math.floor(seconds / 60)).padStart(2, "0");
+    const ss = String(seconds % 60).padStart(2, "0");
+    return `${mm}:${ss}`;
+  }
 
   async function loadHistory() {
     setHistoryLoading(true);
@@ -751,14 +781,17 @@ export default function PhysicianTranscriptionPage() {
                   <>
                     <div className="flex flex-wrap items-center gap-3">
                       {isRecording ? (
-                        <button
-                          type="button"
-                          onClick={stopRecording}
-                          disabled={transcriptLoading}
-                          className="px-4 py-2 text-sm font-medium text-white rounded-lg bg-red-600 hover:bg-red-700 disabled:bg-slate-400"
-                        >
-                          Stop transcription
-                        </button>
+                        <>
+                          <button
+                            type="button"
+                            onClick={stopRecording}
+                            disabled={transcriptLoading}
+                            className="px-4 py-2 text-sm font-medium text-white rounded-lg bg-red-600 hover:bg-red-700 disabled:bg-slate-400"
+                          >
+                            Stop transcription
+                          </button>
+                          <span className="text-sm font-mono text-slate-700">{formatRecordingTime(recordingSeconds)}</span>
+                        </>
                       ) : transcript.trim().length > 0 && !soapVersionId ? (
                         <>
                           <button
