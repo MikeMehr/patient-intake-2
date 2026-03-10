@@ -6,6 +6,7 @@ on:
   push:
     branches:
       - main
+      - copilot/add-recording-timer-display  # temporary: remove after PR is merged
   workflow_dispatch:
 
 jobs:
