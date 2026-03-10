@@ -118,12 +118,13 @@ jobs:
           name: node-app
           path: .
 
+      # Uses: AZURE_CLIENT_ID, AZUREAPPSERVICE_TENANTID_*, AZUREAPPSERVICE_SUBSCRIPTIONID_*
       - name: Login to Azure
         uses: azure/login@v2
         with:
-          client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_6020A719440E41444530B2C41F8D256A }}
-          tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_15A4C1D32CB7486888841881E44EEC12 }}
-          subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_BB00350A7C5842A888F68886AAD18978 }}
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_15A4C1032CB7486888841881E44EEC12 }}
+          subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_BBD8350A7C5842A888F68806AAD1097B }}
 
       - name: Deploy to Azure Web App
         uses: azure/webapps-deploy@v3
