@@ -493,6 +493,14 @@ export default function PhysicianTranscriptionPage() {
       }
       setActionSuccess(exportData?.message || "Finalized and saved to EMR.");
       await loadHistory();
+      setActiveWorkflowTab("capture");
+      setSelectedPatient(null);
+      setPatientIdentityResolution(null);
+      setPatientIdentityMessage(null);
+      setNewPatientFullName("");
+      setNewPatientDob("");
+      setPatientSearchError(null);
+      clearEditorState();
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "Failed to finalize and save to EMR");
     } finally {
