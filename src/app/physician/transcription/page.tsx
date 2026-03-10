@@ -104,6 +104,7 @@ export default function PhysicianTranscriptionPage() {
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const timerIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const recordingStartTimeRef = useRef<number | null>(null);
+  const accumulatedSecondsRef = useRef<number>(0);
 
   const [soapVersionId, setSoapVersionId] = useState<string | null>(null);
   const [encounterId, setEncounterId] = useState<string | null>(null);
@@ -174,10 +175,12 @@ export default function PhysicianTranscriptionPage() {
   useEffect(() => {
     if (isRecording) {
       recordingStartTimeRef.current = Date.now();
-      setRecordingSeconds(0);
       timerIntervalRef.current = setInterval(() => {
         if (recordingStartTimeRef.current !== null) {
-          setRecordingSeconds(Math.floor((Date.now() - recordingStartTimeRef.current) / 1000));
+          setRecordingSeconds(
+            accumulatedSecondsRef.current +
+              Math.floor((Date.now() - recordingStartTimeRef.current) / 1000),
+          );
         }
       }, 1000);
     }
@@ -185,6 +188,13 @@ export default function PhysicianTranscriptionPage() {
       if (timerIntervalRef.current) {
         clearInterval(timerIntervalRef.current);
         timerIntervalRef.current = null;
+      }
+      // Save accumulated time when a recording session ends so Resume continues from here.
+      if (recordingStartTimeRef.current !== null) {
+        accumulatedSecondsRef.current =
+          accumulatedSecondsRef.current +
+          Math.floor((Date.now() - recordingStartTimeRef.current) / 1000);
+        recordingStartTimeRef.current = null;
       }
     };
   }, [isRecording]);
@@ -594,6 +604,8 @@ export default function PhysicianTranscriptionPage() {
     setDraft(initialDraft);
     setReviewText(composeUnifiedSoapText(initialDraft));
     setTranscript("");
+    accumulatedSecondsRef.current = 0;
+    setRecordingSeconds(0);
   }
 
   async function deleteSnapshot(item: TranscriptionListItem) {
@@ -971,6 +983,8 @@ export default function PhysicianTranscriptionPage() {
                 onClick={() => {
                   setShowStartNewConfirm(false);
                   setTranscript("");
+                  accumulatedSecondsRef.current = 0;
+                  setRecordingSeconds(0);
                   startRecording();
                 }}
                 className="px-3 py-1.5 text-sm font-medium text-white rounded-lg bg-slate-900 hover:bg-slate-800"
