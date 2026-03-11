@@ -100,11 +100,18 @@ export async function POST(request: NextRequest) {
       `?language=${encodeURIComponent(locale)}&format=detailed`;
     const safeUrl = assertSafeOutboundUrl(url, { label: "Speech STT endpoint URL" });
 
+    // Azure STT REST API requires the specific codec/samplerate MIME type for WAV PCM.
+    // Sending just "audio/wav" is rejected with 400 by many Azure regions.
+    const isWav = (audio.type || "").toLowerCase().includes("wav");
+    const contentType = isWav
+      ? "audio/wav; codecs=audio/pcm; samplerate=16000"
+      : (audio.type || "audio/webm");
+
     const response = await fetch(safeUrl.toString(), {
       method: "POST",
       headers: {
         "Ocp-Apim-Subscription-Key": speechConfig.key,
-        "Content-Type": audio.type || "audio/webm",
+        "Content-Type": contentType,
         Accept: "application/json",
       },
       body: await audio.arrayBuffer(),
@@ -113,6 +120,11 @@ export async function POST(request: NextRequest) {
     if (!response.ok) {
       status = response.status >= 500 ? 502 : response.status;
       const errText = await response.text().catch(() => "");
+      // Always log Azure's error body server-side for diagnosability
+      console.error(
+        `[speech/stt] Azure returned ${response.status}: ${errText || response.statusText}`,
+        { locale, audioType: contentType, audioSize: audio.size },
+      );
       const res = NextResponse.json(
         {
           error: "Azure Speech transcription request failed.",
