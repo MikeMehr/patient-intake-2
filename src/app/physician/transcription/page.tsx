@@ -35,6 +35,9 @@ type TranscriptionListItem = {
 };
 
 const MAX_STT_AUDIO_BYTES = 100 * 1024 * 1024;
+// Per-request chunk limit sent to the STT API.
+// WAV at 16 kHz / mono / 16-bit is 32 KB/s; 2 MB ≈ 62 s — safely under platform body-size limits.
+const MAX_STT_CHUNK_BYTES = 2 * 1024 * 1024;
 
 const initialDraft: SoapDraft = {
   subjective: "",
@@ -98,9 +101,13 @@ export default function PhysicianTranscriptionPage() {
   const [recordingError, setRecordingError] = useState<string | null>(null);
   const [transcriptLoading, setTranscriptLoading] = useState(false);
   const [transcript, setTranscript] = useState("");
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const mediaChunksRef = useRef<Blob[]>([]);
   const mediaStreamRef = useRef<MediaStream | null>(null);
+  const timerIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const recordingStartTimeRef = useRef<number | null>(null);
+  const accumulatedSecondsRef = useRef<number>(0);
 
   const [soapVersionId, setSoapVersionId] = useState<string | null>(null);
   const [encounterId, setEncounterId] = useState<string | null>(null);
@@ -162,8 +169,44 @@ export default function PhysicianTranscriptionPage() {
       if (mediaStreamRef.current) {
         mediaStreamRef.current.getTracks().forEach((t) => t.stop());
       }
+      if (timerIntervalRef.current) {
+        clearInterval(timerIntervalRef.current);
+      }
     };
   }, []);
+
+  useEffect(() => {
+    if (isRecording) {
+      recordingStartTimeRef.current = Date.now();
+      timerIntervalRef.current = setInterval(() => {
+        if (recordingStartTimeRef.current !== null) {
+          setRecordingSeconds(
+            accumulatedSecondsRef.current +
+              Math.floor((Date.now() - recordingStartTimeRef.current) / 1000),
+          );
+        }
+      }, 1000);
+    }
+    return () => {
+      if (timerIntervalRef.current) {
+        clearInterval(timerIntervalRef.current);
+        timerIntervalRef.current = null;
+      }
+      // Save accumulated time when a recording session ends so Resume continues from here.
+      if (recordingStartTimeRef.current !== null) {
+        accumulatedSecondsRef.current =
+          accumulatedSecondsRef.current +
+          Math.floor((Date.now() - recordingStartTimeRef.current) / 1000);
+        recordingStartTimeRef.current = null;
+      }
+    };
+  }, [isRecording]);
+
+  function formatRecordingTime(seconds: number): string {
+    const mm = String(Math.floor(seconds / 60)).padStart(2, "0");
+    const ss = String(seconds % 60).padStart(2, "0");
+    return `${mm}:${ss}`;
+  }
 
   async function loadHistory() {
     setHistoryLoading(true);
@@ -292,6 +335,43 @@ export default function PhysicianTranscriptionPage() {
     }
   }
 
+  // Split an oversized WAV blob into valid WAV chunks each ≤ MAX_STT_CHUNK_BYTES.
+  // If the blob already fits in one request it is returned as-is (no copy).
+  async function splitWavBlob(wavBlob: Blob): Promise<Blob[]> {
+    if (wavBlob.size <= MAX_STT_CHUNK_BYTES) return [wavBlob];
+    const WAV_HEADER = 44;
+    const BYTES_PER_SAMPLE = 2; // 16-bit PCM
+    const samplesPerChunk = Math.floor((MAX_STT_CHUNK_BYTES - WAV_HEADER) / BYTES_PER_SAMPLE);
+    const buffer = await wavBlob.arrayBuffer();
+    const pcmData = new Int16Array(buffer, WAV_HEADER);
+    const chunks: Blob[] = [];
+    for (let start = 0; start < pcmData.length; start += samplesPerChunk) {
+      const chunkSamples = pcmData.slice(start, Math.min(start + samplesPerChunk, pcmData.length));
+      const numSamples = chunkSamples.length;
+      const chunkBuf = new ArrayBuffer(WAV_HEADER + numSamples * BYTES_PER_SAMPLE);
+      const view = new DataView(chunkBuf);
+      const writeStr = (off: number, s: string) => {
+        for (let i = 0; i < s.length; i += 1) view.setUint8(off + i, s.charCodeAt(i));
+      };
+      writeStr(0, "RIFF");
+      view.setUint32(4, 36 + numSamples * BYTES_PER_SAMPLE, true);
+      writeStr(8, "WAVE");
+      writeStr(12, "fmt ");
+      view.setUint32(16, 16, true);
+      view.setUint16(20, 1, true); // PCM
+      view.setUint16(22, 1, true); // mono
+      view.setUint32(24, 16000, true); // sample rate
+      view.setUint32(28, 32000, true); // byte rate
+      view.setUint16(32, 2, true); // block align
+      view.setUint16(34, 16, true); // bits per sample
+      writeStr(36, "data");
+      view.setUint32(40, numSamples * BYTES_PER_SAMPLE, true);
+      new Int16Array(chunkBuf, WAV_HEADER).set(chunkSamples);
+      chunks.push(new Blob([chunkBuf], { type: "audio/wav" }));
+    }
+    return chunks;
+  }
+
   async function cleanTranscript(raw: string): Promise<string> {
     try {
       const res = await fetch("/api/speech/clean", {
@@ -312,15 +392,21 @@ export default function PhysicianTranscriptionPage() {
     if (wavBlob.size > MAX_STT_AUDIO_BYTES) {
       throw new Error("Recording is too long. Keep each clip under 100MB and try again.");
     }
-    const formData = new FormData();
-    formData.append("audio", new File([wavBlob], "recording.wav", { type: "audio/wav" }));
-    formData.append("language", "en");
-    const res = await fetch("/api/speech/stt", { method: "POST", body: formData });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data?.error || "Transcription failed");
-    const text = typeof data?.text === "string" ? data.text.trim() : "";
-    if (!text) throw new Error("No speech detected.");
-    return cleanTranscript(text);
+    const wavChunks = await splitWavBlob(wavBlob);
+    const texts: string[] = [];
+    for (const chunk of wavChunks) {
+      const formData = new FormData();
+      formData.append("audio", new File([chunk], "recording.wav", { type: "audio/wav" }));
+      formData.append("language", "en");
+      const res = await fetch("/api/speech/stt", { method: "POST", body: formData });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || "Transcription failed");
+      const text = typeof data?.text === "string" ? data.text.trim() : "";
+      if (text) texts.push(text);
+    }
+    const combined = texts.join(" ").trim();
+    if (!combined) throw new Error("No speech detected.");
+    return cleanTranscript(combined);
   }
 
   async function startRecording() {
@@ -564,6 +650,8 @@ export default function PhysicianTranscriptionPage() {
     setDraft(initialDraft);
     setReviewText(composeUnifiedSoapText(initialDraft));
     setTranscript("");
+    accumulatedSecondsRef.current = 0;
+    setRecordingSeconds(0);
   }
 
   async function deleteSnapshot(item: TranscriptionListItem) {
@@ -751,14 +839,17 @@ export default function PhysicianTranscriptionPage() {
                   <>
                     <div className="flex flex-wrap items-center gap-3">
                       {isRecording ? (
-                        <button
-                          type="button"
-                          onClick={stopRecording}
-                          disabled={transcriptLoading}
-                          className="px-4 py-2 text-sm font-medium text-white rounded-lg bg-red-600 hover:bg-red-700 disabled:bg-slate-400"
-                        >
-                          Stop transcription
-                        </button>
+                        <>
+                          <button
+                            type="button"
+                            onClick={stopRecording}
+                            disabled={transcriptLoading}
+                            className="px-4 py-2 text-sm font-medium text-white rounded-lg bg-red-600 hover:bg-red-700 disabled:bg-slate-400"
+                          >
+                            Stop transcription
+                          </button>
+                          <span className="text-sm font-mono text-slate-700">{formatRecordingTime(recordingSeconds)}</span>
+                        </>
                       ) : transcript.trim().length > 0 && !soapVersionId ? (
                         <>
                           <button
@@ -807,7 +898,11 @@ export default function PhysicianTranscriptionPage() {
                       {actionLoading ? "Generating..." : "Generate SOAP"}
                     </button>
                     {generateDisabledReason && (
-                      <p className="text-xs text-slate-500">{generateDisabledReason}</p>
+                      <p
+                        className={`text-xs ${generateDisabledReason === "Enter patient name and DOB." ? "text-red-600" : "text-slate-500"}`}
+                      >
+                        {generateDisabledReason}
+                      </p>
                     )}
                   </>
                 )}
@@ -934,6 +1029,8 @@ export default function PhysicianTranscriptionPage() {
                 onClick={() => {
                   setShowStartNewConfirm(false);
                   setTranscript("");
+                  accumulatedSecondsRef.current = 0;
+                  setRecordingSeconds(0);
                   startRecording();
                 }}
                 className="px-3 py-1.5 text-sm font-medium text-white rounded-lg bg-slate-900 hover:bg-slate-800"
