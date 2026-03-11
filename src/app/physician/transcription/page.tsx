@@ -35,6 +35,9 @@ type TranscriptionListItem = {
 };
 
 const MAX_STT_AUDIO_BYTES = 100 * 1024 * 1024;
+// Per-request chunk limit sent to the STT API.
+// WAV at 16 kHz / mono / 16-bit is 32 KB/s; 2 MB ≈ 62 s — safely under platform body-size limits.
+const MAX_STT_CHUNK_BYTES = 2 * 1024 * 1024;
 
 const initialDraft: SoapDraft = {
   subjective: "",
@@ -332,6 +335,43 @@ export default function PhysicianTranscriptionPage() {
     }
   }
 
+  // Split an oversized WAV blob into valid WAV chunks each ≤ MAX_STT_CHUNK_BYTES.
+  // If the blob already fits in one request it is returned as-is (no copy).
+  async function splitWavBlob(wavBlob: Blob): Promise<Blob[]> {
+    if (wavBlob.size <= MAX_STT_CHUNK_BYTES) return [wavBlob];
+    const WAV_HEADER = 44;
+    const BYTES_PER_SAMPLE = 2; // 16-bit PCM
+    const samplesPerChunk = Math.floor((MAX_STT_CHUNK_BYTES - WAV_HEADER) / BYTES_PER_SAMPLE);
+    const buffer = await wavBlob.arrayBuffer();
+    const pcmData = new Int16Array(buffer, WAV_HEADER);
+    const chunks: Blob[] = [];
+    for (let start = 0; start < pcmData.length; start += samplesPerChunk) {
+      const chunkSamples = pcmData.slice(start, Math.min(start + samplesPerChunk, pcmData.length));
+      const numSamples = chunkSamples.length;
+      const chunkBuf = new ArrayBuffer(WAV_HEADER + numSamples * BYTES_PER_SAMPLE);
+      const view = new DataView(chunkBuf);
+      const writeStr = (off: number, s: string) => {
+        for (let i = 0; i < s.length; i += 1) view.setUint8(off + i, s.charCodeAt(i));
+      };
+      writeStr(0, "RIFF");
+      view.setUint32(4, 36 + numSamples * BYTES_PER_SAMPLE, true);
+      writeStr(8, "WAVE");
+      writeStr(12, "fmt ");
+      view.setUint32(16, 16, true);
+      view.setUint16(20, 1, true); // PCM
+      view.setUint16(22, 1, true); // mono
+      view.setUint32(24, 16000, true); // sample rate
+      view.setUint32(28, 32000, true); // byte rate
+      view.setUint16(32, 2, true); // block align
+      view.setUint16(34, 16, true); // bits per sample
+      writeStr(36, "data");
+      view.setUint32(40, numSamples * BYTES_PER_SAMPLE, true);
+      new Int16Array(chunkBuf, WAV_HEADER).set(chunkSamples);
+      chunks.push(new Blob([chunkBuf], { type: "audio/wav" }));
+    }
+    return chunks;
+  }
+
   async function cleanTranscript(raw: string): Promise<string> {
     try {
       const res = await fetch("/api/speech/clean", {
@@ -352,15 +392,21 @@ export default function PhysicianTranscriptionPage() {
     if (wavBlob.size > MAX_STT_AUDIO_BYTES) {
       throw new Error("Recording is too long. Keep each clip under 100MB and try again.");
     }
-    const formData = new FormData();
-    formData.append("audio", new File([wavBlob], "recording.wav", { type: "audio/wav" }));
-    formData.append("language", "en");
-    const res = await fetch("/api/speech/stt", { method: "POST", body: formData });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data?.error || "Transcription failed");
-    const text = typeof data?.text === "string" ? data.text.trim() : "";
-    if (!text) throw new Error("No speech detected.");
-    return cleanTranscript(text);
+    const wavChunks = await splitWavBlob(wavBlob);
+    const texts: string[] = [];
+    for (const chunk of wavChunks) {
+      const formData = new FormData();
+      formData.append("audio", new File([chunk], "recording.wav", { type: "audio/wav" }));
+      formData.append("language", "en");
+      const res = await fetch("/api/speech/stt", { method: "POST", body: formData });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || "Transcription failed");
+      const text = typeof data?.text === "string" ? data.text.trim() : "";
+      if (text) texts.push(text);
+    }
+    const combined = texts.join(" ").trim();
+    if (!combined) throw new Error("No speech detected.");
+    return cleanTranscript(combined);
   }
 
   async function startRecording() {
