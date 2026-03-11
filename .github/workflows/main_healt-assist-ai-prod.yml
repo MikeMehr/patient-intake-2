@@ -80,6 +80,11 @@ jobs:
             cp -R public deploy/public
           fi
 
+          # Copy web.config so Azure IIS applies the request size limits.
+          if [ -f "web.config" ]; then
+            cp web.config deploy/web.config
+          fi
+
           # Ensure App Service's default `npm start` works for this bundle.
           cat > deploy/package.json <<'EOF'
           {
