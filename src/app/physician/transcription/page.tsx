@@ -243,54 +243,6 @@ export default function PhysicianTranscriptionPage() {
     }
   }
 
-  async function convertToWav(blob: Blob): Promise<Blob> {
-    const audioCtx = new AudioContext({ sampleRate: 16000 });
-    try {
-      const arrayBuf = await blob.arrayBuffer();
-      const decoded = await audioCtx.decodeAudioData(arrayBuf);
-      const mono =
-        decoded.numberOfChannels === 1
-          ? decoded.getChannelData(0)
-          : (() => {
-              const ch0 = decoded.getChannelData(0);
-              const ch1 = decoded.getChannelData(1);
-              const mixed = new Float32Array(ch0.length);
-              for (let i = 0; i < ch0.length; i += 1) mixed[i] = (ch0[i] + ch1[i]) / 2;
-              return mixed;
-            })();
-      const ratio = 16000 / decoded.sampleRate;
-      const newLen = Math.round(mono.length * ratio);
-      const samples = new Float32Array(newLen);
-      for (let i = 0; i < newLen; i += 1) samples[i] = mono[Math.round(i / ratio)] ?? 0;
-
-      const numSamples = samples.length;
-      const buffer = new ArrayBuffer(44 + numSamples * 2);
-      const view = new DataView(buffer);
-      const writeStr = (off: number, s: string) => {
-        for (let i = 0; i < s.length; i += 1) view.setUint8(off + i, s.charCodeAt(i));
-      };
-      writeStr(0, "RIFF");
-      view.setUint32(4, 36 + numSamples * 2, true);
-      writeStr(8, "WAVE");
-      writeStr(12, "fmt ");
-      view.setUint32(16, 16, true);
-      view.setUint16(20, 1, true);
-      view.setUint16(22, 1, true);
-      view.setUint32(24, 16000, true);
-      view.setUint32(28, 32000, true);
-      view.setUint16(32, 2, true);
-      view.setUint16(34, 16, true);
-      writeStr(36, "data");
-      view.setUint32(40, numSamples * 2, true);
-      for (let i = 0; i < numSamples; i += 1) {
-        const s = Math.max(-1, Math.min(1, samples[i]));
-        view.setInt16(44 + i * 2, s < 0 ? s * 0x8000 : s * 0x7fff, true);
-      }
-      return new Blob([buffer], { type: "audio/wav" });
-    } finally {
-      await audioCtx.close();
-    }
-  }
 
   async function cleanTranscript(raw: string): Promise<string> {
     try {
@@ -308,12 +260,12 @@ export default function PhysicianTranscriptionPage() {
   }
 
   async function transcribeAudio(audioBlob: Blob): Promise<string> {
-    const wavBlob = await convertToWav(audioBlob);
-    if (wavBlob.size > MAX_STT_AUDIO_BYTES) {
+    if (audioBlob.size > MAX_STT_AUDIO_BYTES) {
       throw new Error("Recording is too long. Keep each clip under 100MB and try again.");
     }
     const formData = new FormData();
-    formData.append("audio", new File([wavBlob], "recording.wav", { type: "audio/wav" }));
+    const ext = audioBlob.type.includes("wav") ? "wav" : "webm";
+    formData.append("audio", new File([audioBlob], `recording.${ext}`, { type: audioBlob.type || "audio/webm" }));
     formData.append("language", "en");
     const res = await fetch("/api/speech/stt", { method: "POST", body: formData });
     const data = await res.json().catch(() => ({}));
