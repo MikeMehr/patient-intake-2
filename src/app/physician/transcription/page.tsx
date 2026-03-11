@@ -355,6 +355,36 @@ export default function PhysicianTranscriptionPage() {
     return chunks;
   }
 
+  /** Transcribe a single WAV chunk via the STT API. */
+  async function transcribeChunk(chunk: Blob): Promise<string> {
+    const formData = new FormData();
+    formData.append("audio", new File([chunk], "recording.wav", { type: "audio/wav" }));
+    formData.append("language", "en");
+    const res = await fetch("/api/speech/stt", { method: "POST", body: formData });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data?.error || "Transcription failed");
+    return typeof data?.text === "string" ? data.text.trim() : "";
+  }
+
+  /**
+   * Run an array of async tasks with a concurrency limit.
+   * Returns results in the original order regardless of completion order.
+   */
+  async function parallelLimit<T>(tasks: (() => Promise<T>)[], limit: number): Promise<T[]> {
+    const results: T[] = new Array(tasks.length);
+    let nextIndex = 0;
+
+    async function worker() {
+      while (nextIndex < tasks.length) {
+        const idx = nextIndex++;
+        results[idx] = await tasks[idx]();
+      }
+    }
+
+    await Promise.all(Array.from({ length: Math.min(limit, tasks.length) }, () => worker()));
+    return results;
+  }
+
   async function transcribeAudio(audioBlob: Blob): Promise<string> {
     const wavBlob = await convertToWav(audioBlob);
     if (wavBlob.size > MAX_STT_AUDIO_BYTES) {
@@ -362,21 +392,13 @@ export default function PhysicianTranscriptionPage() {
     }
 
     const chunks = await chunkWav(wavBlob);
-    const texts: string[] = [];
 
-    for (const chunk of chunks) {
-      const formData = new FormData();
-      // Audio chunk sent directly over HTTPS — not persisted anywhere
-      formData.append("audio", new File([chunk], "recording.wav", { type: "audio/wav" }));
-      formData.append("language", "en");
-      const res = await fetch("/api/speech/stt", { method: "POST", body: formData });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.error || "Transcription failed");
-      const text = typeof data?.text === "string" ? data.text.trim() : "";
-      if (text) texts.push(text);
-    }
+    // Transcribe up to 5 chunks in parallel — keeps order, ~4-5× faster
+    const CONCURRENCY = 5;
+    const tasks = chunks.map((chunk) => () => transcribeChunk(chunk));
+    const texts = await parallelLimit(tasks, CONCURRENCY);
 
-    const combined = texts.join(" ");
+    const combined = texts.filter(Boolean).join(" ");
     if (!combined) throw new Error("No speech detected.");
     return cleanTranscript(combined);
   }
