@@ -723,6 +723,16 @@ export default function PhysicianTranscriptionPage() {
     setRecordingElapsed(0);
   }
 
+  function handleStartNew() {
+    clearEditorState();
+    setSelectedPatient(null);
+    setNewPatientFullName("");
+    setNewPatientDob("");
+    setActiveTab("capture");
+    setActionError(null);
+    setActionSuccess(null);
+  }
+
   async function deleteSnapshot(item: TranscriptionListItem) {
     if (!window.confirm("Delete this snapshot from Recent snapshots?")) return;
     setDeletingSnapshotId(item.transcriptionSessionId);
@@ -1017,6 +1027,13 @@ export default function PhysicianTranscriptionPage() {
                         className="px-4 py-2 text-sm font-medium text-white bg-emerald-700 rounded-lg hover:bg-emerald-800 disabled:bg-slate-400"
                       >
                         Finalize &amp; Save to EMR
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleStartNew}
+                        className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700"
+                      >
+                        Start New
                       </button>
                     </div>
                     <p className="text-xs text-slate-500">
