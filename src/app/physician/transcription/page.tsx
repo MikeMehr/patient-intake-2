@@ -98,9 +98,11 @@ export default function PhysicianTranscriptionPage() {
   const [recordingError, setRecordingError] = useState<string | null>(null);
   const [transcriptLoading, setTranscriptLoading] = useState(false);
   const [transcript, setTranscript] = useState("");
+  const [recordingElapsed, setRecordingElapsed] = useState(0);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const mediaChunksRef = useRef<Blob[]>([]);
   const mediaStreamRef = useRef<MediaStream | null>(null);
+  const timerIntervalRef = useRef<number | null>(null);
 
   const [soapVersionId, setSoapVersionId] = useState<string | null>(null);
   const [encounterId, setEncounterId] = useState<string | null>(null);
@@ -156,6 +158,9 @@ export default function PhysicianTranscriptionPage() {
       if (copyFeedbackTimeoutRef.current) {
         window.clearTimeout(copyFeedbackTimeoutRef.current);
       }
+      if (timerIntervalRef.current) {
+        window.clearInterval(timerIntervalRef.current);
+      }
       if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
         mediaRecorderRef.current.stop();
       }
@@ -164,6 +169,12 @@ export default function PhysicianTranscriptionPage() {
       }
     };
   }, []);
+
+  function formatElapsed(secs: number): string {
+    const m = Math.floor(secs / 60).toString().padStart(2, "0");
+    const s = (secs % 60).toString().padStart(2, "0");
+    return `${m}:${s}`;
+  }
 
   async function loadHistory() {
     setHistoryLoading(true);
@@ -290,6 +301,9 @@ export default function PhysicianTranscriptionPage() {
       };
       recorder.start(250);
       setIsRecording(true);
+      timerIntervalRef.current = window.setInterval(() => {
+        setRecordingElapsed((prev) => prev + 1);
+      }, 1000);
     } catch (err) {
       setRecordingError(err instanceof Error ? err.message : "Unable to start recording.");
     }
@@ -298,6 +312,10 @@ export default function PhysicianTranscriptionPage() {
   async function stopRecording() {
     const recorder = mediaRecorderRef.current;
     if (!recorder) return;
+    if (timerIntervalRef.current) {
+      window.clearInterval(timerIntervalRef.current);
+      timerIntervalRef.current = null;
+    }
     setIsRecording(false);
     setTranscriptLoading(true);
     setRecordingError(null);
@@ -516,6 +534,7 @@ export default function PhysicianTranscriptionPage() {
     setDraft(initialDraft);
     setReviewText(composeUnifiedSoapText(initialDraft));
     setTranscript("");
+    setRecordingElapsed(0);
   }
 
   async function deleteSnapshot(item: TranscriptionListItem) {
@@ -703,14 +722,19 @@ export default function PhysicianTranscriptionPage() {
                   <>
                     <div className="flex flex-wrap items-center gap-3">
                       {isRecording ? (
-                        <button
-                          type="button"
-                          onClick={stopRecording}
-                          disabled={transcriptLoading}
-                          className="px-4 py-2 text-sm font-medium text-white rounded-lg bg-red-600 hover:bg-red-700 disabled:bg-slate-400"
-                        >
-                          Stop transcription
-                        </button>
+                        <>
+                          <button
+                            type="button"
+                            onClick={stopRecording}
+                            disabled={transcriptLoading}
+                            className="px-4 py-2 text-sm font-medium text-white rounded-lg bg-red-600 hover:bg-red-700 disabled:bg-slate-400"
+                          >
+                            Stop transcription
+                          </button>
+                          <span className="font-mono text-sm font-semibold text-slate-700 tabular-nums">
+                            {formatElapsed(recordingElapsed)}
+                          </span>
+                        </>
                       ) : transcript.trim().length > 0 && !soapVersionId ? (
                         <>
                           <button
@@ -721,6 +745,11 @@ export default function PhysicianTranscriptionPage() {
                           >
                             Resume
                           </button>
+                          {recordingElapsed > 0 && (
+                            <span className="font-mono text-sm font-semibold text-slate-500 tabular-nums">
+                              {formatElapsed(recordingElapsed)}
+                            </span>
+                          )}
                           <button
                             type="button"
                             onClick={() => setShowStartNewConfirm(true)}
@@ -733,7 +762,7 @@ export default function PhysicianTranscriptionPage() {
                       ) : (
                         <button
                           type="button"
-                          onClick={startRecording}
+                          onClick={() => { setRecordingElapsed(0); startRecording(); }}
                           disabled={transcriptLoading}
                           className="px-4 py-2 text-sm font-medium text-white rounded-lg bg-slate-900 hover:bg-slate-800 disabled:bg-slate-400"
                         >
@@ -886,6 +915,7 @@ export default function PhysicianTranscriptionPage() {
                 onClick={() => {
                   setShowStartNewConfirm(false);
                   setTranscript("");
+                  setRecordingElapsed(0);
                   startRecording();
                 }}
                 className="px-3 py-1.5 text-sm font-medium text-white rounded-lg bg-slate-900 hover:bg-slate-800"
