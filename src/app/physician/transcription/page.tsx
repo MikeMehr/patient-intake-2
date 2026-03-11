@@ -835,7 +835,8 @@ export default function PhysicianTranscriptionPage() {
                       type="button"
                       onClick={generateSoap}
                       disabled={!canGenerate}
-                      className="px-4 py-2 text-sm font-medium text-white bg-slate-900 rounded-lg hover:bg-slate-800 disabled:bg-slate-400"
+                      title={generateDisabledReason ?? undefined}
+                      className="px-4 py-2 text-sm font-medium text-white bg-slate-900 rounded-lg hover:bg-slate-800 disabled:bg-slate-400 disabled:cursor-not-allowed"
                     >
                       {actionLoading ? "Generating..." : "Generate SOAP"}
                     </button>
