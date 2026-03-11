@@ -797,11 +797,6 @@ export default function PhysicianTranscriptionPage() {
                           >
                             Resume
                           </button>
-                          {recordingElapsed > 0 && (
-                            <span className="font-mono text-sm font-semibold text-slate-500 tabular-nums">
-                              {formatElapsed(recordingElapsed)}
-                            </span>
-                          )}
                           <button
                             type="button"
                             onClick={() => setShowStartNewConfirm(true)}
@@ -810,6 +805,11 @@ export default function PhysicianTranscriptionPage() {
                           >
                             Start New
                           </button>
+                          {recordingElapsed > 0 && (
+                            <span className="font-mono text-sm font-semibold text-slate-500 tabular-nums">
+                              {formatElapsed(recordingElapsed)}
+                            </span>
+                          )}
                         </>
                       ) : (
                         <button
