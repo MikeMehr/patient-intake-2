@@ -728,7 +728,7 @@ export default function PhysicianTranscriptionPage() {
     setSelectedPatient(null);
     setNewPatientFullName("");
     setNewPatientDob("");
-    setActiveTab("capture");
+    setActiveWorkflowTab("capture");
     setActionError(null);
     setActionSuccess(null);
   }
