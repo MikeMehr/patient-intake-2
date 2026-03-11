@@ -103,6 +103,9 @@ export default function PhysicianTranscriptionPage() {
   const mediaChunksRef = useRef<Blob[]>([]);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const timerIntervalRef = useRef<number | null>(null);
+  const flushIntervalRef = useRef<number | null>(null);
+  const pendingTranscriptionsRef = useRef<Promise<void>[]>([]);
+  const segmentIndexRef = useRef(0);
 
   const [soapVersionId, setSoapVersionId] = useState<string | null>(null);
   const [encounterId, setEncounterId] = useState<string | null>(null);
@@ -403,8 +406,63 @@ export default function PhysicianTranscriptionPage() {
     return cleanTranscript(combined);
   }
 
+  /**
+   * Flush the current audio segment: stop the recorder, grab its blob,
+   * restart immediately, and transcribe the segment in the background.
+   * The transcript updates live as each segment completes.
+   */
+  async function flushSegment(recorder: MediaRecorder, stream: MediaStream, isFinal: boolean) {
+    const mimeType = recorder.mimeType || "audio/webm";
+
+    // Stop recorder to finalize the current segment
+    await new Promise<void>((resolve) => {
+      recorder.onstop = () => resolve();
+      recorder.stop();
+    });
+
+    const blob = new Blob(mediaChunksRef.current, { type: mimeType });
+    mediaChunksRef.current = [];
+
+    // Restart recording immediately (unless this is the final flush)
+    if (!isFinal && stream.active) {
+      const newRecorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = newRecorder;
+      newRecorder.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) mediaChunksRef.current.push(e.data);
+      };
+      newRecorder.start(250);
+    }
+
+    if (!blob.size) return;
+
+    // Capture the segment index for correct ordering
+    const idx = segmentIndexRef.current++;
+
+    // Transcribe in the background — results stream into the transcript
+    const task = (async () => {
+      try {
+        const text = await transcribeAudio(blob);
+        if (text) {
+          setTranscript((prev) => {
+            const parts = prev ? prev.split("\n") : [];
+            // Ensure we insert at the right position (segments may finish out of order)
+            while (parts.length <= idx) parts.push("");
+            parts[idx] = text;
+            return parts.filter(Boolean).join(" ").trim();
+          });
+        }
+      } catch (err) {
+        setRecordingError(err instanceof Error ? err.message : "Transcription failed for a segment.");
+      }
+    })();
+
+    pendingTranscriptionsRef.current.push(task);
+  }
+
   async function startRecording() {
     setRecordingError(null);
+    segmentIndexRef.current = 0;
+    pendingTranscriptionsRef.current = [];
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: { noiseSuppression: true, echoCancellation: true, autoGainControl: true },
@@ -421,6 +479,15 @@ export default function PhysicianTranscriptionPage() {
       timerIntervalRef.current = window.setInterval(() => {
         setRecordingElapsed((prev) => prev + 1);
       }, 1000);
+
+      // Flush a segment every 55 seconds for live transcription
+      flushIntervalRef.current = window.setInterval(() => {
+        const rec = mediaRecorderRef.current;
+        const strm = mediaStreamRef.current;
+        if (rec && rec.state === "recording" && strm) {
+          flushSegment(rec, strm, false);
+        }
+      }, 55_000);
     } catch (err) {
       setRecordingError(err instanceof Error ? err.message : "Unable to start recording.");
     }
@@ -428,36 +495,38 @@ export default function PhysicianTranscriptionPage() {
 
   async function stopRecording() {
     const recorder = mediaRecorderRef.current;
+    const stream = mediaStreamRef.current;
     if (!recorder) return;
+
+    // Clear timers
     if (timerIntervalRef.current) {
       window.clearInterval(timerIntervalRef.current);
       timerIntervalRef.current = null;
     }
+    if (flushIntervalRef.current) {
+      window.clearInterval(flushIntervalRef.current);
+      flushIntervalRef.current = null;
+    }
+
     setIsRecording(false);
     setTranscriptLoading(true);
     setRecordingError(null);
-    await new Promise<void>((resolve) => {
-      recorder.onstop = () => resolve();
-      recorder.stop();
-    });
+
+    // Final flush — transcribe whatever remains
+    if (recorder.state === "recording" && stream) {
+      await flushSegment(recorder, stream, true);
+    }
+
+    // Release microphone
     if (mediaStreamRef.current) {
       mediaStreamRef.current.getTracks().forEach((t) => t.stop());
       mediaStreamRef.current = null;
     }
-    try {
-      const blob = new Blob(mediaChunksRef.current, { type: recorder.mimeType || "audio/webm" });
-      mediaChunksRef.current = [];
-      if (!blob.size) {
-        setRecordingError("No audio captured.");
-        return;
-      }
-      const text = await transcribeAudio(blob);
-      setTranscript((prev) => [prev, text].filter(Boolean).join("\n").trim());
-    } catch (err) {
-      setRecordingError(err instanceof Error ? err.message : "Transcription failed.");
-    } finally {
-      setTranscriptLoading(false);
-    }
+
+    // Wait for all pending transcriptions to finish
+    await Promise.allSettled(pendingTranscriptionsRef.current);
+    pendingTranscriptionsRef.current = [];
+    setTranscriptLoading(false);
   }
 
   async function generateSoap() {
