@@ -322,20 +322,63 @@ export default function PhysicianTranscriptionPage() {
     }
   }
 
+  /**
+   * Split a WAV blob into ≤55-second chunks (safely under Azure's 60-second limit).
+   * Each chunk is a fully valid WAV file built from the original PCM data.
+   * Audio lives only in memory — never written to disk or storage.
+   */
+  async function chunkWav(wavBlob: Blob): Promise<Blob[]> {
+    const CHUNK_SECONDS = 55;
+    const SAMPLE_RATE = 16000;
+    const BYTES_PER_SAMPLE = 2; // 16-bit mono
+    const CHUNK_PCM_BYTES = CHUNK_SECONDS * SAMPLE_RATE * BYTES_PER_SAMPLE;
+
+    const wavBuffer = await wavBlob.arrayBuffer();
+    const wavBytes = new Uint8Array(wavBuffer);
+    const header = wavBytes.slice(0, 44);   // standard WAV header
+    const pcmData = wavBytes.slice(44);     // raw PCM samples
+
+    const chunks: Blob[] = [];
+    for (let offset = 0; offset < pcmData.length; offset += CHUNK_PCM_BYTES) {
+      const chunkPcm = pcmData.slice(offset, offset + CHUNK_PCM_BYTES);
+      const chunkBuf = new ArrayBuffer(44 + chunkPcm.length);
+      const chunkBytes = new Uint8Array(chunkBuf);
+      const chunkView = new DataView(chunkBuf);
+
+      chunkBytes.set(header);                                        // copy header
+      chunkView.setUint32(4, 36 + chunkPcm.length, true);          // RIFF chunk size
+      chunkView.setUint32(40, chunkPcm.length, true);               // data sub-chunk size
+      chunkBytes.set(chunkPcm, 44);                                  // PCM payload
+
+      chunks.push(new Blob([chunkBuf], { type: "audio/wav" }));
+    }
+    return chunks;
+  }
+
   async function transcribeAudio(audioBlob: Blob): Promise<string> {
     const wavBlob = await convertToWav(audioBlob);
     if (wavBlob.size > MAX_STT_AUDIO_BYTES) {
       throw new Error("Recording is too long. Keep each clip under 100MB and try again.");
     }
-    const formData = new FormData();
-    formData.append("audio", new File([wavBlob], "recording.wav", { type: "audio/wav" }));
-    formData.append("language", "en");
-    const res = await fetch("/api/speech/stt", { method: "POST", body: formData });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data?.error || "Transcription failed");
-    const text = typeof data?.text === "string" ? data.text.trim() : "";
-    if (!text) throw new Error("No speech detected.");
-    return cleanTranscript(text);
+
+    const chunks = await chunkWav(wavBlob);
+    const texts: string[] = [];
+
+    for (const chunk of chunks) {
+      const formData = new FormData();
+      // Audio chunk sent directly over HTTPS — not persisted anywhere
+      formData.append("audio", new File([chunk], "recording.wav", { type: "audio/wav" }));
+      formData.append("language", "en");
+      const res = await fetch("/api/speech/stt", { method: "POST", body: formData });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || "Transcription failed");
+      const text = typeof data?.text === "string" ? data.text.trim() : "";
+      if (text) texts.push(text);
+    }
+
+    const combined = texts.join(" ");
+    if (!combined) throw new Error("No speech detected.");
+    return cleanTranscript(combined);
   }
 
   async function startRecording() {
