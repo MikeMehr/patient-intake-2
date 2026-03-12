@@ -102,7 +102,7 @@ export default function PhysicianTranscriptionPage() {
   const [newPatientFullName, setNewPatientFullName] = useState("");
   const [newPatientDob, setNewPatientDob] = useState("");
   const chiefComplaint = "";
-  const [activeWorkflowTab, setActiveWorkflowTab] = useState<"capture" | "review">("capture");
+  const [activeWorkflowTab, setActiveWorkflowTab] = useState<"capture" | "review" | "ask_ai">("capture");
 
   const [isRecording, setIsRecording] = useState(false);
   const [recordingError, setRecordingError] = useState<string | null>(null);
@@ -131,6 +131,12 @@ export default function PhysicianTranscriptionPage() {
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
   const [copyFeedbackState, setCopyFeedbackState] = useState<"idle" | "copied">("idle");
   const copyFeedbackTimeoutRef = useRef<number | null>(null);
+
+  const [aiPrompt, setAiPrompt] = useState("");
+  const [aiResponse, setAiResponse] = useState("");
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
+  const [aiCopyFeedback, setAiCopyFeedback] = useState(false);
 
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyItems, setHistoryItems] = useState<TranscriptionListItem[]>([]);
@@ -904,6 +910,40 @@ export default function PhysicianTranscriptionPage() {
     }
   }
 
+  async function handleAskAi() {
+    if (!aiPrompt.trim() || aiLoading) return;
+    setAiLoading(true);
+    setAiError(null);
+    setAiResponse("");
+    try {
+      const res = await fetch("/api/physician/transcription/ask-ai", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ soapText: reviewText, prompt: aiPrompt.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setAiError(data.error || "Request failed.");
+        return;
+      }
+      if (typeof data.result !== "string") {
+        setAiError("Unexpected response format from AI service.");
+        return;
+      }
+      setAiResponse(data.result.trim());
+    } catch {
+      setAiError("Network error. Please try again.");
+    } finally {
+      setAiLoading(false);
+    }
+  }
+
+  function copyAiResponse() {
+    navigator.clipboard.writeText(aiResponse);
+    setAiCopyFeedback(true);
+    setTimeout(() => setAiCopyFeedback(false), 1500);
+  }
+
   return (
     <>
       <SessionKeepAlive redirectTo="/auth/login" />
@@ -964,6 +1004,17 @@ export default function PhysicianTranscriptionPage() {
                       }`}
                     >
                       Review and export
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setActiveWorkflowTab("ask_ai")}
+                      className={`px-3 py-1.5 text-xs font-medium rounded-md ${
+                        activeWorkflowTab === "ask_ai"
+                          ? "bg-white text-slate-900 shadow-sm"
+                          : "text-slate-600 hover:text-slate-900"
+                      }`}
+                    >
+                      Ask AI
                     </button>
                   </div>
                 </div>
@@ -1116,6 +1167,61 @@ export default function PhysicianTranscriptionPage() {
                     </p>
                     {actionError && <p className="text-sm text-red-700">{actionError}</p>}
                     {actionSuccess && <p className="text-sm text-green-700">{actionSuccess}</p>}
+                  </>
+                )}
+                {activeWorkflowTab === "ask_ai" && (
+                  <>
+                    <div className="space-y-3">
+                      <p className="text-xs text-slate-500">
+                        Ask the AI to draft a referral letter, suggest labs, or handle a custom request using the current SOAP note.
+                      </p>
+                      <p className="text-xs font-medium text-slate-500">Response is shown only here (not saved).</p>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={aiPrompt}
+                          onChange={(e) => setAiPrompt(e.target.value)}
+                          onKeyDown={(e) => { if (e.key === "Enter") handleAskAi(); }}
+                          placeholder='e.g. "generate a referral letter to orthopaedics"'
+                          className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                          disabled={aiLoading}
+                        />
+                        <button
+                          type="button"
+                          onClick={handleAskAi}
+                          disabled={aiLoading || !aiPrompt.trim() || !reviewText.trim()}
+                          className="px-4 py-2 text-sm font-medium text-white bg-slate-900 rounded-lg hover:bg-slate-800 disabled:bg-slate-400"
+                        >
+                          {aiLoading ? "Generating..." : "Ask AI"}
+                        </button>
+                      </div>
+                      {!reviewText.trim() && (
+                        <p className="text-xs text-amber-600">
+                          Generate a SOAP note first (Capture tab) before asking AI.
+                        </p>
+                      )}
+                    </div>
+                    {aiError && <p className="text-sm text-red-700">{aiError}</p>}
+                    {aiResponse && (
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-medium text-slate-700">AI Response</span>
+                          <button
+                            type="button"
+                            onClick={copyAiResponse}
+                            className="px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50"
+                          >
+                            {aiCopyFeedback ? "Copied!" : "Copy"}
+                          </button>
+                        </div>
+                        <textarea
+                          value={aiResponse}
+                          onChange={(e) => setAiResponse(e.target.value)}
+                          rows={10}
+                          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                        />
+                      </div>
+                    )}
                   </>
                 )}
               </div>
