@@ -15,6 +15,7 @@ import {
 } from "@/lib/speech-language";
 import { lightCleanupTranscript, normalizePunctuation } from "@/lib/speech-transcript";
 import BodyPartDiagram from "@/components/BodyPartDiagram";
+import { getBodyDiagramImage } from "@/lib/body-diagram-images";
 import { getSensitivePhotoContext, isPhotoUploadRequestText } from "@/app/api/interview/prompt-helpers";
 import NextImage from "next/image";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -3517,11 +3518,19 @@ export default function Home() {
             return candidateKey === key;
           });
         });
-        const shouldDropGenericBack = uniqueParts.some((bp) => bp.part !== "back");
-        const hasNeckSelection = uniqueParts.some((bp) => bp.part === "neck");
+        // Deduplicate parts that resolve to the same diagram image (e.g. "head" and "neck").
+        const seenImageSrcs = new Set<string>();
+        const deduplicatedParts = uniqueParts.filter((bp) => {
+          const image = getBodyDiagramImage(bp.part as any, bp.side === "both" ? undefined : bp.side);
+          if (seenImageSrcs.has(image.src)) return false;
+          seenImageSrcs.add(image.src);
+          return true;
+        });
+        const shouldDropGenericBack = deduplicatedParts.some((bp) => bp.part !== "back");
+        const hasNeckSelection = deduplicatedParts.some((bp) => bp.part === "neck");
         const filteredParts = shouldDropGenericBack
-          ? uniqueParts.filter((bp) => bp.part !== "back")
-          : uniqueParts;
+          ? deduplicatedParts.filter((bp) => bp.part !== "back")
+          : deduplicatedParts;
         const partsForTurn =
           shouldShowDiagramFromFlag && hasNeckSelection
             ? filteredParts.filter((bp) => bp.part !== "chest")

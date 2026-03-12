@@ -1,3 +1,6 @@
+import type { BodyPart } from "@/lib/body-parts";
+import { getBodyDiagramImage } from "@/lib/body-diagram-images";
+
 export type MarkerPoint = { xPct: number; yPct: number };
 
 export type DiagramSelectionInput = {
@@ -40,6 +43,9 @@ export function mergeDiagramSelectionsForDisplay(args: {
 }): DiagramSelectionForDisplay[] {
   const withMarkers: DiagramSelectionForDisplay[] = [];
   const seenKeys = new Set<string>();
+  // Track resolved image sources so parts that map to the same diagram
+  // (e.g. "head" and "neck" both map to "Head Face Neck.png") are not duplicated.
+  const seenImageSrcs = new Set<string>();
 
   for (const selection of args.markerSelections) {
     const part = (selection.part || "").trim();
@@ -51,7 +57,10 @@ export function mergeDiagramSelectionsForDisplay(args: {
     if (markers.length === 0) continue;
     const key = `${part}::${side ?? "none"}`;
     if (seenKeys.has(key)) continue;
+    const imageSrc = getBodyDiagramImage(part as BodyPart, side).src;
+    if (seenImageSrcs.has(imageSrc)) continue;
     seenKeys.add(key);
+    seenImageSrcs.add(imageSrc);
     withMarkers.push({ part, side, markers });
   }
 
@@ -61,7 +70,10 @@ export function mergeDiagramSelectionsForDisplay(args: {
     const side = toDisplaySide(partSelection.side);
     const key = `${part}::${side ?? "none"}`;
     if (seenKeys.has(key)) continue;
+    const imageSrc = getBodyDiagramImage(part as BodyPart, side).src;
+    if (seenImageSrcs.has(imageSrc)) continue;
     seenKeys.add(key);
+    seenImageSrcs.add(imageSrc);
     withMarkers.push({ part, side, markers: [] });
   }
 
