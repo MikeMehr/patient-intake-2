@@ -1063,8 +1063,6 @@ export default function PhysicianTranscriptionPage() {
                   </div>
                 )}
               </div>
-            )}
-          </div>
 
           <div className="bg-white rounded-lg shadow-sm border border-slate-200">
             <div className="flex items-center justify-between">
