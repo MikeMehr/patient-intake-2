@@ -7,3 +7,4 @@
 ## Git & Deployment
 - After completing changes, commit to the **main** branch on GitHub.
 - After committing, deploy to **Azure**.
+- **Azure deployment is automatic:** pushing to `main` triggers GitHub Actions (`.github/workflows/main_healt-assist-ai-prod.yml`), which builds and deploys to Azure Web App `healt-assist-ai-prod`. No manual deploy command needed — `git push origin main` is the deploy step.
