@@ -457,6 +457,39 @@ export default function PhysicianTranscriptionPage() {
     pendingTranscriptionsRef.current.push(task);
   }
 
+  /** Resume recording without resetting segment index or pending transcriptions. */
+  async function resumeRecording() {
+    setRecordingError(null);
+    // Do NOT reset segmentIndexRef or pendingTranscriptionsRef — keep appending
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: { noiseSuppression: true, echoCancellation: true, autoGainControl: true },
+      });
+      const recorder = new MediaRecorder(stream);
+      mediaChunksRef.current = [];
+      mediaStreamRef.current = stream;
+      mediaRecorderRef.current = recorder;
+      recorder.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) mediaChunksRef.current.push(e.data);
+      };
+      recorder.start(250);
+      setIsRecording(true);
+      timerIntervalRef.current = window.setInterval(() => {
+        setRecordingElapsed((prev) => prev + 1);
+      }, 1000);
+
+      flushIntervalRef.current = window.setInterval(() => {
+        const rec = mediaRecorderRef.current;
+        const strm = mediaStreamRef.current;
+        if (rec && rec.state === "recording" && strm) {
+          flushSegment(rec, strm, false);
+        }
+      }, 55_000);
+    } catch (err) {
+      setRecordingError(err instanceof Error ? err.message : "Unable to start recording.");
+    }
+  }
+
   async function startRecording() {
     setRecordingError(null);
     segmentIndexRef.current = 0;
@@ -858,7 +891,7 @@ export default function PhysicianTranscriptionPage() {
                         <>
                           <button
                             type="button"
-                            onClick={startRecording}
+                            onClick={resumeRecording}
                             disabled={transcriptLoading}
                             className="px-4 py-2 text-sm font-medium text-white rounded-lg bg-slate-900 hover:bg-slate-800 disabled:bg-slate-400"
                           >
