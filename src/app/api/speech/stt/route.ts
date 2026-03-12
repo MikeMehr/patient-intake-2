@@ -128,10 +128,7 @@ export async function POST(request: NextRequest) {
       const res = NextResponse.json(
         {
           error: "Azure Speech transcription request failed.",
-          details:
-            process.env.NODE_ENV === "development"
-              ? errText || response.statusText
-              : undefined,
+          details: errText || response.statusText || undefined,
         },
         { status },
       );
