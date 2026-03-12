@@ -15,7 +15,7 @@ export function getAzureSpeechConfig() {
 
   const endpoint = endpointOverride?.trim().length
     ? endpointOverride.replace(/\/$/, "")
-    : `https://${region}.stt.speech.microsoft.com`;
+    : `https://${region}.api.cognitive.microsoft.com`;
 
   return { key, region, endpoint };
 }
