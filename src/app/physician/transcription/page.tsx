@@ -20,6 +20,16 @@ type SoapDraft = {
   plan: string;
 };
 
+type SoapCase = {
+  label: string;
+  soapVersionId: string;
+  encounterId: string;
+  lifecycleState: "DRAFT" | "FINALIZED_FOR_EXPORT";
+  hasPatient: boolean;
+  draft: SoapDraft;
+  reviewText: string;
+};
+
 type TranscriptionListItem = {
   transcriptionSessionId: string;
   encounterId: string;
@@ -114,6 +124,8 @@ export default function PhysicianTranscriptionPage() {
   const [, setSnapshotLabel] = useState<string>("");
   const [draft, setDraft] = useState<SoapDraft>(initialDraft);
   const [reviewText, setReviewText] = useState<string>(composeUnifiedSoapText(initialDraft));
+  const [soapCases, setSoapCases] = useState<SoapCase[]>([]);
+  const [activeCaseIndex, setActiveCaseIndex] = useState(0);
   const [actionLoading, setActionLoading] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
@@ -589,27 +601,81 @@ export default function PhysicianTranscriptionPage() {
       }
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || "Failed to generate SOAP");
-      setSoapVersionId(data.soapVersionId || null);
-      setEncounterId(data.encounterId || null);
-      setLifecycleState(data.lifecycleState || "DRAFT");
-      setSoapHasPatient(Boolean(data.patientName));
+      const hasPatient = Boolean(data.patientName);
+      const cases: SoapCase[] = Array.isArray(data.cases) && data.cases.length > 0
+        ? data.cases.map((c: { label?: string; soapVersionId: string; encounterId: string; lifecycleState: string; draft: Partial<SoapDraft> }, i: number) => {
+            const d: SoapDraft = {
+              subjective: c.draft?.subjective || "",
+              objective: c.draft?.objective || "",
+              assessment: c.draft?.assessment || "",
+              plan: c.draft?.plan || "",
+            };
+            return {
+              label: c.label || `Case ${i + 1}`,
+              soapVersionId: c.soapVersionId,
+              encounterId: c.encounterId,
+              lifecycleState: (c.lifecycleState as "DRAFT" | "FINALIZED_FOR_EXPORT") || "DRAFT",
+              hasPatient,
+              draft: d,
+              reviewText: composeUnifiedSoapText(d),
+            };
+          })
+        : [{
+            label: "Case 1",
+            soapVersionId: data.soapVersionId || "",
+            encounterId: data.encounterId || "",
+            lifecycleState: (data.lifecycleState as "DRAFT" | "FINALIZED_FOR_EXPORT") || "DRAFT",
+            hasPatient,
+            draft: {
+              subjective: data?.draft?.subjective || "",
+              objective: data?.draft?.objective || "",
+              assessment: data?.draft?.assessment || "",
+              plan: data?.draft?.plan || "",
+            },
+            reviewText: composeUnifiedSoapText({
+              subjective: data?.draft?.subjective || "",
+              objective: data?.draft?.objective || "",
+              assessment: data?.draft?.assessment || "",
+              plan: data?.draft?.plan || "",
+            }),
+          }];
+      setSoapCases(cases);
+      setActiveCaseIndex(0);
+      setSoapVersionId(cases[0].soapVersionId);
+      setEncounterId(cases[0].encounterId);
+      setLifecycleState(cases[0].lifecycleState);
+      setSoapHasPatient(cases[0].hasPatient);
       setSnapshotLabel(typeof data?.snapshotLabel === "string" ? data.snapshotLabel : "");
-      const nextDraft = {
-        subjective: data?.draft?.subjective || "",
-        objective: data?.draft?.objective || "",
-        assessment: data?.draft?.assessment || "",
-        plan: data?.draft?.plan || "",
-      };
-      setDraft(nextDraft);
-      setReviewText(composeUnifiedSoapText(nextDraft));
+      setDraft(cases[0].draft);
+      setReviewText(cases[0].reviewText);
       setActiveWorkflowTab("review");
-      setActionSuccess("SOAP draft generated.");
+      setActionSuccess(cases.length > 1 ? `${cases.length} SOAP drafts generated.` : "SOAP draft generated.");
       await loadHistory();
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "Failed to generate SOAP");
     } finally {
       setActionLoading(false);
     }
+  }
+
+  function switchCase(newIndex: number) {
+    // Persist any edits to the current case before switching
+    const updatedCases = [...soapCases];
+    const parsedDraft = parseUnifiedSoapText(reviewText);
+    updatedCases[activeCaseIndex] = {
+      ...updatedCases[activeCaseIndex],
+      reviewText,
+      draft: parsedDraft ?? updatedCases[activeCaseIndex].draft,
+    };
+    setSoapCases(updatedCases);
+    setActiveCaseIndex(newIndex);
+    const c = updatedCases[newIndex];
+    setSoapVersionId(c.soapVersionId);
+    setEncounterId(c.encounterId);
+    setLifecycleState(c.lifecycleState);
+    setSoapHasPatient(c.hasPatient);
+    setDraft(c.draft);
+    setReviewText(c.reviewText);
   }
 
   async function saveDraft() {
@@ -631,7 +697,13 @@ export default function PhysicianTranscriptionPage() {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || "Failed to save draft");
       setDraft(parsedDraft);
-      setReviewText(composeUnifiedSoapText(parsedDraft));
+      const nextReviewText = composeUnifiedSoapText(parsedDraft);
+      setReviewText(nextReviewText);
+      const updatedCases = [...soapCases];
+      if (updatedCases[activeCaseIndex]) {
+        updatedCases[activeCaseIndex] = { ...updatedCases[activeCaseIndex], draft: parsedDraft, reviewText: nextReviewText };
+        setSoapCases(updatedCases);
+      }
       setActionSuccess("SOAP draft saved.");
       await loadHistory();
     } catch (err) {
@@ -660,6 +732,11 @@ export default function PhysicianTranscriptionPage() {
         setLifecycleState("FINALIZED_FOR_EXPORT");
         if (typeof finalizeData?.snapshotLabel === "string") setSnapshotLabel(finalizeData.snapshotLabel);
         setTranscript("");
+        const updatedCases = [...soapCases];
+        if (updatedCases[activeCaseIndex]) {
+          updatedCases[activeCaseIndex] = { ...updatedCases[activeCaseIndex], lifecycleState: "FINALIZED_FOR_EXPORT" };
+          setSoapCases(updatedCases);
+        }
       }
 
       const idempotencyKey =
@@ -738,9 +815,20 @@ export default function PhysicianTranscriptionPage() {
         plan: data?.draft?.plan || "",
       };
       setDraft(nextDraft);
-      setReviewText(composeUnifiedSoapText(nextDraft));
+      const nextReviewText = composeUnifiedSoapText(nextDraft);
+      setReviewText(nextReviewText);
       setTranscript(data?.draftTranscript || "");
       if (typeof data?.snapshotLabel === "string") setSnapshotLabel(data.snapshotLabel);
+      setSoapCases([{
+        label: "Case 1",
+        soapVersionId: data.soapVersionId || "",
+        encounterId: data.encounterId || "",
+        lifecycleState: data.lifecycleState || "DRAFT",
+        hasPatient: Boolean(data.patientId),
+        draft: nextDraft,
+        reviewText: nextReviewText,
+      }]);
+      setActiveCaseIndex(0);
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "Failed to load SOAP version");
     }
@@ -755,6 +843,8 @@ export default function PhysicianTranscriptionPage() {
     setReviewText(composeUnifiedSoapText(initialDraft));
     setTranscript("");
     setRecordingElapsed(0);
+    setSoapCases([]);
+    setActiveCaseIndex(0);
   }
 
   function handleStartNew() {
@@ -954,6 +1044,24 @@ export default function PhysicianTranscriptionPage() {
                 )}
                 {activeWorkflowTab === "review" && (
                   <>
+                    {soapCases.length > 1 && (
+                      <div className="flex flex-wrap gap-1">
+                        {soapCases.map((c, i) => (
+                          <button
+                            key={c.soapVersionId}
+                            type="button"
+                            onClick={() => switchCase(i)}
+                            className={`px-3 py-1.5 text-xs font-medium rounded-md border ${
+                              i === activeCaseIndex
+                                ? "bg-slate-900 text-white border-slate-900"
+                                : "bg-white text-slate-700 border-slate-300 hover:bg-slate-50"
+                            }`}
+                          >
+                            {c.label}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                     <div className="flex items-center justify-end">
                       <button
                         type="button"
