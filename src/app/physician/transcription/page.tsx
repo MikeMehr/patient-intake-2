@@ -1020,7 +1020,7 @@ export default function PhysicianTranscriptionPage() {
                         disabled={!soapVersionId || lifecycleState === "FINALIZED_FOR_EXPORT" || actionLoading}
                         className="px-4 py-2 text-sm font-medium text-white bg-slate-900 rounded-lg hover:bg-slate-800 disabled:bg-slate-400"
                       >
-                        Save draft
+                        Save changes
                       </button>
                       <button
                         type="button"
@@ -1031,9 +1031,6 @@ export default function PhysicianTranscriptionPage() {
                       >
                         Finalize &amp; Save to EMR
                       </button>
-                      {!soapHasPatient && soapVersionId && (
-                        <p className="text-xs text-amber-600">Patient name required to finalize and save to EMR.</p>
-                      )}
                       <button
                         type="button"
                         onClick={handleStartNew}
@@ -1042,6 +1039,9 @@ export default function PhysicianTranscriptionPage() {
                         Start New
                       </button>
                     </div>
+                    {!soapHasPatient && soapVersionId && (
+                      <p className="text-xs text-amber-600">Patient name required to finalize and save to EMR.</p>
+                    )}
                     <p className="text-xs text-slate-500">
                       Lifecycle: {lifecycleState || "—"} {encounterId ? `• Encounter ${encounterId}` : ""}
                     </p>
