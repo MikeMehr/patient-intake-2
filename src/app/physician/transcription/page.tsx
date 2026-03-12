@@ -125,6 +125,7 @@ export default function PhysicianTranscriptionPage() {
   const [deletingSnapshotId, setDeletingSnapshotId] = useState<string | null>(null);
   const [deletingAllSnapshots, setDeletingAllSnapshots] = useState(false);
   const [showStartNewConfirm, setShowStartNewConfirm] = useState(false);
+  const [patientSectionOpen, setPatientSectionOpen] = useState(false);
 
   const hasNewPatientIdentity = useMemo(
     () => newPatientFullName.trim().length >= 3 && /^\d{4}-\d{2}-\d{2}$/.test(newPatientDob.trim()),
@@ -810,83 +811,6 @@ export default function PhysicianTranscriptionPage() {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="lg:col-span-2 space-y-6">
               <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6 space-y-4">
-                <p className="text-sm font-medium text-slate-700">Search or add new patient</p>
-                <form
-                  className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] gap-2"
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    void continuePatientIdentity();
-                  }}
-                >
-                  <input
-                    type="text"
-                    value={newPatientFullName}
-                    onChange={(e) => {
-                      setNewPatientFullName(e.target.value);
-                      setSelectedPatient(null);
-                      setPatientIdentityResolution(null);
-                      setPatientIdentityMessage(null);
-                      setPatientSearchError(null);
-                    }}
-                    className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
-                    placeholder="First name Last name"
-                  />
-                  <input
-                    type="date"
-                    value={newPatientDob}
-                    onChange={(e) => {
-                      setNewPatientDob(e.target.value);
-                      setSelectedPatient(null);
-                      setPatientIdentityResolution(null);
-                      setPatientIdentityMessage(null);
-                      setPatientSearchError(null);
-                    }}
-                    className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
-                  />
-                  <button
-                    type="submit"
-                    disabled={patientSearchLoading}
-                    className="px-4 py-2 text-sm font-medium text-white bg-slate-900 rounded-lg hover:bg-slate-800 disabled:bg-slate-400"
-                  >
-                    {patientSearchLoading ? "Resolving..." : "Continue"}
-                  </button>
-                </form>
-                {patientSearchError && <p className="text-sm text-red-700">{patientSearchError}</p>}
-                {patientIdentityMessage && (
-                  <p
-                    className={`text-sm ${
-                      patientIdentityResolution === "existing" ? "text-emerald-700" : "text-slate-600"
-                    }`}
-                  >
-                    {patientIdentityMessage}
-                  </p>
-                )}
-                {selectedPatient && (
-                  <div className="rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 flex items-start justify-between gap-3">
-                    <div>
-                      <p className="text-sm font-semibold text-emerald-900">Selected patient</p>
-                      <p className="text-sm text-emerald-900">{selectedPatient.fullName}</p>
-                      <p className="text-xs text-emerald-800">
-                        DOB: {selectedPatient.dateOfBirth || "—"} •{" "}
-                        {selectedPatient.primaryPhone || selectedPatient.email || "No contact"}
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSelectedPatient(null);
-                        setPatientIdentityResolution(null);
-                        setPatientIdentityMessage(null);
-                      }}
-                      className="px-3 py-1.5 text-xs font-medium text-emerald-900 bg-white border border-emerald-300 rounded-lg hover:bg-emerald-100"
-                    >
-                      Edit patient
-                    </button>
-                  </div>
-                )}
-              </div>
-
-              <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6 space-y-4">
                 <div className="flex items-center justify-start">
                   <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-1">
                     <button
@@ -986,9 +910,6 @@ export default function PhysicianTranscriptionPage() {
                     {generateDisabledReason && (
                       <p className="text-xs text-slate-500">{generateDisabledReason}</p>
                     )}
-                    {!hasPatientIdentity && transcript.trim().length >= 10 && !soapVersionId && (
-                      <p className="text-xs text-amber-600">No patient specified. SOAP will be saved as anonymous and cannot be finalized for EMR.</p>
-                    )}
                   </>
                 )}
                 {activeWorkflowTab === "review" && (
@@ -1048,6 +969,98 @@ export default function PhysicianTranscriptionPage() {
                     {actionError && <p className="text-sm text-red-700">{actionError}</p>}
                     {actionSuccess && <p className="text-sm text-green-700">{actionSuccess}</p>}
                   </>
+                )}
+              </div>
+
+              <div className="bg-white rounded-lg shadow-sm border border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => setPatientSectionOpen((v) => !v)}
+                  className="w-full flex items-center justify-between px-6 py-3 text-sm font-medium text-slate-700 hover:bg-slate-50 rounded-lg"
+                >
+                  <span>
+                    {selectedPatient
+                      ? `Patient: ${selectedPatient.fullName}`
+                      : "Search or add new patient"}
+                  </span>
+                  <span className="text-slate-400">{patientSectionOpen ? "∧" : "›"}</span>
+                </button>
+                {patientSectionOpen && (
+                  <div className="px-6 pb-5 pt-1 space-y-4 border-t border-slate-100">
+                    <form
+                      className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] gap-2"
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        void continuePatientIdentity();
+                      }}
+                    >
+                      <input
+                        type="text"
+                        value={newPatientFullName}
+                        onChange={(e) => {
+                          setNewPatientFullName(e.target.value);
+                          setSelectedPatient(null);
+                          setPatientIdentityResolution(null);
+                          setPatientIdentityMessage(null);
+                          setPatientSearchError(null);
+                        }}
+                        className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
+                        placeholder="First name Last name"
+                      />
+                      <input
+                        type="date"
+                        value={newPatientDob}
+                        onChange={(e) => {
+                          setNewPatientDob(e.target.value);
+                          setSelectedPatient(null);
+                          setPatientIdentityResolution(null);
+                          setPatientIdentityMessage(null);
+                          setPatientSearchError(null);
+                        }}
+                        className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
+                      />
+                      <button
+                        type="submit"
+                        disabled={patientSearchLoading}
+                        className="px-4 py-2 text-sm font-medium text-white bg-slate-900 rounded-lg hover:bg-slate-800 disabled:bg-slate-400"
+                      >
+                        {patientSearchLoading ? "Resolving..." : "Continue"}
+                      </button>
+                    </form>
+                    {patientSearchError && <p className="text-sm text-red-700">{patientSearchError}</p>}
+                    {patientIdentityMessage && (
+                      <p
+                        className={`text-sm ${
+                          patientIdentityResolution === "existing" ? "text-emerald-700" : "text-slate-600"
+                        }`}
+                      >
+                        {patientIdentityMessage}
+                      </p>
+                    )}
+                    {selectedPatient && (
+                      <div className="rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-semibold text-emerald-900">Selected patient</p>
+                          <p className="text-sm text-emerald-900">{selectedPatient.fullName}</p>
+                          <p className="text-xs text-emerald-800">
+                            DOB: {selectedPatient.dateOfBirth || "—"} •{" "}
+                            {selectedPatient.primaryPhone || selectedPatient.email || "No contact"}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedPatient(null);
+                            setPatientIdentityResolution(null);
+                            setPatientIdentityMessage(null);
+                          }}
+                          className="px-3 py-1.5 text-xs font-medium text-emerald-900 bg-white border border-emerald-300 rounded-lg hover:bg-emerald-100"
+                        >
+                          Edit patient
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
             </div>
