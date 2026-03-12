@@ -3,6 +3,7 @@
 import type { BodyPart } from "@/lib/body-parts";
 import { getBodyDiagramImage } from "@/lib/body-diagram-images";
 import type { MouseEvent } from "react";
+import { useState } from "react";
 
 interface BodyPartDiagramProps {
   bodyPart: BodyPart;
@@ -27,6 +28,7 @@ export default function BodyPartDiagram({
   onMarkersClear,
   onMarkersDone,
 }: BodyPartDiagramProps) {
+  const [isSaved, setIsSaved] = useState(false);
   const image = getBodyDiagramImage(bodyPart, side, sex);
   const diagramSizeClass = "w-96 h-96";
 
@@ -38,6 +40,7 @@ export default function BodyPartDiagram({
     const y = ((event.clientY - rect.top) / rect.height) * 100;
     const xPct = Math.max(0, Math.min(100, Number(x.toFixed(1))));
     const yPct = Math.max(0, Math.min(100, Number(y.toFixed(1))));
+    setIsSaved(false);
     onMarkerAdd({
       part: bodyPart,
       side,
@@ -91,7 +94,7 @@ export default function BodyPartDiagram({
           {onMarkersClear && (
             <button
               type="button"
-              onClick={onMarkersClear}
+              onClick={() => { setIsSaved(false); onMarkersClear(); }}
               className="rounded-md border border-slate-300 px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
             >
               Clear marks
@@ -100,10 +103,10 @@ export default function BodyPartDiagram({
           {onMarkersDone && (
             <button
               type="button"
-              onClick={onMarkersDone}
-              className="rounded-md bg-emerald-600 px-2 py-1 text-xs font-medium text-white hover:bg-emerald-500"
+              onClick={() => { setIsSaved(true); onMarkersDone(); }}
+              className={`rounded-md px-2 py-1 text-xs font-medium text-white transition-colors ${isSaved ? "bg-slate-500 hover:bg-slate-400" : "bg-emerald-600 hover:bg-emerald-500"}`}
             >
-              Done
+              {isSaved ? "Saved" : "Done"}
             </button>
           )}
         </div>

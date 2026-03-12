@@ -17,7 +17,7 @@ import { lightCleanupTranscript, normalizePunctuation } from "@/lib/speech-trans
 import BodyPartDiagram from "@/components/BodyPartDiagram";
 import { getSensitivePhotoContext, isPhotoUploadRequestText } from "@/app/api/interview/prompt-helpers";
 import NextImage from "next/image";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { z } from "zod";
 
@@ -597,7 +597,15 @@ export default function Home() {
   const lastTranslatedSummaryKeyRef = useRef<string | null>(null);
   const consentCheckboxRef = useRef<HTMLInputElement | null>(null);
   const micStartingUiTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  
+  const draftTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+
+  const autoresizeDraftTextarea = useCallback(() => {
+    const el = draftTextareaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 320)}px`;
+  }, []);
+
   const [hasPhysicianId, setHasPhysicianId] = useState<boolean>(false);
   const [editingMessageIndex, setEditingMessageIndex] = useState<number | null>(null);
   const [editingContent, setEditingContent] = useState<string>("");
@@ -731,7 +739,8 @@ export default function Home() {
   };
   useEffect(() => {
     draftTranscriptRef.current = draftTranscript;
-  }, [draftTranscript]);
+    autoresizeDraftTextarea();
+  }, [draftTranscript, autoresizeDraftTextarea]);
 
   useEffect(() => {
     const summary = result?.summary?.trim();
@@ -4818,7 +4827,8 @@ export default function Home() {
                       <div className="group flex flex-col items-center">
                         <div className="relative w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 transition">
                         <textarea
-                          rows={4}
+                          ref={draftTextareaRef}
+                          rows={2}
                           maxLength={1000}
                           placeholder={
                             awaitingFinalComments && finalCommentsChoice === "yes"
@@ -4845,11 +4855,13 @@ export default function Home() {
                               }
                             }
                             setDraftTranscript(nextValue);
+                            autoresizeDraftTextarea();
                           }}
                           className={[
                             "mt-1 w-full resize-none rounded-lg border border-slate-200 bg-white px-2 pt-2 text-sm text-slate-800 outline-none transition focus:border-[#80D7FF] focus:ring-2 focus:ring-[#C0ECFC]",
                             "pb-2",
                             "text-left",
+                            "overflow-hidden",
                           ].join(" ")}
                         />
                         {showReviewActions && (
