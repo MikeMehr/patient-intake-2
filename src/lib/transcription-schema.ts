@@ -18,9 +18,6 @@ export const generateSoapFromTranscriptRequestSchema = z.object({
   transcript: z.string().trim().min(10).max(20000),
   chiefComplaint: z.string().trim().max(1000).optional(),
   encounterId: z.string().uuid().optional(),
-}).refine((data) => Boolean(data.patientId) || Boolean(data.newPatient), {
-  message: "Either patientId or newPatient is required.",
-  path: ["patientId"],
 });
 
 export const saveSoapDraftRequestSchema = z.object({
@@ -44,8 +41,8 @@ export const transcriptionListItemSchema = z.object({
   transcriptionSessionId: z.string().uuid(),
   encounterId: z.string().uuid(),
   soapVersionId: z.string().uuid(),
-  patientId: z.string().uuid(),
-  patientName: z.string(),
+  patientId: z.string().uuid().nullable(),
+  patientName: z.string().nullable(),
   chiefComplaint: z.string().nullable(),
   lifecycleState: z.enum(["DRAFT", "FINALIZED_FOR_EXPORT"]),
   version: z.number().int().positive(),

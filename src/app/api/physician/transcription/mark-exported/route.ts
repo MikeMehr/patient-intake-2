@@ -52,6 +52,7 @@ export async function POST(request: NextRequest) {
     const version = await getSoapVersionByIdForScope({
       soapVersionId: parsed.data.soapVersionId,
       scope,
+      physicianId,
     });
     if (!version) {
       status = 404;

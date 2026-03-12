@@ -33,7 +33,7 @@ export async function GET(
       return res;
     }
     const { soapVersionId } = await ctx.params;
-    const soap = await getSoapVersionByIdForScope({ soapVersionId, scope });
+    const soap = await getSoapVersionByIdForScope({ soapVersionId, scope, physicianId: auth.userId });
     if (!soap) {
       status = 404;
       const res = NextResponse.json({ error: "SOAP version not found." }, { status });

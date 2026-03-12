@@ -26,7 +26,7 @@ export async function DELETE(request: NextRequest) {
       logRequestMeta("/api/physician/transcription/snapshots", requestId, status, Date.now() - started);
       return res;
     }
-    const result = await deleteAllTranscriptionSessionsForScope({ scope });
+    const result = await deleteAllTranscriptionSessionsForScope({ scope, physicianId: auth.userId });
     const res = NextResponse.json({
       success: true,
       deletedCount: result.deletedCount,

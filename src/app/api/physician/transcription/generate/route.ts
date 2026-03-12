@@ -79,9 +79,9 @@ export async function POST(request: NextRequest) {
     }
 
     const physicianId = auth.userId;
-    let patientId = parsed.data.patientId || "";
-    let patientName = "";
-    let identityPath: "existing_patient" | "new_patient_quick_entry" = "existing_patient";
+    let patientId: string | null = parsed.data.patientId || null;
+    let patientName: string | null = null;
+    let identityPath: "existing_patient" | "new_patient_quick_entry" | "anonymous" = "anonymous";
     if (patientId) {
       const access = await assertPhysicianCanAccessPatient({
         physicianId,
@@ -89,6 +89,7 @@ export async function POST(request: NextRequest) {
         scope,
       });
       patientName = access.patientName;
+      identityPath = "existing_patient";
     } else if (parsed.data.newPatient) {
       const created = await upsertPatientFromQuickEntry({
         physicianId,
@@ -99,14 +100,6 @@ export async function POST(request: NextRequest) {
       patientId = created.patientId;
       patientName = created.patientName;
       identityPath = "new_patient_quick_entry";
-    } else {
-      status = 400;
-      const res = NextResponse.json(
-        { error: "Select an existing patient or provide new patient full name and date of birth." },
-        { status },
-      );
-      logRequestMeta("/api/physician/transcription/generate", requestId, status, Date.now() - started);
-      return res;
     }
 
     let encounterId = parsed.data.encounterId || "";
@@ -164,7 +157,7 @@ export async function POST(request: NextRequest) {
 
     await logPhysicianPhiAudit({
       physicianId,
-      patientId,
+      patientId: patientId || undefined,
       encounterId,
       soapVersionId: saved.soapVersionId,
       eventType: "transcription_soap_generated",
