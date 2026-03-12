@@ -809,8 +809,7 @@ export default function PhysicianTranscriptionPage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="lg:col-span-2 space-y-6">
+          <div className="space-y-6">
               <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6 space-y-4">
                 <div className="flex items-center justify-start">
                   <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-1">
@@ -1064,75 +1063,76 @@ export default function PhysicianTranscriptionPage() {
                   </div>
                 )}
               </div>
-            </div>
-
-            <div className="bg-white rounded-lg shadow-sm border border-slate-200">
-              <div className="flex items-center justify-between">
-                <button
-                  type="button"
-                  onClick={() => setSnapshotSectionOpen((v) => !v)}
-                  className="flex-1 flex items-center justify-between px-6 py-3 text-sm font-medium text-slate-700 hover:bg-slate-50 rounded-lg"
-                >
-                  <span>
-                    Recent snapshots{historyItems.length > 0 ? ` (${historyItems.length})` : ""}
-                  </span>
-                  <span className="text-slate-400">{snapshotSectionOpen ? "∧" : "›"}</span>
-                </button>
-              </div>
-              {snapshotSectionOpen && (
-                <div className="px-6 pb-5 pt-1 border-t border-slate-100 space-y-3">
-                  <div className="flex justify-end">
-                    <button
-                      type="button"
-                      onClick={deleteAllSnapshots}
-                      disabled={historyLoading || historyItems.length === 0 || deletingAllSnapshots}
-                      className="px-3 py-1.5 text-xs font-medium text-red-700 bg-white border border-red-300 rounded-lg hover:bg-red-50 disabled:opacity-60"
-                    >
-                      {deletingAllSnapshots ? "Deleting..." : "Delete All"}
-                    </button>
-                  </div>
-                  {historyLoading ? (
-                    <p className="text-sm text-slate-600">Loading...</p>
-                  ) : historyItems.length === 0 ? (
-                    <p className="text-sm text-slate-600">No transcription snapshots yet.</p>
-                  ) : (
-                    <div className="space-y-2">
-                      {historyItems.map((item) => (
-                        <div
-                          key={item.transcriptionSessionId}
-                          className="rounded-lg border border-slate-200 px-3 py-2"
-                        >
-                          <div className="flex items-start justify-between gap-2">
-                            <button
-                              type="button"
-                              onClick={() => loadSoapVersion(item.soapVersionId)}
-                              className="flex-1 text-left hover:bg-slate-50 rounded-md"
-                            >
-                              <div className="text-sm font-medium text-slate-900">{item.patientName || <span className="italic text-slate-400">Anonymous</span>}</div>
-                              <div className="text-xs text-slate-500">
-                                v{item.version} • {item.lifecycleState} • {formatDateTime(item.createdAt)}
-                              </div>
-                              {item.previewSummary && (
-                                <div className="text-xs text-slate-600 mt-1 line-clamp-2">{item.previewSummary}</div>
-                              )}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => deleteSnapshot(item)}
-                              disabled={deletingSnapshotId === item.transcriptionSessionId}
-                              className="shrink-0 px-2 py-1 text-xs font-medium text-red-700 bg-white border border-red-300 rounded hover:bg-red-50 disabled:opacity-60"
-                            >
-                              {deletingSnapshotId === item.transcriptionSessionId ? "Deleting..." : "Delete"}
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
+            )}
           </div>
+
+          <div className="bg-white rounded-lg shadow-sm border border-slate-200">
+            <div className="flex items-center justify-between">
+              <button
+                type="button"
+                onClick={() => setSnapshotSectionOpen((v) => !v)}
+                className="flex-1 flex items-center justify-between px-6 py-3 text-sm font-medium text-slate-700 hover:bg-slate-50 rounded-lg"
+              >
+                <span>
+                  Recent snapshots{historyItems.length > 0 ? ` (${historyItems.length})` : ""}
+                </span>
+                <span className="text-slate-400">{snapshotSectionOpen ? "∧" : "›"}</span>
+              </button>
+            </div>
+            {snapshotSectionOpen && (
+              <div className="px-6 pb-5 pt-1 border-t border-slate-100 space-y-3">
+                <div className="flex justify-end">
+                  <button
+                    type="button"
+                    onClick={deleteAllSnapshots}
+                    disabled={historyLoading || historyItems.length === 0 || deletingAllSnapshots}
+                    className="px-3 py-1.5 text-xs font-medium text-red-700 bg-white border border-red-300 rounded-lg hover:bg-red-50 disabled:opacity-60"
+                  >
+                    {deletingAllSnapshots ? "Deleting..." : "Delete All"}
+                  </button>
+                </div>
+                {historyLoading ? (
+                  <p className="text-sm text-slate-600">Loading...</p>
+                ) : historyItems.length === 0 ? (
+                  <p className="text-sm text-slate-600">No transcription snapshots yet.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {historyItems.map((item) => (
+                      <div
+                        key={item.transcriptionSessionId}
+                        className="rounded-lg border border-slate-200 px-3 py-2"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <button
+                            type="button"
+                            onClick={() => loadSoapVersion(item.soapVersionId)}
+                            className="flex-1 text-left hover:bg-slate-50 rounded-md"
+                          >
+                            <div className="text-sm font-medium text-slate-900">{item.patientName || <span className="italic text-slate-400">Anonymous</span>}</div>
+                            <div className="text-xs text-slate-500">
+                              v{item.version} • {item.lifecycleState} • {formatDateTime(item.createdAt)}
+                            </div>
+                            {item.previewSummary && (
+                              <div className="text-xs text-slate-600 mt-1 line-clamp-2">{item.previewSummary}</div>
+                            )}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => deleteSnapshot(item)}
+                            disabled={deletingSnapshotId === item.transcriptionSessionId}
+                            className="shrink-0 px-2 py-1 text-xs font-medium text-red-700 bg-white border border-red-300 rounded hover:bg-red-50 disabled:opacity-60"
+                          >
+                            {deletingSnapshotId === item.transcriptionSessionId ? "Deleting..." : "Delete"}
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
         </div>
       </div>
       {showStartNewConfirm && (
