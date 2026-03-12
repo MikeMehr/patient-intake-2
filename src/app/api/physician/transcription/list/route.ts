@@ -4,6 +4,7 @@ import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
 import { getRequestIp } from "@/lib/invitation-security";
 import { logPhysicianPhiAudit } from "@/lib/phi-audit";
 import {
+  deleteExpiredAnonymousSnapshots,
   getTranscriptionSessionsForScope,
   resolveWorkforceScope,
 } from "@/lib/transcription-store";
@@ -32,7 +33,9 @@ export async function GET(request: NextRequest) {
       logRequestMeta("/api/physician/transcription/list", requestId, status, Date.now() - started);
       return res;
     }
-    const items = await getTranscriptionSessionsForScope(scope);
+    // Clean up expired anonymous snapshots (best-effort)
+    try { await deleteExpiredAnonymousSnapshots(); } catch { /* ignore */ }
+    const items = await getTranscriptionSessionsForScope(scope, auth.userId);
     try {
       await logPhysicianPhiAudit({
         physicianId: auth.userId,

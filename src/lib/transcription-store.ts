@@ -96,7 +96,7 @@ export async function upsertPatientFromQuickEntry(params: {
 
 export async function createTranscriptionEncounter(params: {
   physicianId: string;
-  patientId: string;
+  patientId: string | null;
   scope: Scope;
   chiefComplaint?: string | null;
 }): Promise<{ encounterId: string }> {
@@ -107,14 +107,14 @@ export async function createTranscriptionEncounter(params: {
        source_session_code, chief_complaint, hpi_json, encounter_type
      ) VALUES ($1,$2,$3,NOW(),NULL,$4,'{}'::jsonb,'transcription')
      RETURNING id`,
-    [params.patientId, organizationId, params.physicianId, params.chiefComplaint || null],
+    [params.patientId || null, organizationId, params.physicianId, params.chiefComplaint || null],
   );
   return { encounterId: insert.rows[0].id };
 }
 
 export async function createSoapDraftVersion(params: {
   encounterId: string;
-  patientId: string;
+  patientId: string | null;
   physicianId: string;
   draft: SoapDraft;
   transcript: string;
@@ -137,7 +137,7 @@ export async function createSoapDraftVersion(params: {
        RETURNING id`,
       [
         params.encounterId,
-        params.patientId,
+        params.patientId || null,
         params.physicianId,
         version,
         SOAP_LIFECYCLE_STATES.DRAFT,
@@ -167,9 +167,10 @@ export async function createSoapDraftVersion(params: {
 export async function updateSoapDraftVersion(params: {
   soapVersionId: string;
   scope: Scope;
+  physicianId: string;
   draft: SoapDraft;
 }): Promise<void> {
-  const { sql: scopeSql, params: scopeParams } = scopeWhere(params.scope, 7);
+  const { sql: scopeSql, params: scopeParams } = scopeWhere(params.scope, 8);
   const res = await query(
     `UPDATE soap_note_versions
      SET subjective = $3,
@@ -182,9 +183,10 @@ export async function updateSoapDraftVersion(params: {
        AND EXISTS (
          SELECT 1
          FROM patient_encounters pe
-         JOIN patients p ON p.id = pe.patient_id
+         LEFT JOIN patients p ON p.id = pe.patient_id
          WHERE pe.id = soap_note_versions.encounter_id
-           AND ${scopeSql}
+           AND pe.physician_id = $7
+           AND (pe.patient_id IS NULL OR ${scopeSql})
        )`,
     [
       params.soapVersionId,
@@ -193,6 +195,7 @@ export async function updateSoapDraftVersion(params: {
       params.draft.objective,
       params.draft.assessment,
       params.draft.plan,
+      params.physicianId,
       ...scopeParams,
     ],
   );
@@ -205,12 +208,12 @@ export async function finalizeSoapVersion(params: {
   soapVersionId: string;
   scope: Scope;
   actorUserId: string;
-}): Promise<{ encounterId: string; patientId: string; version: number }> {
-  const { sql: scopeSql, params: scopeParams } = scopeWhere(params.scope, 2);
+}): Promise<{ encounterId: string; patientId: string | null; version: number }> {
+  const { sql: scopeSql, params: scopeParams } = scopeWhere(params.scope, 3);
   const rowRes = await query<{
     id: string;
     encounter_id: string;
-    patient_id: string;
+    patient_id: string | null;
     version: number;
     subjective: string;
     objective: string;
@@ -224,12 +227,13 @@ export async function finalizeSoapVersion(params: {
        AND EXISTS (
          SELECT 1
          FROM patient_encounters pe
-         JOIN patients p ON p.id = pe.patient_id
+         LEFT JOIN patients p ON p.id = pe.patient_id
          WHERE pe.id = soap_note_versions.encounter_id
-           AND ${scopeSql}
+           AND pe.physician_id = $2
+           AND (pe.patient_id IS NULL OR ${scopeSql})
        )
      LIMIT 1`,
-    [params.soapVersionId, ...scopeParams],
+    [params.soapVersionId, params.actorUserId, ...scopeParams],
   );
   const row = rowRes.rows[0];
   if (!row) throw new Error("SOAP version not found.");
@@ -265,7 +269,7 @@ export async function finalizeSoapVersion(params: {
 
 export async function upsertTranscriptionSessionPointer(params: {
   physicianId: string;
-  patientId: string;
+  patientId: string | null;
   encounterId: string;
   soapVersionId: string;
   previewSummary: string | null;
@@ -295,7 +299,7 @@ export async function upsertTranscriptionSessionPointer(params: {
      RETURNING id`,
     [
       params.physicianId,
-      params.patientId,
+      params.patientId || null,
       params.encounterId,
       params.soapVersionId,
       params.previewSummary,
@@ -367,8 +371,8 @@ export async function getTranscriptionSessionsForPhysician(physicianId: string) 
     transcription_session_id: string;
     encounter_id: string;
     soap_version_id: string;
-    patient_id: string;
-    patient_name: string;
+    patient_id: string | null;
+    patient_name: string | null;
     chief_complaint: string | null;
     lifecycle_state: string;
     version: number;
@@ -389,7 +393,7 @@ export async function getTranscriptionSessionsForPhysician(physicianId: string) 
        pts.created_at,
        snv.finalized_for_export_at
      FROM physician_transcription_sessions pts
-     JOIN patients p ON p.id = pts.patient_id
+     LEFT JOIN patients p ON p.id = pts.patient_id
      JOIN patient_encounters pe ON pe.id = pts.encounter_id
      JOIN soap_note_versions snv ON snv.id = pts.soap_version_id
      WHERE pts.physician_id = $1
@@ -411,14 +415,14 @@ export async function getTranscriptionSessionsForPhysician(physicianId: string) 
   }));
 }
 
-export async function getTranscriptionSessionsForScope(scope: Scope) {
-  const { sql: scopeSql, params: scopeParams } = scopeWhere(scope, 1);
+export async function getTranscriptionSessionsForScope(scope: Scope, physicianId: string) {
+  const { sql: scopeSql, params: scopeParams } = scopeWhere(scope, 2);
   const res = await query<{
     transcription_session_id: string;
     encounter_id: string;
     soap_version_id: string;
-    patient_id: string;
-    patient_name: string;
+    patient_id: string | null;
+    patient_name: string | null;
     chief_complaint: string | null;
     lifecycle_state: string;
     version: number;
@@ -439,12 +443,13 @@ export async function getTranscriptionSessionsForScope(scope: Scope) {
        pts.created_at,
        snv.finalized_for_export_at
      FROM physician_transcription_sessions pts
-     JOIN patients p ON p.id = pts.patient_id
+     LEFT JOIN patients p ON p.id = pts.patient_id
      JOIN patient_encounters pe ON pe.id = pts.encounter_id
      JOIN soap_note_versions snv ON snv.id = pts.soap_version_id
-     WHERE ${scopeSql}
+     WHERE pts.physician_id = $1
+       AND (pts.patient_id IS NULL OR ${scopeSql})
      ORDER BY pts.created_at DESC`,
-    scopeParams,
+    [physicianId, ...scopeParams],
   );
   return res.rows.map((r) => ({
     transcriptionSessionId: r.transcription_session_id,
@@ -488,12 +493,12 @@ export async function getSoapVersionById(params: { soapVersionId: string; physic
   return res.rows[0] || null;
 }
 
-export async function getSoapVersionByIdForScope(params: { soapVersionId: string; scope: Scope }) {
-  const { sql: scopeSql, params: scopeParams } = scopeWhere(params.scope, 2);
+export async function getSoapVersionByIdForScope(params: { soapVersionId: string; scope: Scope; physicianId: string }) {
+  const { sql: scopeSql, params: scopeParams } = scopeWhere(params.scope, 3);
   const res = await query<{
     id: string;
     encounter_id: string;
-    patient_id: string;
+    patient_id: string | null;
     version: number;
     lifecycle_state: string;
     subjective: string;
@@ -508,11 +513,12 @@ export async function getSoapVersionByIdForScope(params: { soapVersionId: string
        snv.subjective, snv.objective, snv.assessment, snv.plan, snv.draft_transcript, snv.finalized_for_export_at
      FROM soap_note_versions snv
      JOIN patient_encounters pe ON pe.id = snv.encounter_id
-     JOIN patients p ON p.id = pe.patient_id
+     LEFT JOIN patients p ON p.id = pe.patient_id
      WHERE snv.id = $1
-       AND ${scopeSql}
+       AND pe.physician_id = $2
+       AND (snv.patient_id IS NULL OR ${scopeSql})
      LIMIT 1`,
-    [params.soapVersionId, ...scopeParams],
+    [params.soapVersionId, params.physicianId, ...scopeParams],
   );
   return res.rows[0] || null;
 }
@@ -520,16 +526,18 @@ export async function getSoapVersionByIdForScope(params: { soapVersionId: string
 export async function deleteTranscriptionSessionByIdForScope(params: {
   transcriptionSessionId: string;
   scope: Scope;
+  physicianId: string;
 }): Promise<{ deleted: boolean; soapVersionId: string | null }> {
-  const { sql: scopeSql, params: scopeParams } = scopeWhere(params.scope, 2);
+  const { sql: scopeSql, params: scopeParams } = scopeWhere(params.scope, 3);
   const res = await query<{ soap_version_id: string | null }>(
     `DELETE FROM physician_transcription_sessions pts
-     USING patients p
      WHERE pts.id = $1
-       AND p.id = pts.patient_id
-       AND ${scopeSql}
+       AND pts.physician_id = $2
+       AND (pts.patient_id IS NULL OR EXISTS (
+         SELECT 1 FROM patients p WHERE p.id = pts.patient_id AND ${scopeSql}
+       ))
      RETURNING pts.soap_version_id`,
-    [params.transcriptionSessionId, ...scopeParams],
+    [params.transcriptionSessionId, params.physicianId, ...scopeParams],
   );
   return {
     deleted: (res.rowCount ?? 0) > 0,
@@ -539,17 +547,30 @@ export async function deleteTranscriptionSessionByIdForScope(params: {
 
 export async function deleteAllTranscriptionSessionsForScope(params: {
   scope: Scope;
+  physicianId: string;
 }): Promise<{ deletedCount: number }> {
-  const { sql: scopeSql, params: scopeParams } = scopeWhere(params.scope, 1);
+  const { sql: scopeSql, params: scopeParams } = scopeWhere(params.scope, 2);
   const res = await query<{ id: string }>(
     `DELETE FROM physician_transcription_sessions pts
-     USING patients p
-     WHERE p.id = pts.patient_id
-       AND ${scopeSql}
+     WHERE pts.physician_id = $1
+       AND (pts.patient_id IS NULL OR EXISTS (
+         SELECT 1 FROM patients p WHERE p.id = pts.patient_id AND ${scopeSql}
+       ))
      RETURNING pts.id`,
-    scopeParams,
+    [params.physicianId, ...scopeParams],
   );
   return {
     deletedCount: res.rowCount ?? 0,
   };
+}
+
+export async function deleteExpiredAnonymousSnapshots(): Promise<{ deletedCount: number }> {
+  const res = await query<{ id: string }>(
+    `DELETE FROM physician_transcription_sessions
+     WHERE patient_id IS NULL
+       AND created_at < NOW() - INTERVAL '12 hours'
+     RETURNING id`,
+    [],
+  );
+  return { deletedCount: res.rowCount ?? 0 };
 }

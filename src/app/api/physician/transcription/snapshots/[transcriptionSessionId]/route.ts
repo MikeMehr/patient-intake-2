@@ -60,6 +60,7 @@ export async function DELETE(
     const deleted = await deleteTranscriptionSessionByIdForScope({
       transcriptionSessionId: targetId,
       scope,
+      physicianId: auth.userId,
     });
     if (!deleted.deleted) {
       status = 404;

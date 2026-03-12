@@ -61,6 +61,7 @@ export async function PUT(request: NextRequest) {
     const version = await getSoapVersionByIdForScope({
       soapVersionId: parsed.data.soapVersionId,
       scope,
+      physicianId,
     });
     if (!version) {
       status = 404;
@@ -71,6 +72,7 @@ export async function PUT(request: NextRequest) {
     await updateSoapDraftVersion({
       soapVersionId: parsed.data.soapVersionId,
       scope,
+      physicianId,
       draft: parsed.data.draft,
     });
     await upsertTranscriptionSessionPointer({

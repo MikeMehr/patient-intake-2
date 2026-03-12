@@ -24,8 +24,8 @@ type TranscriptionListItem = {
   transcriptionSessionId: string;
   encounterId: string;
   soapVersionId: string;
-  patientId: string;
-  patientName: string;
+  patientId: string | null;
+  patientName: string | null;
   chiefComplaint: string | null;
   lifecycleState: "DRAFT" | "FINALIZED_FOR_EXPORT";
   version: number;
@@ -110,6 +110,7 @@ export default function PhysicianTranscriptionPage() {
   const [soapVersionId, setSoapVersionId] = useState<string | null>(null);
   const [encounterId, setEncounterId] = useState<string | null>(null);
   const [lifecycleState, setLifecycleState] = useState<"DRAFT" | "FINALIZED_FOR_EXPORT" | null>(null);
+  const [soapHasPatient, setSoapHasPatient] = useState(false);
   const [, setSnapshotLabel] = useState<string>("");
   const [draft, setDraft] = useState<SoapDraft>(initialDraft);
   const [reviewText, setReviewText] = useState<string>(composeUnifiedSoapText(initialDraft));
@@ -133,23 +134,18 @@ export default function PhysicianTranscriptionPage() {
     () => patientIdentityResolution === "new" && hasNewPatientIdentity,
     [patientIdentityResolution, hasNewPatientIdentity],
   );
+  const hasPatientIdentity = useMemo(
+    () => Boolean(selectedPatient?.id) || canCreateNewPatient,
+    [selectedPatient?.id, canCreateNewPatient],
+  );
   const canGenerate = useMemo(
-    () =>
-      transcript.trim().length >= 10 &&
-      (Boolean(selectedPatient?.id) || canCreateNewPatient) &&
-      !actionLoading,
-    [selectedPatient?.id, transcript, canCreateNewPatient, actionLoading],
+    () => transcript.trim().length >= 10 && !actionLoading,
+    [transcript, actionLoading],
   );
   const generateDisabledReason = useMemo(() => {
     if (transcript.trim().length < 10) return "Add transcript text first.";
-    if (!hasNewPatientIdentity) {
-      return "Enter patient name and DOB.";
-    }
-    if (!selectedPatient?.id && !canCreateNewPatient) {
-      return "Click Continue to resolve patient identity.";
-    }
     return null;
-  }, [transcript, selectedPatient?.id, hasNewPatientIdentity, canCreateNewPatient]);
+  }, [transcript]);
   const canCopySoap = useMemo(() => reviewText.trim().length > 0, [reviewText]);
 
   useEffect(() => {
@@ -561,6 +557,7 @@ export default function PhysicianTranscriptionPage() {
       setSoapVersionId(data.soapVersionId || null);
       setEncounterId(data.encounterId || null);
       setLifecycleState(data.lifecycleState || "DRAFT");
+      setSoapHasPatient(Boolean(data.patientName));
       setSnapshotLabel(typeof data?.snapshotLabel === "string" ? data.snapshotLabel : "");
       const nextDraft = {
         subjective: data?.draft?.subjective || "",
@@ -698,6 +695,7 @@ export default function PhysicianTranscriptionPage() {
       setSoapVersionId(data.soapVersionId || null);
       setEncounterId(data.encounterId || null);
       setLifecycleState(data.lifecycleState || null);
+      setSoapHasPatient(Boolean(data.patientId));
       const nextDraft = {
         subjective: data?.draft?.subjective || "",
         objective: data?.draft?.objective || "",
@@ -717,6 +715,7 @@ export default function PhysicianTranscriptionPage() {
     setSoapVersionId(null);
     setEncounterId(null);
     setLifecycleState(null);
+    setSoapHasPatient(false);
     setDraft(initialDraft);
     setReviewText(composeUnifiedSoapText(initialDraft));
     setTranscript("");
@@ -985,7 +984,10 @@ export default function PhysicianTranscriptionPage() {
                       {actionLoading ? "Generating..." : "Generate SOAP"}
                     </button>
                     {generateDisabledReason && (
-                      <p className={`text-xs ${generateDisabledReason === "Enter patient name and DOB." ? "text-red-500" : "text-slate-500"}`}>{generateDisabledReason}</p>
+                      <p className="text-xs text-slate-500">{generateDisabledReason}</p>
+                    )}
+                    {!hasPatientIdentity && transcript.trim().length >= 10 && !soapVersionId && (
+                      <p className="text-xs text-amber-600">No patient specified. SOAP will be saved as anonymous and cannot be finalized for EMR.</p>
                     )}
                   </>
                 )}
@@ -1023,11 +1025,15 @@ export default function PhysicianTranscriptionPage() {
                       <button
                         type="button"
                         onClick={finalizeAndSaveToEmr}
-                        disabled={!soapVersionId || actionLoading}
+                        disabled={!soapVersionId || !soapHasPatient || actionLoading}
+                        title={!soapHasPatient ? "Add patient name and DOB to finalize and save to EMR." : undefined}
                         className="px-4 py-2 text-sm font-medium text-white bg-emerald-700 rounded-lg hover:bg-emerald-800 disabled:bg-slate-400"
                       >
                         Finalize &amp; Save to EMR
                       </button>
+                      {!soapHasPatient && soapVersionId && (
+                        <p className="text-xs text-amber-600">Patient name required to finalize and save to EMR.</p>
+                      )}
                       <button
                         type="button"
                         onClick={handleStartNew}
@@ -1075,7 +1081,7 @@ export default function PhysicianTranscriptionPage() {
                           onClick={() => loadSoapVersion(item.soapVersionId)}
                           className="flex-1 text-left hover:bg-slate-50 rounded-md"
                         >
-                          <div className="text-sm font-medium text-slate-900">{item.patientName}</div>
+                          <div className="text-sm font-medium text-slate-900">{item.patientName || <span className="italic text-slate-400">Anonymous</span>}</div>
                           <div className="text-xs text-slate-500">
                             v{item.version} • {item.lifecycleState} • {formatDateTime(item.createdAt)}
                           </div>
