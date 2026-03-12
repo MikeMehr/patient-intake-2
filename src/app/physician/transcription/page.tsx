@@ -834,10 +834,17 @@ export default function PhysicianTranscriptionPage() {
               </div>
               <button
                 type="button"
-                onClick={() => router.push("/physician/dashboard")}
+                onClick={() => {
+                  if (isRecording) {
+                    window.open('/physician/dashboard', '_blank');
+                  } else {
+                    router.push('/physician/dashboard');
+                  }
+                }}
+                title={isRecording ? "Recording in progress — opens in new tab" : undefined}
                 className="px-3 py-1.5 text-[0.7rem] font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50"
               >
-                Back to dashboard
+                {isRecording ? "Dashboard (new tab)" : "Back to dashboard"}
               </button>
             </div>
           </div>
