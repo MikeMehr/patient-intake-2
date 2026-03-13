@@ -23,14 +23,9 @@ resource vnetIntegration 'Microsoft.Web/sites/networkConfig@2023-01-01' = {
   }
 }
 
-// App setting to enforce routing all outbound through VNet
-resource appSettings 'Microsoft.Web/sites/config@2023-01-01' = {
-  parent: appService
-  name: 'appsettings'
-  properties: {
-    WEBSITE_VNET_ROUTE_ALL: '1'
-  }
-}
+// NOTE: Do NOT deploy Microsoft.Web/sites/config 'appsettings' here.
+// ARM replaces ALL app settings with only the ones specified, wiping existing secrets.
+// WEBSITE_VNET_ROUTE_ALL is set via `az webapp config appsettings set` instead.
 
 @description('VNet integration resource ID')
 output vnetIntegrationId string = vnetIntegration.id
