@@ -21,7 +21,7 @@
       "value": "rg-health-assist-prod"
     },
     "postgresServerName": {
-      "value": "REPLACE_WITH_POSTGRES_SERVER_NAME"
+      "value": "patient-intake-db"
     },
     "postgresResourceGroup": {
       "value": "rg-health-assist-prod"
