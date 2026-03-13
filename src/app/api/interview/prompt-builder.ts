@@ -199,6 +199,7 @@ OUTPUT CONTRACT:
   - Keep the rationale brief and clinical.
   - Set "requiresPhotoUpload": true only when the question explicitly asks for an image upload.
   - Set "requiresLocationMarking": true when the question asks the patient to mark pain location on a body diagram.
+  - Optionally include "newComplaints" (string array) when the patient's last message introduces a clearly NEW, affirmatively stated complaint not already listed in active or pending complaints. Only include complaints the patient affirms they currently have. Do NOT include: denied symptoms ("no chest pain"), symptoms reported about others, resolved conditions, or vague references. Omit "newComplaints" entirely if nothing new was introduced.
 - If providing a summary: {"type":"summary","positives":["..."],"negatives":["..."],"summary":"...","investigations":["..."],"assessment":"...","plan":["..."],"progress":{"questionsAsked":N,"approxTotalQuestions":N}}
   - Preserve uncertainty when history is incomplete.
   - Do not give treatment or medication advice to the patient.

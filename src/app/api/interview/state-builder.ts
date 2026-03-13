@@ -766,8 +766,9 @@ function extractDynamicComplaintCandidates(
     });
 
     if (candidates.length === 0) {
+      const nonMskNegationPattern = /\b(no|not|none|never|without|denies|denied|deny|negative for)\b/;
       NON_MSK_DYNAMIC_COMPLAINTS.forEach((item) => {
-        if (item.pattern.test(lower)) {
+        if (hasPositiveUnnegatedSignal(lower, item.pattern, nonMskNegationPattern)) {
           candidates.push(item.label);
         }
       });
@@ -830,7 +831,10 @@ function shouldPromoteBriefConcernFromFollowUp(answer: string) {
   return PROMOTE_BRIEF_CONCERN_PATTERN.test(lower) && !REASSURING_BRIEF_CONCERN_PATTERN.test(lower);
 }
 
-function buildComplaintSeeds(chiefComplaint: string, transcript: InterviewMessage[]): {
+function buildComplaintSeeds(
+  chiefComplaint: string,
+  detectedComplaints: string[],
+): {
   complaintSeeds: ComplaintSeed[];
   briefSecondaryConcerns: BriefSecondaryConcern[];
 } {
@@ -841,64 +845,19 @@ function buildComplaintSeeds(chiefComplaint: string, transcript: InterviewMessag
     addedMidInterview: false,
     firstDetectedAtMessageIndex: null,
   }));
-  let briefSecondaryConcerns: BriefSecondaryConcern[] = [];
 
-  const patientMessages = transcript.filter((message) => message.role === "patient");
-  patientMessages.forEach((message, patientTurnIndex) => {
-    const transcriptIndex = transcript.findIndex((item) => item === message);
-    const previousAssistant =
-      transcriptIndex > 0 && transcript[transcriptIndex - 1]?.role === "assistant"
-        ? transcript[transcriptIndex - 1]
-        : null;
-
-    briefSecondaryConcerns = briefSecondaryConcerns.filter((concern) => {
-      const shouldPromote =
-        previousAssistant &&
-        messageMentionsComplaint(previousAssistant.content, concern.complaint) &&
-        shouldPromoteBriefConcernFromFollowUp(message.content);
-      if (!shouldPromote) return true;
-
-      const alreadyTracked = seeds.some((seed) => complaintsAreEquivalent(seed.complaint, concern.complaint));
-      if (!alreadyTracked) {
-        seeds.push({
-          complaint: normalizeComplaintText(concern.complaint),
-          originalComplaint: concern.complaint,
-          source: "transcript",
-          addedMidInterview: true,
-          firstDetectedAtMessageIndex: transcriptIndex >= 0 ? transcriptIndex : null,
-        });
-      }
-      return false;
-    });
-
-    extractDynamicComplaintDetections(message.content, patientTurnIndex).forEach((detection) => {
-      const alreadyTracked = seeds.some((seed) => complaintsAreEquivalent(seed.complaint, detection.complaint));
-      if (alreadyTracked) return;
-
-      if (detection.disposition === "brief_safety_screen") {
-        const alreadyTrackedAsBrief = briefSecondaryConcerns.some((concern) =>
-          complaintsAreEquivalent(concern.complaint, detection.complaint),
-        );
-        if (!alreadyTrackedAsBrief) {
-          briefSecondaryConcerns.push({
-            complaint: detection.complaint,
-            firstDetectedAtMessageIndex: transcriptIndex >= 0 ? transcriptIndex : null,
-          });
-        }
-        return;
-      }
-
+  detectedComplaints.forEach((complaint) => {
+    const normalized = normalizeComplaintText(complaint);
+    const alreadyTracked = seeds.some((seed) => complaintsAreEquivalent(seed.complaint, normalized));
+    if (!alreadyTracked) {
       seeds.push({
-        complaint: normalizeComplaintText(detection.complaint),
-        originalComplaint: detection.complaint,
+        complaint: normalized,
+        originalComplaint: complaint,
         source: "transcript",
         addedMidInterview: true,
-        firstDetectedAtMessageIndex: transcriptIndex >= 0 ? transcriptIndex : null,
+        firstDetectedAtMessageIndex: null,
       });
-      briefSecondaryConcerns = briefSecondaryConcerns.filter(
-        (concern) => !complaintsAreEquivalent(concern.complaint, detection.complaint),
-      );
-    });
+    }
   });
 
   if (seeds.length === 0) {
@@ -912,13 +871,13 @@ function buildComplaintSeeds(chiefComplaint: string, transcript: InterviewMessag
           firstDetectedAtMessageIndex: null,
         },
       ],
-      briefSecondaryConcerns,
+      briefSecondaryConcerns: [],
     };
   }
 
   return {
     complaintSeeds: seeds,
-    briefSecondaryConcerns,
+    briefSecondaryConcerns: [],
   };
 }
 
@@ -1568,6 +1527,7 @@ export function buildInterviewState(params: {
   patientBackground: string | null;
   forceSummary: boolean;
   deferredIntentHint: string | null;
+  detectedComplaints?: string[];
 }): InterviewState {
   const allQuestionsAsked = params.transcript
     .filter((message) => message.role === "assistant")
@@ -1588,7 +1548,7 @@ export function buildInterviewState(params: {
 
   const { complaintSeeds, briefSecondaryConcerns } = buildComplaintSeeds(
     params.chiefComplaint,
-    params.transcript,
+    params.detectedComplaints ?? [],
   );
   const complaintScopes = buildComplaintScopes({
     chiefComplaint: params.chiefComplaint,

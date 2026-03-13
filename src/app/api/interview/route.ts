@@ -35,6 +35,7 @@ function validateInterviewTurnFormat(turn: InterviewResponse): InterviewResponse
       requiresLocationMarking: turn.requiresLocationMarking === true,
       deferredIntentHint: turn.deferredIntentHint,
       ...(turn.progress && { progress: turn.progress }),
+      ...(turn.newComplaints && turn.newComplaints.length > 0 && { newComplaints: turn.newComplaints }),
     };
   }
   if (turn.type === "summary") {
@@ -149,6 +150,7 @@ export async function POST(request: Request) {
     forceSummary = false,
     language: requestedLanguage,
     deferredIntentHint,
+    detectedComplaints,
   } = parsed.data;
   
   const supportedLanguages: Record<string, string> = {
@@ -206,6 +208,7 @@ export async function POST(request: Request) {
     patientBackground: patientBackground ?? null,
     forceSummary,
     deferredIntentHint: deferredIntentHint ?? null,
+    detectedComplaints: detectedComplaints ?? [],
   });
 
   if (shouldMock()) {

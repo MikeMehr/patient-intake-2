@@ -263,6 +263,7 @@ export default function Home() {
   const [status, setStatus] = useState<Status>("idle");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [patientResponse, setPatientResponse] = useState("");
+  const [detectedComplaints, setDetectedComplaints] = useState<string[]>([]);
   
   // Keep refs in sync with state for use in closures
   useEffect(() => {
@@ -2279,6 +2280,7 @@ export default function Home() {
     setMessages([]);
     setResult(null);
     setPatientResponse("");
+    setDetectedComplaints([]);
     setError(null);
     
     // Fetch lab report summaries and form summary if not already fetched (in case useEffect didn't complete)
@@ -2620,6 +2622,7 @@ export default function Home() {
         physicianIdToUse,
         language,
         deferredIntentHint,
+        detectedComplaints,
       );
       processTurn(turn);
       submittedSuccessfully = true;
@@ -2724,6 +2727,7 @@ export default function Home() {
             physicianIdToUse,
             language,
             deferredIntentHint,
+            detectedComplaints,
           );
           processTurn(turn);
         } catch (err) {
@@ -2873,6 +2877,7 @@ export default function Home() {
     setFinalCommentsChoice(null);
     setPatientResponse("");
     patientResponseRef.current = "";
+    setDetectedComplaints([]);
     setInterimTranscript("");
     interimTranscriptRef.current = "";
     setDraftTranscript("");
@@ -3115,6 +3120,7 @@ export default function Home() {
           physicianIdToUse,
           language,
           deferredIntentHint,
+          detectedComplaints,
           true,
         );
         
@@ -3412,6 +3418,17 @@ export default function Home() {
     setInterviewProgress(turn.progress ?? null);
 
     if (turn.type === "question") {
+      if (turn.newComplaints && turn.newComplaints.length > 0) {
+        setDetectedComplaints((prev) => {
+          const merged = [...prev];
+          turn.newComplaints!.forEach((c) => {
+            if (!merged.some((existing) => existing.toLowerCase() === c.toLowerCase())) {
+              merged.push(c);
+            }
+          });
+          return merged;
+        });
+      }
       setDeferredIntentHint(turn.deferredIntentHint ?? null);
       // Use the AI question as-is (no added greeting)
       const questionContent = turn.question;
@@ -5473,6 +5490,7 @@ async function requestTurn(
   physicianId: string,
   language: string,
   deferredIntentHint: string | null,
+  detectedComplaints: string[] = [],
   forceSummary: boolean = false,
 ): Promise<InterviewResponse> {
   if (process.env.NODE_ENV === "development") {
@@ -5504,6 +5522,7 @@ async function requestTurn(
       physicianId,
       language,
       deferredIntentHint: deferredIntentHint ?? undefined,
+      detectedComplaints: detectedComplaints.length > 0 ? detectedComplaints : undefined,
       forceSummary,
     }),
   });
