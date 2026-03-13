@@ -46,8 +46,8 @@ Primary sources used:
 
 ### Gaps Detected
 
-1. **Azure platform controls remain attestation-based rather than IaC-backed in-repo** (Private Endpoints, VNet, egress allowlists).
-2. **Runtime evidence dependency:** monthly attestation refresh is required to keep infrastructure and monitoring evidence current.
+1. ~~**Azure platform controls remain attestation-based rather than IaC-backed in-repo** (Private Endpoints, VNet, egress allowlists).~~ **Resolved 2026-03-13:** Bicep IaC added to `infrastructure/` — see INF-04.
+2. **Runtime evidence dependency:** monthly attestation refresh still required for controls not covered by IaC (runtime key rotation, DB access logs).
 
 ## Methodology and De-duplication Rules
 
@@ -116,7 +116,7 @@ Primary sources used:
 | INF-01 | Infrastructure | Technical Safeguard | Edge transport/header hardening (CSP, HSTS production, frame/type/referrer controls). | `src/proxy.ts` | `docs/compliance/technical-safeguards.md` | Engineering/Security | Not documented | Implemented | Header inspection on representative routes in production-like environment. |
 | INF-02 | Infrastructure | Technical Safeguard | Environment hardening and required-production-variable fail-fast behavior. | `src/lib/required-env.ts`, `src/lib/azure-openai.ts`, `src/lib/azure-speech.ts`, `scripts/check-env-no-secrets.js`, `package.json` (`lint:env`) | Technical safeguards docs + script code | Engineering/Security | Not documented | Implemented | Production startup/env validation and CI `lint:env` execution. |
 | INF-03 | Infrastructure | Technical Safeguard | Outbound URL and network egress guardrails at application layer (anti-SSRF checks). | `src/lib/outbound-url.ts` and usages in OSCAR/speech/PDF routes | `src/lib/outbound-url.test.ts`, matrix T-20 | Engineering/Security | Not documented | Implemented | Unit tests for blocked hosts/schemes and route-level failure behavior. |
-| INF-04 | Infrastructure | Technical Safeguard | Azure network isolation controls for private endpoints/VNet/egress restrictions with runtime attestation evidence. | `DEPLOYMENT.md` Network Isolation Checklist (Azure) | `docs/compliance/evidence/azure-runtime-attestation-2026-03-02.md`, `DEPLOYMENT.md` sections on Private Endpoint, VNet integration, outbound restrictions | Ops/Security | Monthly | Implemented (attested dependency control) | Validate through monthly runtime attestation and environment configuration review; IaC still not in-repo. |
+| INF-04 | Infrastructure | Technical Safeguard | Azure network isolation controls for private endpoints/VNet/egress restrictions — codified as Bicep IaC. | `infrastructure/main.bicep`, `infrastructure/modules/vnet.bicep`, `infrastructure/modules/nsg.bicep`, `infrastructure/modules/private-endpoints.bicep`, `infrastructure/modules/private-dns.bicep`, `infrastructure/modules/app-service-vnet-integration.bicep` | `docs/compliance/evidence/azure-runtime-attestation-2026-03-02.md`, `DEPLOYMENT.md`, `.github/workflows/infra-deploy.yml` | Ops/Security | Monthly | Implemented (IaC-backed) | Deploy via `infra-deploy.yml` workflow (what-if then deploy); verify Private Endpoint connection state in Azure Portal; confirm App Service VNet Integration active under Networking tab. |
 
 ---
 

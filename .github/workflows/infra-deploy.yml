@@ -1,0 +1,70 @@
+name: Infrastructure Deploy (Bicep)
+
+# Manually triggered only — never runs automatically with app code pushes.
+# Always run with mode=what-if first to preview changes before applying.
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Deployment mode'
+        required: true
+        default: 'what-if'
+        type: choice
+        options:
+          - what-if
+          - deploy
+
+env:
+  RESOURCE_GROUP: rg-health-assist-prod
+  TEMPLATE_FILE: infrastructure/main.bicep
+  PARAMETERS_FILE: infrastructure/parameters.prod.json
+
+jobs:
+  infra:
+    name: '${{ github.event.inputs.mode == ''what-if'' && ''Preview (what-if)'' || ''Deploy Infrastructure'' }}'
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.mode == 'deploy' && 'production' || '' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Install Bicep CLI
+        run: az bicep install
+
+      - name: Lint Bicep templates
+        run: az bicep lint --file ${{ env.TEMPLATE_FILE }}
+
+      - name: Preview changes (what-if)
+        if: github.event.inputs.mode == 'what-if'
+        run: |
+          az deployment group what-if \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --template-file ${{ env.TEMPLATE_FILE }} \
+            --parameters ${{ env.PARAMETERS_FILE }} \
+            --result-format FullResourcePayloads
+
+      - name: Deploy infrastructure
+        if: github.event.inputs.mode == 'deploy'
+        run: |
+          az deployment group create \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --template-file ${{ env.TEMPLATE_FILE }} \
+            --parameters ${{ env.PARAMETERS_FILE }} \
+            --name "infra-$(date +%Y%m%d-%H%M%S)" \
+            --verbose
+
+      - name: Show deployment outputs
+        if: github.event.inputs.mode == 'deploy'
+        run: |
+          az deployment group show \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --name "infra-$(date +%Y%m%d-%H%M%S)" \
+            --query properties.outputs \
+            --output table || true

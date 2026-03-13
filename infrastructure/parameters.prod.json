@@ -1,0 +1,39 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "location": {
+      "value": "eastus2"
+    },
+    "namePrefix": {
+      "value": "health-assist-prod"
+    },
+    "appServiceName": {
+      "value": "healt-assist-ai-prod"
+    },
+    "keyVaultName": {
+      "value": "health-assist-ai-prod-kv"
+    },
+    "aiResourceName": {
+      "value": "mehra-mj8tusfe-eastus2"
+    },
+    "aiResourceGroup": {
+      "value": "rg-health-assist-prod"
+    },
+    "postgresServerName": {
+      "value": "REPLACE_WITH_POSTGRES_SERVER_NAME"
+    },
+    "postgresResourceGroup": {
+      "value": "rg-health-assist-prod"
+    },
+    "vnetAddressPrefix": {
+      "value": "10.0.0.0/16"
+    },
+    "appSubnetPrefix": {
+      "value": "10.0.0.0/24"
+    },
+    "peSubnetPrefix": {
+      "value": "10.0.1.0/24"
+    }
+  }
+}
