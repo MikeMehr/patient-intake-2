@@ -128,7 +128,7 @@ resource nsg 'Microsoft.Network/networkSecurityGroups@2023-05-01' = {
           sourcePortRange: '*'
           destinationAddressPrefix: 'Internet'
           destinationPortRange: '443'
-          description: 'Allow outbound HTTPS to external APIs (Resend email, Google OAuth, npm registry). Narrowed by deny-all non-443 + application-layer allowlists.'
+          description: 'Allow outbound HTTPS to external APIs (Resend, Google OAuth). Non-443 blocked.'
         }
       }
       {
