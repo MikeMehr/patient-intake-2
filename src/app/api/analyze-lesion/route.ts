@@ -52,6 +52,18 @@ export async function POST(request: Request) {
     return res;
   }
 
+  // Enforce maximum file size (10 MB)
+  const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
+  if (file.size > MAX_FILE_SIZE_BYTES) {
+    status = 413;
+    const res = NextResponse.json(
+      { error: "Image exceeds the 10 MB size limit." },
+      { status },
+    );
+    logRequestMeta("/api/analyze-lesion", requestId, status, Date.now() - started);
+    return res;
+  }
+
   // Validate allowed image types (including HEIC/HEIF from iOS devices)
   const normalizedType = file.type.toLowerCase();
   const normalizedName = file.name.toLowerCase();

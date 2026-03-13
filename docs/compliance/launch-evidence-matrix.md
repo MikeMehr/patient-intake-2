@@ -174,6 +174,24 @@ This matrix links launch controls to objective evidence, owner, and closure crit
   - Next review: 2026-03-26
   - Closure criteria: V1 security regression and route-level negative tests remain green in CI and ASVS V1 CSV rows stay synchronized with code/test evidence
 
+- Control ID: T-26
+  - Control: File upload security controls (MIME allowlist, magic-number validation, size limit, HIPAA-mode fail-closed guard)
+  - Evidence: `docs/compliance/runbooks/file-upload-security.md`, `src/app/api/analyze-lesion/route.ts`
+  - Owner: Engineering/Security
+  - Status: implemented
+  - Last review: 2026-03-13
+  - Next review: 2026-04-13
+  - Closure criteria: upload endpoint enforces MIME allowlist, magic-number check, 10 MB size limit, and returns 503 in HIPAA mode; virus scanning requirement documented and gated on PHI-path enablement
+
+- Control ID: T-27
+  - Control: Password policy documented and mapped to enforcement evidence (length, character class, context-word prohibition, breach check, hashing) (ASVS V6.1.1, V6.1.2, V6.1.3, V6.2.1)
+  - Evidence: `docs/compliance/runbooks/password-policy.md`, `src/lib/auth.ts`, `src/lib/password-context.ts`, `src/lib/password-breach.ts`, `src/app/api/auth/register/route.ts`, `src/app/api/auth/reset-password/[token]/route.ts`, `src/app/api/admin/providers/[id]/route.ts`, `src/app/api/org/providers/[id]/route.ts`
+  - Owner: Engineering/Security
+  - Status: implemented
+  - Last review: 2026-03-13
+  - Next review: 2026-04-13
+  - Closure criteria: password policy runbook remains current with all four ASVS controls mapped to code and test evidence; tests remain green across all enforcement paths
+
 - Control ID: T-21
   - Control: PHI production scope boundary is explicitly documented and enforced by HIPAA-mode fail-closed behavior for external AI routes
   - Evidence: `docs/compliance/phi-production-scope.md`, `src/app/api/lab-requisitions/generate/route.ts`, `src/app/api/speech/clean/route.ts`, existing HIPAA-mode guards in AI/voice routes and related tests
@@ -278,11 +296,12 @@ This matrix links launch controls to objective evidence, owner, and closure crit
 
 - Control ID: A-01
   - Control: Vendor BAAs complete for PHI paths
-  - Evidence: `docs/compliance/vendor-baa-register.md`, `docs/compliance/evidence/baa-execution-log-2026-03-02.md`
+  - Evidence: `docs/compliance/vendor-baa-register.md`, `docs/compliance/evidence/baa-execution-log-2026-03-02.md`, `docs/compliance/evidence/baa-review-2026-03-13.md`
   - Owner: Legal/Compliance
   - Status: implemented
-  - Last review: 2026-03-02
-  - Closure criteria: all required vendors marked executed
+  - Last review: 2026-03-13
+  - Next review: 2026-06-02
+  - Closure criteria: all required vendors marked executed; no new PHI-path vendors added without BAA assessment
 
 - Control ID: A-02
   - Control: Workforce HIPAA training evidence

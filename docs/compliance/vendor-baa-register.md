@@ -9,8 +9,9 @@ Use this register to track all vendors that may process PHI.
   - BAA required: yes
   - BAA status: executed
   - Owner: Security/Legal
+  - Last reviewed: 2026-03-13
   - Next review: 2026-06-02
-  - Evidence link: `docs/compliance/evidence/baa-execution-log-2026-03-02.md`
+  - Evidence link: `docs/compliance/evidence/baa-execution-log-2026-03-02.md`, `docs/compliance/evidence/baa-review-2026-03-13.md`
   - Approver: Manucher Mehraein
 
 - Vendor: Resend (email delivery)
@@ -18,8 +19,9 @@ Use this register to track all vendors that may process PHI.
   - BAA required: no for current PHI-disabled use
   - BAA status: not_required_documented
   - Owner: Security/Legal
+  - Last reviewed: 2026-03-13
   - Next review: 2026-06-02
-  - Evidence link: `docs/compliance/evidence/baa-execution-log-2026-03-02.md`
+  - Evidence link: `docs/compliance/evidence/baa-execution-log-2026-03-02.md`, `docs/compliance/evidence/baa-review-2026-03-13.md`
   - Approver: Manucher Mehraein
 
 - Vendor: OpenAI / Google AI providers
@@ -27,8 +29,9 @@ Use this register to track all vendors that may process PHI.
   - BAA required: no for current PHI-disabled use
   - BAA status: not_required_documented
   - Owner: Security/Legal/Engineering
+  - Last reviewed: 2026-03-13
   - Next review: 2026-06-02
-  - Evidence link: `docs/compliance/evidence/baa-execution-log-2026-03-02.md`
+  - Evidence link: `docs/compliance/evidence/baa-execution-log-2026-03-02.md`, `docs/compliance/evidence/baa-review-2026-03-13.md`
   - Approver: Manucher Mehraein
 
 ## Register Rules
