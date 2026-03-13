@@ -5,27 +5,17 @@
 # Prerequisites:
 #   1. Azure CLI installed and logged in (az login)
 #   2. Key Vault "health-assist-ai-prod-kv" already exists
-#   3. App Service managed identity enabled:
-#        az webapp identity assign --name healt-assist-ai-prod --resource-group <RG>
-#   4. Key Vault access policy grants GET to that identity:
-#        az keyvault set-policy --name health-assist-ai-prod-kv \
-#          --object-id <PRINCIPAL_ID> --secret-permissions get
+#   3. App Service managed identity enabled and granted Key Vault Secrets User role
 #
 # Usage:
 #   ./scripts/setup-keyvault.sh <RESOURCE_GROUP>
-#
-# What this script does:
-#   1. Reads current secret values from App Service settings
-#   2. Stores them in Azure Key Vault
-#   3. Updates App Service settings to use Key Vault References
-#      (@Microsoft.KeyVault(SecretUri=...))
 #
 # After running:
 #   - Verify in Azure Portal: App Service > Configuration > green checkmarks
 #   - Restart the app: az webapp restart --name healt-assist-ai-prod --resource-group <RG>
 #   - Rotate all credentials at their source and update Key Vault values
 
-set -euo pipefail
+set -eo pipefail
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -33,33 +23,26 @@ set -euo pipefail
 APP_NAME="healt-assist-ai-prod"
 VAULT_NAME="health-assist-ai-prod-kv"
 
-# Map: APP_SETTING_NAME -> KEY_VAULT_SECRET_NAME
-declare -A SECRETS=(
-  # AI Services
-  ["AZURE_OPENAI_API_KEY"]="openai-api-key"
-  ["AZURE_PHI_API_KEY"]="phi-api-key"
-  ["AZURE_SPEECH_KEY"]="speech-key"
-  ["AZURE_DOCUMENT_INTELLIGENCE_API_KEY"]="document-intelligence-api-key"
-  # Database
-  ["DATABASE_URL"]="database-url"
-  # Email
-  ["RESEND_API_KEY"]="resend-api-key"
-  # Fax
-  ["SRFAX_ACCESS_ID"]="srfax-access-id"
-  ["SRFAX_ACCESS_PASSWORD"]="srfax-access-password"
-  # Auth
-  ["GOOGLE_CLIENT_SECRET"]="google-client-secret"
-  ["SESSION_SECRET"]="session-secret"
-  ["INVITATION_SESSION_SECRET"]="invitation-session-secret"
-  ["NEXTAUTH_SECRET"]="nextauth-secret"
-  ["AUTH_MFA_SECRET"]="auth-mfa-secret"
-  ["CRON_SECRET"]="cron-secret"
-  # Encryption
-  ["PATIENT_PHI_ENCRYPTION_KEY"]="patient-phi-encryption-key"
-  ["PATIENT_HIN_HASH_PEPPER"]="patient-hin-hash-pepper"
-  ["EMR_ENCRYPTION_KEY"]="emr-encryption-key"
-  # Monitoring
-  ["APPLICATIONINSIGHTS_CONNECTION_STRING"]="appinsights-connection-string"
+# Pairs: "APP_SETTING_NAME:kv-secret-name"
+SECRETS=(
+  "AZURE_OPENAI_API_KEY:openai-api-key"
+  "AZURE_PHI_API_KEY:phi-api-key"
+  "AZURE_SPEECH_KEY:speech-key"
+  "AZURE_DOCUMENT_INTELLIGENCE_API_KEY:document-intelligence-api-key"
+  "DATABASE_URL:database-url"
+  "RESEND_API_KEY:resend-api-key"
+  "SRFAX_ACCESS_ID:srfax-access-id"
+  "SRFAX_ACCESS_PASSWORD:srfax-access-password"
+  "GOOGLE_CLIENT_SECRET:google-client-secret"
+  "SESSION_SECRET:session-secret"
+  "INVITATION_SESSION_SECRET:invitation-session-secret"
+  "NEXTAUTH_SECRET:nextauth-secret"
+  "AUTH_MFA_SECRET:auth-mfa-secret"
+  "CRON_SECRET:cron-secret"
+  "PATIENT_PHI_ENCRYPTION_KEY:patient-phi-encryption-key"
+  "PATIENT_HIN_HASH_PEPPER:patient-hin-hash-pepper"
+  "EMR_ENCRYPTION_KEY:emr-encryption-key"
+  "APPLICATIONINSIGHTS_CONNECTION_STRING:appinsights-connection-string"
 )
 
 # ---------------------------------------------------------------------------
@@ -68,7 +51,7 @@ declare -A SECRETS=(
 if [[ $# -lt 1 ]]; then
   echo "Usage: $0 <RESOURCE_GROUP>"
   echo ""
-  echo "Example: $0 patient-intake-prod-rg"
+  echo "Example: $0 rg-health-assist-prod"
   exit 1
 fi
 
@@ -111,10 +94,11 @@ echo "--- Step 2: Storing secrets in Key Vault ---"
 
 FAILED=()
 SKIPPED=()
-STORED=()
+STORED_PAIRS=()
 
-for APP_SETTING in "${!SECRETS[@]}"; do
-  KV_SECRET="${SECRETS[$APP_SETTING]}"
+for PAIR in "${SECRETS[@]}"; do
+  APP_SETTING="${PAIR%%:*}"
+  KV_SECRET="${PAIR##*:}"
 
   VALUE=$(get_setting_value "$APP_SETTING") || true
 
@@ -124,7 +108,6 @@ for APP_SETTING in "${!SECRETS[@]}"; do
     continue
   fi
 
-  # Skip if already a Key Vault reference
   if [[ "$VALUE" == @Microsoft.KeyVault* ]]; then
     echo "  SKIP: $APP_SETTING (already a Key Vault reference)"
     SKIPPED+=("$APP_SETTING")
@@ -137,7 +120,7 @@ for APP_SETTING in "${!SECRETS[@]}"; do
     --name "$KV_SECRET" \
     --value "$VALUE" \
     --output none 2>/dev/null; then
-    STORED+=("$APP_SETTING")
+    STORED_PAIRS+=("$PAIR")
   else
     echo "  ERROR: Failed to store $KV_SECRET"
     FAILED+=("$APP_SETTING")
@@ -145,7 +128,7 @@ for APP_SETTING in "${!SECRETS[@]}"; do
 done
 
 echo ""
-echo "Stored: ${#STORED[@]}, Skipped: ${#SKIPPED[@]}, Failed: ${#FAILED[@]}"
+echo "Stored: ${#STORED_PAIRS[@]}, Skipped: ${#SKIPPED[@]}, Failed: ${#FAILED[@]}"
 
 if [[ ${#FAILED[@]} -gt 0 ]]; then
   echo "FAILED secrets: ${FAILED[*]}"
@@ -160,8 +143,9 @@ echo ""
 echo "--- Step 3: Updating App Service settings to Key Vault References ---"
 
 SETTINGS_ARGS=()
-for APP_SETTING in "${STORED[@]}"; do
-  KV_SECRET="${SECRETS[$APP_SETTING]}"
+for PAIR in "${STORED_PAIRS[@]}"; do
+  APP_SETTING="${PAIR%%:*}"
+  KV_SECRET="${PAIR##*:}"
   REF="@Microsoft.KeyVault(SecretUri=https://${VAULT_NAME}.vault.azure.net/secrets/${KV_SECRET}/)"
   SETTINGS_ARGS+=("${APP_SETTING}=${REF}")
 done
@@ -190,12 +174,14 @@ echo "     Each migrated setting should show a green checkmark"
 echo "  2. Restart the app:"
 echo "     az webapp restart --name $APP_NAME --resource-group $RESOURCE_GROUP"
 echo "  3. Test the application (login, patient intake, AI analysis)"
-echo "  4. Rotate all credentials at their source and update Key Vault:"
+echo "  4. Rotate all credentials at their source, then update Key Vault:"
 echo "     az keyvault secret set --vault-name $VAULT_NAME --name <secret> --value <new-value>"
 echo ""
 echo "Migrated secrets:"
-for s in "${STORED[@]}"; do
-  echo "  - $s -> ${SECRETS[$s]}"
+for PAIR in "${STORED_PAIRS[@]}"; do
+  APP_SETTING="${PAIR%%:*}"
+  KV_SECRET="${PAIR##*:}"
+  echo "  - $APP_SETTING -> $KV_SECRET"
 done
 if [[ ${#SKIPPED[@]} -gt 0 ]]; then
   echo ""
