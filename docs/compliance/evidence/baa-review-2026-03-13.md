@@ -11,10 +11,14 @@ and verifies no new vendors have been introduced that require BAA assessment.
 
 ## Vendor Status Confirmation
 
-- Azure (hosting/infrastructure)
-  - PHI touchpoint: yes — application hosting, database, networking
-  - BAA status: executed — no change
-  - Notes: BAA in place. Next scheduled review: 2026-06-02.
+- Microsoft Azure (hosting/infrastructure/AI/speech)
+  - PHI touchpoint: yes — application hosting, database, networking, AI inference, speech, monitoring
+  - BAA status: covered_via_product_terms
+  - Notes: Microsoft's HIPAA BAA coverage is included in the standard Data Processing
+    Addendum (DPA) / Product Terms accepted at subscription time. No separately signed
+    document exists or is required. In-scope services verified and configuration
+    reviewed. See `docs/compliance/evidence/microsoft-dpa-baa-reference-2026-03-13.md`
+    for full service list and evidence links. Next scheduled review: 2026-06-02.
 
 - Resend (email delivery)
   - PHI touchpoint: no — PHI-bearing email paths remain disabled in HIPAA production mode

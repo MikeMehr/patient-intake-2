@@ -295,13 +295,20 @@ This matrix links launch controls to objective evidence, owner, and closure crit
 ## Administrative Controls
 
 - Control ID: A-01
-  - Control: Vendor BAAs complete for PHI paths
-  - Evidence: `docs/compliance/vendor-baa-register.md`, `docs/compliance/evidence/baa-execution-log-2026-03-02.md`, `docs/compliance/evidence/baa-review-2026-03-13.md`
-  - Owner: Legal/Compliance
+  - Control: Vendor BAA coverage confirmed for all PHI-path vendors; Microsoft Azure
+    covered via DPA/Product Terms (no separately signed document); all other PHI-path
+    vendors either covered or PHI paths technically disabled
+  - Evidence: `docs/compliance/vendor-baa-register.md`,
+    `docs/compliance/evidence/baa-execution-log-2026-03-02.md`,
+    `docs/compliance/evidence/baa-review-2026-03-13.md`,
+    `docs/compliance/evidence/microsoft-dpa-baa-reference-2026-03-13.md`
+  - Owner: Manucher Mehraein (Compliance/Engineering)
   - Status: implemented
   - Last review: 2026-03-13
   - Next review: 2026-06-02
-  - Closure criteria: all required vendors marked executed; no new PHI-path vendors added without BAA assessment
+  - Closure criteria: all PHI-path vendors hold status `executed` or
+    `covered_via_product_terms`; `not_required_documented` vendors have PHI paths
+    technically disabled; no new PHI-path vendor added without BAA assessment
 
 - Control ID: A-02
   - Control: Workforce HIPAA training evidence

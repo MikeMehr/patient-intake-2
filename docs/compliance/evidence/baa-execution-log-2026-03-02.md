@@ -2,14 +2,21 @@
 
 - Log date: 2026-03-02
 - Owner: Manucher Mehraein
+- Correction applied: 2026-03-13 — Microsoft Azure BAA status updated to reflect
+  actual mechanism (DPA / Product Terms, not a separately signed document)
 
 ## Vendor Decisions
 
-- Azure (hosting/infrastructure)
+- Microsoft Azure (hosting/infrastructure/AI/speech)
   - PHI touchpoint: yes
   - BAA required: yes
-  - BAA status: executed
-  - Evidence reference: contract record retained in legal archive
+  - BAA status: covered_via_product_terms
+  - Mechanism: Microsoft includes HIPAA BAA coverage in its standard Data Processing
+    Addendum (DPA) / Product Terms. Coverage is established at subscription time;
+    no separately signed bilateral document is issued.
+  - Evidence reference: `docs/compliance/evidence/microsoft-dpa-baa-reference-2026-03-13.md`
+  - In-scope services: Azure App Service, Azure PostgreSQL, Azure VNet, Azure OpenAI,
+    Azure AI Speech (STT/TTS), Azure AI Document Intelligence, Azure Application Insights
 
 - Resend (email delivery)
   - PHI touchpoint in current production posture: no (HIPAA mode disables PHI-bearing email workflows)
