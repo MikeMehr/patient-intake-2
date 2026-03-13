@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAzureVisionClient } from "@/lib/azure-openai";
 import { logDebug } from "@/lib/secure-logger";
+import heicConvert from "heic-convert";
 
 export const runtime = "nodejs";
 
@@ -34,7 +35,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const arrayBuffer = await file.arrayBuffer();
+    let arrayBuffer = await file.arrayBuffer();
     const bytes = new Uint8Array(arrayBuffer.slice(0, 12));
     const isPng = bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47;
     const isJpeg = bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
@@ -43,16 +44,41 @@ export async function POST(request: NextRequest) {
       bytes[8] === 0x57 && bytes[9] === 0x45 && bytes[10] === 0x42 && bytes[11] === 0x50;
     const isPdf =
       bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46; // %PDF
+    // HEIC: bytes 4-7 are "ftyp", bytes 8-11 are a HEIC brand
+    const isFtyp = bytes[4] === 0x66 && bytes[5] === 0x74 && bytes[6] === 0x79 && bytes[7] === 0x70;
+    const heicBrands = ["heic", "heix", "mif1", "msf1", "hevc", "hevx"];
+    const brand = String.fromCharCode(bytes[8], bytes[9], bytes[10], bytes[11]);
+    const isHeic = isFtyp && heicBrands.includes(brand);
 
-    if (!(isPng || isJpeg || isWebp || isPdf)) {
+    if (!(isPng || isJpeg || isWebp || isPdf || isHeic)) {
       return NextResponse.json(
-        { error: "Unsupported file type. Please upload an image or PDF." },
+        { error: "Unsupported file type. Please upload an image (JPEG, PNG, WebP, HEIC) or PDF." },
         { status: 400 },
       );
     }
 
+    let mime = "image/jpeg";
+    if (isPng) mime = "image/png";
+    else if (isWebp) mime = "image/webp";
+    else if (isPdf) mime = "application/pdf";
+
+    // Convert HEIC to JPEG for Azure Vision compatibility
+    if (isHeic) {
+      const jpegBuffer = await heicConvert({
+        buffer: Buffer.from(arrayBuffer),
+        format: "JPEG",
+        quality: 0.92,
+      });
+      arrayBuffer = jpegBuffer.buffer.slice(
+        jpegBuffer.byteOffset,
+        jpegBuffer.byteOffset + jpegBuffer.byteLength,
+      );
+      mime = "image/jpeg";
+    } else if (file.type && file.type.length > 0) {
+      mime = file.type;
+    }
+
     const base64Image = Buffer.from(arrayBuffer).toString("base64");
-    const mime = file.type && file.type.length > 0 ? file.type : isPdf ? "application/pdf" : "image/png";
     const dataUrl = `data:${mime};base64,${base64Image}`;
 
     const azure = getAzureVisionClient();

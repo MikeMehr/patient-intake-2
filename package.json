@@ -19,6 +19,7 @@
     "@types/pg": "^8.15.6",
     "applicationinsights": "^3.14.0",
     "bcrypt": "^6.0.0",
+    "heic-convert": "^2.1.0",
     "jspdf": "^4.2.0",
     "lottie-react": "^2.4.1",
     "next": "^16.1.6",
