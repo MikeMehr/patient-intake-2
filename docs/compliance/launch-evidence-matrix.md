@@ -212,13 +212,12 @@ This matrix links launch controls to objective evidence, owner, and closure crit
   - Closure criteria: production DB pool rejects untrusted certificates (`rejectUnauthorized=true`)
 
 - Control ID: T-23
-  - Control: Google SSO is deny-by-default and restricted to explicit allowlisted domains
-  - Evidence: `src/auth.ts`
+  - Control: Google SSO (NextAuth) removed — not used in production; workforce authentication uses native username/password + MFA
+  - Evidence: removal commit 2026-03-13; `src/auth.ts`, `src/app/api/auth/[...nextauth]/`, `src/app/auth/signin/` deleted; `next-auth` dependency removed from `package.json`
   - Owner: Engineering/Security
-  - Status: implemented
-  - Last review: 2026-03-02
-  - Next review: 2026-04-02
-  - Closure criteria: SSO remains disabled unless `ENABLE_GOOGLE_SSO=true` and domain allowlist is configured
+  - Status: removed
+  - Last review: 2026-03-13
+  - Closure criteria: n/a — feature removed; SSO may be re-introduced via a future controlled change with BAA assessment and domain allowlist configuration
 
 - Control ID: T-24
   - Control: Product/UI language avoids premature formal HIPAA attestation prior to legal close
