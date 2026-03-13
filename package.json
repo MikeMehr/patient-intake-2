@@ -17,6 +17,7 @@
     "@sparticuz/chromium": "^143.0.4",
     "@types/bcrypt": "^6.0.0",
     "@types/pg": "^8.15.6",
+    "applicationinsights": "^3.14.0",
     "bcrypt": "^6.0.0",
     "jspdf": "^4.2.0",
     "lottie-react": "^2.4.1",
