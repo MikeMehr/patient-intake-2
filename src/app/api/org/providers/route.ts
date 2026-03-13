@@ -7,6 +7,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getCurrentSession } from "@/lib/auth";
 import { query } from "@/lib/db";
 import { hashPassword, validatePassword } from "@/lib/auth";
+import { isPasswordContextWordSafe, CONTEXT_PASSWORD_ERROR } from "@/lib/password-context";
 import { randomBytes } from "crypto";
 import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
 
@@ -113,6 +114,17 @@ export async function POST(request: NextRequest) {
       status = 400;
       const res = NextResponse.json(
         { error: passwordValidation.error },
+        { status }
+      );
+      logRequestMeta("/api/org/providers", requestId, status, Date.now() - started);
+      return res;
+    }
+
+    // Validate password does not contain context words
+    if (!isPasswordContextWordSafe(password)) {
+      status = 400;
+      const res = NextResponse.json(
+        { error: CONTEXT_PASSWORD_ERROR },
         { status }
       );
       logRequestMeta("/api/org/providers", requestId, status, Date.now() - started);
