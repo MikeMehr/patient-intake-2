@@ -3988,6 +3988,7 @@ export default function Home() {
                             try {
                               const formData = new FormData();
                               formData.append("image", file);
+                              formData.append("mode", "pmh");
                               const response = await fetch("/api/analyze-med-pmh", {
                                 method: "POST",
                                 body: formData,
@@ -4101,6 +4102,7 @@ export default function Home() {
                             try {
                               const formData = new FormData();
                               formData.append("image", file);
+                              formData.append("mode", "medications");
                               const response = await fetch("/api/analyze-med-pmh", {
                                 method: "POST",
                                 body: formData,

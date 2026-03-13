@@ -36,6 +36,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const mode = (formData.get("mode") as string | null) ?? "both"; // "pmh" | "medications" | "both"
+
     let arrayBuffer = await file.arrayBuffer();
     const bytes = new Uint8Array(arrayBuffer.slice(0, 12));
     const isPng = bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47;
@@ -81,27 +83,74 @@ export async function POST(request: NextRequest) {
 
     const azure = getAzureVisionClient();
 
-    const systemInstruction = `
-You are a clinical OCR assistant. Extract medications and past medical history (PMH) from the attached image or PDF.
+    let systemInstruction: string;
+    let userPrompt: string;
+
+    if (mode === "pmh") {
+      systemInstruction = `
+You are a clinical OCR assistant. Extract the list of medical diagnoses and conditions from the attached image or PDF.
 
 OUTPUT FORMAT — respond with exactly these two sections, no other text:
 
 Medications:
-- [medication name] [strength] [dose/frequency]
+- None
 
 Pertinent PMH:
 - [diagnosis or condition]
 
 RULES:
-- Replace the bracketed placeholders above with the ACTUAL content you read from the image.
-- If there are no medications visible, write "- None" under Medications.
-- If there are no PMH items visible, write "- None" under Pertinent PMH.
+- Replace the bracketed placeholder with EACH diagnosis/condition you read from the image, one per line.
+- Everything in the image is a medical history item — list it under Pertinent PMH.
 - Perform best-effort OCR; include partially readable text rather than skipping it.
-- Only mark a specific line "Unclear" if that exact line is truly illegible.
-- Do NOT fabricate data; transcribe only what is visible.
+- Only mark a line "Unclear" if it is truly illegible.
+- Do NOT fabricate data.
 `.trim();
+      userPrompt = `List every diagnosis and medical condition visible in the attached image under Pertinent PMH.`;
+    } else if (mode === "medications") {
+      systemInstruction = `
+You are a clinical OCR assistant. Extract the list of medications from the attached image or PDF.
 
-    const userPrompt = `Extract all medications and medical history items from the attached image. Replace the placeholders in the format with the actual text you see.`.trim();
+OUTPUT FORMAT — respond with exactly these two sections, no other text:
+
+Medications:
+- [drug name] [strength] [dose/frequency]
+
+Pertinent PMH:
+- None
+
+RULES:
+- Replace the bracketed placeholder with EACH medication you read from the image, one per line. Include name, strength, and dose/frequency when present.
+- Perform best-effort OCR; include partially readable text rather than skipping it.
+- Only mark a line "Unclear" if it is truly illegible.
+- Do NOT fabricate data.
+`.trim();
+      userPrompt = `List every medication visible in the attached image under Medications.`;
+    } else {
+      systemInstruction = `
+You are a clinical OCR assistant. Extract medications and past medical history (PMH) from the attached image or PDF.
+
+CLASSIFICATION:
+- Medications: drug/medication names with strength and dose (e.g., metformin 500 mg BID, lisinopril 10 mg daily).
+- Pertinent PMH: diagnoses and conditions (e.g., HTN, DM2, asthma, CAD, COPD, hypothyroidism).
+
+OUTPUT FORMAT — respond with exactly these two sections, no other text:
+
+Medications:
+- [drug name] [strength] [dose/frequency]
+
+Pertinent PMH:
+- [diagnosis or condition]
+
+RULES:
+- Replace the bracketed placeholders with the ACTUAL content you read from the image.
+- If no medications are visible, write "- None" under Medications.
+- If no PMH items are visible, write "- None" under Pertinent PMH.
+- Perform best-effort OCR; include partially readable text rather than skipping it.
+- Only mark a line "Unclear" if it is truly illegible.
+- Do NOT fabricate data.
+`.trim();
+      userPrompt = `Extract all medications and medical history items from the attached image.`;
+    }
 
     const completion = await azure.client.chat.completions.create({
       model: azure.deployment,
