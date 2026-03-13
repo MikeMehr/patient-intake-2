@@ -282,10 +282,9 @@ export default function PatientChartPage() {
           <Image
             src="/LogoFinal.png"
             alt="Health Assist AI logo"
-            width={260}
-            height={64}
-            className="mx-auto mb-5 h-[72px] w-[218px] object-cover sm:h-24 sm:w-[289px]"
-            style={{ objectPosition: "78% center" }}
+            width={112}
+            height={26}
+            className="mx-auto mb-4 h-[38px] w-[114px] object-contain sm:h-[50px] sm:w-[150px]"
             priority
           />
           <div className="flex items-start justify-between gap-4">

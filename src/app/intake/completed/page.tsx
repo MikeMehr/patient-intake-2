@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useState } from "react";
 
@@ -56,6 +57,14 @@ function IntakeCompletedContent() {
   return (
     <div className="min-h-screen bg-slate-100 flex items-center justify-center px-4">
       <main className="w-[80%] max-w-[calc(100vw-2rem)] sm:w-full sm:max-w-xl rounded-2xl border border-slate-200 bg-white p-6 sm:p-8 shadow-sm">
+        <div className="flex justify-center mb-6">
+          <Image
+            src="/LogoFinal.png"
+            alt="Health Assist AI logo"
+            width={180}
+            height={40}
+          />
+        </div>
         <h1 className="text-2xl font-semibold text-slate-900">Submission received</h1>
         <p className="mt-3 text-sm text-slate-700">
           Thank you. Your intake has been submitted to your physician.
@@ -87,6 +96,14 @@ export default function IntakeCompletedPage() {
       fallback={
         <div className="min-h-screen bg-slate-100 flex items-center justify-center px-4">
           <main className="w-[80%] max-w-[calc(100vw-2rem)] sm:w-full sm:max-w-xl rounded-2xl border border-slate-200 bg-white p-6 sm:p-8 shadow-sm">
+            <div className="flex justify-center mb-6">
+              <Image
+                src="/LogoFinal.png"
+                alt="Health Assist AI logo"
+                width={180}
+                height={40}
+              />
+            </div>
             <h1 className="text-2xl font-semibold text-slate-900">Submission received</h1>
             <p className="mt-3 text-sm text-slate-700">
               Thank you. Your intake has been submitted to your physician.
