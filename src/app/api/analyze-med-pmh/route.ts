@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAzureVisionClient } from "@/lib/azure-openai";
 import { logDebug } from "@/lib/secure-logger";
-import heicConvert from "heic-convert";
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const heicConvert = require("heic-convert") as typeof import("heic-convert");
 
 export const runtime = "nodejs";
 
@@ -64,15 +65,12 @@ export async function POST(request: NextRequest) {
 
     // Convert HEIC to JPEG for Azure Vision compatibility
     if (isHeic) {
-      const jpegBuffer = await heicConvert({
+      const jpegUint8 = await heicConvert({
         buffer: Buffer.from(arrayBuffer),
         format: "JPEG",
         quality: 0.92,
       });
-      arrayBuffer = jpegBuffer.buffer.slice(
-        jpegBuffer.byteOffset,
-        jpegBuffer.byteOffset + jpegBuffer.byteLength,
-      );
+      arrayBuffer = Buffer.from(jpegUint8).buffer as ArrayBuffer;
       mime = "image/jpeg";
     } else if (file.type && file.type.length > 0) {
       mime = file.type;
