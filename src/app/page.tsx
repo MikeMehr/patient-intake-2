@@ -3960,7 +3960,7 @@ export default function Home() {
                       <div className="space-y-2">
                         <input
                           type="file"
-                          accept="image/*,.pdf"
+                          accept="image/*,.heic,.heif,.pdf"
                           disabled={status !== "idle"}
                           aria-label="Upload PMH photo or PDF"
                           onChange={async (event) => {
@@ -4074,7 +4074,7 @@ export default function Home() {
                       <div className="space-y-2">
                         <input
                           type="file"
-                          accept="image/*,.pdf"
+                          accept="image/*,.heic,.heif,.pdf"
                           disabled={status !== "idle"}
                           aria-label="Upload medication list photo or PDF"
                           onChange={async (event) => {
