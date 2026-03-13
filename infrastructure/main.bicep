@@ -12,7 +12,7 @@
 //     --parameters infrastructure/parameters.prod.json
 
 @description('Azure region for all resources')
-param location string = 'eastus2'
+param location string = 'canadacentral'
 
 @description('Name prefix used for all created resources (e.g. health-assist-prod)')
 param namePrefix string = 'health-assist-prod'
