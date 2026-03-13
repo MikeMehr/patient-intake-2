@@ -193,13 +193,14 @@ This matrix links launch controls to objective evidence, owner, and closure crit
   - Closure criteria: password policy runbook remains current with all four ASVS controls mapped to code and test evidence; tests remain green across all enforcement paths
 
 - Control ID: T-21
-  - Control: PHI production scope boundary is explicitly documented and enforced by HIPAA-mode fail-closed behavior for external AI routes
-  - Evidence: `docs/compliance/phi-production-scope.md`, `src/app/api/lab-requisitions/generate/route.ts`, `src/app/api/speech/clean/route.ts`, existing HIPAA-mode guards in AI/voice routes and related tests
+  - Control: PHI production scope boundary is explicitly documented and enforced by HIPAA-mode fail-closed behavior for all external AI routes
+  - Evidence: `docs/compliance/phi-production-scope.md`, `docs/compliance/evidence/baa-review-2026-03-13.md`, `src/app/api/history/route.ts`, `src/app/api/analyze-med-pmh/route.ts`, `src/app/api/analyze-lesion/route.ts`, `src/app/api/lab-requisitions/generate/route.ts`, `src/app/api/speech/clean/route.ts`, `src/app/api/speech/stt/route.ts`, `src/app/api/speech/tts/route.ts`, `src/app/api/interview/route.ts`, `src/app/api/analyze-form/route.ts`, `src/app/api/analyze-lab-report/route.ts`, `src/app/api/translate/route.ts`, `src/app/api/physician/transcription/generate/route.ts`, `src/app/api/physician/transcription/ask-ai/route.ts`, `src/app/api/physician/translate-final-comments/route.ts`, `src/app/api/physician/hpi-actions/route.ts`
   - Owner: Engineering/Security
   - Status: implemented
-  - Last review: 2026-03-02
-  - Next review: 2026-04-02
-  - Closure criteria: in production (`HIPAA_MODE=true`), external AI PHI paths return fail-closed responses and out-of-scope workflows remain disabled
+  - Last review: 2026-03-13
+  - Next review: 2026-04-13
+  - Gap resolved: 2026-03-13 — `POST /api/history` (Google Gemini) and `POST /api/analyze-med-pmh` (Azure OpenAI Vision) were missing HIPAA_MODE guards; both now return HTTP 503 in HIPAA mode. Gap finding documented in `docs/compliance/evidence/baa-review-2026-03-13.md`.
+  - Closure criteria: all routes in `docs/compliance/phi-production-scope.md` external AI list return fail-closed 503 when `HIPAA_MODE=true`; phi-production-scope.md route inventory stays synchronized with deployed code
 
 - Control ID: T-22
   - Control: Production database TLS certificate validation enforced

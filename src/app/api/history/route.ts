@@ -54,6 +54,16 @@ export async function POST(request: Request) {
     return res;
   }
 
+  if (process.env.HIPAA_MODE === "true") {
+    status = 503;
+    const res = NextResponse.json(
+      { error: "History generation is disabled in HIPAA mode (external AI blocked)." },
+      { status },
+    );
+    logRequestMeta("/api/history", requestId, status, Date.now() - started);
+    return res;
+  }
+
   const apiKey = process.env.GOOGLE_AI_API_KEY;
   if (!apiKey) {
     status = 500;

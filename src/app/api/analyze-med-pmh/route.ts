@@ -6,6 +6,15 @@ export const runtime = "nodejs";
 
 export async function POST(request: NextRequest) {
   let status = 200;
+
+  if (process.env.HIPAA_MODE === "true") {
+    status = 503;
+    return NextResponse.json(
+      { error: "Medication/PMH analysis is disabled in HIPAA mode (external AI blocked)." },
+      { status },
+    );
+  }
+
   try {
     const formData = await request.formData();
     const file = formData.get("image");

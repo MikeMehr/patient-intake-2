@@ -25,8 +25,36 @@ and verifies no new vendors have been introduced that require BAA assessment.
 - OpenAI / Google AI providers
   - PHI touchpoint: no — external AI disabled for PHI mode
   - BAA status: not_required_documented — no change
-  - Notes: All external AI routes return 503 in `HIPAA_MODE=true`. No PHI transits
-    these providers in current production posture. Must reopen if PHI paths are enabled.
+  - Notes: See Gap Finding below. After remediation, all external AI routes including
+    the Google Gemini path in `/api/history` return 503 in `HIPAA_MODE=true`.
+    No PHI transits these providers in current production posture.
+    Must reopen if PHI paths are enabled.
+
+## Gap Finding — HIPAA_MODE Guards Missing from Two Routes
+
+During review, two API routes were identified that lacked `HIPAA_MODE=true` fail-closed guards:
+
+- `src/app/api/history/route.ts`
+  - Calls Google Gemini (`@google/generative-ai`) with patient chief complaints
+  - **No HIPAA_MODE guard was present**
+  - Risk: In production (`HIPAA_MODE=true`), patient chief complaints (PHI) could be
+    transmitted to Google's Generative AI API, which holds a `not_required_documented`
+    BAA status (only valid because the path was assumed disabled)
+  - Remediation: HIPAA_MODE guard added — route now returns HTTP 503 when
+    `HIPAA_MODE=true`, consistent with all other external AI routes
+
+- `src/app/api/analyze-med-pmh/route.ts`
+  - Calls Azure OpenAI (covered by Azure BAA) with uploaded medication/PMH images
+  - **No HIPAA_MODE guard was present**
+  - Risk: Lower severity (Azure BAA is executed), but inconsistent with the
+    declared PHI scope boundary and external AI disable policy
+  - Remediation: HIPAA_MODE guard added — route now returns HTTP 503 when
+    `HIPAA_MODE=true`
+
+Both guards were added in the same review cycle. The `not_required_documented` BAA
+status for Google AI providers remains valid after remediation because the PHI path
+is now correctly blocked in HIPAA mode. If this guard is ever removed or bypassed,
+BAA status must be re-evaluated before production activation.
 
 ## New Vendor Assessment
 
