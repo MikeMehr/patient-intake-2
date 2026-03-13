@@ -82,29 +82,26 @@ export async function POST(request: NextRequest) {
     const azure = getAzureVisionClient();
 
     const systemInstruction = `
-You extract structured clinical data from a photo or PDF of a medication list and past medical history (PMH).
-Return concise, structured text suitable for downstream clinical use.
-Rules:
-- Perform best-effort OCR. Include any partially readable text rather than saying "Unclear".
-- Only mark an individual item "Unclear" if that specific line is truly illegible; do not mark the entire list unclear if some lines are readable.
-- Preserve partial fields if only some parts are legible (e.g., keep the drug name even if dose is unclear).
-- Medications: list each medication with name, strength, dose, frequency if present. Include OTC/supplements if shown.
-- PMH: list pertinent diagnoses/problems separately.
-- Do NOT fabricate missing data.
-- Do NOT return "None identified" or empty lists if any text is readable; include partial tokens (e.g., partial drug names) instead.
-- Output in two sections exactly:
-  Medications:
-    - name – strength – dose/frequency (bullets)
-  Pertinent PMH:
-    - problem/diagnosis (bullets)
+You are a clinical OCR assistant. Extract medications and past medical history (PMH) from the attached image or PDF.
+
+OUTPUT FORMAT — respond with exactly these two sections, no other text:
+
+Medications:
+- [medication name] [strength] [dose/frequency]
+
+Pertinent PMH:
+- [diagnosis or condition]
+
+RULES:
+- Replace the bracketed placeholders above with the ACTUAL content you read from the image.
+- If there are no medications visible, write "- None" under Medications.
+- If there are no PMH items visible, write "- None" under Pertinent PMH.
+- Perform best-effort OCR; include partially readable text rather than skipping it.
+- Only mark a specific line "Unclear" if that exact line is truly illegible.
+- Do NOT fabricate data; transcribe only what is visible.
 `.trim();
 
-    const userPrompt = `
-An image/PDF is attached. Extract medications and PMH as instructed.
-- Use best-effort transcription from the attached image/PDF.
-- Include partial tokens; only mark a specific line as "Unclear" if truly illegible.
-- Do not mark all items unclear if any text is readable.
-`.trim();
+    const userPrompt = `Extract all medications and medical history items from the attached image. Replace the placeholders in the format with the actual text you see.`.trim();
 
     const completion = await azure.client.chat.completions.create({
       model: azure.deployment,
