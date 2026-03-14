@@ -4,7 +4,7 @@
  */
 
 import bcrypt from "bcrypt";
-import { randomBytes } from "crypto";
+import { createHmac, randomBytes } from "crypto";
 import { cookies } from "next/headers";
 import { logDebug } from "@/lib/secure-logger";
 import { asRecord, parseJsonObject } from "@/lib/safe-json";
@@ -70,12 +70,14 @@ type PhysicianSessionRow = {
 async function loadSessionRow(token: string): Promise<PhysicianSessionRow | null> {
   if (!token) return null;
   const { query } = await import("./db");
+  // Always look up by the hash — the raw token never leaves the cookie.
+  const tokenHash = hashSessionToken(token);
   const result = await query<PhysicianSessionRow>(
     `SELECT user_id, user_type, organization_id, physician_id, expires_at, created_at, session_data
      FROM physician_sessions
      WHERE token = $1
      LIMIT 1`,
-    [token],
+    [tokenHash],
   );
   if (result.rows[0]) {
     return result.rows[0];
@@ -83,13 +85,14 @@ async function loadSessionRow(token: string): Promise<PhysicianSessionRow | null
 
   // Rotation grace lookup: accept the previous token briefly so in-flight
   // requests don't fail while the browser applies a freshly rotated cookie.
+  // previousToken in session_data is also stored as a hash.
   const graceLookup = await query<PhysicianSessionRow>(
     `SELECT user_id, user_type, organization_id, physician_id, expires_at, created_at, session_data
      FROM physician_sessions
      WHERE session_data->>'previousToken' = $1
        AND COALESCE((session_data->>'previousTokenGraceUntil')::bigint, 0) > $2
      LIMIT 1`,
-    [token, Date.now()],
+    [tokenHash, Date.now()],
   );
   return graceLookup.rows[0] || null;
 }
@@ -148,6 +151,15 @@ function generateSessionToken(): string {
 }
 
 /**
+ * Hash a raw session token for DB storage.
+ * The cookie always holds the raw token; the DB stores only this hash.
+ * Mirrors the same pattern used for invitation tokens.
+ */
+function hashSessionToken(rawToken: string): string {
+  return createHmac("sha256", getSessionSecret()).update(rawToken).digest("hex");
+}
+
+/**
  * Create a session and set cookie
  * Supports all user types: super_admin, org_admin, provider
  */
@@ -195,12 +207,14 @@ export async function createSession(
        )`,
       [userId, Math.max(1, MAX_CONCURRENT_SESSIONS - 1)],
     );
+    // Store only the hash — the raw token lives in the browser cookie only.
+    const tokenHash = hashSessionToken(token);
     await query(
       `INSERT INTO physician_sessions (token, user_id, user_type, organization_id, physician_id, expires_at, session_data)
        VALUES ($1, $2, $3, $4, $5, $6, $7)
        ON CONFLICT (token) DO UPDATE SET expires_at = $6, session_data = $7, user_id = $2, user_type = $3, organization_id = $4`,
       [
-        token,
+        tokenHash,
         userId,
         userType,
         organizationId || null,
@@ -264,7 +278,7 @@ export async function verifySession(
   // Enforce idle timeout from DB.
   if (row.expires_at.getTime() <= nowMs) {
     const { query } = await import("./db");
-    await query("DELETE FROM physician_sessions WHERE token = $1", [token]);
+    await query("DELETE FROM physician_sessions WHERE token = $1", [hashSessionToken(token)]);
     return null;
   }
 
@@ -272,7 +286,7 @@ export async function verifySession(
   const absoluteExpiresAtMs = row.created_at.getTime() + ABSOLUTE_MAX_MS;
   if (nowMs >= absoluteExpiresAtMs) {
     const { query } = await import("./db");
-    await query("DELETE FROM physician_sessions WHERE token = $1", [token]);
+    await query("DELETE FROM physician_sessions WHERE token = $1", [hashSessionToken(token)]);
     return null;
   }
 
@@ -314,7 +328,7 @@ export async function getCurrentSession(options?: { refresh?: boolean }): Promis
     // Enforce absolute max + idle expiry first.
     if (nowMs >= absoluteExpiresAtMs || row.expires_at.getTime() <= nowMs) {
       const { query } = await import("./db");
-      await query("DELETE FROM physician_sessions WHERE token = $1", [token]);
+      await query("DELETE FROM physician_sessions WHERE token = $1", [hashSessionToken(token)]);
       cookieStore.set(SESSION_COOKIE_NAME, "", {
         ...getSessionCookieBaseOptions(),
         maxAge: 0,
@@ -346,12 +360,12 @@ export async function getCurrentSession(options?: { refresh?: boolean }): Promis
              )
          WHERE token = $6`,
         [
-          rotatedToken,
+          hashSessionToken(rotatedToken),   // $1: new token — store hash only
           new Date(newExpiresAtMs),
           newExpiresAtMs,
-          token,
+          hashSessionToken(token),          // $4: old token hash stored in previousToken for grace lookup
           previousTokenGraceUntilMs,
-          token,
+          hashSessionToken(token),          // $6: WHERE — current row has old token hash
         ],
       );
       const updatedRows =
@@ -405,7 +419,7 @@ export async function getCurrentProviderSession(): Promise<PhysicianSession | nu
  */
 export async function deleteSession(token: string): Promise<void> {
   const { query } = await import("./db");
-  await query("DELETE FROM physician_sessions WHERE token = $1", [token]);
+  await query("DELETE FROM physician_sessions WHERE token = $1", [hashSessionToken(token)]);
 
   const cookieStore = await cookies();
   cookieStore.set(SESSION_COOKIE_NAME, "", {

@@ -1,3 +1,4 @@
+import { createHmac } from "crypto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const queryMock = vi.hoisted(() => vi.fn());
@@ -52,7 +53,10 @@ describe("auth session lifecycle", () => {
     expect(session?.userId).toBe("provider-1");
     expect(queryMock).toHaveBeenCalledTimes(2);
     expect(String(queryMock.mock.calls[1][0])).toContain("SET token = $1");
-    expect(queryMock.mock.calls[1][1][3]).toBe("old-token");
+    // $4 is previousToken stored in JSONB — must be the HMAC hash, not the raw token.
+    const expectedOldHash = createHmac("sha256", "test-session-secret").update("old-token").digest("hex");
+    expect(queryMock.mock.calls[1][1][3]).toBe(expectedOldHash);
+    expect(queryMock.mock.calls[1][1][3]).not.toBe("old-token");
     expect(cookieSetMock).toHaveBeenCalledTimes(1);
     const [cookieName, rotatedToken] = cookieSetMock.mock.calls[0];
     expect(cookieName).toBe("physician_session");
