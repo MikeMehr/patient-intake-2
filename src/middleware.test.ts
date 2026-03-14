@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { middleware } from "./middleware";
+import { proxy } from "./proxy";
 import { NextRequest } from "next/server";
 
 const BASE = "https://example.com";
@@ -19,25 +19,25 @@ describe("middleware", () => {
   // ── Physician pages ──────────────────────────────────────────────────────
 
   it("redirects /physician/* to /auth/login when no cookie", () => {
-    const res = middleware(makeRequest("/physician/dashboard"));
+    const res = proxy(makeRequest("/physician/dashboard"));
     expect(res.status).toBe(307);
     expect(res.headers.get("location")).toContain("/auth/login");
   });
 
   it("redirects /physician/* to /auth/login when cookie is malformed", () => {
-    const res = middleware(makeRequest("/physician/dashboard", "bad-token"));
+    const res = proxy(makeRequest("/physician/dashboard", "bad-token"));
     expect(res.status).toBe(307);
     expect(res.headers.get("location")).toContain("/auth/login");
   });
 
   it("includes returnTo param in redirect for physician pages", () => {
-    const res = middleware(makeRequest("/physician/patients/123"));
+    const res = proxy(makeRequest("/physician/patients/123"));
     const location = res.headers.get("location") ?? "";
     expect(location).toContain("returnTo=");
   });
 
   it("passes /physician/* through when valid cookie is present", () => {
-    const res = middleware(makeRequest("/physician/dashboard", VALID_TOKEN));
+    const res = proxy(makeRequest("/physician/dashboard", VALID_TOKEN));
     expect(res.status).toBe(200);
   });
 
@@ -52,7 +52,7 @@ describe("middleware", () => {
     "/api/physician/transcription/list",
     "/api/emr/oscar/patient-lookup",
   ])("returns 401 for %s without cookie", (path) => {
-    const res = middleware(makeRequest(path));
+    const res = proxy(makeRequest(path));
     expect(res.status).toBe(401);
   });
 
@@ -65,7 +65,7 @@ describe("middleware", () => {
     "/api/physician/transcription/list",
     "/api/emr/oscar/patient-lookup",
   ])("passes %s through with valid cookie", (path) => {
-    const res = middleware(makeRequest(path, VALID_TOKEN));
+    const res = proxy(makeRequest(path, VALID_TOKEN));
     expect(res.status).toBe(200);
   });
 
@@ -78,7 +78,7 @@ describe("middleware", () => {
     "/api/auth/ping",
     "/api/auth/logout",
   ])("returns 401 for %s without cookie", (path) => {
-    const res = middleware(makeRequest(path));
+    const res = proxy(makeRequest(path));
     expect(res.status).toBe(401);
   });
 
@@ -89,7 +89,7 @@ describe("middleware", () => {
     "/api/auth/ping",
     "/api/auth/logout",
   ])("passes %s through with valid cookie", (path) => {
-    const res = middleware(makeRequest(path, VALID_TOKEN));
+    const res = proxy(makeRequest(path, VALID_TOKEN));
     expect(res.status).toBe(200);
   });
 
@@ -111,7 +111,7 @@ describe("middleware", () => {
     "/intake/invite/sometoken",
     "/auth/login",
   ])("does not block public route %s", (path) => {
-    const res = middleware(makeRequest(path)); // no cookie
+    const res = proxy(makeRequest(path)); // no cookie
     expect(res.status).toBe(200);
   });
 });
