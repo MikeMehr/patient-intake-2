@@ -2,6 +2,7 @@ import { createHash } from "crypto";
 import { getClient, query } from "@/lib/db";
 import type { SoapDraft } from "@/lib/transcription-schema";
 import { EMR_EXPORT_STATUS, SOAP_LIFECYCLE_STATES } from "@/lib/transcription-policy";
+import { getPhiRetentionHours } from "@/lib/phi-retention";
 
 type Scope = { organizationId: string; physicianId?: never } | { organizationId?: never; physicianId: string };
 
@@ -564,13 +565,101 @@ export async function deleteAllTranscriptionSessionsForScope(params: {
   };
 }
 
+/** @deprecated Use deleteExpiredTranscriptionSnapshots() */
 export async function deleteExpiredAnonymousSnapshots(): Promise<{ deletedCount: number }> {
+  return deleteExpiredTranscriptionSnapshots();
+}
+
+export async function deleteExpiredTranscriptionSnapshots(): Promise<{ deletedCount: number }> {
+  const hours = getPhiRetentionHours();
   const res = await query<{ id: string }>(
     `DELETE FROM physician_transcription_sessions
-     WHERE patient_id IS NULL
-       AND created_at < NOW() - INTERVAL '12 hours'
+     WHERE created_at < NOW() - ($1::int * INTERVAL '1 hour')
      RETURNING id`,
-    [],
+    [Math.floor(hours)],
   );
   return { deletedCount: res.rowCount ?? 0 };
+}
+
+export async function cleanupExpiredPhiRecords(): Promise<{
+  labEditorSessions: number;
+  labRequisitions: number;
+  prescriptions: number;
+  emrExports: number;
+  transcriptionSessions: number;
+  soapNoteVersions: number;
+  patientEncounters: number;
+  patients: number;
+}> {
+  const hours = Math.floor(getPhiRetentionHours());
+  const client = await getClient();
+  try {
+    await client.query("BEGIN");
+
+    const labEditorRes = await client.query(
+      `DELETE FROM lab_requisition_editor_sessions
+       WHERE created_at < NOW() - ($1::int * INTERVAL '1 hour')`,
+      [hours],
+    );
+
+    const labReqRes = await client.query(
+      `DELETE FROM lab_requisitions
+       WHERE created_at < NOW() - ($1::int * INTERVAL '1 hour')`,
+      [hours],
+    );
+
+    const rxRes = await client.query(
+      `DELETE FROM prescriptions
+       WHERE created_at < NOW() - ($1::int * INTERVAL '1 hour')`,
+      [hours],
+    );
+
+    const emrRes = await client.query(
+      `DELETE FROM emr_exports
+       WHERE created_at < NOW() - ($1::int * INTERVAL '1 hour')`,
+      [hours],
+    );
+
+    const txRes = await client.query(
+      `DELETE FROM physician_transcription_sessions
+       WHERE created_at < NOW() - ($1::int * INTERVAL '1 hour')`,
+      [hours],
+    );
+
+    const soapRes = await client.query(
+      `DELETE FROM soap_note_versions
+       WHERE created_at < NOW() - ($1::int * INTERVAL '1 hour')`,
+      [hours],
+    );
+
+    const encRes = await client.query(
+      `DELETE FROM patient_encounters
+       WHERE created_at < NOW() - ($1::int * INTERVAL '1 hour')`,
+      [hours],
+    );
+
+    const patRes = await client.query(
+      `DELETE FROM patients
+       WHERE created_at < NOW() - ($1::int * INTERVAL '1 hour')`,
+      [hours],
+    );
+
+    await client.query("COMMIT");
+
+    return {
+      labEditorSessions: labEditorRes.rowCount ?? 0,
+      labRequisitions: labReqRes.rowCount ?? 0,
+      prescriptions: rxRes.rowCount ?? 0,
+      emrExports: emrRes.rowCount ?? 0,
+      transcriptionSessions: txRes.rowCount ?? 0,
+      soapNoteVersions: soapRes.rowCount ?? 0,
+      patientEncounters: encRes.rowCount ?? 0,
+      patients: patRes.rowCount ?? 0,
+    };
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
 }

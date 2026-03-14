@@ -6,6 +6,7 @@
 import type { HistoryResponse } from "./history-schema";
 import type { PatientProfile, InterviewMessage } from "./interview-schema";
 import { query } from "./db";
+import { getPhiRetentionHours } from "./phi-retention";
 
 export type FormAnswerItem = {
   question: string;
@@ -46,11 +47,7 @@ export interface PatientSession {
  * Clean up expired sessions from database
  */
 export async function cleanupExpiredSessions(): Promise<number> {
-  const configuredHours = Number(process.env.SESSION_EXPIRY_HOURS);
-  const retentionHours =
-    Number.isFinite(configuredHours) && configuredHours > 0
-      ? configuredHours
-      : 24 * 30;
+  const retentionHours = getPhiRetentionHours();
 
   const result = await query(
     `DELETE FROM patient_sessions
