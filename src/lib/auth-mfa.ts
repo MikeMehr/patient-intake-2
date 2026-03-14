@@ -28,11 +28,18 @@ type WorkforceRecoveryState = {
 };
 
 function getMfaSecret(): string {
-  const secret = process.env.AUTH_MFA_SECRET || process.env.SESSION_SECRET;
-  if (!secret) {
-    throw new Error("AUTH_MFA_SECRET or SESSION_SECRET is required");
+  const dedicated = process.env.AUTH_MFA_SECRET;
+  if (dedicated) return dedicated;
+  const fallback = process.env.SESSION_SECRET;
+  if (fallback) {
+    if (process.env.NODE_ENV === "production") {
+      throw new Error(
+        "AUTH_MFA_SECRET must be set to a dedicated secret in production (cannot reuse SESSION_SECRET)",
+      );
+    }
+    return fallback;
   }
-  return secret;
+  throw new Error("AUTH_MFA_SECRET is required");
 }
 
 function hashValue(value: string): string {
@@ -336,13 +343,28 @@ export async function verifyMfaChallenge(params: {
     return { ok: false, reason: "invalid" };
   }
 
-  await query(
+  // Atomic consume: only one concurrent request can win when verified_at IS NULL.
+  const verifyResult = await query(
     `UPDATE auth_mfa_challenges
      SET verified_at = NOW(),
          updated_at = NOW()
-     WHERE id = $1`,
+     WHERE id = $1
+       AND verified_at IS NULL`,
     [challenge.id],
   );
+  const verifiedRows = (verifyResult as { rowCount?: number }).rowCount ?? 0;
+  if (verifiedRows === 0) {
+    // A concurrent request already consumed this challenge.
+    auditMfaEvent({
+      purpose: params.purpose,
+      action: "challenge_failed",
+      outcome: "failure",
+      userType: challenge.user_type,
+      userId: challenge.user_id,
+      reason: "invalid",
+    });
+    return { ok: false, reason: "invalid" };
+  }
   auditMfaEvent({
     purpose: params.purpose,
     action: "challenge_verified",
@@ -404,13 +426,20 @@ export async function consumeVerifiedMfaChallenge(params: {
   )) return { ok: false };
   if ((params.contextTokenHash || null) !== (challenge.context_token_hash || null)) return { ok: false };
 
-  await query(
+  // Atomic consume: only one concurrent request can win when consumed_at IS NULL.
+  const consumeResult = await query(
     `UPDATE auth_mfa_challenges
      SET consumed_at = NOW(),
          updated_at = NOW()
-     WHERE id = $1`,
+     WHERE id = $1
+       AND consumed_at IS NULL`,
     [challenge.id],
   );
+  const consumedRows = (consumeResult as { rowCount?: number }).rowCount ?? 0;
+  if (consumedRows === 0) {
+    // A concurrent request already consumed this challenge.
+    return { ok: false };
+  }
   auditMfaEvent({
     purpose: params.purpose,
     action: "challenge_consumed",

@@ -15,6 +15,7 @@ import {
   type InvitationUploadSummaries,
 } from "@/lib/invitation-pdf-summary";
 import {
+  consumeRateLimit,
   createInvitationToken,
   logInvitationAudit,
 } from "@/lib/invitation-security";
@@ -75,6 +76,22 @@ export async function POST(request: NextRequest) {
       const res = NextResponse.json(
         { error: "Only providers can send patient invitations" },
         { status }
+      );
+      logRequestMeta("/api/invitations/send", requestId, status, Date.now() - started);
+      return res;
+    }
+
+    // Rate limit: 20 invitations per physician per 10 minutes.
+    const sendRateLimit = await consumeRateLimit(
+      `invitations:send:${session.userId}`,
+      20,
+      600,
+    );
+    if (!sendRateLimit.allowed) {
+      status = 429;
+      const res = NextResponse.json(
+        { error: "Too many invitation requests. Please try again later." },
+        { status, headers: { "Retry-After": String(sendRateLimit.retryAfterSeconds) } },
       );
       logRequestMeta("/api/invitations/send", requestId, status, Date.now() - started);
       return res;

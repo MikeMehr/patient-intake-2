@@ -78,14 +78,21 @@ type RateLimitResult = {
 };
 
 function getSessionSecret(): string {
-  const secret = process.env.INVITATION_SESSION_SECRET || process.env.SESSION_SECRET;
-  if (!secret) {
-    if (process.env.NODE_ENV !== "production") {
-      return "dev-only-invitation-secret-change-me";
+  const dedicated = process.env.INVITATION_SESSION_SECRET;
+  if (dedicated) return dedicated;
+  const fallback = process.env.SESSION_SECRET;
+  if (fallback) {
+    if (process.env.NODE_ENV === "production") {
+      throw new Error(
+        "INVITATION_SESSION_SECRET must be set to a dedicated secret in production (cannot reuse SESSION_SECRET)",
+      );
     }
-    throw new Error("INVITATION_SESSION_SECRET or SESSION_SECRET is required");
+    return fallback;
   }
-  return secret;
+  if (process.env.NODE_ENV !== "production") {
+    return "dev-only-invitation-secret-change-me";
+  }
+  throw new Error("INVITATION_SESSION_SECRET is required");
 }
 
 function toBase64Url(input: string): string {
@@ -467,12 +474,19 @@ export async function verifyOtpForInvitation(params: {
     return { ok: false, reason: "invalid" };
   }
 
-  await query(
+  // Atomic consume: only one concurrent request can win when verified_at IS NULL.
+  const verifyResult = await query(
     `UPDATE invitation_otp_challenges
      SET verified_at = NOW()
-     WHERE id = $1`,
+     WHERE id = $1
+       AND verified_at IS NULL`,
     [challenge.id],
   );
+  const verifiedRows = (verifyResult as { rowCount?: number }).rowCount ?? 0;
+  if (verifiedRows === 0) {
+    // A concurrent request already consumed this OTP.
+    return { ok: false, reason: "invalid" };
+  }
   return { ok: true };
 }
 
