@@ -153,6 +153,10 @@ export default function PhysicianDashboard() {
   const [inviteLoading, setInviteLoading] = useState(false);
   const [inviteError, setInviteError] = useState<string | null>(null);
   const [inviteSuccess, setInviteSuccess] = useState<string | null>(null);
+  const [formQuestions, setFormQuestions] = useState<{ text: string; checked: boolean }[]>([]);
+  const [formQuestionsModalOpen, setFormQuestionsModalOpen] = useState(false);
+  const [extractingFormQuestions, setExtractingFormQuestions] = useState(false);
+  const [formQuestionsError, setFormQuestionsError] = useState<string | null>(null);
 
   type PatientSearchResult = {
     id: string;
@@ -364,6 +368,11 @@ export default function PhysicianDashboard() {
       if (formFile) {
         formData.append("form", formFile);
       }
+      // Include selected form questions filter if physician reviewed them
+      const selectedFormQuestions = formQuestions.filter((q) => q.checked).map((q) => q.text);
+      if (formQuestions.length > 0 && selectedFormQuestions.length > 0) {
+        formData.append("formQuestionsFilter", JSON.stringify(selectedFormQuestions));
+      }
 
       const response = await fetch("/api/invitations/send", {
         method: "POST",
@@ -395,6 +404,8 @@ export default function PhysicianDashboard() {
       setLabReportFile(null);
       setPreviousLabReportFile(null);
       setFormFile(null);
+      setFormQuestions([]);
+      setFormQuestionsError(null);
       // Refresh invitations list after sending
       try {
         const res = await fetch("/api/invitations/list");
@@ -546,7 +557,7 @@ export default function PhysicianDashboard() {
     }
   };
 
-  const handleFormFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFormFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       // Validate file type
@@ -562,6 +573,29 @@ export default function PhysicianDashboard() {
       }
       setFormFile(file);
       setInviteError(null);
+      // Reset previous question state for new file
+      setFormQuestions([]);
+      setFormQuestionsError(null);
+
+      // Extract questions from the form PDF
+      setExtractingFormQuestions(true);
+      try {
+        const fd = new FormData();
+        fd.append("form", file);
+        const res = await fetch("/api/extract-form-questions", { method: "POST", body: fd });
+        const data = await res.json();
+        if (res.ok && Array.isArray(data.questions) && data.questions.length > 0) {
+          setFormQuestions(data.questions.map((q: string) => ({ text: q, checked: true })));
+          setFormQuestionsModalOpen(true);
+        } else if (!res.ok) {
+          setFormQuestionsError(data.error || "Could not extract questions from the form.");
+        }
+        // If questions array is empty, silently continue (no popup needed)
+      } catch {
+        setFormQuestionsError("Failed to analyze form. The form will still be processed during invitation.");
+      } finally {
+        setExtractingFormQuestions(false);
+      }
     }
   };
 
@@ -974,6 +1008,23 @@ export default function PhysicianDashboard() {
                     <p className="text-xs text-green-700 mt-1">
                       Selected: {formFile.name} ({(formFile.size / 1024).toFixed(1)} KB)
                     </p>
+                  )}
+                  {extractingFormQuestions && (
+                    <p className="text-xs text-blue-600 mt-1 animate-pulse font-medium">
+                      ⏳ Analyzing form questions…
+                    </p>
+                  )}
+                  {formQuestionsError && (
+                    <p className="text-xs text-amber-600 mt-1">{formQuestionsError}</p>
+                  )}
+                  {!extractingFormQuestions && formQuestions.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setFormQuestionsModalOpen(true)}
+                      className="text-xs text-blue-700 underline mt-1 text-left"
+                    >
+                      {formQuestions.filter((q) => q.checked).length}/{formQuestions.length} questions selected — click to review
+                    </button>
                   )}
                 </div>
               </div>
@@ -1403,6 +1454,109 @@ export default function PhysicianDashboard() {
         </div>
         </div>
       </div>
+
+      {/* Form Questions Selection Modal */}
+      {formQuestionsModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[85vh] flex flex-col">
+            {/* Header */}
+            <div className="px-6 pt-6 pb-4 border-b border-slate-200">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h2 className="text-lg font-semibold text-slate-900">Review Form Questions</h2>
+                  {formFile && (
+                    <p className="text-xs text-slate-500 mt-0.5 break-all">{formFile.name}</p>
+                  )}
+                  <p className="text-sm text-slate-600 mt-1">
+                    Select which questions the AI should ask during the interview.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  aria-label="Close"
+                  onClick={() => setFormQuestionsModalOpen(false)}
+                  className="flex-shrink-0 text-slate-400 hover:text-slate-600 text-xl leading-none"
+                >
+                  ✕
+                </button>
+              </div>
+              {/* Select all / Deselect all */}
+              <div className="flex gap-3 mt-3">
+                <button
+                  type="button"
+                  onClick={() =>
+                    setFormQuestions((prev) => prev.map((q) => ({ ...q, checked: true })))
+                  }
+                  className="text-xs font-medium text-blue-700 hover:underline"
+                >
+                  Select all
+                </button>
+                <span className="text-xs text-slate-300">|</span>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setFormQuestions((prev) => prev.map((q) => ({ ...q, checked: false })))
+                  }
+                  className="text-xs font-medium text-slate-500 hover:underline"
+                >
+                  Deselect all
+                </button>
+              </div>
+            </div>
+
+            {/* Question list */}
+            <div className="flex-1 overflow-y-auto px-6 py-4 space-y-2">
+              {formQuestions.map((q, idx) => (
+                <label
+                  key={idx}
+                  className="flex items-start gap-3 cursor-pointer group"
+                >
+                  <input
+                    type="checkbox"
+                    checked={q.checked}
+                    onChange={() =>
+                      setFormQuestions((prev) =>
+                        prev.map((item, i) =>
+                          i === idx ? { ...item, checked: !item.checked } : item,
+                        ),
+                      )
+                    }
+                    className="mt-0.5 h-4 w-4 rounded border-slate-300 text-slate-900 accent-slate-900 flex-shrink-0"
+                  />
+                  <span className="text-sm text-slate-700 group-hover:text-slate-900">{q.text}</span>
+                </label>
+              ))}
+            </div>
+
+            {/* Footer */}
+            <div className="px-6 py-4 border-t border-slate-200 flex items-center justify-between gap-3">
+              <p className="text-xs text-slate-500">
+                {formQuestions.filter((q) => q.checked).length} of {formQuestions.length} selected
+              </p>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    // Restore all checked on cancel
+                    setFormQuestions((prev) => prev.map((q) => ({ ...q, checked: true })));
+                    setFormQuestionsModalOpen(false);
+                  }}
+                  className="px-4 py-2 text-sm rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFormQuestionsModalOpen(false)}
+                  className="px-4 py-2 text-sm rounded-lg bg-slate-900 text-white hover:bg-slate-800"
+                >
+                  Confirm Selection
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

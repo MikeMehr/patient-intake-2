@@ -89,6 +89,7 @@ export async function POST(request: NextRequest) {
       labReportFile,
       previousLabReportFile,
       formFile,
+      formQuestionsFilter,
     } =
       await parseRequestBody(request);
 
@@ -171,6 +172,7 @@ export async function POST(request: NextRequest) {
           labReport: labReportFile,
           previousLabReport: previousLabReportFile,
           form: formFile,
+          formQuestionsFilter,
         });
         summaryExpiresAt = new Date(Date.now() + 60 * 60 * 1000);
       } catch (summaryError) {
@@ -373,11 +375,26 @@ async function parseRequestBody(request: NextRequest): Promise<{
   labReportFile: File | null;
   previousLabReportFile: File | null;
   formFile: File | null;
+  formQuestionsFilter: string[] | null;
 }> {
   const contentType = request.headers.get("content-type") || "";
 
   if (contentType.includes("multipart/form-data")) {
     const formData = await request.formData();
+
+    let formQuestionsFilter: string[] | null = null;
+    const rawFilter = formData.get("formQuestionsFilter");
+    if (typeof rawFilter === "string" && rawFilter.trim()) {
+      try {
+        const parsed = JSON.parse(rawFilter);
+        if (Array.isArray(parsed) && parsed.every((q) => typeof q === "string")) {
+          formQuestionsFilter = parsed;
+        }
+      } catch {
+        // ignore malformed filter — fall back to full summarization
+      }
+    }
+
     return {
       patientName: (formData.get("patientName") as string | null) || "",
       patientEmail: (formData.get("patientEmail") as string | null) || "",
@@ -390,6 +407,7 @@ async function parseRequestBody(request: NextRequest): Promise<{
           ? (formData.get("previousLabReport") as File)
           : null,
       formFile: formData.get("form") instanceof File ? (formData.get("form") as File) : null,
+      formQuestionsFilter,
     };
   }
 
@@ -405,6 +423,7 @@ async function parseRequestBody(request: NextRequest): Promise<{
       labReportFile: null,
       previousLabReportFile: null,
       formFile: null,
+      formQuestionsFilter: null,
     };
   } catch (err) {
     console.error("[invitations/send] Failed to parse JSON body");
@@ -420,6 +439,7 @@ async function parseRequestBody(request: NextRequest): Promise<{
       labReportFile: null,
       previousLabReportFile: null,
       formFile: null,
+      formQuestionsFilter: null,
     };
   }
 }

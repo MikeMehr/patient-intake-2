@@ -184,6 +184,7 @@ export async function buildInvitationUploadSummaries(files: {
   labReport: File | null;
   previousLabReport: File | null;
   form: File | null;
+  formQuestionsFilter?: string[] | null;
 }): Promise<InvitationUploadSummaries> {
   const result: InvitationUploadSummaries = {
     labReportSummary: null,
@@ -199,6 +200,23 @@ export async function buildInvitationUploadSummaries(files: {
 
   for (const entry of entries) {
     if (!entry.file) continue;
+
+    // When physician has selected specific questions, build a targeted summary directly
+    // without re-running Azure Document Intelligence + OpenAI summarization
+    if (
+      entry.key === "form" &&
+      files.formQuestionsFilter &&
+      files.formQuestionsFilter.length > 0
+    ) {
+      result.formSummary = [
+        `Document Type: Form`,
+        `Form file: ${entry.file.name}`,
+        `Questions to gather during interview:`,
+        ...files.formQuestionsFilter.map((q, i) => `${i + 1}. ${q}`),
+      ].join("\n");
+      continue;
+    }
+
     assertValidPdfUpload(entry.file, entry.key);
     const extractedText = await extractPdfTextWithAzureDocumentIntelligence(entry.file);
     const summary = await summarizeExtractedPdfTextWithAzureOpenAI(extractedText, entry.key);
