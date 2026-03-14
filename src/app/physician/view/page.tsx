@@ -363,6 +363,9 @@ function PhysicianViewContent() {
   const [prescriptionListError, setPrescriptionListError] = useState<string | null>(null);
   const labPrefillRequestedRef = useRef(false);
   const [labPrefillStatus, setLabPrefillStatus] = useState<string | null>(null);
+  const [formAnswers, setFormAnswers] = useState<{ question: string; answer: string }[] | null>(null);
+  const [formAnswersLoading, setFormAnswersLoading] = useState(false);
+  const [formAnswersError, setFormAnswersError] = useState<string | null>(null);
   const rxSignatureCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const rxSignatureDrawingRef = useRef(false);
 
@@ -682,8 +685,72 @@ function PhysicianViewContent() {
     session?.history?.patientFinalQuestionsCommentsEnglish,
   ]);
 
+  // Auto-generate form answers when session loads and has form questions
+  useEffect(() => {
+    if (!sessionCode || !session) return;
+    const formSummary = (session.history as any)?.formSummary as string | undefined;
+    if (!formSummary?.trim()) return;
+
+    // Use cached answers already stored in the session
+    const cached = (session.history as any)?.formAnswers;
+    if (Array.isArray(cached) && cached.length > 0) {
+      setFormAnswers(cached);
+      return;
+    }
+
+    let isActive = true;
+    setFormAnswersLoading(true);
+    setFormAnswersError(null);
+
+    fetch("/api/generate-form-answers", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sessionCode }),
+    })
+      .then(async (res) => {
+        const payload = (await res.json().catch(() => ({}))) as {
+          formAnswers?: { question: string; answer: string }[];
+          error?: string;
+        };
+        if (!res.ok) throw new Error(payload.error || "Failed to generate form answers.");
+        if (isActive && Array.isArray(payload.formAnswers)) {
+          setFormAnswers(payload.formAnswers);
+        }
+      })
+      .catch((err) => {
+        if (isActive) {
+          setFormAnswersError(err.message || "Unable to generate form responses.");
+        }
+      })
+      .finally(() => {
+        if (isActive) setFormAnswersLoading(false);
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, [sessionCode, session?.sessionCode]);
+
   const handleBack = () => {
     router.push("/physician/dashboard");
+  };
+
+  const handleDownloadFormAnswers = () => {
+    if (!formAnswers || formAnswers.length === 0) return;
+    const patientName = session?.patientName || "patient";
+    const lines = formAnswers
+      .map((qa, i) => `Q${i + 1}: ${qa.question}\nA:  ${qa.answer}`)
+      .join("\n\n");
+    const text = `Form Responses — ${patientName}\n${"=".repeat(50)}\n\n${lines}\n`;
+    const blob = new Blob([text], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `form-responses-${patientName.replace(/\s+/g, "-").toLowerCase()}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   };
 
   const [reviewing, setReviewing] = useState(false);
@@ -2365,6 +2432,84 @@ function PhysicianViewContent() {
                 )}
               </div>
             </div>
+
+            {/* Form Responses — shown when a form was uploaded with the invitation */}
+            {(session.history as any)?.formSummary && (
+              <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6 mb-6">
+                <div className="flex items-center justify-between gap-3 mb-4">
+                  <div>
+                    <h2 className="text-lg font-semibold text-slate-900">Form Responses</h2>
+                    <p className="text-sm text-slate-500 mt-0.5">
+                      Patient answers extracted from the interview for the uploaded form.
+                    </p>
+                  </div>
+                  {formAnswers && formAnswers.length > 0 && (
+                    <button
+                      onClick={handleDownloadFormAnswers}
+                      className="px-3 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 flex-shrink-0"
+                    >
+                      Download
+                    </button>
+                  )}
+                </div>
+
+                {formAnswersLoading && (
+                  <div className="flex items-center gap-2 py-4">
+                    <svg className="animate-spin h-4 w-4 text-slate-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    </svg>
+                    <p className="text-sm text-slate-500 animate-pulse">Extracting form responses from interview…</p>
+                  </div>
+                )}
+
+                {formAnswersError && (
+                  <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3">
+                    <p className="text-sm text-amber-800">{formAnswersError}</p>
+                    <button
+                      onClick={() => {
+                        setFormAnswersError(null);
+                        setFormAnswersLoading(true);
+                        fetch("/api/generate-form-answers", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ sessionCode }),
+                        })
+                          .then(async (res) => {
+                            const payload = await res.json().catch(() => ({})) as { formAnswers?: { question: string; answer: string }[]; error?: string };
+                            if (!res.ok) throw new Error(payload.error || "Failed");
+                            if (Array.isArray(payload.formAnswers)) setFormAnswers(payload.formAnswers);
+                          })
+                          .catch((err) => setFormAnswersError(err.message || "Retry failed."))
+                          .finally(() => setFormAnswersLoading(false));
+                      }}
+                      className="mt-2 text-xs text-amber-700 underline"
+                    >
+                      Retry
+                    </button>
+                  </div>
+                )}
+
+                {!formAnswersLoading && !formAnswersError && formAnswers && formAnswers.length > 0 && (
+                  <div className="space-y-4">
+                    {formAnswers.map((qa, idx) => (
+                      <div key={idx} className="rounded-md border border-slate-100 bg-slate-50/60 px-4 py-3">
+                        <p className="text-sm font-medium text-slate-700">
+                          {idx + 1}. {qa.question}
+                        </p>
+                        <p className="mt-1 text-base text-slate-900 whitespace-pre-wrap">
+                          {qa.answer}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {!formAnswersLoading && !formAnswersError && formAnswers && formAnswers.length === 0 && (
+                  <p className="text-sm text-slate-500">No form responses could be extracted from this interview.</p>
+                )}
+              </div>
+            )}
 
             <div className="mb-6">
               <CollapsibleSection

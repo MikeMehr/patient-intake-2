@@ -7,12 +7,18 @@ import type { HistoryResponse } from "./history-schema";
 import type { PatientProfile, InterviewMessage } from "./interview-schema";
 import { query } from "./db";
 
+export type FormAnswerItem = {
+  question: string;
+  answer: string;
+};
+
 export type SessionHistory = HistoryResponse & {
   interviewDuration?: number;
   transcript?: InterviewMessage[];
   labReportSummary?: string;
   previousLabReportSummary?: string;
   formSummary?: string;
+  formAnswers?: FormAnswerItem[];
   medPmhSummary?: string;
   physicianReviewedAt?: string;
   hpiUpdatedAt?: string;
@@ -421,6 +427,35 @@ export async function updateSessionPatientProfilePharmacyFields(
     return (result.rowCount ?? 0) > 0;
   } catch (error) {
     console.error("[session-store] Error updating patient profile pharmacy fields:", error);
+    throw error;
+  }
+}
+
+/**
+ * Persist AI-generated form answer pairs in the session's history JSONB.
+ * Caches the result so the physician view avoids repeated generation calls.
+ */
+export async function updateSessionFormAnswers(
+  sessionCode: string,
+  formAnswers: FormAnswerItem[],
+): Promise<boolean> {
+  if (!Array.isArray(formAnswers) || formAnswers.length === 0) return false;
+
+  try {
+    const result = await query(
+      `UPDATE patient_sessions
+       SET history = jsonb_set(
+         COALESCE(history, '{}'::jsonb),
+         '{formAnswers}',
+         $2::jsonb,
+         true
+       )
+       WHERE session_code = $1`,
+      [sessionCode, JSON.stringify(formAnswers)],
+    );
+    return (result.rowCount ?? 0) > 0;
+  } catch (error) {
+    console.error("[session-store] Error updating form answers:", error);
     throw error;
   }
 }
