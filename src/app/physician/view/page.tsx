@@ -2435,79 +2435,79 @@ function PhysicianViewContent() {
 
             {/* Form Responses — shown when a form was uploaded with the invitation */}
             {(session.history as any)?.formSummary && (
-              <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6 mb-6">
-                <div className="flex items-center justify-between gap-3 mb-4">
-                  <div>
-                    <h2 className="text-lg font-semibold text-slate-900">Form Responses</h2>
-                    <p className="text-sm text-slate-500 mt-0.5">
-                      Patient answers extracted from the interview for the uploaded form.
-                    </p>
-                  </div>
-                  {formAnswers && formAnswers.length > 0 && (
-                    <button
-                      onClick={handleDownloadFormAnswers}
-                      className="px-3 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 flex-shrink-0"
-                    >
-                      Download
-                    </button>
+              <div className="mb-6">
+                <CollapsibleSection
+                  id="form-responses"
+                  title="Form Responses"
+                  description="Patient answers extracted from the interview for the uploaded form."
+                  defaultOpen={true}
+                  headerRight={
+                    formAnswers && formAnswers.length > 0 ? (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleDownloadFormAnswers(); }}
+                        className="px-3 py-1.5 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50"
+                      >
+                        Download
+                      </button>
+                    ) : undefined
+                  }
+                >
+                  {formAnswersLoading && (
+                    <div className="flex items-center gap-2 py-4">
+                      <svg className="animate-spin h-4 w-4 text-slate-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                      </svg>
+                      <p className="text-sm text-slate-500 animate-pulse">Extracting form responses from interview…</p>
+                    </div>
                   )}
-                </div>
 
-                {formAnswersLoading && (
-                  <div className="flex items-center gap-2 py-4">
-                    <svg className="animate-spin h-4 w-4 text-slate-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                    </svg>
-                    <p className="text-sm text-slate-500 animate-pulse">Extracting form responses from interview…</p>
-                  </div>
-                )}
-
-                {formAnswersError && (
-                  <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3">
-                    <p className="text-sm text-amber-800">{formAnswersError}</p>
-                    <button
-                      onClick={() => {
-                        setFormAnswersError(null);
-                        setFormAnswersLoading(true);
-                        fetch("/api/generate-form-answers", {
-                          method: "POST",
-                          headers: { "Content-Type": "application/json" },
-                          body: JSON.stringify({ sessionCode }),
-                        })
-                          .then(async (res) => {
-                            const payload = await res.json().catch(() => ({})) as { formAnswers?: { question: string; answer: string }[]; error?: string };
-                            if (!res.ok) throw new Error(payload.error || "Failed");
-                            if (Array.isArray(payload.formAnswers)) setFormAnswers(payload.formAnswers);
+                  {formAnswersError && (
+                    <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3">
+                      <p className="text-sm text-amber-800">{formAnswersError}</p>
+                      <button
+                        onClick={() => {
+                          setFormAnswersError(null);
+                          setFormAnswersLoading(true);
+                          fetch("/api/generate-form-answers", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ sessionCode }),
                           })
-                          .catch((err) => setFormAnswersError(err.message || "Retry failed."))
-                          .finally(() => setFormAnswersLoading(false));
-                      }}
-                      className="mt-2 text-xs text-amber-700 underline"
-                    >
-                      Retry
-                    </button>
-                  </div>
-                )}
+                            .then(async (res) => {
+                              const payload = await res.json().catch(() => ({})) as { formAnswers?: { question: string; answer: string }[]; error?: string };
+                              if (!res.ok) throw new Error(payload.error || "Failed");
+                              if (Array.isArray(payload.formAnswers)) setFormAnswers(payload.formAnswers);
+                            })
+                            .catch((err) => setFormAnswersError(err.message || "Retry failed."))
+                            .finally(() => setFormAnswersLoading(false));
+                        }}
+                        className="mt-2 text-xs text-amber-700 underline"
+                      >
+                        Retry
+                      </button>
+                    </div>
+                  )}
 
-                {!formAnswersLoading && !formAnswersError && formAnswers && formAnswers.length > 0 && (
-                  <div className="space-y-4">
-                    {formAnswers.map((qa, idx) => (
-                      <div key={idx} className="rounded-md border border-slate-100 bg-slate-50/60 px-4 py-3">
-                        <p className="text-sm font-medium text-slate-700">
-                          {idx + 1}. {qa.question}
-                        </p>
-                        <p className="mt-1 text-base text-slate-900 whitespace-pre-wrap">
-                          {qa.answer}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-                )}
+                  {!formAnswersLoading && !formAnswersError && formAnswers && formAnswers.length > 0 && (
+                    <div className="space-y-3">
+                      {formAnswers.map((qa, idx) => (
+                        <div key={idx} className="rounded-md border border-slate-100 bg-slate-50/60 px-4 py-3">
+                          <p className="text-sm font-medium text-slate-700">
+                            {idx + 1}. {qa.question}
+                          </p>
+                          <p className="mt-1 text-base text-slate-900 whitespace-pre-wrap">
+                            {qa.answer}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
 
-                {!formAnswersLoading && !formAnswersError && formAnswers && formAnswers.length === 0 && (
-                  <p className="text-sm text-slate-500">No form responses could be extracted from this interview.</p>
-                )}
+                  {!formAnswersLoading && !formAnswersError && formAnswers && formAnswers.length === 0 && (
+                    <p className="text-sm text-slate-500">No form responses could be extracted from this interview.</p>
+                  )}
+                </CollapsibleSection>
               </div>
             )}
 
