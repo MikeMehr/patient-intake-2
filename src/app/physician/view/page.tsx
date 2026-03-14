@@ -2440,7 +2440,7 @@ function PhysicianViewContent() {
                   id="form-responses"
                   title="Form Responses"
                   description="Patient answers extracted from the interview for the uploaded form."
-                  defaultOpen={true}
+                  defaultOpen={false}
                   headerRight={
                     formAnswers && formAnswers.length > 0 ? (
                       <button
