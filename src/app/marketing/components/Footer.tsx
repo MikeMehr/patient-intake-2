@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import Logo from "./Logo";
 
 export default function Footer() {
@@ -90,10 +91,10 @@ export default function Footer() {
             <ul className="space-y-2 mb-6">
               <li>
                 <a
-                  href="mailto:info@healthassistai.com"
+                  href="mailto:info@health-assist.org"
                   className="text-gray-400 hover:text-cyan-500 transition-colors"
                 >
-                  info@healthassistai.com
+                  info@health-assist.org
                 </a>
               </li>
               <li>
@@ -108,20 +109,28 @@ export default function Footer() {
             <div className="border-t border-gray-800 pt-4">
               <ul className="space-y-2 text-sm">
                 <li>
-                  <a
-                    href="#"
+                  <Link
+                    href="/privacy"
                     className="text-gray-400 hover:text-cyan-500 transition-colors"
                   >
                     Privacy Policy
-                  </a>
+                  </Link>
                 </li>
                 <li>
-                  <a
-                    href="#"
+                  <Link
+                    href="/terms"
                     className="text-gray-400 hover:text-cyan-500 transition-colors"
                   >
-                    Terms of Service
-                  </a>
+                    Terms of Use
+                  </Link>
+                </li>
+                <li>
+                  <Link
+                    href="/compliance"
+                    className="text-gray-400 hover:text-cyan-500 transition-colors"
+                  >
+                    Compliance
+                  </Link>
                 </li>
               </ul>
             </div>
