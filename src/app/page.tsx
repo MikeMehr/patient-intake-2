@@ -477,6 +477,7 @@ export default function Home() {
   const [finalCommentsChoice, setFinalCommentsChoice] = useState<"yes" | "no" | null>(null);
   const [hasConsented, setHasConsented] = useState(false);
   const [isInvitedFlow, setIsInvitedFlow] = useState(false);
+  const [clinicName, setClinicName] = useState<string>("");
   const [physicianIdValue, setPhysicianIdValue] = useState<string | null>(null);
   const [sessionCode, setSessionCode] = useState<string | null>(null);
   const [showShareLink, setShowShareLink] = useState(false);
@@ -1060,6 +1061,8 @@ export default function Home() {
       const invitePatientName = sessionStorage.getItem("invitePatientName");
       const invitePatientEmail = sessionStorage.getItem("invitePatientEmail");
       const inviteDob = sessionStorage.getItem("invitePatientDob");
+      const ssClinicName = sessionStorage.getItem("clinicName");
+      if (ssClinicName) setClinicName(ssClinicName);
       setIsInvitedFlow(invitedFlow);
       if (invitedFlow) {
         if (invitePatientName) {
@@ -3684,9 +3687,11 @@ export default function Home() {
             className="mx-auto mb-5 h-[72px] w-[218px] object-contain sm:h-24 sm:w-[289px]"
             priority
           />
-          <p className="text-sm font-semibold uppercase tracking-wide text-slate-500">
-            MyMD Medical
-          </p>
+          {clinicName && (
+            <p className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+              {clinicName}
+            </p>
+          )}
           <h1 className="mt-1 text-[1.35rem] font-semibold tracking-tight text-slate-900">
             AI-Powered Medical History Intake
           </h1>
@@ -3738,11 +3743,11 @@ export default function Home() {
                     className="mt-1 h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 disabled:cursor-not-allowed"
                   />
                   <span>
-                    I understand this AI interview does not provide medical advice and does not replace a physician’s
-                    assessment. If this is a medical emergency, I will seek immediate care. I understand my information
-                    will be kept confidential and secure. I will only provide information relevant to my medical care
-                    and will not enter sensitive financial or security information (e.g., credit card numbers, banking
-                    information, passwords). I agree to the{" "}
+                    I consent to {clinicName ? <strong>{clinicName}</strong> : "my clinic"} collecting my health
+                    information using Health Assist AI to prepare an AI-assisted intake summary for my physician. My
+                    information will be processed on Microsoft Azure (including servers in the USA) and automatically
+                    deleted after 12 hours. This is not medical advice — my physician reviews all AI-generated content.
+                    I can withdraw at any time before completing this interview. I agree to the{" "}
                     <a
                       href="https://www.health-assist.org/terms"
                       target="_blank"
@@ -3759,8 +3764,8 @@ export default function Home() {
                       className="font-medium text-emerald-700 underline underline-offset-2 hover:text-emerald-800"
                     >
                       Privacy Policy
-                    </a>{" "}
-                    and consent to proceed.
+                    </a>
+                    .
                   </span>
                 </label>
               </div>
