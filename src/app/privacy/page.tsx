@@ -133,7 +133,7 @@ export default function PrivacyPage() {
         </Section>
 
         <Section title="11. Data Retention">
-          <P><strong>Patient session PHI</strong> is automatically and permanently deleted at the end of the configured retention window. The default retention window is <strong>12 hours</strong> from session creation. Healthcare organizations may configure a longer window (up to 7 days) through their account settings. On-demand deletion is available at any time through the platform dashboard.</P>
+          <P><strong>Patient session PHI</strong> is automatically and permanently deleted at the end of the configured retention window. The default retention window is <strong>3 years</strong> from session creation. Healthcare organizations may configure a longer window (up to 7 years) through their account settings. On-demand deletion is available at any time through the platform dashboard.</P>
           <P><strong>Consent records and audit logs</strong> are retained for 7 years as required by applicable healthcare privacy legislation.</P>
           <P><strong>Account information</strong> is retained for the duration of the Customer relationship and deleted within 30 days of account termination, except where retention is required by law.</P>
         </Section>

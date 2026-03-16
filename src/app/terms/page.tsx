@@ -100,7 +100,7 @@ export default function TermsPage() {
         </Section>
 
         <Section title="13. Suspension and Termination">
-          <P>We may suspend or terminate your access to the Platform immediately if we determine you have violated these Terms, if required by law, or if your use poses a security or legal risk. Upon termination, patient PHI will be deleted in accordance with our retention policy (default: 12 hours from session creation; any remaining PHI deleted within 48 hours of account termination). Sections 3, 5, 10, 14, 15, 16, and 17 survive termination.</P>
+          <P>We may suspend or terminate your access to the Platform immediately if we determine you have violated these Terms, if required by law, or if your use poses a security or legal risk. Upon termination, patient PHI continues to be retained for the remainder of the configured retention window (default: 3 years from session creation), after which it is automatically and permanently deleted. Sections 3, 5, 10, 14, 15, 16, and 17 survive termination.</P>
         </Section>
 
         <Section title="14. Disclaimer of Warranties">
