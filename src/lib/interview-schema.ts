@@ -224,6 +224,7 @@ const interviewQuestionSchema = z.object({
     .optional(),
   progress: interviewProgressSchema.optional(),
   requiresLocationMarking: z.boolean().optional(),
+  locationBodyParts: z.array(z.string().min(2).max(30)).max(4).optional(),
   requiresPhotoUpload: z.boolean().optional(),
   deferredIntentHint: z.string().min(3).max(500).optional(),
   newComplaints: z.array(z.string().min(2).max(100)).optional(),

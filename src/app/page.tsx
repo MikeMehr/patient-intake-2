@@ -3492,10 +3492,28 @@ export default function Home() {
       const hasPainLocationCue = painLocationKeywords.some((keyword) => questionLower.includes(keyword));
       const isAskingLocation = hasDiagramAction || (hasDiagramReference && hasPainLocationCue);
 
-      // First try to detect body parts from question text, then chief complaint.
-      let bodyParts = detectBodyParts(turn.question);
-      if (bodyParts.length === 0) {
-        bodyParts = detectBodyParts(chiefComplaint);
+      // Use LLM-provided body parts when available, otherwise detect from text.
+      let bodyParts: ReturnType<typeof detectBodyParts>;
+      if (
+        turn.requiresLocationMarking &&
+        Array.isArray(turn.locationBodyParts) &&
+        turn.locationBodyParts.length > 0
+      ) {
+        const questionLowerForSide = turn.question.toLowerCase();
+        bodyParts = turn.locationBodyParts.map((part: string) => ({
+          part: part as any,
+          name: part.replace(/_/g, " "),
+          side: questionLowerForSide.includes("right")
+            ? ("right" as const)
+            : questionLowerForSide.includes("left")
+              ? ("left" as const)
+              : undefined,
+        }));
+      } else {
+        bodyParts = detectBodyParts(turn.question);
+        if (bodyParts.length === 0) {
+          bodyParts = detectBodyParts(chiefComplaint);
+        }
       }
       const mskBodyPartSet = new Set([
         "back",
