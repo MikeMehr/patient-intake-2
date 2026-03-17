@@ -3565,13 +3565,15 @@ export default function Home() {
           return true;
         });
         const shouldDropGenericBack = deduplicatedParts.some((bp) => bp.part !== "back");
-        const hasNeckSelection = deduplicatedParts.some((bp) => bp.part === "neck");
+        const hasChestSelection = deduplicatedParts.some((bp) => bp.part === "chest");
         const filteredParts = shouldDropGenericBack
           ? deduplicatedParts.filter((bp) => bp.part !== "back")
           : deduplicatedParts;
+        // When chest is explicitly selected, drop neck (neck may appear as a radiation-site mention
+        // in the question text, but the diagram should show the primary pain location: chest).
         const partsForTurn =
-          shouldShowDiagramFromFlag && hasNeckSelection
-            ? filteredParts.filter((bp) => bp.part !== "chest")
+          shouldShowDiagramFromFlag && hasChestSelection
+            ? filteredParts.filter((bp) => bp.part !== "neck")
             : filteredParts;
         const partsToShow = partsForTurn.map((bp) => ({
           part: bp.part,
