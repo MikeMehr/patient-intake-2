@@ -3,6 +3,9 @@ export const AUTH_MFA_POLICY = {
   allowPstnOtp: false,
   primaryOtpChannels: ["email"] as const,
   recoveryChannels: ["backup_code"] as const,
+  webauthn: {
+    enabled: true,
+  },
 } as const;
 
 export type AuthMfaPolicy = typeof AUTH_MFA_POLICY;

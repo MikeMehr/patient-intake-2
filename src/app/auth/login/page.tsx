@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 
@@ -16,6 +16,45 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [passkeySupported, setPasskeySupported] = useState(false);
+
+  useEffect(() => {
+    import("@simplewebauthn/browser").then(({ browserSupportsWebAuthn }) => {
+      setPasskeySupported(browserSupportsWebAuthn());
+    });
+  }, []);
+
+  const redirectByUserType = (userType: string) => {
+    if (userType === "super_admin") {
+      router.push("/admin/dashboard");
+    } else if (userType === "org_admin") {
+      router.push("/org/dashboard");
+    } else {
+      router.push("/physician/dashboard");
+    }
+    router.refresh();
+  };
+
+  const handlePasskeyLogin = async () => {
+    setError(null);
+    setMessage(null);
+    setLoading(true);
+    try {
+      const { authenticateWithPasskey } = await import("@/lib/webauthn-client");
+      const result = await authenticateWithPasskey();
+      if (result.success && result.data) {
+        redirectByUserType(result.data.userType);
+      } else {
+        if (result.error !== "Authentication was cancelled") {
+          setError(result.error || "Passkey authentication failed");
+        }
+        setLoading(false);
+      }
+    } catch {
+      setError("An error occurred. Please try again.");
+      setLoading(false);
+    }
+  };
 
   const handleLoginSubmit = async (e?: React.FormEvent) => {
     e?.preventDefault();
@@ -49,15 +88,7 @@ export default function LoginPage() {
         return;
       }
 
-      // Redirect based on user type
-      if (data.userType === "super_admin") {
-        router.push("/admin/dashboard");
-      } else if (data.userType === "org_admin") {
-        router.push("/org/dashboard");
-      } else {
-        router.push("/physician/dashboard");
-      }
-      router.refresh();
+      redirectByUserType(data.userType);
     } catch (err) {
       setError("An error occurred. Please try again.");
       setLoading(false);
@@ -85,14 +116,7 @@ export default function LoginPage() {
         return;
       }
 
-      if (data.userType === "super_admin") {
-        router.push("/admin/dashboard");
-      } else if (data.userType === "org_admin") {
-        router.push("/org/dashboard");
-      } else {
-        router.push("/physician/dashboard");
-      }
-      router.refresh();
+      redirectByUserType(data.userType);
     } catch {
       setError("An error occurred. Please try again.");
       setLoading(false);
@@ -121,14 +145,7 @@ export default function LoginPage() {
         return;
       }
 
-      if (data.userType === "super_admin") {
-        router.push("/admin/dashboard");
-      } else if (data.userType === "org_admin") {
-        router.push("/org/dashboard");
-      } else {
-        router.push("/physician/dashboard");
-      }
-      router.refresh();
+      redirectByUserType(data.userType);
     } catch {
       setError("An error occurred. Please try again.");
       setLoading(false);
@@ -272,6 +289,27 @@ export default function LoginPage() {
               {useBackupCode ? "Use email verification code instead" : "Use backup recovery code instead"}
             </button>
           </form>
+        )}
+
+        {!mfaRequired && passkeySupported && (
+          <>
+            <div className="mt-5 flex items-center gap-3">
+              <div className="h-px flex-1 bg-slate-200" />
+              <span className="text-xs text-slate-400">or</span>
+              <div className="h-px flex-1 bg-slate-200" />
+            </div>
+            <button
+              type="button"
+              onClick={handlePasskeyLogin}
+              disabled={loading}
+              className="mt-4 flex w-full items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-3 text-base font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-70"
+            >
+              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 5.25a3 3 0 0 1 3 3m3 0a6 6 0 0 1-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1 1 21.75 8.25Z" />
+              </svg>
+              Sign in with passkey
+            </button>
+          </>
         )}
 
         <div className="mt-6 text-center">

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import SessionKeepAlive from "@/components/auth/SessionKeepAlive";
+import PasskeyEnrollmentBanner from "@/components/auth/PasskeyEnrollmentBanner";
 
 interface Organization {
   id: string;
@@ -143,6 +144,7 @@ export default function OrgDashboard() {
       </div>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <PasskeyEnrollmentBanner />
         {error && (
           <div className="mb-6 rounded-lg bg-red-50 border border-red-200 px-4 py-3">
             <p className="text-sm text-red-800">{error}</p>

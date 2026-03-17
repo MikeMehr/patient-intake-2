@@ -80,6 +80,9 @@ const PHYSICIAN_API_ROUTES = new Set<string>([
   "/api/auth/me",
   "/api/auth/ping",
   "/api/auth/logout",
+  "/api/auth/webauthn/register/options",
+  "/api/auth/webauthn/register/verify",
+  "/api/auth/webauthn/credentials",
 ]);
 
 function requiresPhysicianSession(pathname: string): boolean {
