@@ -398,11 +398,13 @@ export async function POST(request: Request) {
     const turnWithProgress = attachProgressToTurn(finalTurn, interviewState.progress);
 
     // Send emergency SMS alert if this is a summary with red flags detected
+    console.error(`[SMS-DEBUG] turn type=${turnWithProgress.type} urgency=${interviewState.urgency} escalationReasons=${JSON.stringify(interviewState.escalationReasons)}`);
     if (turnWithProgress.type === "summary" && interviewState.urgency === "elevated") {
       // Fire-and-forget: send SMS asynchronously without blocking response
       (async () => {
         try {
           const physicianPhone = await getPhysicianPhone(invitationContext.physicianId);
+          console.error(`[SMS-DEBUG] physicianId=${invitationContext.physicianId} phone=${physicianPhone ? "present" : "MISSING"}`);
 
           if (!physicianPhone) {
             logDebug("[interview-route] Physician has no phone number for SMS alert", {
@@ -416,17 +418,15 @@ export async function POST(request: Request) {
           const dashboardBaseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://healt-assist-ai-prod.azurewebsites.net";
           const patientRecordUrl = `${dashboardBaseUrl}/org/dashboard?invitation=${invitationContext.invitationId}`;
 
-          logDebug("[interview-route] Sending emergency SMS to physician", {
-            physicianId: invitationContext.physicianId,
-            patientName,
-            redFlagReasons: interviewState.escalationReasons,
-          });
+          console.error(`[SMS-DEBUG] Sending SMS to physician for patient=${patientName}`);
 
           const result = await sendEmergencyAlertSMS(
             physicianPhone,
             patientName,
             patientRecordUrl
           );
+
+          console.error(`[SMS-DEBUG] SMS result: success=${result.success} sid=${result.messageSid} error=${result.error}`);
 
           if (!result.success) {
             logDebug("[interview-route] Emergency SMS send failed", {
@@ -437,6 +437,7 @@ export async function POST(request: Request) {
         } catch (smsError) {
           // Log SMS errors but don't interrupt interview response
           const errorMsg = smsError instanceof Error ? smsError.message : String(smsError);
+          console.error(`[SMS-DEBUG] Exception: ${errorMsg}`);
           logDebug("[interview-route] Unexpected error sending emergency SMS", {
             error: errorMsg,
           });
