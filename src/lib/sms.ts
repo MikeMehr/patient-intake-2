@@ -32,6 +32,14 @@ export interface SendSmsResult {
  * @param patientRecordUrl - URL to the patient's record in the dashboard
  * @returns Result object with success status and message SID or error
  */
+/** Normalize a North American phone number to E.164 format (+1XXXXXXXXXX) */
+function toE164(phone: string): string {
+  const digits = phone.replace(/\D/g, "");
+  if (digits.length === 10) return `+1${digits}`;
+  if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
+  return phone; // return as-is if unrecognized format
+}
+
 export async function sendEmergencyAlertSMS(
   physicianPhone: string,
   patientName: string,
@@ -68,10 +76,11 @@ export async function sendEmergencyAlertSMS(
       messageLength: message.length,
     });
 
+    const toNumber = toE164(physicianPhone);
     const result = await client.messages.create({
       body: message,
       from: fromNumber,
-      to: physicianPhone,
+      to: toNumber,
     });
 
     logDebug("[sms] SMS sent successfully", {
