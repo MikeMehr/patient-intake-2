@@ -24,6 +24,8 @@ import {
 } from "./prompt-helpers";
 import { buildPrompt as buildInterviewPrompt } from "./prompt-builder";
 import { buildInterviewState } from "./state-builder";
+import { sendEmergencyAlertSMS } from "@/lib/sms";
+import { getPhysicianPhone } from "@/lib/physician-lookup";
 
 function validateInterviewTurnFormat(turn: InterviewResponse): InterviewResponse {
   if (turn.type === "question") {
@@ -394,6 +396,53 @@ export async function POST(request: Request) {
     const validatedTurn = validateInterviewTurnFormat(parsedTurn);
     const finalTurn = applySensitivePhotoSuppressionToTurn(validatedTurn, sensitivePhotoContext);
     const turnWithProgress = attachProgressToTurn(finalTurn, interviewState.progress);
+
+    // Send emergency SMS alert if this is a summary with red flags detected
+    if (turnWithProgress.type === "summary" && interviewState.escalation.hasRedFlagSignal) {
+      // Fire-and-forget: send SMS asynchronously without blocking response
+      (async () => {
+        try {
+          const physicianPhone = await getPhysicianPhone(invitationContext.physicianId);
+
+          if (!physicianPhone) {
+            logDebug("[interview-route] Physician has no phone number for SMS alert", {
+              physicianId: invitationContext.physicianId,
+            });
+            return;
+          }
+
+          // Construct patient dashboard URL
+          const patientName = invitationContext.patientName || "Patient";
+          const dashboardBaseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://healt-assist-ai-prod.azurewebsites.net";
+          const patientRecordUrl = `${dashboardBaseUrl}/org/dashboard?invitation=${invitationContext.invitationId}`;
+
+          logDebug("[interview-route] Sending emergency SMS to physician", {
+            physicianId: invitationContext.physicianId,
+            patientName,
+            redFlagReasons: interviewState.escalation.reasons,
+          });
+
+          const result = await sendEmergencyAlertSMS(
+            physicianPhone,
+            patientName,
+            patientRecordUrl
+          );
+
+          if (!result.success) {
+            logDebug("[interview-route] Emergency SMS send failed", {
+              error: result.error,
+              physicianId: invitationContext.physicianId,
+            });
+          }
+        } catch (smsError) {
+          // Log SMS errors but don't interrupt interview response
+          const errorMsg = smsError instanceof Error ? smsError.message : String(smsError);
+          logDebug("[interview-route] Unexpected error sending emergency SMS", {
+            error: errorMsg,
+          });
+        }
+      })();
+    }
 
     const res = NextResponse.json(turnWithProgress);
     logRequestMeta("/api/interview", requestId, status, Date.now() - started);
