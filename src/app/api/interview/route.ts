@@ -398,7 +398,7 @@ export async function POST(request: Request) {
     const turnWithProgress = attachProgressToTurn(finalTurn, interviewState.progress);
 
     // Send emergency SMS alert if this is a summary with red flags detected
-    if (turnWithProgress.type === "summary" && interviewState.escalation.hasRedFlagSignal) {
+    if (turnWithProgress.type === "summary" && interviewState.urgency === "elevated") {
       // Fire-and-forget: send SMS asynchronously without blocking response
       (async () => {
         try {
@@ -419,7 +419,7 @@ export async function POST(request: Request) {
           logDebug("[interview-route] Sending emergency SMS to physician", {
             physicianId: invitationContext.physicianId,
             patientName,
-            redFlagReasons: interviewState.escalation.reasons,
+            redFlagReasons: interviewState.escalationReasons,
           });
 
           const result = await sendEmergencyAlertSMS(
