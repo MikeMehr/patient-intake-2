@@ -1400,15 +1400,19 @@ export default function Home() {
     // HTMLAudioElement.play() would require a fresh user-gesture on iOS each
     // time, which fails when TTS is triggered from a useEffect.
     const ctx = audioContextRef.current;
+    console.log("[speech] speakWithAzureTts: ctx exists:", !!ctx, "blob size:", audioBlob.size);
     if (ctx) {
+      console.log("[speech] AudioContext state before resume:", ctx.state);
       if (ctx.state === "suspended" || ctx.state === "interrupted") {
         await ctx.resume();
+        console.log("[speech] AudioContext state after resume:", ctx.state);
       }
       if (ctx.state !== "running") {
         throw new Error(`AudioContext not running after resume (${ctx.state})`);
       }
       const arrayBuffer = await audioBlob.arrayBuffer();
       const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
+      console.log("[speech] Decoded audio buffer: duration:", audioBuffer.duration, "channels:", audioBuffer.numberOfChannels, "sampleRate:", audioBuffer.sampleRate, "length:", audioBuffer.length);
       const source = ctx.createBufferSource();
       source.buffer = audioBuffer;
       source.connect(ctx.destination);
@@ -1417,11 +1421,13 @@ export default function Home() {
       setIsSpeaking(true);
       armSpeakingWatchdog(Math.ceil(audioBuffer.duration * 1000) + 1500);
       source.onended = () => {
+        console.log("[speech] AudioContext source ended");
         clearSpeakingWatchdog();
         setIsSpeaking(false);
         audioSourceNodeRef.current = null;
       };
       source.start(0);
+      console.log("[speech] AudioContext source started, ctx.state:", ctx.state);
       return;
     }
 
@@ -1489,19 +1495,30 @@ export default function Home() {
   };
 
   /** Create / resume an AudioContext on a user gesture so iOS allows later
-   *  Web Audio API playback from async code (useEffect, fetch callbacks, etc.). */
+   *  Web Audio API playback from async code (useEffect, fetch callbacks, etc.).
+   *  On iOS, just creating + resuming isn't enough — we must play actual audio
+   *  through the context during the gesture to fully activate the hardware
+   *  audio session (AVAudioSession). */
   const unlockAudioPlayback = () => {
     if (typeof window === "undefined") return;
     try {
       if (!audioContextRef.current) {
         audioContextRef.current = new AudioContext();
+        console.log("[speech] AudioContext created, state:", audioContextRef.current.state, "sampleRate:", audioContextRef.current.sampleRate);
       }
-      if (
-        audioContextRef.current.state === "suspended" ||
-        audioContextRef.current.state === "interrupted"
-      ) {
-        void audioContextRef.current.resume();
+      const ctx = audioContextRef.current;
+      if (ctx.state === "suspended" || ctx.state === "interrupted") {
+        void ctx.resume();
       }
+      // Play a silent buffer to fully activate the iOS audio session.
+      // Without this, AudioContext.state can be "running" but audio output
+      // is not routed to the speakers on iOS Safari.
+      const silentBuffer = ctx.createBuffer(1, 1, ctx.sampleRate);
+      const silentSource = ctx.createBufferSource();
+      silentSource.buffer = silentBuffer;
+      silentSource.connect(ctx.destination);
+      silentSource.start(0);
+      console.log("[speech] AudioContext unlocked with silent buffer, state:", ctx.state);
     } catch (error) {
       console.warn("[speech] Unable to unlock AudioContext:", error);
     }
