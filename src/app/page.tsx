@@ -4420,7 +4420,7 @@ export default function Home() {
                   Guided Interview
                 </h2>
                 <div className="flex w-full flex-wrap items-center justify-center gap-2 sm:w-auto sm:justify-end">
-                  {status === "awaitingPatient" && messages.some(m => m.role === "assistant") && (
+                  {status === "awaitingPatient" && !isSpeaking && messages.some(m => m.role === "assistant") && (
                     <button
                       type="button"
                       onClick={() => {
