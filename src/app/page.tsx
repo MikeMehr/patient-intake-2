@@ -1495,10 +1495,7 @@ export default function Home() {
   };
 
   /** Create / resume an AudioContext on a user gesture so iOS allows later
-   *  Web Audio API playback from async code (useEffect, fetch callbacks, etc.).
-   *  On iOS, just creating + resuming isn't enough — we must play actual audio
-   *  through the context during the gesture to fully activate the hardware
-   *  audio session (AVAudioSession). */
+   *  Web Audio API playback from async code (useEffect, fetch callbacks, etc.). */
   const unlockAudioPlayback = () => {
     if (typeof window === "undefined") return;
     try {
@@ -1506,19 +1503,12 @@ export default function Home() {
         audioContextRef.current = new AudioContext();
         console.log("[speech] AudioContext created, state:", audioContextRef.current.state, "sampleRate:", audioContextRef.current.sampleRate);
       }
-      const ctx = audioContextRef.current;
-      if (ctx.state === "suspended" || ctx.state === "interrupted") {
-        void ctx.resume();
+      if (
+        audioContextRef.current.state === "suspended" ||
+        audioContextRef.current.state === "interrupted"
+      ) {
+        void audioContextRef.current.resume();
       }
-      // Play a silent buffer to fully activate the iOS audio session.
-      // Without this, AudioContext.state can be "running" but audio output
-      // is not routed to the speakers on iOS Safari.
-      const silentBuffer = ctx.createBuffer(1, 1, ctx.sampleRate);
-      const silentSource = ctx.createBufferSource();
-      silentSource.buffer = silentBuffer;
-      silentSource.connect(ctx.destination);
-      silentSource.start(0);
-      console.log("[speech] AudioContext unlocked with silent buffer, state:", ctx.state);
     } catch (error) {
       console.warn("[speech] Unable to unlock AudioContext:", error);
     }
@@ -1613,21 +1603,10 @@ export default function Home() {
     };
   }, [isMuted]);
 
-  // Control the always-mounted TTS avatar video to avoid iOS AudioContext interruption.
-  // Mounting/unmounting a <video> element on iOS forces AVAudioSession reconfiguration,
-  // which interrupts active AudioContext playback. Keeping it in the DOM and calling
-  // play()/pause() instead prevents this.
-  useEffect(() => {
-    const video = ttsVideoRef.current;
-    if (!video) return;
-    const shouldPlay = isSpeaking && !isPaused && language.toLowerCase().startsWith("en");
-    if (shouldPlay) {
-      void video.play().catch(() => {});
-    } else {
-      video.pause();
-      video.currentTime = 0;
-    }
-  }, [isSpeaking, isPaused, language]);
+  // The TTS avatar video runs continuously (muted, autoPlay) and is shown/hidden
+  // via CSS visibility. We deliberately avoid calling video.play()/pause() from JS
+  // because any JS-triggered media state change during active AudioContext playback
+  // causes iOS to reconfigure AVAudioSession, which interrupts TTS audio.
 
   // Initialize speech recognition
   useEffect(() => {
@@ -4496,12 +4475,17 @@ export default function Home() {
                       </>
                     )}
                   </button>
-                  {/* Always keep video in DOM to avoid iOS AVAudioSession interruption on mount */}
+                  {/* Video runs continuously (autoPlay muted) — shown/hidden via visibility CSS only.
+                      Never call video.play()/pause() from JS: any JS-triggered media state change
+                      during active AudioContext playback causes iOS to reconfigure AVAudioSession
+                      and interrupt TTS audio. */}
                   <video
                     ref={ttsVideoRef}
-                    className={`h-24 w-full max-w-40 rounded-xl border border-slate-200 object-cover shadow-sm sm:w-40 ${
-                      isSpeaking && !isPaused && language.toLowerCase().startsWith("en") ? "" : "hidden"
-                    }`}
+                    className="h-24 w-full max-w-40 rounded-xl border border-slate-200 object-cover shadow-sm sm:w-40"
+                    style={{
+                      visibility: isSpeaking && !isPaused && language.toLowerCase().startsWith("en") ? "visible" : "hidden",
+                    }}
+                    autoPlay
                     loop
                     muted
                     playsInline
