@@ -1719,10 +1719,11 @@ export function buildInterviewState(params: {
     missingRedFlags: activeEvaluation.missingRedFlags,
     missingVirtualExamFields: activeEvaluation.missingVirtualExamFields,
     remainingFormCoverageHints,
-    urgency:
-      escalation.hasRedFlagSignal || (activeEvaluation.missingRedFlags.length > 0 && allQuestionsAsked.length >= 4)
-        ? "elevated"
-        : "routine",
+    // Only elevate urgency when an actual red-flag signal was DETECTED in the patient's
+    // answers. missingRedFlags.length > 0 only means some screening checks weren't
+    // covered yet — it does NOT mean a red flag was found — so it must NOT trigger
+    // the emergency SMS alert.
+    urgency: escalation.hasRedFlagSignal ? "elevated" : "routine",
     questionBudget: budget.budget,
     questionBudgetModifiers: budget.modifiers,
     escalationReasons: escalation.reasons,
