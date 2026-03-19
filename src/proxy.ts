@@ -17,6 +17,7 @@ function buildCspHeader(pathname: string) {
     "form-action 'self'",
     "img-src 'self' data: blob:",
     "font-src 'self' data:",
+    "media-src 'self' blob:",
     "style-src 'self' 'unsafe-inline'",
     scriptSrc,
     "connect-src 'self' https: wss:",
