@@ -4449,7 +4449,7 @@ export default function Home() {
 
             <div className="mt-2 h-px w-full bg-slate-200/70" aria-hidden="true" />
 
-            <section className="mt-2 rounded-3xl border border-slate-100 bg-white/80 px-5 py-6 shadow-slate-100">
+            <section className="mt-2 rounded-3xl border border-slate-100 bg-white/80 px-3 py-4 sm:px-5 sm:py-6 shadow-slate-100">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
                 <h2 className="text-2xl font-semibold text-slate-900">
                   Guided Interview
@@ -4522,7 +4522,7 @@ export default function Home() {
               </div>
               <div
                 ref={chatRef}
-                className={`mt-5 space-y-4 overflow-y-auto rounded-2xl border border-slate-100 bg-slate-50/60 px-4 py-4 text-sm text-slate-800 max-h-[360px] ${
+                className={`mt-5 space-y-4 overflow-y-auto rounded-2xl border border-slate-100 bg-slate-50/60 px-2 py-3 sm:px-4 sm:py-4 text-sm text-slate-800 max-h-[360px] ${
                   interviewMode === "conversation" ? "conversation-mode" : ""
                 }`}
               >
@@ -4547,13 +4547,13 @@ export default function Home() {
                         <div
                           className={`flex-1 ${
                             message.role === "assistant"
-                              ? "max-w-[85%]"
-                              : "max-w-[85%]"
+                              ? "max-w-[95%] sm:max-w-[85%]"
+                              : "max-w-[95%] sm:max-w-[85%]"
                           }`}
                         >
                           {message.role === "assistant" ? (
                             <>
-                              <div className="bg-white rounded-2xl rounded-tl-sm px-5 py-3 shadow-sm border border-slate-200">
+                              <div className="bg-white rounded-2xl rounded-tl-sm px-3 py-2 sm:px-5 sm:py-3 shadow-sm border border-slate-200">
                                 <p className="text-slate-900 leading-relaxed whitespace-pre-wrap">
                                   {getDisplayMessageContent(message)}
                                 </p>
@@ -4562,7 +4562,7 @@ export default function Home() {
                           ) : (
                             <div
                               className={[
-                                "bg-gradient-to-t from-[#80D7FF] via-[#C0ECFC] to-[#80D7FF] rounded-2xl rounded-tr-sm px-5 py-3 text-slate-900 text-left ml-auto relative group max-w-full shadow-sm",
+                                "bg-gradient-to-t from-[#80D7FF] via-[#C0ECFC] to-[#80D7FF] rounded-2xl rounded-tr-sm px-3 py-2 sm:px-5 sm:py-3 text-slate-900 text-left ml-auto relative group max-w-full shadow-sm",
                                 // When editing/adding, expand the bubble so the textarea isn't cramped on desktop/tablet.
                                 addingToMessageIndex === index || editingMessageIndex === index
                                   ? "block w-full"
