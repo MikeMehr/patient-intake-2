@@ -4518,9 +4518,24 @@ export default function Home() {
                                   <p className="text-slate-900 leading-relaxed whitespace-pre-wrap flex-1">
                                     {getDisplayMessageContent(message)}
                                   </p>
-                                  {index === messages.length - 1 && isSpeaking && (
-                                    <div className="flex-shrink-0 w-5 h-5 flex items-center justify-center mt-1">
-                                      <div className="w-3 h-3 bg-emerald-500 rounded-full animate-pulse" title="Reading question aloud"></div>
+                                  {index === messages.length - 1 && (isSpeaking || status === "awaitingPatient") && (
+                                    <div className="flex-shrink-0 flex items-center gap-1">
+                                      {isSpeaking && (
+                                        <div className="w-5 h-5 flex items-center justify-center mt-1">
+                                          <div className="w-3 h-3 bg-emerald-500 rounded-full animate-pulse" title="Reading question aloud"></div>
+                                        </div>
+                                      )}
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          speakText(getSpokenMessageContent(message));
+                                        }}
+                                        disabled={isSpeaking}
+                                        className="flex-shrink-0 px-2 py-1 text-xs font-medium rounded-md bg-slate-100 text-slate-600 hover:bg-slate-200 disabled:opacity-60 disabled:cursor-not-allowed transition"
+                                        title="Repeat question"
+                                      >
+                                        Repeat
+                                      </button>
                                     </div>
                                   )}
                                 </div>
@@ -4957,7 +4972,7 @@ export default function Home() {
                               }}
                             className="inline-flex min-h-[31px] sm:min-h-[26px] items-center justify-center rounded-full bg-gradient-to-t from-[#80D7FF] via-[#C0ECFC] to-[#80D7FF] px-2.5 py-1.5 sm:py-1 text-xs font-medium text-slate-900 shadow-sm transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-60"
                             >
-                              Use this
+                              Submit
                             </button>
                             <button
                               type="button"
