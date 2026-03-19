@@ -844,7 +844,7 @@ export default function PhysicianDashboard() {
                         disabled={emrLookupLoading}
                         className="shrink-0 px-3 py-1.5 rounded-lg bg-slate-900 text-white text-sm font-medium hover:bg-slate-800 disabled:opacity-60 disabled:cursor-not-allowed"
                       >
-                        Use this
+                        Submit
                       </button>
                     </div>
                   ))}

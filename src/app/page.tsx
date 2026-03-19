@@ -4747,9 +4747,24 @@ export default function Home() {
                         }`}
                       >
                         <p className="flex-1">{getDisplayMessageContent(message)}</p>
-                        {message.role === "assistant" && index === messages.length - 1 && isSpeaking && (
-                          <div className="flex-shrink-0 w-4 h-4 flex items-center justify-center mt-0.5">
-                            <div className="w-2.5 h-2.5 bg-emerald-500 rounded-full animate-pulse" title="Reading question aloud"></div>
+                        {message.role === "assistant" && index === messages.length - 1 && (isSpeaking || status === "awaitingPatient") && (
+                          <div className="flex-shrink-0 flex items-center gap-1">
+                            {isSpeaking && (
+                              <div className="w-4 h-4 flex items-center justify-center mt-0.5">
+                                <div className="w-2.5 h-2.5 bg-emerald-500 rounded-full animate-pulse" title="Reading question aloud"></div>
+                              </div>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                speakText(getSpokenMessageContent(message));
+                              }}
+                              disabled={isSpeaking}
+                              className="flex-shrink-0 px-2 py-1 text-xs font-medium rounded-md bg-slate-200 text-slate-700 hover:bg-slate-300 disabled:opacity-60 disabled:cursor-not-allowed transition"
+                              title="Repeat question"
+                            >
+                              Repeat
+                            </button>
                           </div>
                         )}
                       </div>
@@ -5250,7 +5265,7 @@ export default function Home() {
                             }}
                             className="inline-flex min-h-[108px] sm:min-h-[74px] items-center justify-center rounded-xl bg-gradient-to-t from-[#80D7FF] via-[#C0ECFC] to-[#80D7FF] px-4 py-2.5 sm:py-2 text-sm font-semibold text-slate-900 transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-60"
                           >
-                            {isSubmittingResponse ? "Sending..." : "Use this"}
+                            {isSubmittingResponse ? "Sending..." : "Submit"}
                           </button>
                           <button
                             type="button"
