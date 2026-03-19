@@ -4484,10 +4484,12 @@ export default function Home() {
                       and interrupt TTS audio. */}
                   <video
                     ref={ttsVideoRef}
-                    className="h-24 w-full max-w-40 rounded-xl border border-slate-200 object-cover shadow-sm sm:w-40"
-                    style={{
-                      visibility: isSpeaking && !isPaused && language.toLowerCase().startsWith("en") ? "visible" : "hidden",
-                    }}
+                    className="w-full max-w-40 rounded-xl border border-slate-200 object-cover shadow-sm sm:w-40"
+                    style={
+                      isSpeaking && !isPaused && language.toLowerCase().startsWith("en")
+                        ? { visibility: "visible" as const, height: "6rem" }
+                        : { visibility: "hidden" as const, height: 0, overflow: "hidden", border: "none" }
+                    }
                     autoPlay
                     loop
                     muted
