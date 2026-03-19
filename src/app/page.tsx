@@ -563,6 +563,7 @@ export default function Home() {
   const audioPlaybackUrlRef = useRef<string | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const audioSourceNodeRef = useRef<AudioBufferSourceNode | null>(null);
+  const ttsVideoRef = useRef<HTMLVideoElement | null>(null);
   const lastSpokenMessageRef = useRef<string>("");
   const chatRef = useRef<HTMLDivElement | null>(null);
   const patientResponseInputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -1594,6 +1595,22 @@ export default function Home() {
       document.removeEventListener("visibilitychange", handleVisibilityOrFocus);
     };
   }, [isMuted]);
+
+  // Control the always-mounted TTS avatar video to avoid iOS AudioContext interruption.
+  // Mounting/unmounting a <video> element on iOS forces AVAudioSession reconfiguration,
+  // which interrupts active AudioContext playback. Keeping it in the DOM and calling
+  // play()/pause() instead prevents this.
+  useEffect(() => {
+    const video = ttsVideoRef.current;
+    if (!video) return;
+    const shouldPlay = isSpeaking && !isPaused && language.toLowerCase().startsWith("en");
+    if (shouldPlay) {
+      void video.play().catch(() => {});
+    } else {
+      video.pause();
+      video.currentTime = 0;
+    }
+  }, [isSpeaking, isPaused, language]);
 
   // Initialize speech recognition
   useEffect(() => {
@@ -4462,19 +4479,20 @@ export default function Home() {
                       </>
                     )}
                   </button>
-                  {isSpeaking && !isPaused && language.toLowerCase().startsWith("en") && (
-                    <video
-                      className="h-24 w-full max-w-40 rounded-xl border border-slate-200 object-cover shadow-sm sm:w-40"
-                      autoPlay
-                      loop
-                      muted
-                      playsInline
-                      preload="auto"
-                    >
-                      <source src="/Confident_Busines_woman.mp4" type="video/mp4" />
-                      Your browser does not support the video tag.
-                    </video>
-                  )}
+                  {/* Always keep video in DOM to avoid iOS AVAudioSession interruption on mount */}
+                  <video
+                    ref={ttsVideoRef}
+                    className={`h-24 w-full max-w-40 rounded-xl border border-slate-200 object-cover shadow-sm sm:w-40 ${
+                      isSpeaking && !isPaused && language.toLowerCase().startsWith("en") ? "" : "hidden"
+                    }`}
+                    loop
+                    muted
+                    playsInline
+                    preload="auto"
+                  >
+                    <source src="/Confident_Busines_woman.mp4" type="video/mp4" />
+                    Your browser does not support the video tag.
+                  </video>
                 </div>
               </div>
               <div
