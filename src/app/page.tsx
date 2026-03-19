@@ -4420,6 +4420,20 @@ export default function Home() {
                   Guided Interview
                 </h2>
                 <div className="flex w-full flex-wrap items-center justify-center gap-2 sm:w-auto sm:justify-end">
+                  {status === "awaitingPatient" && messages.some(m => m.role === "assistant") && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const lastAssistant = [...messages].reverse().find(m => m.role === "assistant");
+                        if (lastAssistant) speakText(getSpokenMessageContent(lastAssistant));
+                      }}
+                      disabled={isSpeaking}
+                      className="inline-flex items-center justify-center rounded-lg px-3 py-1.5 text-sm font-medium transition-colors bg-slate-100 text-slate-700 hover:bg-slate-200 disabled:opacity-60 disabled:cursor-not-allowed"
+                      title="Replay the last question"
+                    >
+                      🔊 Hear again
+                    </button>
+                  )}
                   <button
                     onClick={() => {
                       setIsMuted(!isMuted);
@@ -4518,24 +4532,9 @@ export default function Home() {
                                   <p className="text-slate-900 leading-relaxed whitespace-pre-wrap flex-1">
                                     {getDisplayMessageContent(message)}
                                   </p>
-                                  {index === messages.length - 1 && (isSpeaking || status === "awaitingPatient") && (
-                                    <div className="flex-shrink-0 flex items-center gap-1">
-                                      {isSpeaking && (
-                                        <div className="w-5 h-5 flex items-center justify-center mt-1">
-                                          <div className="w-3 h-3 bg-emerald-500 rounded-full animate-pulse" title="Reading question aloud"></div>
-                                        </div>
-                                      )}
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          speakText(getSpokenMessageContent(message));
-                                        }}
-                                        disabled={isSpeaking}
-                                        className="flex-shrink-0 px-2 py-1 text-xs font-medium rounded-md bg-slate-100 text-slate-600 hover:bg-slate-200 disabled:opacity-60 disabled:cursor-not-allowed transition"
-                                        title="Repeat question"
-                                      >
-                                        Repeat
-                                      </button>
+                                  {index === messages.length - 1 && isSpeaking && (
+                                    <div className="flex-shrink-0 w-5 h-5 flex items-center justify-center mt-1">
+                                      <div className="w-3 h-3 bg-emerald-500 rounded-full animate-pulse" title="Reading question aloud"></div>
                                     </div>
                                   )}
                                 </div>
@@ -4762,24 +4761,9 @@ export default function Home() {
                         }`}
                       >
                         <p className="flex-1">{getDisplayMessageContent(message)}</p>
-                        {message.role === "assistant" && index === messages.length - 1 && (isSpeaking || status === "awaitingPatient") && (
-                          <div className="flex-shrink-0 flex items-center gap-1">
-                            {isSpeaking && (
-                              <div className="w-4 h-4 flex items-center justify-center mt-0.5">
-                                <div className="w-2.5 h-2.5 bg-emerald-500 rounded-full animate-pulse" title="Reading question aloud"></div>
-                              </div>
-                            )}
-                            <button
-                              type="button"
-                              onClick={() => {
-                                speakText(getSpokenMessageContent(message));
-                              }}
-                              disabled={isSpeaking}
-                              className="flex-shrink-0 px-2 py-1 text-xs font-medium rounded-md bg-slate-200 text-slate-700 hover:bg-slate-300 disabled:opacity-60 disabled:cursor-not-allowed transition"
-                              title="Repeat question"
-                            >
-                              Repeat
-                            </button>
+                        {message.role === "assistant" && index === messages.length - 1 && isSpeaking && (
+                          <div className="flex-shrink-0 w-4 h-4 flex items-center justify-center mt-0.5">
+                            <div className="w-2.5 h-2.5 bg-emerald-500 rounded-full animate-pulse" title="Reading question aloud"></div>
                           </div>
                         )}
                       </div>
