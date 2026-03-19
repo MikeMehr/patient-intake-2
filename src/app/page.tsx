@@ -1395,10 +1395,10 @@ export default function Home() {
     }
     clearAzureAudioPlayback();
 
-    // Prefer Web Audio API (AudioContext) — it stays unlocked on iOS once
-    // resume() is called during a user gesture (see unlockAudioPlayback).
-    // HTMLAudioElement.play() would require a fresh user-gesture on iOS each
-    // time, which fails when TTS is triggered from a useEffect.
+    // AudioContext path: used only if audioContextRef was set externally.
+    // unlockAudioPlayback() no longer creates an AudioContext (it uses
+    // HTMLAudioElement to activate iOS AVAudioSession "playback" category),
+    // so ctx will be null and we fall through to the HTMLAudioElement path below.
     const ctx = audioContextRef.current;
     console.log("[speech] speakWithAzureTts: ctx exists:", !!ctx, "blob size:", audioBlob.size);
     if (ctx) {
@@ -1494,23 +1494,23 @@ export default function Home() {
     })();
   };
 
-  /** Create / resume an AudioContext on a user gesture so iOS allows later
-   *  Web Audio API playback from async code (useEffect, fetch callbacks, etc.). */
+  // Minimal silent WAV: 44100Hz, mono, 16-bit PCM, 1 sample (46 bytes)
+  const SILENT_WAV_URI = "data:audio/wav;base64,UklGRiYAAABXQVZFZm10IBAAAAABAAQARKwAAIhYAQACABAAZGF0YQIAAAAAAAA==";
+
+  /** Play a silent audio clip during a user gesture to activate iOS AVAudioSession
+   *  in "playback" category. This bypasses the ringer switch and stays active for
+   *  subsequent HTMLAudioElement.play() calls from async code (fetch callbacks, etc.).
+   *  AudioContext used the "ambient" category which respects the ringer switch and
+   *  would end immediately on iOS when the session was interrupted. */
   const unlockAudioPlayback = () => {
     if (typeof window === "undefined") return;
     try {
-      if (!audioContextRef.current) {
-        audioContextRef.current = new AudioContext();
-        console.log("[speech] AudioContext created, state:", audioContextRef.current.state, "sampleRate:", audioContextRef.current.sampleRate);
-      }
-      if (
-        audioContextRef.current.state === "suspended" ||
-        audioContextRef.current.state === "interrupted"
-      ) {
-        void audioContextRef.current.resume();
-      }
+      const audio = new Audio(SILENT_WAV_URI);
+      void audio.play().then(() => { audio.pause(); }).catch((err) => {
+        console.warn("[speech] Audio unlock play failed:", err);
+      });
     } catch (error) {
-      console.warn("[speech] Unable to unlock AudioContext:", error);
+      console.warn("[speech] Unable to unlock audio session:", error);
     }
   };
 
@@ -2442,6 +2442,9 @@ export default function Home() {
   ): Promise<void> {
     if (event) {
       event.preventDefault();
+      // Re-activate iOS playback session on each submit gesture so the next
+      // TTS question can play without a NotAllowedError.
+      unlockAudioPlayback();
     }
     setSessionSaveError(null);
     setIsSubmittingResponse(true);
