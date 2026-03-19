@@ -1267,11 +1267,19 @@ export default function Home() {
       }
       audioSourceNodeRef.current = null;
     }
-    // Stop HTML Audio element if used (desktop fallback)
+    // Stop HTML Audio element — pause it and revoke the blob URL, but keep the
+    // element alive in audioPlaybackRef so iOS "sticky activation" persists.
+    // Nulling the ref would force a new element on the next TTS call, causing
+    // iOS to treat it as an unactivated element and throw AbortError / NotAllowedError.
     if (audioPlaybackRef.current) {
       audioPlaybackRef.current.pause();
+      audioPlaybackRef.current.onplay = null;
+      audioPlaybackRef.current.onended = null;
+      audioPlaybackRef.current.onerror = null;
+      audioPlaybackRef.current.onloadedmetadata = null;
+      // Remove src so the element is idle (don't revoke yet — we revoke below)
       audioPlaybackRef.current.src = "";
-      audioPlaybackRef.current = null;
+      // Keep audioPlaybackRef.current alive for future TTS calls
     }
     if (audioPlaybackUrlRef.current) {
       URL.revokeObjectURL(audioPlaybackUrlRef.current);
@@ -1431,11 +1439,16 @@ export default function Home() {
       return;
     }
 
-    // Fallback: HTMLAudioElement (desktop browsers where AudioContext wasn't created)
+    // HTMLAudioElement path (all browsers — AudioContext no longer used).
+    // Reuse the persistent element created during unlockAudioPlayback() so that
+    // iOS "sticky activation" carries over without creating a second competing element.
     const audioUrl = URL.createObjectURL(audioBlob);
-    const audio = new Audio(audioUrl);
+    if (!audioPlaybackRef.current) {
+      audioPlaybackRef.current = new Audio();
+    }
+    const audio = audioPlaybackRef.current;
     audio.preload = "auto";
-    audioPlaybackRef.current = audio;
+    audio.src = audioUrl;
     audioPlaybackUrlRef.current = audioUrl;
 
     audio.onplay = () => {
@@ -1501,14 +1514,23 @@ export default function Home() {
    *  in "playback" category. This bypasses the ringer switch and stays active for
    *  subsequent HTMLAudioElement.play() calls from async code (fetch callbacks, etc.).
    *  AudioContext used the "ambient" category which respects the ringer switch and
-   *  would end immediately on iOS when the session was interrupted. */
+   *  would end immediately on iOS when the session was interrupted.
+   *
+   *  We create the persistent audio element ONCE here and keep it for the whole session.
+   *  TTS reuses the same element so iOS "sticky activation" carries over — no second
+   *  unlock needed and no two elements competing for the audio session (AbortError). */
   const unlockAudioPlayback = () => {
     if (typeof window === "undefined") return;
     try {
-      const audio = new Audio(SILENT_WAV_URI);
-      void audio.play().then(() => { audio.pause(); }).catch((err) => {
+      if (!audioPlaybackRef.current) {
+        audioPlaybackRef.current = new Audio();
+      }
+      const audio = audioPlaybackRef.current;
+      audio.src = SILENT_WAV_URI;
+      void audio.play().then(() => { audio.pause(); audio.src = ""; }).catch((err) => {
         console.warn("[speech] Audio unlock play failed:", err);
       });
+      console.log("[speech] HTMLAudioElement unlock initiated (playback session)");
     } catch (error) {
       console.warn("[speech] Unable to unlock audio session:", error);
     }
@@ -2442,9 +2464,6 @@ export default function Home() {
   ): Promise<void> {
     if (event) {
       event.preventDefault();
-      // Re-activate iOS playback session on each submit gesture so the next
-      // TTS question can play without a NotAllowedError.
-      unlockAudioPlayback();
     }
     setSessionSaveError(null);
     setIsSubmittingResponse(true);
