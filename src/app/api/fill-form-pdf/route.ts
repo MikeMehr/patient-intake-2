@@ -322,12 +322,17 @@ function buildFieldLocations(
     let height = (maxY - minY) * unitScale;
 
     // If using key bounds (no value region), place answer directly below the key label.
-    // Reserve enough vertical space for up to ~4 wrapped lines (fill-form-pdf will
-    // shrink the visible box to only as tall as the text actually needs).
+    // Convention used throughout: loc.y = box bottom, loc.y + loc.height = box top.
+    // We must therefore set loc.y + loc.height = (key label bottom) - 2 pts gap, then
+    // extend loc.y downward by the reserved height.  Without this anchor the "top"
+    // of the box overshoots above the key label and text is drawn above it.
     if (!candidate.valueBounds) {
-      y -= height + 2;
+      const labelBottomPdf = y;                 // bottom of key label in PDF coords
+      const answerAreaTop = labelBottomPdf - 2; // 2 pt gap below key label
+      const reservedH = Math.max(height * 3, 72); // ~4 lines of text maximum
+      y = answerAreaTop - reservedH;            // bottom of answer area
       width = Math.max(width, 300);
-      height = Math.max(height, 60); // generous max — box is auto-shrunk when rendered
+      height = reservedH;
     }
 
     locations.push({
