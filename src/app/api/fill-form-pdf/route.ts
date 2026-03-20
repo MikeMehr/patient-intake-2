@@ -1,6 +1,7 @@
 /**
  * GET /api/fill-form-pdf?code={sessionCode}
  * Returns the original uploaded form PDF with patient interview answers filled in.
+ * Uses Azure Document Intelligence to detect field positions on flat PDFs.
  * Requires an authenticated physician session with access to the given session.
  */
 
@@ -10,7 +11,154 @@ import { getSession } from "@/lib/session-store";
 import { canAccessSessionInScope, loadSessionAccessScope } from "@/lib/session-access";
 import { query } from "@/lib/db";
 import { buildFilledFormPdf, sanitiseFilename } from "@/lib/fill-form-pdf";
+import type { FieldLocation } from "@/lib/fill-form-pdf";
 import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
+import { assertSafeOutboundUrl, assertSafeOperationLocation } from "@/lib/outbound-url";
+import { ensureProdEnv } from "@/lib/required-env";
+
+// ---------------------------------------------------------------------------
+// Document Intelligence: detect key-value field positions on flat PDFs
+// ---------------------------------------------------------------------------
+
+async function analyzeFormFieldPositions(pdfBytes: Buffer): Promise<FieldLocation[]> {
+  // Require DI credentials (same env vars as invitation-pdf-summary)
+  ensureProdEnv(["AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT", "AZURE_DOCUMENT_INTELLIGENCE_API_KEY"]);
+  const rawEndpoint = process.env.AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT;
+  const apiKey = process.env.AZURE_DOCUMENT_INTELLIGENCE_API_KEY;
+  const apiVersion = process.env.AZURE_DOCUMENT_INTELLIGENCE_API_VERSION || "2024-11-30";
+
+  if (!rawEndpoint || !apiKey) return [];
+
+  const endpoint = assertSafeOutboundUrl(rawEndpoint.replace(/\/$/, ""), {
+    label: "Document Intelligence endpoint",
+  })
+    .toString()
+    .replace(/\/$/, "");
+
+  // Use prebuilt-document model for key-value pair extraction (not prebuilt-read)
+  const analyzeUrl = `${endpoint}/documentintelligence/documentModels/prebuilt-document:analyze?api-version=${encodeURIComponent(apiVersion)}`;
+
+  const startResponse = await fetch(analyzeUrl, {
+    method: "POST",
+    headers: {
+      "Ocp-Apim-Subscription-Key": apiKey,
+      "Content-Type": "application/pdf",
+    },
+    body: new Uint8Array(pdfBytes),
+  });
+
+  if (!startResponse.ok) {
+    const body = await startResponse.text().catch(() => "");
+    console.warn("[fill-form-pdf] DI analyze request failed:", startResponse.status, body);
+    return [];
+  }
+
+  const operationLocation =
+    startResponse.headers.get("operation-location") ||
+    startResponse.headers.get("Operation-Location");
+  if (!operationLocation) return [];
+
+  const safeOpLoc = assertSafeOperationLocation(operationLocation, endpoint);
+
+  // Poll for result (up to 60s)
+  const maxAttempts = 60;
+  for (let i = 0; i < maxAttempts; i++) {
+    await new Promise((r) => setTimeout(r, 1000));
+    const pollRes = await fetch(safeOpLoc.toString(), {
+      headers: { "Ocp-Apim-Subscription-Key": apiKey },
+    });
+    if (!pollRes.ok) return [];
+
+    const payload = (await pollRes.json()) as {
+      status?: string;
+      analyzeResult?: {
+        pages?: Array<{ pageNumber: number; width: number; height: number; unit?: string }>;
+        keyValuePairs?: Array<{
+          key?: { content?: string; boundingRegions?: Array<{ pageNumber: number; polygon: number[] }> };
+          value?: { content?: string; boundingRegions?: Array<{ pageNumber: number; polygon: number[] }> };
+        }>;
+      };
+    };
+
+    const st = (payload.status || "").toLowerCase();
+    if (st === "succeeded") {
+      return parseKeyValuePairs(payload.analyzeResult);
+    }
+    if (st === "failed") {
+      console.warn("[fill-form-pdf] DI analysis failed");
+      return [];
+    }
+  }
+
+  console.warn("[fill-form-pdf] DI analysis timed out");
+  return [];
+}
+
+function parseKeyValuePairs(result: {
+  pages?: Array<{ pageNumber: number; width: number; height: number; unit?: string }>;
+  keyValuePairs?: Array<{
+    key?: { content?: string; boundingRegions?: Array<{ pageNumber: number; polygon: number[] }> };
+    value?: { content?: string; boundingRegions?: Array<{ pageNumber: number; polygon: number[] }> };
+  }>;
+} | undefined): FieldLocation[] {
+  if (!result?.keyValuePairs || !result.pages) return [];
+
+  const locations: FieldLocation[] = [];
+
+  for (const kvp of result.keyValuePairs) {
+    const keyContent = kvp.key?.content?.trim();
+    if (!keyContent) continue;
+
+    // Prefer value bounding region (where answer should go); fall back to key region
+    const valueBounds = kvp.value?.boundingRegions?.[0];
+    const keyBounds = kvp.key?.boundingRegions?.[0];
+    const bounds = valueBounds || keyBounds;
+    if (!bounds?.polygon || bounds.polygon.length < 8) continue;
+
+    const pageInfo = result.pages.find((p) => p.pageNumber === bounds.pageNumber);
+    if (!pageInfo) continue;
+
+    // DI uses inches by default; convert factor to points
+    const unitScale = (pageInfo.unit === "pixel") ? (72 / 96) : 72; // inches → points
+    const pageHeightPts = pageInfo.height * unitScale;
+
+    // Extract bounding box from polygon [x1,y1, x2,y2, x3,y3, x4,y4]
+    const poly = bounds.polygon;
+    const xs = [poly[0], poly[2], poly[4], poly[6]];
+    const ys = [poly[1], poly[3], poly[5], poly[7]];
+    const minX = Math.min(...xs);
+    const maxX = Math.max(...xs);
+    const minY = Math.min(...ys);
+    const maxY = Math.max(...ys);
+
+    // Convert from DI coords (top-left origin, inches) to PDF coords (bottom-left, points)
+    let x = minX * unitScale;
+    let y = pageHeightPts - maxY * unitScale; // flip Y
+    let width = (maxX - minX) * unitScale;
+    let height = (maxY - minY) * unitScale;
+
+    // If we used the key bounds (no value region found), offset below the key text
+    if (!valueBounds) {
+      y -= height + 2;
+      width = Math.max(width, 200);
+    }
+
+    locations.push({
+      keyText: keyContent,
+      pageIndex: bounds.pageNumber - 1,
+      x,
+      y,
+      width,
+      height: Math.max(height, 12),
+    });
+  }
+
+  return locations;
+}
+
+// ---------------------------------------------------------------------------
+// Main handler
+// ---------------------------------------------------------------------------
 
 export async function GET(request: NextRequest) {
   const requestId = getRequestId(request.headers);
@@ -113,6 +261,18 @@ export async function GET(request: NextRequest) {
   const { form_pdf_data, form_pdf_filename } = pdfResult.rows[0];
 
   try {
+    // Analyze the PDF with Document Intelligence to detect field positions.
+    // This is best-effort; if it fails, we still get the appended response pages.
+    let fieldLocations: FieldLocation[] = [];
+    try {
+      fieldLocations = await analyzeFormFieldPositions(form_pdf_data!);
+      console.log(
+        `[fill-form-pdf] DI detected ${fieldLocations.length} key-value fields`,
+      );
+    } catch (diErr) {
+      console.warn("[fill-form-pdf] DI field analysis failed, using appended pages only", diErr);
+    }
+
     const filledBytes = await buildFilledFormPdf({
       pdfBytes: form_pdf_data!,
       formAnswers,
@@ -121,6 +281,7 @@ export async function GET(request: NextRequest) {
         sessionDate: session.completedAt ? new Date(session.completedAt) : new Date(),
         originalFilename: form_pdf_filename,
       },
+      fieldLocations,
     });
 
     const baseName = form_pdf_filename

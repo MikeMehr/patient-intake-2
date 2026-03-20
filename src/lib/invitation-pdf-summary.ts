@@ -61,7 +61,7 @@ export function assertValidPdfUpload(file: File, fieldName: string): void {
   }
 }
 
-function getDocumentIntelligenceConfig() {
+export function getDocumentIntelligenceConfig() {
   ensureProdEnv(["AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT", "AZURE_DOCUMENT_INTELLIGENCE_API_KEY"]);
   const endpoint = process.env.AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT;
   const apiKey = process.env.AZURE_DOCUMENT_INTELLIGENCE_API_KEY;

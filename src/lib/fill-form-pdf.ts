@@ -5,8 +5,10 @@
  * 1. Load the original PDF with pdf-lib.
  * 2. If the PDF has interactive AcroForm fields, fuzzy-match each field to a
  *    form answer and fill it.
- * 3. Always append a "Completed Patient Responses" page with all Q&A pairs so
- *    there is a clear, human-readable record regardless of whether step 2 ran.
+ * 3. For flat PDFs (no AcroForm), overlay answers at field locations detected
+ *    by Azure Document Intelligence.
+ * 4. Always append a "Completed Patient Responses" page with all Q&A pairs so
+ *    there is a clear, human-readable record regardless of whether step 2/3 ran.
  */
 
 import {
@@ -27,6 +29,16 @@ export interface FilledFormMetadata {
   patientName: string;
   sessionDate: Date;
   originalFilename: string | null;
+}
+
+/** A detected field position from Document Intelligence layout analysis. */
+export interface FieldLocation {
+  keyText: string;
+  pageIndex: number; // 0-based
+  x: number;         // PDF points from left
+  y: number;         // PDF points from bottom
+  width: number;     // PDF points
+  height: number;    // PDF points
 }
 
 /**
@@ -92,8 +104,9 @@ export async function buildFilledFormPdf(params: {
   pdfBytes: Buffer;
   formAnswers: FormAnswer[];
   metadata: FilledFormMetadata;
+  fieldLocations?: FieldLocation[];
 }): Promise<Uint8Array> {
-  const { pdfBytes, formAnswers, metadata } = params;
+  const { pdfBytes, formAnswers, metadata, fieldLocations } = params;
 
   // --- 1. Load the original PDF ---
   let pdfDoc: PDFDocument;
@@ -145,7 +158,69 @@ export async function buildFilledFormPdf(params: {
       }
     }
   } catch {
-    // PDF has no AcroForm or it's malformed — fall through to response page
+    // PDF has no AcroForm or it's malformed — fall through to overlay / response page
+  }
+
+  // --- 2b. Overlay answers at detected field locations (for flat PDFs) ---
+  if (fieldLocations && fieldLocations.length > 0) {
+    const overlayFont = await pdfDoc.embedFont(StandardFonts.Helvetica);
+    const pages = pdfDoc.getPages();
+    const usedAnswerIndices = new Set<number>();
+
+    for (const loc of fieldLocations) {
+      if (loc.pageIndex < 0 || loc.pageIndex >= pages.length) continue;
+
+      // Find best matching form answer (each answer used at most once)
+      let bestIdx = -1;
+      let bestScore = 0;
+      for (let i = 0; i < formAnswers.length; i++) {
+        if (usedAnswerIndices.has(i)) continue;
+        const score = overlapScore(loc.keyText, formAnswers[i].question);
+        if (score > bestScore) {
+          bestScore = score;
+          bestIdx = i;
+        }
+      }
+      if (bestIdx < 0 || bestScore < 0.15) continue;
+      usedAnswerIndices.add(bestIdx);
+
+      const answer = formAnswers[bestIdx].answer?.trim();
+      if (!answer) continue;
+
+      const targetPage = pages[loc.pageIndex];
+      const fontSize = Math.max(7, Math.min(10, loc.height * 0.65));
+      const lineHeight = fontSize * 1.2;
+      const maxWidth = loc.width - 4;
+
+      // Wrap text to fit within the field width
+      const words = answer.split(" ");
+      const lines: string[] = [];
+      let current = "";
+      for (const word of words) {
+        const candidate = current ? `${current} ${word}` : word;
+        if (overlayFont.widthOfTextAtSize(candidate, fontSize) > maxWidth && current) {
+          lines.push(current);
+          current = word;
+        } else {
+          current = candidate;
+        }
+      }
+      if (current) lines.push(current);
+
+      // Draw each line, starting from top of the bounding box
+      let textY = loc.y + loc.height - fontSize - 1;
+      for (const line of lines) {
+        if (textY < loc.y) break; // Don't overflow below the box
+        targetPage.drawText(line, {
+          x: loc.x + 2,
+          y: textY,
+          size: fontSize,
+          font: overlayFont,
+          color: rgb(0.0, 0.1, 0.5), // Dark blue to distinguish filled answers
+        });
+        textY -= lineHeight;
+      }
+    }
   }
 
   // --- 3. Append "Completed Patient Responses" page(s) ---
