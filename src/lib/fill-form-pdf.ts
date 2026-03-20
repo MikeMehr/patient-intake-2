@@ -237,22 +237,13 @@ export async function buildFilledFormPdf(params: {
       if (!answer) continue;
 
       const targetPage = pages[loc.pageIndex];
-      const fontSize = Math.max(7, Math.min(10, loc.height * 0.65));
-      const lineHeight = fontSize * 1.2;
-      const maxWidth = loc.width - 4;
+      // Use a comfortable readable size; loc.height is the maximum available space
+      const fontSize = Math.max(8, Math.min(10, loc.height * 0.6));
+      const lineHeight = fontSize * 1.35;
+      const PADDING = 3; // pts top & bottom inside the box
+      const maxWidth = loc.width - 6;
 
-      // Erase any existing content in the target area before writing
-      targetPage.drawRectangle({
-        x: loc.x,
-        y: loc.y,
-        width: loc.width,
-        height: loc.height,
-        color: rgb(1, 1, 1),       // white fill
-        borderColor: rgb(0.82, 0.87, 0.93),
-        borderWidth: 0.4,
-      });
-
-      // Wrap text to fit within the field width
+      // ── 1. Wrap text first so we know the actual height needed ──────────
       const words = answer.split(" ");
       const lines: string[] = [];
       let current = "";
@@ -267,16 +258,32 @@ export async function buildFilledFormPdf(params: {
       }
       if (current) lines.push(current);
 
-      // Draw each line, starting from top of the bounding box
-      let textY = loc.y + loc.height - fontSize - 1;
+      // ── 2. Size the box to exactly fit the text (no wasted white space) ─
+      const actualHeight = lines.length * lineHeight + PADDING * 2;
+      // Anchor the box at the top of the available area (loc.y + loc.height = top)
+      const boxY = loc.y + loc.height - actualHeight;
+
+      // Erase existing content only over the area we actually use
+      targetPage.drawRectangle({
+        x: loc.x,
+        y: boxY,
+        width: loc.width,
+        height: actualHeight,
+        color: rgb(1, 1, 1),
+        borderColor: rgb(0.75, 0.82, 0.92),
+        borderWidth: 0.5,
+      });
+
+      // ── 3. Draw each line top-to-bottom inside the box ──────────────────
+      let textY = boxY + actualHeight - PADDING - fontSize;
       for (const line of lines) {
-        if (textY < loc.y) break; // Don't overflow below the box
+        if (textY < boxY) break;
         targetPage.drawText(line, {
-          x: loc.x + 2,
+          x: loc.x + 3,
           y: textY,
           size: fontSize,
           font: overlayFont,
-          color: rgb(0.0, 0.1, 0.5), // Dark blue to distinguish filled answers
+          color: rgb(0.0, 0.1, 0.5),
         });
         textY -= lineHeight;
       }

@@ -321,11 +321,13 @@ function buildFieldLocations(
     let width = (maxX - minX) * unitScale;
     let height = (maxY - minY) * unitScale;
 
-    // If using key bounds (no value region), place below the key
+    // If using key bounds (no value region), place answer directly below the key label.
+    // Reserve enough vertical space for up to ~4 wrapped lines (fill-form-pdf will
+    // shrink the visible box to only as tall as the text actually needs).
     if (!candidate.valueBounds) {
       y -= height + 2;
-      width = Math.max(width, 350);
-      height = Math.max(height, 40);
+      width = Math.max(width, 300);
+      height = Math.max(height, 60); // generous max — box is auto-shrunk when rendered
     }
 
     locations.push({
