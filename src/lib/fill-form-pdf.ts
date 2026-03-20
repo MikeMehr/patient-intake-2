@@ -162,29 +162,15 @@ export async function buildFilledFormPdf(params: {
   }
 
   // --- 2b. Overlay answers at detected field locations (for flat PDFs) ---
+  // Each FieldLocation's keyText contains the ANSWER text to draw (pre-mapped by AI).
   if (fieldLocations && fieldLocations.length > 0) {
     const overlayFont = await pdfDoc.embedFont(StandardFonts.Helvetica);
     const pages = pdfDoc.getPages();
-    const usedAnswerIndices = new Set<number>();
 
     for (const loc of fieldLocations) {
       if (loc.pageIndex < 0 || loc.pageIndex >= pages.length) continue;
 
-      // Find best matching form answer (each answer used at most once)
-      let bestIdx = -1;
-      let bestScore = 0;
-      for (let i = 0; i < formAnswers.length; i++) {
-        if (usedAnswerIndices.has(i)) continue;
-        const score = overlapScore(loc.keyText, formAnswers[i].question);
-        if (score > bestScore) {
-          bestScore = score;
-          bestIdx = i;
-        }
-      }
-      if (bestIdx < 0 || bestScore < 0.15) continue;
-      usedAnswerIndices.add(bestIdx);
-
-      const answer = formAnswers[bestIdx].answer?.trim();
+      const answer = loc.keyText?.trim();
       if (!answer) continue;
 
       const targetPage = pages[loc.pageIndex];

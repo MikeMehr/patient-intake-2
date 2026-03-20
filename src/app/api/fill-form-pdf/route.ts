@@ -1,7 +1,8 @@
 /**
  * GET /api/fill-form-pdf?code={sessionCode}
  * Returns the original uploaded form PDF with patient interview answers filled in.
- * Uses Azure Document Intelligence to detect field positions on flat PDFs.
+ * Uses Azure Document Intelligence (prebuilt-layout) to detect field positions,
+ * then Azure OpenAI to intelligently map interview answers to form fields.
  * Requires an authenticated physician session with access to the given session.
  */
 
@@ -15,19 +16,48 @@ import type { FieldLocation } from "@/lib/fill-form-pdf";
 import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
 import { assertSafeOutboundUrl, assertSafeOperationLocation } from "@/lib/outbound-url";
 import { ensureProdEnv } from "@/lib/required-env";
+import { getAzureOpenAIClient } from "@/lib/azure-openai";
 
 // ---------------------------------------------------------------------------
-// Document Intelligence: detect key-value field positions on flat PDFs
+// Types for DI response
 // ---------------------------------------------------------------------------
 
-async function analyzeFormFieldPositions(pdfBytes: Buffer): Promise<FieldLocation[]> {
-  // Require DI credentials (same env vars as invitation-pdf-summary)
+interface DIPage {
+  pageNumber: number;
+  width: number;
+  height: number;
+  unit?: string;
+}
+
+interface DIBoundingRegion {
+  pageNumber: number;
+  polygon: number[];
+}
+
+interface DIKeyValuePair {
+  key?: { content?: string; boundingRegions?: DIBoundingRegion[] };
+  value?: { content?: string; boundingRegions?: DIBoundingRegion[] };
+}
+
+interface DIAnalyzeResult {
+  pages?: DIPage[];
+  keyValuePairs?: DIKeyValuePair[];
+}
+
+// ---------------------------------------------------------------------------
+// Step 1: Analyze PDF with Document Intelligence (prebuilt-layout + KVPs)
+// ---------------------------------------------------------------------------
+
+async function analyzeFormLayout(pdfBytes: Buffer): Promise<{
+  pages: DIPage[];
+  keyValuePairs: DIKeyValuePair[];
+}> {
   ensureProdEnv(["AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT", "AZURE_DOCUMENT_INTELLIGENCE_API_KEY"]);
   const rawEndpoint = process.env.AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT;
   const apiKey = process.env.AZURE_DOCUMENT_INTELLIGENCE_API_KEY;
   const apiVersion = process.env.AZURE_DOCUMENT_INTELLIGENCE_API_VERSION || "2024-11-30";
 
-  if (!rawEndpoint || !apiKey) return [];
+  if (!rawEndpoint || !apiKey) return { pages: [], keyValuePairs: [] };
 
   const endpoint = assertSafeOutboundUrl(rawEndpoint.replace(/\/$/, ""), {
     label: "Document Intelligence endpoint",
@@ -35,8 +65,8 @@ async function analyzeFormFieldPositions(pdfBytes: Buffer): Promise<FieldLocatio
     .toString()
     .replace(/\/$/, "");
 
-  // Use prebuilt-document model for key-value pair extraction (not prebuilt-read)
-  const analyzeUrl = `${endpoint}/documentintelligence/documentModels/prebuilt-document:analyze?api-version=${encodeURIComponent(apiVersion)}`;
+  // prebuilt-layout with keyValuePairs feature (prebuilt-document was removed in 2024-11-30)
+  const analyzeUrl = `${endpoint}/documentintelligence/documentModels/prebuilt-layout:analyze?api-version=${encodeURIComponent(apiVersion)}&features=keyValuePairs`;
 
   const startResponse = await fetch(analyzeUrl, {
     method: "POST",
@@ -50,79 +80,162 @@ async function analyzeFormFieldPositions(pdfBytes: Buffer): Promise<FieldLocatio
   if (!startResponse.ok) {
     const body = await startResponse.text().catch(() => "");
     console.warn("[fill-form-pdf] DI analyze request failed:", startResponse.status, body);
-    return [];
+    return { pages: [], keyValuePairs: [] };
   }
 
   const operationLocation =
     startResponse.headers.get("operation-location") ||
     startResponse.headers.get("Operation-Location");
-  if (!operationLocation) return [];
+  if (!operationLocation) return { pages: [], keyValuePairs: [] };
 
   const safeOpLoc = assertSafeOperationLocation(operationLocation, endpoint);
 
-  // Poll for result (up to 60s)
-  const maxAttempts = 60;
-  for (let i = 0; i < maxAttempts; i++) {
+  // Poll for result (up to 90s)
+  for (let i = 0; i < 90; i++) {
     await new Promise((r) => setTimeout(r, 1000));
     const pollRes = await fetch(safeOpLoc.toString(), {
       headers: { "Ocp-Apim-Subscription-Key": apiKey },
     });
-    if (!pollRes.ok) return [];
+    if (!pollRes.ok) return { pages: [], keyValuePairs: [] };
 
     const payload = (await pollRes.json()) as {
       status?: string;
-      analyzeResult?: {
-        pages?: Array<{ pageNumber: number; width: number; height: number; unit?: string }>;
-        keyValuePairs?: Array<{
-          key?: { content?: string; boundingRegions?: Array<{ pageNumber: number; polygon: number[] }> };
-          value?: { content?: string; boundingRegions?: Array<{ pageNumber: number; polygon: number[] }> };
-        }>;
-      };
+      analyzeResult?: DIAnalyzeResult;
     };
 
     const st = (payload.status || "").toLowerCase();
     if (st === "succeeded") {
-      return parseKeyValuePairs(payload.analyzeResult);
+      return {
+        pages: payload.analyzeResult?.pages || [],
+        keyValuePairs: payload.analyzeResult?.keyValuePairs || [],
+      };
     }
     if (st === "failed") {
       console.warn("[fill-form-pdf] DI analysis failed");
-      return [];
+      return { pages: [], keyValuePairs: [] };
     }
   }
 
   console.warn("[fill-form-pdf] DI analysis timed out");
-  return [];
+  return { pages: [], keyValuePairs: [] };
 }
 
-function parseKeyValuePairs(result: {
-  pages?: Array<{ pageNumber: number; width: number; height: number; unit?: string }>;
-  keyValuePairs?: Array<{
-    key?: { content?: string; boundingRegions?: Array<{ pageNumber: number; polygon: number[] }> };
-    value?: { content?: string; boundingRegions?: Array<{ pageNumber: number; polygon: number[] }> };
-  }>;
-} | undefined): FieldLocation[] {
-  if (!result?.keyValuePairs || !result.pages) return [];
+// ---------------------------------------------------------------------------
+// Step 2: Use Azure OpenAI to map form answers → DI field positions
+// ---------------------------------------------------------------------------
 
+interface TextFieldCandidate {
+  index: number;
+  keyText: string;
+  pageNumber: number;
+  valueBounds: DIBoundingRegion | null;
+  keyBounds: DIBoundingRegion | null;
+}
+
+async function mapAnswersToFields(
+  formAnswers: { question: string; answer: string }[],
+  candidates: TextFieldCandidate[],
+): Promise<Array<{ answerIndex: number; fieldIndex: number; formattedValue?: string }>> {
+  if (candidates.length === 0 || formAnswers.length === 0) return [];
+
+  const azure = getAzureOpenAIClient();
+
+  // Build the prompt with field labels and form Q&A
+  const fieldLabels = candidates
+    .map((c) => `  ${c.index}. [page ${c.pageNumber}] "${c.keyText}"`)
+    .join("\n");
+
+  const qaPairs = formAnswers
+    .map((qa, i) => `  ${i}. Q: ${qa.question}\n     A: ${qa.answer}`)
+    .join("\n");
+
+  const systemPrompt = `You are mapping patient interview answers to a medical form's field labels.
+You will receive a list of form field labels (detected from a PDF form) and a list of interview Q&A pairs.
+
+Rules:
+- Map each interview answer to the form field label(s) it should fill.
+- Only map to TEXT fields — skip checkbox-type fields (Yes/No/Left/Right/Full/Modified etc.)
+- If a field label specifies a date format like (dd/mmm/yyyy), reformat the answer to match.
+- If an answer says "Not discussed during interview" or "Not applicable", skip it.
+- If no good match exists for an answer, omit it.
+- One answer may map to multiple fields (e.g. symptoms might fill both subjective findings and diagnosis).
+- Return ONLY a JSON array, no other text.
+
+Return format:
+[{"answerIndex": 0, "fieldIndex": 1, "formattedValue": "17/Mar/2025"}, ...]
+
+The "formattedValue" is optional — include it only when the answer needs reformatting (e.g. dates).
+If omitted, the raw answer text will be used.`;
+
+  const userPrompt = `Form field labels:\n${fieldLabels}\n\nInterview Q&A:\n${qaPairs}`;
+
+  try {
+    const completion = await azure.client.chat.completions.create({
+      model: azure.deployment,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt },
+      ],
+      max_completion_tokens: 2000,
+      temperature: 0,
+    });
+
+    const raw = completion.choices?.[0]?.message?.content?.trim() || "[]";
+    // Extract JSON from potential markdown code blocks
+    const jsonMatch = raw.match(/\[[\s\S]*\]/);
+    if (!jsonMatch) return [];
+
+    const parsed = JSON.parse(jsonMatch[0]) as Array<{
+      answerIndex: number;
+      fieldIndex: number;
+      formattedValue?: string;
+    }>;
+
+    // Validate and filter
+    return parsed.filter(
+      (m) =>
+        typeof m.answerIndex === "number" &&
+        typeof m.fieldIndex === "number" &&
+        m.answerIndex >= 0 &&
+        m.answerIndex < formAnswers.length &&
+        candidates.some((c) => c.index === m.fieldIndex),
+    );
+  } catch (err) {
+    console.warn("[fill-form-pdf] OpenAI mapping failed:", err);
+    return [];
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Step 3: Convert DI coordinates → FieldLocation[]
+// ---------------------------------------------------------------------------
+
+function buildFieldLocations(
+  mappings: Array<{ answerIndex: number; fieldIndex: number; formattedValue?: string }>,
+  candidates: TextFieldCandidate[],
+  formAnswers: { question: string; answer: string }[],
+  pages: DIPage[],
+): FieldLocation[] {
   const locations: FieldLocation[] = [];
+  const candidateMap = new Map(candidates.map((c) => [c.index, c]));
 
-  for (const kvp of result.keyValuePairs) {
-    const keyContent = kvp.key?.content?.trim();
-    if (!keyContent) continue;
+  for (const mapping of mappings) {
+    const candidate = candidateMap.get(mapping.fieldIndex);
+    if (!candidate) continue;
 
-    // Prefer value bounding region (where answer should go); fall back to key region
-    const valueBounds = kvp.value?.boundingRegions?.[0];
-    const keyBounds = kvp.key?.boundingRegions?.[0];
-    const bounds = valueBounds || keyBounds;
+    const answer = mapping.formattedValue || formAnswers[mapping.answerIndex]?.answer;
+    if (!answer?.trim()) continue;
+
+    // Use value bounds if available, otherwise key bounds
+    const bounds = candidate.valueBounds || candidate.keyBounds;
     if (!bounds?.polygon || bounds.polygon.length < 8) continue;
 
-    const pageInfo = result.pages.find((p) => p.pageNumber === bounds.pageNumber);
+    const pageInfo = pages.find((p) => p.pageNumber === bounds.pageNumber);
     if (!pageInfo) continue;
 
-    // DI uses inches by default; convert factor to points
-    const unitScale = (pageInfo.unit === "pixel") ? (72 / 96) : 72; // inches → points
+    const unitScale = pageInfo.unit === "pixel" ? 72 / 96 : 72; // inches → points
     const pageHeightPts = pageInfo.height * unitScale;
 
-    // Extract bounding box from polygon [x1,y1, x2,y2, x3,y3, x4,y4]
     const poly = bounds.polygon;
     const xs = [poly[0], poly[2], poly[4], poly[6]];
     const ys = [poly[1], poly[3], poly[5], poly[7]];
@@ -131,20 +244,20 @@ function parseKeyValuePairs(result: {
     const minY = Math.min(...ys);
     const maxY = Math.max(...ys);
 
-    // Convert from DI coords (top-left origin, inches) to PDF coords (bottom-left, points)
     let x = minX * unitScale;
-    let y = pageHeightPts - maxY * unitScale; // flip Y
+    let y = pageHeightPts - maxY * unitScale;
     let width = (maxX - minX) * unitScale;
     let height = (maxY - minY) * unitScale;
 
-    // If we used the key bounds (no value region found), offset below the key text
-    if (!valueBounds) {
+    // If using key bounds (no value region), place below the key
+    if (!candidate.valueBounds) {
       y -= height + 2;
-      width = Math.max(width, 200);
+      width = Math.max(width, 350);
+      height = Math.max(height, 40);
     }
 
     locations.push({
-      keyText: keyContent,
+      keyText: answer, // Store the ANSWER text (not the key) for the builder to draw
       pageIndex: bounds.pageNumber - 1,
       x,
       y,
@@ -225,8 +338,7 @@ export async function GET(request: NextRequest) {
     return res;
   }
 
-  // Fetch the stored PDF bytes from the invitation linked to this patient session.
-  // JOIN on physician_id + patient_email since patient_sessions has no invitation_id FK.
+  // Fetch the stored PDF bytes
   const pdfResult = await query<{
     form_pdf_data: Buffer | null;
     form_pdf_filename: string | null;
@@ -261,16 +373,46 @@ export async function GET(request: NextRequest) {
   const { form_pdf_data, form_pdf_filename } = pdfResult.rows[0];
 
   try {
-    // Analyze the PDF with Document Intelligence to detect field positions.
-    // This is best-effort; if it fails, we still get the appended response pages.
+    // Step 1: Analyze PDF layout with Document Intelligence
     let fieldLocations: FieldLocation[] = [];
     try {
-      fieldLocations = await analyzeFormFieldPositions(form_pdf_data!);
-      console.log(
-        `[fill-form-pdf] DI detected ${fieldLocations.length} key-value fields`,
-      );
+      const { pages, keyValuePairs } = await analyzeFormLayout(form_pdf_data!);
+      console.log(`[fill-form-pdf] DI detected ${keyValuePairs.length} KVPs on ${pages.length} pages`);
+
+      if (keyValuePairs.length > 0) {
+        // Filter to text-field candidates (skip selection marks / checkboxes)
+        const selectionValues = new Set([":selected:", ":unselected:"]);
+        const checkboxKeys = new Set(["yes", "no", "left", "right", "bilat.", "none", "full", "modified"]);
+
+        const candidates: TextFieldCandidate[] = [];
+        keyValuePairs.forEach((kvp, idx) => {
+          const keyText = kvp.key?.content?.trim() || "";
+          const valContent = kvp.value?.content?.trim() || "";
+          if (!keyText) return;
+          // Skip checkbox/radio fields
+          if (checkboxKeys.has(keyText.toLowerCase())) return;
+          if (selectionValues.has(valContent)) return;
+
+          candidates.push({
+            index: idx,
+            keyText,
+            pageNumber: kvp.key?.boundingRegions?.[0]?.pageNumber || 1,
+            valueBounds: kvp.value?.boundingRegions?.[0] || null,
+            keyBounds: kvp.key?.boundingRegions?.[0] || null,
+          });
+        });
+
+        console.log(`[fill-form-pdf] ${candidates.length} text-field candidates for AI mapping`);
+
+        // Step 2: Use OpenAI to map answers → fields
+        const mappings = await mapAnswersToFields(formAnswers, candidates);
+        console.log(`[fill-form-pdf] AI mapped ${mappings.length} answer→field pairs`);
+
+        // Step 3: Convert to FieldLocation[]
+        fieldLocations = buildFieldLocations(mappings, candidates, formAnswers, pages);
+      }
     } catch (diErr) {
-      console.warn("[fill-form-pdf] DI field analysis failed, using appended pages only", diErr);
+      console.warn("[fill-form-pdf] DI/AI field analysis failed, using appended pages only", diErr);
     }
 
     const filledBytes = await buildFilledFormPdf({
