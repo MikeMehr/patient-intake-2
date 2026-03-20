@@ -55,13 +55,15 @@ export default function CollapsibleSection({
 
   return (
     <div className="rounded-2xl border border-slate-200 bg-white/60 px-4 py-4">
-      <button
+      <div
         id={buttonId}
-        type="button"
+        role="button"
+        tabIndex={0}
         aria-expanded={open}
         aria-controls={contentId}
         onClick={() => setOpen((v) => !v)}
-        className="w-full text-left"
+        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setOpen((v) => !v); } }}
+        className="w-full text-left cursor-pointer"
       >
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0 space-y-1">
@@ -78,7 +80,7 @@ export default function CollapsibleSection({
           </div>
           {headerRight ? <div className="shrink-0">{headerRight}</div> : null}
         </div>
-      </button>
+      </div>
 
       <div
         id={contentId}

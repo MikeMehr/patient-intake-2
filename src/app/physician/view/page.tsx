@@ -4,7 +4,6 @@ import Image from "next/image";
 import { useEffect, useMemo, useRef, useState, Suspense, type PointerEvent as ReactPointerEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { PatientSession } from "@/lib/session-store";
-import { jsPDF } from "jspdf";
 import SessionKeepAlive from "@/components/auth/SessionKeepAlive";
 import CollapsibleSection from "@/components/CollapsibleSection";
 import { mergeDiagramSelectionsForDisplay, type DiagramSelectionInput } from "@/lib/body-diagram-display";
@@ -1699,6 +1698,7 @@ function PhysicianViewContent() {
     setRxSaving(true);
 
     try {
+      const { jsPDF } = await import("jspdf");
       const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
       const pageWidth = doc.internal.pageSize.getWidth();
       const pageHeight = doc.internal.pageSize.getHeight();

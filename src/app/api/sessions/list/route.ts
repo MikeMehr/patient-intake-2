@@ -114,10 +114,32 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // Determine which sessions have an available form PDF in patient_invitations.
+    let hasPdfFormCodes = new Set<string>();
+    if (sessionCodes.length > 0) {
+      try {
+        const pdfCheck = await query<{ session_code: string }>(
+          `SELECT DISTINCT ps.session_code
+           FROM patient_sessions ps
+           JOIN patient_invitations pi
+             ON pi.physician_id = ps.physician_id
+             AND LOWER(pi.patient_email) = LOWER(ps.patient_email)
+           WHERE ps.session_code = ANY($1::text[])
+             AND pi.form_pdf_data IS NOT NULL
+             AND pi.form_pdf_deleted_at IS NULL`,
+          [sessionCodes],
+        );
+        hasPdfFormCodes = new Set(pdfCheck.rows.map((r) => r.session_code));
+      } catch {
+        // Best-effort; omit hasPdfForm if query fails
+      }
+    }
+
     // Convert Date objects to ISO strings for JSON serialization
     const serializedSessions = sessions.map(s => ({
       ...s,
       patientId: patientIdByCode.get(s.sessionCode) || null,
+      hasPdfForm: hasPdfFormCodes.has(s.sessionCode),
       completedAt: s.completedAt.toISOString(),
       viewedAt: s.viewedAt?.toISOString(),
     }));

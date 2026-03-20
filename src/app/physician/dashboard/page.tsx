@@ -8,7 +8,7 @@ import SessionKeepAlive from "@/components/auth/SessionKeepAlive";
 import PasskeyEnrollmentBanner from "@/components/auth/PasskeyEnrollmentBanner";
 import CollapsibleSection from "@/components/CollapsibleSection";
 
-type PatientSessionWithChartLink = PatientSession & { patientId?: string | null };
+type PatientSessionWithChartLink = PatientSession & { patientId?: string | null; hasPdfForm?: boolean };
 type InvitationActivityStatus =
   | "sent"
   | "opened"
@@ -256,6 +256,30 @@ export default function PhysicianDashboard() {
 
   const handleViewSession = (sessionCode: string) => {
     router.push(`/physician/view?code=${sessionCode}`);
+  };
+
+  const handleDownloadFilledPdf = async (sessionCode: string) => {
+    try {
+      const res = await fetch(`/api/fill-form-pdf?code=${sessionCode}`);
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        alert(data.error || "Failed to download filled form PDF.");
+        return;
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      const disposition = res.headers.get("Content-Disposition") || "";
+      const match = disposition.match(/filename="([^"]+)"/);
+      a.href = url;
+      a.download = match?.[1] || "filled-form.pdf";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      alert("Failed to download filled form PDF. Please try again.");
+    }
   };
 
   const handleOpenPatientChart = (patientId: string) => {
@@ -1137,6 +1161,15 @@ export default function PhysicianDashboard() {
                                   >
                                     View
                                   </button>
+                                  {session.hasPdfForm && Array.isArray((session.history as any)?.formAnswers) && (session.history as any).formAnswers.length > 0 && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDownloadFilledPdf(session.sessionCode)}
+                                      className="text-emerald-600 hover:text-emerald-800 font-medium"
+                                    >
+                                      Filled PDF
+                                    </button>
+                                  )}
                                   {isUuid(pid) ? (
                                     <button
                                       type="button"
