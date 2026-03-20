@@ -3732,7 +3732,7 @@ export default function Home() {
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-slate-100 px-4 py-10 text-slate-900">
-      <main className="w-full max-w-5xl lg:max-w-7xl rounded-3xl border border-slate-200 bg-white/90 shadow-xl shadow-slate-100 backdrop-blur">
+      <main className="w-full max-w-5xl rounded-3xl border border-slate-200 bg-white/90 shadow-xl shadow-slate-100 backdrop-blur">
         <header className="border-b border-slate-100 px-8 py-6">
           <NextImage
             src="/LogoFinal.png"
@@ -3752,7 +3752,7 @@ export default function Home() {
           </h1>
         </header>
 
-        <section className="grid gap-8 px-8 py-8 lg:grid-cols-[1.2fr_0.8fr]">
+        <section className="px-8 py-8">
           <div className="space-y-6">
             {!hasPhysicianId && status === "idle" && (
               <div className="rounded-lg border-2 border-amber-300 bg-amber-50 p-4">
