@@ -11,8 +11,8 @@ import { getCurrentSession } from "@/lib/auth";
 import { getSession } from "@/lib/session-store";
 import { canAccessSessionInScope, loadSessionAccessScope } from "@/lib/session-access";
 import { query } from "@/lib/db";
-import { buildFilledFormPdf, sanitiseFilename } from "@/lib/fill-form-pdf";
-import type { FieldLocation } from "@/lib/fill-form-pdf";
+import { buildFilledFormPdf, sanitiseFilename, extractAcroTextFields } from "@/lib/fill-form-pdf";
+import type { FieldLocation, AcroFieldMapping } from "@/lib/fill-form-pdf";
 import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
 import { assertSafeOutboundUrl, assertSafeOperationLocation } from "@/lib/outbound-url";
 import { ensureProdEnv } from "@/lib/required-env";
@@ -207,6 +207,80 @@ If omitted, the raw answer text will be used.`;
 }
 
 // ---------------------------------------------------------------------------
+// Step 2b: Use Azure OpenAI to map answers → AcroForm field names
+// (used when the PDF has interactive AcroForm fields and DI is unavailable)
+// ---------------------------------------------------------------------------
+
+async function mapAnswersToAcroFields(
+  formAnswers: { question: string; answer: string }[],
+  acroFields: { name: string; tooltip: string }[],
+): Promise<AcroFieldMapping[]> {
+  if (acroFields.length === 0 || formAnswers.length === 0) return [];
+
+  const azure = getAzureOpenAIClient();
+
+  const fieldList = acroFields
+    .map((f, i) => `  ${i}. name="${f.name}" label="${f.tooltip}"`)
+    .join("\n");
+
+  const qaPairs = formAnswers
+    .map((qa, i) => `  ${i}. Q: ${qa.question}\n     A: ${qa.answer}`)
+    .join("\n");
+
+  const systemPrompt = `You are mapping patient interview answers into an interactive PDF form's fillable fields.
+You will receive a list of PDF form fields (each with an internal name and a human-readable label) and a list of interview Q&A pairs.
+
+Rules:
+- Match each Q&A answer to the most appropriate form field.
+- Prefer matching on the human-readable label; fall back to the internal name.
+- Only map answers that are clearly relevant to the field — do not guess wildly.
+- If an answer says "Not discussed" or "Not applicable", skip it.
+- Dates: reformat to match common medical form conventions (e.g. YYYY-MM-DD or DD/MMM/YYYY).
+- A single answer may fill multiple fields if they ask for the same information.
+- Return ONLY a JSON array, no other text.
+
+Return format:
+[{"fieldName": "Text1", "answer": "value to fill"}, ...]
+
+Use the exact internal field name (the "name" attribute, not the label).`;
+
+  const userPrompt = `PDF form fields:\n${fieldList}\n\nPatient interview Q&A:\n${qaPairs}`;
+
+  try {
+    const completion = await azure.client.chat.completions.create({
+      model: azure.deployment,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt },
+      ],
+      max_completion_tokens: 2000,
+      temperature: 0,
+    });
+
+    const raw = completion.choices?.[0]?.message?.content?.trim() || "[]";
+    const jsonMatch = raw.match(/\[[\s\S]*\]/);
+    if (!jsonMatch) return [];
+
+    const parsed = JSON.parse(jsonMatch[0]) as Array<{
+      fieldName: string;
+      answer: string;
+    }>;
+
+    const validNames = new Set(acroFields.map((f) => f.name));
+    return parsed.filter(
+      (m) =>
+        typeof m.fieldName === "string" &&
+        typeof m.answer === "string" &&
+        m.answer.trim() !== "" &&
+        validNames.has(m.fieldName),
+    );
+  } catch (err) {
+    console.warn("[fill-form-pdf] AcroForm OpenAI mapping failed:", err);
+    return [];
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Step 3: Convert DI coordinates → FieldLocation[]
 // ---------------------------------------------------------------------------
 
@@ -373,46 +447,63 @@ export async function GET(request: NextRequest) {
   const { form_pdf_data, form_pdf_filename } = pdfResult.rows[0];
 
   try {
-    // Step 1: Analyze PDF layout with Document Intelligence
-    let fieldLocations: FieldLocation[] = [];
+    // Step 1a: Check for interactive AcroForm fields and use AI to map answers → fields.
+    // This path works even without Azure Document Intelligence.
+    let acroFieldMappings: AcroFieldMapping[] = [];
     try {
-      const { pages, keyValuePairs } = await analyzeFormLayout(form_pdf_data!);
-      console.log(`[fill-form-pdf] DI detected ${keyValuePairs.length} KVPs on ${pages.length} pages`);
-
-      if (keyValuePairs.length > 0) {
-        // Filter to text-field candidates (skip selection marks / checkboxes)
-        const selectionValues = new Set([":selected:", ":unselected:"]);
-        const checkboxKeys = new Set(["yes", "no", "left", "right", "bilat.", "none", "full", "modified"]);
-
-        const candidates: TextFieldCandidate[] = [];
-        keyValuePairs.forEach((kvp, idx) => {
-          const keyText = kvp.key?.content?.trim() || "";
-          const valContent = kvp.value?.content?.trim() || "";
-          if (!keyText) return;
-          // Skip checkbox/radio fields
-          if (checkboxKeys.has(keyText.toLowerCase())) return;
-          if (selectionValues.has(valContent)) return;
-
-          candidates.push({
-            index: idx,
-            keyText,
-            pageNumber: kvp.key?.boundingRegions?.[0]?.pageNumber || 1,
-            valueBounds: kvp.value?.boundingRegions?.[0] || null,
-            keyBounds: kvp.key?.boundingRegions?.[0] || null,
-          });
-        });
-
-        console.log(`[fill-form-pdf] ${candidates.length} text-field candidates for AI mapping`);
-
-        // Step 2: Use OpenAI to map answers → fields
-        const mappings = await mapAnswersToFields(formAnswers, candidates);
-        console.log(`[fill-form-pdf] AI mapped ${mappings.length} answer→field pairs`);
-
-        // Step 3: Convert to FieldLocation[]
-        fieldLocations = buildFieldLocations(mappings, candidates, formAnswers, pages);
+      const acroFields = await extractAcroTextFields(form_pdf_data!);
+      console.log(`[fill-form-pdf] AcroForm text fields detected: ${acroFields.length}`);
+      if (acroFields.length > 0) {
+        acroFieldMappings = await mapAnswersToAcroFields(formAnswers, acroFields);
+        console.log(`[fill-form-pdf] AI mapped ${acroFieldMappings.length} answers to AcroForm fields`);
       }
-    } catch (diErr) {
-      console.warn("[fill-form-pdf] DI/AI field analysis failed, using appended pages only", diErr);
+    } catch (acroErr) {
+      console.warn("[fill-form-pdf] AcroForm field extraction/mapping failed:", acroErr);
+    }
+
+    // Step 1b: Analyze flat PDF layout with Document Intelligence (for non-AcroForm PDFs).
+    // Only run if AcroForm mapping found no fields (avoids double-billing DI calls).
+    let fieldLocations: FieldLocation[] = [];
+    if (acroFieldMappings.length === 0) {
+      try {
+        const { pages, keyValuePairs } = await analyzeFormLayout(form_pdf_data!);
+        console.log(`[fill-form-pdf] DI detected ${keyValuePairs.length} KVPs on ${pages.length} pages`);
+
+        if (keyValuePairs.length > 0) {
+          // Filter to text-field candidates (skip selection marks / checkboxes)
+          const selectionValues = new Set([":selected:", ":unselected:"]);
+          const checkboxKeys = new Set(["yes", "no", "left", "right", "bilat.", "none", "full", "modified"]);
+
+          const candidates: TextFieldCandidate[] = [];
+          keyValuePairs.forEach((kvp, idx) => {
+            const keyText = kvp.key?.content?.trim() || "";
+            const valContent = kvp.value?.content?.trim() || "";
+            if (!keyText) return;
+            // Skip checkbox/radio fields
+            if (checkboxKeys.has(keyText.toLowerCase())) return;
+            if (selectionValues.has(valContent)) return;
+
+            candidates.push({
+              index: idx,
+              keyText,
+              pageNumber: kvp.key?.boundingRegions?.[0]?.pageNumber || 1,
+              valueBounds: kvp.value?.boundingRegions?.[0] || null,
+              keyBounds: kvp.key?.boundingRegions?.[0] || null,
+            });
+          });
+
+          console.log(`[fill-form-pdf] ${candidates.length} text-field candidates for AI mapping`);
+
+          // Step 2: Use OpenAI to map answers → DI fields
+          const mappings = await mapAnswersToFields(formAnswers, candidates);
+          console.log(`[fill-form-pdf] AI mapped ${mappings.length} answer→DI field pairs`);
+
+          // Step 3: Convert to FieldLocation[]
+          fieldLocations = buildFieldLocations(mappings, candidates, formAnswers, pages);
+        }
+      } catch (diErr) {
+        console.warn("[fill-form-pdf] DI/AI field analysis failed, using appended pages only", diErr);
+      }
     }
 
     const filledBytes = await buildFilledFormPdf({
@@ -424,6 +515,7 @@ export async function GET(request: NextRequest) {
         originalFilename: form_pdf_filename,
       },
       fieldLocations,
+      acroFieldMappings,
     });
 
     const baseName = form_pdf_filename

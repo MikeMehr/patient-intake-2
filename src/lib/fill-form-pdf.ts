@@ -16,6 +16,8 @@ import {
   PDFTextField,
   PDFCheckBox,
   PDFRadioGroup,
+  PDFName,
+  PDFString,
   rgb,
   StandardFonts,
 } from "pdf-lib";
@@ -98,6 +100,50 @@ function findBestMatch(
 }
 
 /**
+ * Extract all text-type AcroForm fields from a PDF, returning their names and
+ * any human-readable alternative text (tooltip / TU entry).
+ * Returns an empty array if the PDF has no AcroForm or no text fields.
+ */
+export async function extractAcroTextFields(
+  pdfBytes: Buffer,
+): Promise<{ name: string; tooltip: string }[]> {
+  try {
+    const pdfDoc = await PDFDocument.load(pdfBytes, { ignoreEncryption: true });
+    const form = pdfDoc.getForm();
+    const fields = form.getFields();
+    const results: { name: string; tooltip: string }[] = [];
+    for (const field of fields) {
+      if (!(field instanceof PDFTextField)) continue;
+      const name = field.getName();
+      // Try to get the human-readable alternative text (TU / tooltip entry)
+      let tooltip = name;
+      try {
+        const tuEntry = field.acroField.dict.lookup(PDFName.of("TU"));
+        if (tuEntry instanceof PDFString) {
+          const decoded = tuEntry.decodeText();
+          if (decoded?.trim()) tooltip = decoded.trim();
+        }
+      } catch {
+        // No tooltip — fall back to field name
+      }
+      results.push({ name, tooltip });
+    }
+    return results;
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Pre-computed AI mapping of AcroForm field name → answer text.
+ * When provided, takes priority over the built-in fuzzy matcher.
+ */
+export interface AcroFieldMapping {
+  fieldName: string;
+  answer: string;
+}
+
+/**
  * Build a filled PDF from the original form bytes and the patient's answers.
  */
 export async function buildFilledFormPdf(params: {
@@ -105,8 +151,11 @@ export async function buildFilledFormPdf(params: {
   formAnswers: FormAnswer[];
   metadata: FilledFormMetadata;
   fieldLocations?: FieldLocation[];
+  /** AI-computed field→answer mappings for AcroForm PDFs. When supplied, the
+   *  built-in fuzzy matcher is skipped and these are used directly. */
+  acroFieldMappings?: AcroFieldMapping[];
 }): Promise<Uint8Array> {
-  const { pdfBytes, formAnswers, metadata, fieldLocations } = params;
+  const { pdfBytes, formAnswers, metadata, fieldLocations, acroFieldMappings } = params;
 
   // --- 1. Load the original PDF ---
   let pdfDoc: PDFDocument;
@@ -123,23 +172,37 @@ export async function buildFilledFormPdf(params: {
     const fields = form.getFields();
 
     if (fields.length > 0) {
+      // Build a fast lookup from field name → answer when AI mappings are provided
+      const aiMap = new Map<string, string>(
+        (acroFieldMappings || []).map((m) => [m.fieldName, m.answer]),
+      );
+      const useAiMap = aiMap.size > 0;
+
       for (const field of fields) {
         const fieldName = field.getName();
-        const match = findBestMatch(fieldName, formAnswers);
-        if (!match) continue;
+
+        // Resolve answer: prefer AI mapping, fall back to fuzzy match
+        let answerText: string | null = null;
+        if (useAiMap) {
+          answerText = aiMap.get(fieldName) ?? null;
+        } else {
+          const match = findBestMatch(fieldName, formAnswers);
+          answerText = match?.answer ?? null;
+        }
+        if (!answerText) continue;
 
         try {
           if (field instanceof PDFTextField) {
-            field.setText(match.answer);
+            field.setText(answerText);
           } else if (field instanceof PDFCheckBox) {
-            const val = match.answer.trim().toLowerCase();
+            const val = answerText.trim().toLowerCase();
             if (val === "yes" || val === "true" || val === "checked") {
               field.check();
             }
           } else if (field instanceof PDFRadioGroup) {
             // Best-effort: try to select an option whose label matches the answer
             const options = field.getOptions();
-            const answerLower = match.answer.trim().toLowerCase();
+            const answerLower = answerText.trim().toLowerCase();
             const matchedOption = options.find((o) =>
               o.toLowerCase().includes(answerLower) || answerLower.includes(o.toLowerCase()),
             );
