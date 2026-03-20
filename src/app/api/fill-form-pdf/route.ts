@@ -177,7 +177,6 @@ If omitted, the raw answer text will be used.`;
         { role: "user", content: userPrompt },
       ],
       max_completion_tokens: 2000,
-      temperature: 0,
     });
 
     const raw = completion.choices?.[0]?.message?.content?.trim() || "[]";
@@ -254,7 +253,6 @@ Use the exact internal field name (the "name" attribute, not the label).`;
         { role: "user", content: userPrompt },
       ],
       max_completion_tokens: 2000,
-      temperature: 0,
     });
 
     const raw = completion.choices?.[0]?.message?.content?.trim() || "[]";
