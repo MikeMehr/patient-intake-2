@@ -105,6 +105,7 @@ export default function PhysicianTranscriptionPage() {
   const [activeWorkflowTab, setActiveWorkflowTab] = useState<"capture" | "review" | "ask_ai">("capture");
 
   const [isRecording, setIsRecording] = useState(false);
+  const [isStartingRecording, setIsStartingRecording] = useState(false);
   const [recordingError, setRecordingError] = useState<string | null>(null);
   const [transcriptLoading, setTranscriptLoading] = useState(false);
   const [transcript, setTranscript] = useState("");
@@ -491,6 +492,7 @@ export default function PhysicianTranscriptionPage() {
         if (e.data && e.data.size > 0) mediaChunksRef.current.push(e.data);
       };
       recorder.start(250);
+      setIsStartingRecording(false);
       setIsRecording(true);
       timerIntervalRef.current = window.setInterval(() => {
         setRecordingElapsed((prev) => prev + 1);
@@ -504,6 +506,7 @@ export default function PhysicianTranscriptionPage() {
         }
       }, 55_000);
     } catch (err) {
+      setIsStartingRecording(false);
       setRecordingError(err instanceof Error ? err.message : "Unable to start recording.");
     }
   }
@@ -524,6 +527,7 @@ export default function PhysicianTranscriptionPage() {
         if (e.data && e.data.size > 0) mediaChunksRef.current.push(e.data);
       };
       recorder.start(250);
+      setIsStartingRecording(false);
       setIsRecording(true);
       timerIntervalRef.current = window.setInterval(() => {
         setRecordingElapsed((prev) => prev + 1);
@@ -538,6 +542,7 @@ export default function PhysicianTranscriptionPage() {
         }
       }, 55_000);
     } catch (err) {
+      setIsStartingRecording(false);
       setRecordingError(err instanceof Error ? err.message : "Unable to start recording.");
     }
   }
@@ -1027,7 +1032,7 @@ export default function PhysicianTranscriptionPage() {
                             type="button"
                             onClick={stopRecording}
                             disabled={transcriptLoading}
-                            className="px-4 py-2 text-sm font-medium text-white rounded-lg bg-red-600 hover:bg-red-700 disabled:bg-slate-400"
+                            className="gi-animate-mic-pulse px-4 py-2 text-sm font-medium text-white rounded-lg bg-red-600 hover:bg-red-700 disabled:bg-slate-400"
                           >
                             Stop transcription
                           </button>
@@ -1039,11 +1044,11 @@ export default function PhysicianTranscriptionPage() {
                         <>
                           <button
                             type="button"
-                            onClick={resumeRecording}
-                            disabled={transcriptLoading}
-                            className="px-4 py-2 text-sm font-medium text-white rounded-lg bg-slate-900 hover:bg-slate-800 disabled:bg-slate-400"
+                            onClick={() => { setIsStartingRecording(true); resumeRecording(); }}
+                            disabled={transcriptLoading || isStartingRecording}
+                            className={`px-4 py-2 text-sm font-medium text-white rounded-lg disabled:bg-slate-400 ${isStartingRecording ? "bg-orange-500" : "bg-slate-900 hover:bg-slate-800"}`}
                           >
-                            Resume
+                            {isStartingRecording ? "Starting..." : "Resume"}
                           </button>
                           <button
                             type="button"
@@ -1062,11 +1067,11 @@ export default function PhysicianTranscriptionPage() {
                       ) : (
                         <button
                           type="button"
-                          onClick={() => { setRecordingElapsed(0); startRecording(); }}
-                          disabled={transcriptLoading}
-                          className="px-4 py-2 text-sm font-medium text-white rounded-lg bg-slate-900 hover:bg-slate-800 disabled:bg-slate-400"
+                          onClick={() => { setRecordingElapsed(0); setIsStartingRecording(true); startRecording(); }}
+                          disabled={transcriptLoading || isStartingRecording}
+                          className={`px-4 py-2 text-sm font-medium text-white rounded-lg disabled:bg-slate-400 ${isStartingRecording ? "bg-orange-500" : "bg-slate-900 hover:bg-slate-800"}`}
                         >
-                          Start transcription
+                          {isStartingRecording ? "Starting..." : "Start transcription"}
                         </button>
                       )}
                       {transcriptLoading && <span className="text-sm text-slate-600">Transcribing...</span>}
