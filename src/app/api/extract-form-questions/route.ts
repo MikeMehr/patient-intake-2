@@ -164,8 +164,8 @@ export async function POST(request: Request) {
     return res;
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    console.error("[extract-form-questions] Processing failed");
-    logDebug("[extract-form-questions] Error details", { errorMessage });
+    // Log the actual error message in all environments so Azure App Service logs capture it
+    console.error("[extract-form-questions] Processing failed:", errorMessage);
     status = 502;
     const res = NextResponse.json(
       {

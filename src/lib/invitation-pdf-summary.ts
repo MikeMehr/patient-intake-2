@@ -109,7 +109,8 @@ async function pollDocumentIntelligenceResult(operationLocation: string, apiKey:
       return content;
     }
     if (status === "failed") {
-      throw new Error("Azure Document Intelligence extraction failed.");
+      const errDetail = JSON.stringify((payload as Record<string, unknown>).error ?? payload);
+      throw new Error(`Azure Document Intelligence extraction failed: ${errDetail}`);
     }
     await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
   }
@@ -134,7 +135,9 @@ export async function extractPdfTextWithAzureDocumentIntelligence(file: File): P
   });
 
   if (!startResponse.ok) {
-    throw new Error(`Azure Document Intelligence request failed: HTTP ${startResponse.status}`);
+    let body = "";
+    try { body = await startResponse.text(); } catch { /* ignore */ }
+    throw new Error(`Azure Document Intelligence request failed: HTTP ${startResponse.status} ${body}`.trim());
   }
 
   const operationLocation =
