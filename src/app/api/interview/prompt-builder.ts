@@ -199,7 +199,7 @@ OUTPUT CONTRACT:
   - When asking multiple questions in a single turn, number each question (1., 2., 3., etc.) and place each on its own line for clarity. Maximum 3 questions per turn. For example: "1. How severe is the pain on a scale of 0-10?\n2. Does it stay in one place or spread elsewhere?\n3. Have you noticed any other symptoms?"
   - Keep the rationale brief and clinical.
   - Set "requiresPhotoUpload": true only when the question explicitly asks for an image upload.
-  - Set "requiresLocationMarking": true when the question asks the patient to mark pain location on a body diagram.
+  - Set "requiresLocationMarking": true when the question asks the patient to mark the location of a symptom or finding (pain, lump, mass, swelling, rash, etc.) on a body diagram.
   - Optionally include "newComplaints" (string array) when the patient's last message introduces a clearly NEW, affirmatively stated complaint not already listed in active or pending complaints. Only include complaints the patient affirms they currently have. Do NOT include: denied symptoms ("no chest pain"), symptoms reported about others, resolved conditions, or vague references. Omit "newComplaints" entirely if nothing new was introduced.
 - If providing a summary: {"type":"summary","positives":["..."],"negatives":["..."],"summary":"...","investigations":["..."],"assessment":"...","plan":["..."],"progress":{"questionsAsked":N,"approxTotalQuestions":N}}
   - Preserve uncertainty when history is incomplete.

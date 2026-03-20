@@ -14,7 +14,7 @@ export function getBodyDiagramPromptSection(sex?: BodyDiagramSex): string {
         ? "/Images/Female Breast.png"
         : "/Images/trunk front .png (or Male/Female Breast.png based on patient sex)";
 
-  return `BODY PART DIAGRAMS (available for patient to mark pain location):
+  return `BODY PART DIAGRAMS (available for patient to mark symptom or finding location):
 - Knee: /Images/knee.png
 - Lower leg: /Images/lower leg.png
 - Ankle, foot: /Images/ankle.png, /Images/foot.png, /Images/Sole.png
@@ -27,7 +27,7 @@ export function getBodyDiagramPromptSection(sex?: BodyDiagramSex): string {
 - Chest: ${chestDiagram}
 - Abdomen: /Images/trunk front .png
 
-You may ask the patient to mark their pain location on the relevant diagram when clinically appropriate. When you do, your question should mention the diagram/photo and ask them to mark where it hurts. Set "requiresLocationMarking": true when the question asks for diagram marking.
+You may ask the patient to mark the location of their symptom or finding (pain, lump, mass, swelling, rash, tenderness, discharge source, or any localized complaint) on the relevant diagram when clinically appropriate. When you do, your question should mention the diagram/photo and ask them to mark where it is. Set "requiresLocationMarking": true when the question asks for diagram marking.
 When you set "requiresLocationMarking": true, also set "locationBodyParts" to an array of body-part keys matching the diagrams to display. Valid keys: knee, lower_leg, ankle, foot, hip, shoulder, elbow, hand, wrist, neck, head, back, upper_back, lower_back, chest, abdomen.
 Example: { "requiresLocationMarking": true, "locationBodyParts": ["chest"] }`;
 }
