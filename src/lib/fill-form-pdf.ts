@@ -241,6 +241,17 @@ export async function buildFilledFormPdf(params: {
       const lineHeight = fontSize * 1.2;
       const maxWidth = loc.width - 4;
 
+      // Erase any existing content in the target area before writing
+      targetPage.drawRectangle({
+        x: loc.x,
+        y: loc.y,
+        width: loc.width,
+        height: loc.height,
+        color: rgb(1, 1, 1),       // white fill
+        borderColor: rgb(0.82, 0.87, 0.93),
+        borderWidth: 0.4,
+      });
+
       // Wrap text to fit within the field width
       const words = answer.split(" ");
       const lines: string[] = [];

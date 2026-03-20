@@ -472,6 +472,21 @@ export async function GET(request: NextRequest) {
           const selectionValues = new Set([":selected:", ":unselected:"]);
           const checkboxKeys = new Set(["yes", "no", "left", "right", "bilat.", "none", "full", "modified"]);
 
+          /**
+           * Returns true when DI's detected value is "real" content the physician
+           * already typed (e.g. a name, a valid date).  We skip those fields to avoid
+           * overlaying patient-interview answers on top of intentionally pre-filled data.
+           * Values like "undefined/undefined/", blank strings, or checkbox marks are
+           * treated as empty so we DO fill them.
+           */
+          function hasRealContent(val: string): boolean {
+            if (!val || !val.trim()) return false;
+            const lower = val.toLowerCase().trim();
+            if (lower.includes("undefined")) return false;
+            if (lower === "n/a" || lower === "na" || lower === "none" || lower === "-") return false;
+            return true;
+          }
+
           const candidates: TextFieldCandidate[] = [];
           keyValuePairs.forEach((kvp, idx) => {
             const keyText = kvp.key?.content?.trim() || "";
@@ -480,6 +495,10 @@ export async function GET(request: NextRequest) {
             // Skip checkbox/radio fields
             if (checkboxKeys.has(keyText.toLowerCase())) return;
             if (selectionValues.has(valContent)) return;
+            // Skip fields that are already filled with meaningful content —
+            // overlaying interview answers on top of real existing data creates
+            // unreadable overlapping text.
+            if (hasRealContent(valContent)) return;
 
             candidates.push({
               index: idx,
