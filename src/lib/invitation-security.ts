@@ -600,6 +600,28 @@ export async function clearInactiveInvitationSummaries(): Promise<number> {
   return result.rowCount ?? 0;
 }
 
+/**
+ * NULL out form_pdf_data for invitations that have been revoked or expired
+ * (with a 72-hour grace period so physicians can still download shortly after
+ * a patient token expires). The hard DELETE in runCleanup() will remove the
+ * row — and any remaining bytes — 24 hours after expiry/revocation.
+ */
+export async function clearExpiredFormPdfData(): Promise<number> {
+  const result = await query(
+    `UPDATE patient_invitations
+     SET form_pdf_data       = NULL,
+         form_pdf_filename   = NULL,
+         form_pdf_deleted_at = COALESCE(form_pdf_deleted_at, NOW())
+     WHERE form_pdf_deleted_at IS NULL
+       AND form_pdf_data IS NOT NULL
+       AND (
+         (revoked_at IS NOT NULL AND revoked_at < NOW() - INTERVAL '72 hours')
+         OR (expires_at IS NOT NULL AND expires_at < NOW() - INTERVAL '72 hours')
+       )`,
+  );
+  return result.rowCount ?? 0;
+}
+
 export function maskEmail(email: string): string {
   const [local, domain] = email.split("@");
   if (!local || !domain) return email;

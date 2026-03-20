@@ -366,6 +366,8 @@ function PhysicianViewContent() {
   const [formAnswers, setFormAnswers] = useState<{ question: string; answer: string }[] | null>(null);
   const [formAnswersLoading, setFormAnswersLoading] = useState(false);
   const [formAnswersError, setFormAnswersError] = useState<string | null>(null);
+  const [filledPdfLoading, setFilledPdfLoading] = useState(false);
+  const [filledPdfError, setFilledPdfError] = useState<string | null>(null);
   const rxSignatureCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const rxSignatureDrawingRef = useRef(false);
 
@@ -751,6 +753,35 @@ function PhysicianViewContent() {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+  };
+
+  const handleDownloadFilledPdf = async () => {
+    if (!sessionCode || !formAnswers || formAnswers.length === 0) return;
+    setFilledPdfLoading(true);
+    setFilledPdfError(null);
+    try {
+      const res = await fetch(`/api/fill-form-pdf?code=${encodeURIComponent(sessionCode)}`);
+      if (!res.ok) {
+        const payload = await res.json().catch(() => ({})) as { error?: string };
+        throw new Error(payload.error || "Failed to generate filled PDF.");
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      const disposition = res.headers.get("content-disposition") || "";
+      const match = disposition.match(/filename="([^"]+)"/);
+      const patientName = session?.patientName || "patient";
+      a.download = match?.[1] || `filled-form-${patientName.replace(/\s+/g, "-").toLowerCase()}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setFilledPdfError(err instanceof Error ? err.message : "Unable to generate filled PDF.");
+    } finally {
+      setFilledPdfLoading(false);
+    }
   };
 
   const [reviewing, setReviewing] = useState(false);
@@ -2443,12 +2474,23 @@ function PhysicianViewContent() {
                   defaultOpen={false}
                   headerRight={
                     formAnswers && formAnswers.length > 0 ? (
-                      <button
-                        onClick={(e) => { e.stopPropagation(); handleDownloadFormAnswers(); }}
-                        className="px-3 py-1.5 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50"
-                      >
-                        Download
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleDownloadFormAnswers(); }}
+                          className="px-3 py-1.5 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50"
+                          title="Download as plain text"
+                        >
+                          .txt
+                        </button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); void handleDownloadFilledPdf(); }}
+                          disabled={filledPdfLoading}
+                          className="px-3 py-1.5 text-sm font-medium text-white bg-slate-700 border border-slate-700 rounded-lg hover:bg-slate-800 disabled:opacity-50"
+                          title="Download filled PDF form"
+                        >
+                          {filledPdfLoading ? "Generating…" : "Filled PDF"}
+                        </button>
+                      </div>
                     ) : undefined
                   }
                 >
@@ -2486,6 +2528,12 @@ function PhysicianViewContent() {
                       >
                         Retry
                       </button>
+                    </div>
+                  )}
+
+                  {filledPdfError && (
+                    <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 mb-3">
+                      <p className="text-sm text-amber-800">{filledPdfError}</p>
                     </div>
                   )}
 

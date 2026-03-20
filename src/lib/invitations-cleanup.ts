@@ -2,6 +2,7 @@ import { query } from "@/lib/db";
 import {
   clearExpiredInvitationSummaries,
   clearInactiveInvitationSummaries,
+  clearExpiredFormPdfData,
 } from "@/lib/invitation-security";
 
 const DEFAULT_INTERVAL_MINUTES = 15;
@@ -14,6 +15,7 @@ async function runCleanup() {
   try {
     await clearExpiredInvitationSummaries();
     await clearInactiveInvitationSummaries();
+    await clearExpiredFormPdfData();
 
     await query(
       `DELETE FROM patient_invitations

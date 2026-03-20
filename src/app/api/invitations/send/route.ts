@@ -174,6 +174,14 @@ export async function POST(request: NextRequest) {
     const retainInvitationLink =
       process.env.RETAIN_INVITATION_LINKS === "true" || process.env.NODE_ENV === "development";
 
+    // Capture form PDF bytes before summarization (File.arrayBuffer() is safe to call multiple times)
+    let formPdfBytes: Buffer | null = null;
+    let formPdfFilename: string | null = null;
+    if (formFile) {
+      formPdfBytes = Buffer.from(await formFile.arrayBuffer());
+      formPdfFilename = formFile.name;
+    }
+
     const hasUploadedPdf =
       Boolean(labReportFile) || Boolean(previousLabReportFile) || Boolean(formFile);
     let uploadSummaries: InvitationUploadSummaries = {
@@ -222,9 +230,11 @@ export async function POST(request: NextRequest) {
              previous_lab_report_summary,
              form_summary,
              summary_expires_at,
-             summary_deleted_at
+             summary_deleted_at,
+             form_pdf_data,
+             form_pdf_filename
            )
-          VALUES ($1, $2, $3, $4::date, $5, $6, $7, $7, NOW(), $8, $9, $10, $11, $12, $13, NULL)
+          VALUES ($1, $2, $3, $4::date, $5, $6, $7, $7, NOW(), $8, $9, $10, $11, $12, $13, NULL, $14, $15)
            RETURNING id`,
           [
             physicianId,
@@ -240,6 +250,8 @@ export async function POST(request: NextRequest) {
             uploadSummaries.previousLabReportSummary,
             uploadSummaries.formSummary,
             summaryExpiresAt,
+            formPdfBytes,
+            formPdfFilename,
           ],
         );
         const invitationId = invitationResult.rows[0]?.id || null;
