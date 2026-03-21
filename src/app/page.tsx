@@ -616,6 +616,7 @@ export default function Home() {
   const [addingToMessageIndex, setAddingToMessageIndex] = useState<number | null>(null);
   const [addingContent, setAddingContent] = useState<string>("");
   const [showBodyDiagram, setShowBodyDiagram] = useState(false);
+  const [diagramUnmarkedWarning, setDiagramUnmarkedWarning] = useState(false);
   const [selectedBodyParts, setSelectedBodyParts] = useState<Array<{ part: string; side?: "left" | "right" | "both" }>>([]);
   const [selectedDiagramMarkers, setSelectedDiagramMarkers] = useState<DiagramMarkerSelection[]>([]);
   const selectedDiagramMarkersRef = useRef<DiagramMarkerSelection[]>([]);
@@ -2606,6 +2607,17 @@ export default function Home() {
       setShowSubmitToast(false);
       return;
     }
+
+    // Warn once if the diagram is visible but no markers have been placed.
+    // Second submit bypasses the warning so the patient is never truly blocked.
+    if (showBodyDiagram && selectedDiagramMarkersRef.current.length === 0 && !diagramUnmarkedWarning) {
+      setDiagramUnmarkedWarning(true);
+      setIsSubmittingResponse(false);
+      setShowSubmitToast(false);
+      return;
+    }
+    setDiagramUnmarkedWarning(false);
+
     setLastSubmittedDraft(currentResponse);
 
     if (trimmed.length > 1000) {
@@ -3635,7 +3647,12 @@ export default function Home() {
         );
       } else {
         // Hide diagram unless the assistant is asking location.
+        // Also clear parts and markers so stale data from a previous turn is not
+        // submitted with a future answer.
         setShowBodyDiagram(false);
+        setSelectedBodyParts([]);
+        setSelectedDiagramMarkersWithRef([]);
+        setDiagramUnmarkedWarning(false);
       }
       
       setStatus("awaitingPatient");
@@ -5080,6 +5097,11 @@ export default function Home() {
                       </div>
                     </div>
                     {/* Body part diagrams - shown below buttons, side by side if multiple */}
+                    {diagramUnmarkedWarning && showBodyDiagram && (
+                      <div className="mt-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-2.5 text-sm text-amber-800">
+                        Please tap the diagram to mark where you feel the pain, then press <strong>Done</strong>. Or submit again to skip.
+                      </div>
+                    )}
                     {showBodyDiagram && selectedBodyParts.length > 0 && (
                       <div className="mt-4 mb-4 flex flex-wrap justify-center gap-4 z-10 relative">
                         {selectedBodyParts.map((bodyPart, index) => {
@@ -5096,6 +5118,7 @@ export default function Home() {
                             sex={sex === "female" || sex === "male" ? sex : undefined}
                             markers={markerSelection?.markers || []}
                             onMarkerAdd={({ part, side, marker }) => {
+                              setDiagramUnmarkedWarning(false);
                               let nextSelections: DiagramMarkerSelection[] = [];
                               setSelectedDiagramMarkersWithRef((prev) => {
                                 const key = getDiagramMarkerKey(part, side);

@@ -137,6 +137,20 @@ export function detectBodyParts(text: string): BodyPartInfo[] {
     detected.push({ part: "head", name: "head" });
   }
 
+  // Jaw / TMJ (map to head diagram)
+  if (lowerText.match(/\b(jaw|jawbone|tmj|mandible)\b/)) {
+    if (!detected.some((d) => d.part === "head")) {
+      detected.push({ part: "head", name: "head" });
+    }
+  }
+
+  // Ear / eye / temple / forehead (map to head diagram)
+  if (lowerText.match(/\b(ear|ears|eardrum|earache|eye|eyes|eyelid|temple|temples|forehead)\b/)) {
+    if (!detected.some((d) => d.part === "head")) {
+      detected.push({ part: "head", name: "head" });
+    }
+  }
+
   // Chest (include breast and anterior-neck phrasing for trunk-front diagram)
   if (
     lowerText.match(/\b(chest|breast|breasts|breastbone|sternum)\b/) ||
@@ -145,9 +159,61 @@ export function detectBodyParts(text: string): BodyPartInfo[] {
     detected.push({ part: "chest", name: "chest" });
   }
 
+  // Ribs / ribcage (map to chest diagram)
+  if (lowerText.match(/\b(rib|ribs|ribcage|rib\s*cage|costal)\b/)) {
+    if (!detected.some((d) => d.part === "chest")) {
+      detected.push({ part: "chest", name: "chest" });
+    }
+  }
+
   // Abdomen
   if (lowerText.match(/\b(abdomen|abdominal|stomach|belly)\b/)) {
     detected.push({ part: "abdomen", name: "abdomen" });
+  }
+
+  // Pelvis / pelvic (map to abdomen — often GI/GYN in context)
+  if (lowerText.match(/\b(pelvis|pelvic|pubic)\b/)) {
+    if (!detected.some((d) => d.part === "abdomen")) {
+      detected.push({ part: "abdomen", name: "abdomen" });
+    }
+  }
+
+  // Groin / buttock / glute (map to hip diagram)
+  if (lowerText.match(/\b(groin|buttock|buttocks|glute|glutes|gluteal)\b/)) {
+    const side = lowerText.includes("right") ? "right" : lowerText.includes("left") ? "left" : undefined;
+    if (!detected.some((d) => d.part === "hip")) {
+      detected.push({ part: "hip", name: "hip", side });
+    }
+  }
+
+  // Finger / thumb / knuckle (map to hand diagram)
+  if (lowerText.match(/\b(finger|fingers|thumb|thumbs|knuckle|knuckles|fingertip|fingertips)\b/)) {
+    const side = lowerText.includes("right") ? "right" : lowerText.includes("left") ? "left" : undefined;
+    if (!detected.some((d) => d.part === "hand" || d.part === "wrist")) {
+      detected.push({ part: "hand", name: "hand", side });
+    }
+  }
+
+  // Armpit / axilla (map to shoulder diagram)
+  if (lowerText.match(/\b(armpit|armpits|axilla|axillae)\b/)) {
+    const side = lowerText.includes("right") ? "right" : lowerText.includes("left") ? "left" : undefined;
+    if (!detected.some((d) => d.part === "shoulder")) {
+      detected.push({ part: "shoulder", name: "shoulder", side });
+    }
+  }
+
+  // Tailbone / sacrum (map to lower_back diagram)
+  if (lowerText.match(/\b(tailbone|coccyx|sacrum|sacral)\b/)) {
+    if (!detected.some((d) => d.part === "lower_back")) {
+      detected.push({ part: "lower_back", name: "lower back" });
+    }
+  }
+
+  // Spine / disc / vertebra — generic (map to back; lumbar/thoracic already caught above)
+  if (lowerText.match(/\b(spine|spinal|vertebra|vertebrae|disc|discs)\b/)) {
+    if (!detected.some((d) => d.part === "back" || d.part === "lower_back" || d.part === "upper_back")) {
+      detected.push({ part: "back", name: "back" });
+    }
   }
 
   return detected;
