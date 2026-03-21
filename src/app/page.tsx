@@ -3811,7 +3811,7 @@ export default function Home() {
       ? "Processing transcript..."
       : microphoneBlocked
         ? "Microphone blocked. Please allow access in browser settings."
-        : "Microphone ready";
+        : "";
   const micStatusClassName = microphoneBlocked
     ? "text-amber-600"
     : isTranscribing
