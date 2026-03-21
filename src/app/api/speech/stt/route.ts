@@ -95,9 +95,13 @@ export async function POST(request: NextRequest) {
   const locale = getSpeechLocale(languageCode);
 
   try {
+    // Use dictation mode (vs conversation) — it tolerates longer mid-speech pauses
+    // and is designed for continuous, long-form speech like patient descriptions.
+    // speechsegmentationsilencetimeoutms=30000 gives Azure up to 30 seconds of
+    // end-of-speech silence before it stops — prevents cutting off after a pause.
     const url =
-      `${speechConfig.endpoint}/speech/recognition/conversation/cognitiveservices/v1` +
-      `?language=${encodeURIComponent(locale)}&format=detailed`;
+      `${speechConfig.endpoint}/speech/recognition/dictation/cognitiveservices/v1` +
+      `?language=${encodeURIComponent(locale)}&format=detailed&speechsegmentationsilencetimeoutms=30000`;
     const safeUrl = assertSafeOutboundUrl(url, { label: "Speech STT endpoint URL" });
 
     // Azure STT REST API requires the specific codec/samplerate MIME type for WAV PCM.
