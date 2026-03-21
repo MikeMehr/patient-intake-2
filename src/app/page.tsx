@@ -412,7 +412,9 @@ export default function Home() {
     draftTranscriptRawRef.current = combined;
     setDraftTranscriptRaw(combined);
   };
-  const finalizeDraftTranscript = async () => {
+  // resetExisting: when true, replaces draftTranscript with the cleaned result instead of appending.
+  // Used after chunked Azure STT recording where raw text was already shown live in the textarea.
+  const finalizeDraftTranscript = async (resetExisting = false) => {
     const interim = interimTranscriptRef.current.trim();
     const raw = draftTranscriptRawRef.current.trim();
     const combined = `${raw} ${interim}`.replace(/\s+/g, " ").trim();
@@ -432,7 +434,7 @@ export default function Home() {
       const cleaned = await cleanTranscript(lightlyCleaned, language);
       const endTime = Date.now();
       const normalized = normalizePunctuation(cleaned);
-      const existingDraft = draftTranscriptRef.current.trim();
+      const existingDraft = resetExisting ? "" : draftTranscriptRef.current.trim();
       const nextDraft = existingDraft ? `${existingDraft} ${normalized}` : normalized;
       if (hasPendingSubmission) {
         setHasPendingSubmission(false);
@@ -443,7 +445,7 @@ export default function Home() {
       draftTranscriptRawRef.current = "";
     } catch (error) {
       const normalized = normalizePunctuation(lightlyCleaned);
-      const existingDraft = draftTranscriptRef.current.trim();
+      const existingDraft = resetExisting ? "" : draftTranscriptRef.current.trim();
       const nextDraft = existingDraft ? `${existingDraft} ${normalized}` : normalized;
       if (hasPendingSubmission) {
         setHasPendingSubmission(false);
@@ -2198,10 +2200,9 @@ export default function Home() {
             return;
           }
 
-          // Zero out the ref so finalizeDraftTranscript doesn't double-append
+          // resetExisting=true so the cleaned result replaces (not appends to)
           // the raw text we've been showing live in the textarea
-          draftTranscriptRef.current = "";
-          await finalizeDraftTranscript();
+          await finalizeDraftTranscript(true);
         } catch {
           // Fallback: leave whatever raw text is already visible
         } finally {
