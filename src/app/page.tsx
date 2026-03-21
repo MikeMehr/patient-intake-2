@@ -610,6 +610,9 @@ export default function Home() {
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const mediaChunksRef = useRef<BlobPart[]>([]);
   const finalizeMediaOnStopRef = useRef<boolean>(false);
+  const flushIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const segmentIndexRef = useRef<number>(0);
+  const pendingTranscriptionsRef = useRef<Promise<void>[]>([]);
   const isListeningRef = useRef<boolean>(false); // Ref for isListening state to access in callbacks
   const interimTranscriptRef = useRef<string>(""); // Ref to track interim transcript for pause detection
   const draftTranscriptRawRef = useRef<string>("");
@@ -1876,6 +1879,72 @@ export default function Home() {
     }, delayMs);
   };
 
+  // Flush the current audio segment: stop recorder, restart on same stream, transcribe chunk in background.
+  // isFinal=true means we're done recording — don't restart.
+  const flushSegment = async (
+    recorder: MediaRecorder,
+    stream: MediaStream,
+    isFinal: boolean,
+  ): Promise<void> => {
+    const mimeType = recorder.mimeType || "audio/webm";
+
+    // Stop recorder and collect the audio blob
+    const blob = await new Promise<Blob>((resolve) => {
+      recorder.onstop = () => {
+        const chunks = [...mediaChunksRef.current];
+        mediaChunksRef.current = [];
+        resolve(new Blob(chunks, { type: mimeType }));
+      };
+      if (recorder.state !== "inactive") {
+        try {
+          recorder.stop();
+        } catch {
+          resolve(new Blob([], { type: mimeType }));
+        }
+      } else {
+        resolve(new Blob([], { type: mimeType }));
+      }
+    });
+
+    // Immediately restart a new recorder on the same stream (unless this is the final flush)
+    if (!isFinal && stream.active) {
+      const newRecorder =
+        typeof MediaRecorder !== "undefined" &&
+        MediaRecorder.isTypeSupported?.(mimeType)
+          ? new MediaRecorder(stream, { mimeType })
+          : new MediaRecorder(stream);
+      newRecorder.ondataavailable = (event) => {
+        if (event.data && event.data.size > 0) {
+          mediaChunksRef.current.push(event.data);
+        }
+      };
+      newRecorder.onerror = () => {
+        setError("Audio capture failed. Please check your microphone.");
+      };
+      newRecorder.start(250);
+      mediaRecorderRef.current = newRecorder;
+    }
+
+    if (!blob.size) return;
+
+    // Transcribe this chunk in the background; track the promise for ordering
+    const task = (async () => {
+      try {
+        const text = await transcribeAudio(blob, language);
+        if (!text) return;
+        appendDraftRaw(text);
+        // Show accumulated raw text live in the patient input textarea
+        setDraftTranscript(draftTranscriptRawRef.current);
+        setShowReview(true);
+      } catch {
+        // Segment transcription failed — skip silently
+      }
+    })();
+
+    pendingTranscriptionsRef.current.push(task);
+    if (isFinal) await task;
+  };
+
   const startListening = async (options?: { allowDuringReview?: boolean }) => {
     // Capture current selection before we start listening (in case focus shifts)
     updateSelectionRef(patientResponseInputRef.current);
@@ -1950,7 +2019,8 @@ export default function Home() {
         mediaChunksRef.current = [];
         mediaStreamRef.current = stream;
         mediaRecorderRef.current = recorder;
-        finalizeMediaOnStopRef.current = false;
+        segmentIndexRef.current = 0;
+        pendingTranscriptionsRef.current = [];
 
         recorder.ondataavailable = (event) => {
           if (event.data && event.data.size > 0) {
@@ -1965,50 +2035,18 @@ export default function Home() {
           setError("Audio capture failed. Please check your microphone.");
         };
 
-        recorder.onstop = async () => {
-          setIsListening(false);
-          isListeningRef.current = false;
-          setMicUiState("idle");
-          const shouldFinalize = finalizeMediaOnStopRef.current;
-          finalizeMediaOnStopRef.current = false;
-          const chunks = [...mediaChunksRef.current];
-          mediaChunksRef.current = [];
-
-          if (mediaStreamRef.current) {
-            mediaStreamRef.current.getTracks().forEach((track) => track.stop());
-            mediaStreamRef.current = null;
-          }
-
-          if (!shouldFinalize) {
-            setIsTranscribing(false);
-            return;
-          }
-
-          setIsTranscribing(true);
-          try {
-            const audioBlob = new Blob(chunks, {
-              type: recorder.mimeType || "audio/webm",
-            });
-
-            if (!audioBlob.size) {
-              setMicWarning("No speech detected. Please try again.");
-              return;
-            }
-
-            const rawTranscript = await transcribeAudio(audioBlob, language);
-            if (!rawTranscript) {
-              setMicWarning("We could not transcribe your speech. Please try again.");
-              return;
-            }
-
-            appendDraftRaw(rawTranscript);
-            await finalizeDraftTranscript();
-          } finally {
-            setIsTranscribing(false);
-          }
-        };
+        // onstop is managed dynamically by flushSegment — no static handler needed here.
 
         recorder.start(250);
+
+        // Auto-flush every 20 seconds so transcription appears live in the input box
+        flushIntervalRef.current = setInterval(() => {
+          const rec = mediaRecorderRef.current;
+          const strm = mediaStreamRef.current;
+          if (rec && rec.state === "recording" && strm?.active) {
+            void flushSegment(rec, strm, false);
+          }
+        }, 20_000);
         setIsHolding(true);
         isHoldingRef.current = true;
         setIsListening(true);
@@ -2101,23 +2139,67 @@ export default function Home() {
     isHoldingRef.current = false;
     setMicUiState("idle");
     if (useAzureStt) {
-      finalizeMediaOnStopRef.current = finalizeDraft;
-      const recorder = mediaRecorderRef.current;
-      if (recorder && recorder.state !== "inactive") {
-        if (finalizeDraft) {
-          setIsTranscribing(true);
-        }
-        try {
-          recorder.stop();
-        } catch {
-          // Ignore recorder stop errors
-        }
-      } else if (finalizeDraft) {
-        setMicWarning("No speech detected. Please try again.");
-        setIsTranscribing(false);
+      // Stop the auto-flush interval
+      if (flushIntervalRef.current) {
+        clearInterval(flushIntervalRef.current);
+        flushIntervalRef.current = null;
       }
+
       setIsListening(false);
       isListeningRef.current = false;
+
+      const recorder = mediaRecorderRef.current;
+      const stream = mediaStreamRef.current;
+
+      if (!finalizeDraft) {
+        // Cancel — stop recorder without transcribing
+        if (recorder && recorder.state !== "inactive") {
+          recorder.onstop = () => {
+            mediaChunksRef.current = [];
+          };
+          try { recorder.stop(); } catch { /* ignore */ }
+        }
+        if (stream) {
+          stream.getTracks().forEach((t) => t.stop());
+          mediaStreamRef.current = null;
+        }
+        setIsTranscribing(false);
+        return;
+      }
+
+      // Finalize: flush last chunk, wait for all in-flight segments, then clean
+      setIsTranscribing(true);
+      void (async () => {
+        try {
+          if (recorder && recorder.state !== "inactive" && stream) {
+            await flushSegment(recorder, stream, true);
+          }
+          await Promise.allSettled(pendingTranscriptionsRef.current);
+
+          if (!draftTranscriptRawRef.current.trim()) {
+            setMicWarning("No speech detected. Please try again.");
+            setIsTranscribing(false);
+            if (stream) {
+              stream.getTracks().forEach((t) => t.stop());
+              mediaStreamRef.current = null;
+            }
+            return;
+          }
+
+          // Zero out the ref so finalizeDraftTranscript doesn't double-append
+          // the raw text we've been showing live in the textarea
+          draftTranscriptRef.current = "";
+          await finalizeDraftTranscript();
+        } catch {
+          // Fallback: leave whatever raw text is already visible
+        } finally {
+          setIsTranscribing(false);
+          if (mediaStreamRef.current) {
+            mediaStreamRef.current.getTracks().forEach((t) => t.stop());
+            mediaStreamRef.current = null;
+          }
+        }
+      })();
       return;
     }
     const rawLength = draftTranscriptRawRef.current.length;
