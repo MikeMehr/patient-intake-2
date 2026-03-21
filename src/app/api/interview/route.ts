@@ -397,9 +397,9 @@ export async function POST(request: Request) {
     const finalTurn = applySensitivePhotoSuppressionToTurn(validatedTurn, sensitivePhotoContext);
     const turnWithProgress = attachProgressToTurn(finalTurn, interviewState.progress);
 
-    // Send emergency SMS alert if this is a summary with red flags detected
-    console.error(`[SMS-DEBUG] turn type=${turnWithProgress.type} urgency=${interviewState.urgency} escalationReasons=${JSON.stringify(interviewState.escalationReasons)}`);
-    if (turnWithProgress.type === "summary" && interviewState.urgency === "elevated") {
+    // Send emergency SMS alert if the LLM flagged this as a genuine emergency
+    console.error(`[SMS-DEBUG] turn type=${turnWithProgress.type} isEmergency=${turnWithProgress.type === "summary" ? (turnWithProgress as { isEmergency?: boolean }).isEmergency : "n/a"}`);
+    if (turnWithProgress.type === "summary" && (turnWithProgress as { isEmergency?: boolean }).isEmergency === true) {
       // Fire-and-forget: send SMS asynchronously without blocking response
       (async () => {
         try {

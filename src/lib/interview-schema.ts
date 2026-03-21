@@ -233,6 +233,9 @@ const interviewQuestionSchema = z.object({
 const interviewSummarySchema = historyResponseSchema.extend({
   type: z.literal("summary"),
   progress: interviewProgressSchema.optional(),
+  // LLM-evaluated emergency flag: true only when the patient has active, confirmed
+  // red-flag symptoms requiring urgent physician attention (not denied/historical).
+  isEmergency: z.boolean().optional(),
 });
 
 export const interviewResponseSchema = z.discriminatedUnion("type", [

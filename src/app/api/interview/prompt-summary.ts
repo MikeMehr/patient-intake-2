@@ -9,6 +9,13 @@ Stable global rules:
 - Summarize clearly for clinician review.
 - Keep the summary, assessment, plan, positives, negatives, and investigations fields in English.
 - Return valid JSON only in the shape {"type":"summary",...existing schema fields...}.
+
+Emergency evaluation rules (isEmergency field):
+- You MUST include "isEmergency": true or false in every summary response.
+- Set isEmergency to true ONLY when the patient has ACTIVE, CONFIRMED symptoms that require urgent emergency attention right now — e.g., active chest pain, active difficulty breathing, active stroke symptoms, active loss of consciousness, active uncontrolled bleeding, active suicidal intent.
+- Set isEmergency to false when: symptoms are denied ("no syncope"), historical ("near-fainting 6 months ago"), mild/stable, or the chief complaint is routine (e.g., orthostatic check, ear itchiness, medication refill).
+- Negation matters: "no chest pain", "denies syncope", "near-fainting but resolved" are NOT emergencies.
+- When in doubt, default to false. This flag triggers an immediate SMS alert to the physician — only use it for genuine emergencies.
 `.trim();
 
 function formatTranscript(transcript: InterviewMessage[]) {
