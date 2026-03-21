@@ -249,22 +249,45 @@ export default function Home() {
     }
   }
 
-  async function transcribeAudio(audioBlob: Blob, lang: string, attempt = 1): Promise<string> {
+  // Split a WAV blob into chunks of at most chunkSeconds each.
+  // Azure's REST STT endpoint silently drops audio beyond ~60 seconds,
+  // so we stay well under that limit and concatenate results.
+  async function splitWavBlob(wavBlob: Blob, chunkSeconds: number): Promise<Blob[]> {
+    const arrayBuf = await wavBlob.arrayBuffer();
+    const SAMPLE_RATE = 16000;
+    const BYTES_PER_SAMPLE = 2; // 16-bit mono
+    const HEADER_SIZE = 44;
+    const bytesPerChunk = chunkSeconds * SAMPLE_RATE * BYTES_PER_SAMPLE;
+    const audioSize = arrayBuf.byteLength - HEADER_SIZE;
+    if (audioSize <= bytesPerChunk) return [wavBlob];
+    const chunks: Blob[] = [];
+    for (let offset = 0; offset < audioSize; offset += bytesPerChunk) {
+      const chunkAudioSize = Math.min(bytesPerChunk, audioSize - offset);
+      const chunkBuf = new ArrayBuffer(HEADER_SIZE + chunkAudioSize);
+      // Copy original header then fix the two size fields
+      new Uint8Array(chunkBuf).set(new Uint8Array(arrayBuf, 0, HEADER_SIZE));
+      const chunkView = new DataView(chunkBuf);
+      chunkView.setUint32(4, 36 + chunkAudioSize, true); // RIFF chunk size
+      chunkView.setUint32(40, chunkAudioSize, true);      // data chunk size
+      new Uint8Array(chunkBuf, HEADER_SIZE).set(
+        new Uint8Array(arrayBuf, HEADER_SIZE + offset, chunkAudioSize),
+      );
+      chunks.push(new Blob([chunkBuf], { type: "audio/wav" }));
+    }
+    return chunks;
+  }
+
+  async function transcribeWavChunk(wavBlob: Blob, lang: string, attempt = 1): Promise<string> {
     const MAX_ATTEMPTS = 3;
     try {
-      const wavBlob = await convertToWav(audioBlob);
       const formData = new FormData();
-      const normalizedLanguage = normalizeLanguageCode(lang);
       formData.append("audio", new File([wavBlob], "recording.wav", { type: "audio/wav" }));
-      formData.append("language", normalizedLanguage);
-      const res = await fetch("/api/speech/stt", {
-        method: "POST",
-        body: formData,
-      });
+      formData.append("language", normalizeLanguageCode(lang));
+      const res = await fetch("/api/speech/stt", { method: "POST", body: formData });
       if (!res.ok) {
         if (attempt < MAX_ATTEMPTS) {
           await new Promise((r) => setTimeout(r, 500 * attempt));
-          return transcribeAudio(audioBlob, lang, attempt + 1);
+          return transcribeWavChunk(wavBlob, lang, attempt + 1);
         }
         console.error("[transcribeAudio] STT request failed:", res.status);
         return "";
@@ -275,14 +298,31 @@ export default function Home() {
         console.error("[transcribeAudio] Invalid STT response:", data);
         return "";
       }
-      const result = parsed.data.text.trim();
-      console.log("[transcribeAudio] attempt:", attempt, "result:", JSON.stringify(result), "blobSize:", audioBlob.size);
-      return result;
+      return parsed.data.text.trim();
     } catch (err) {
       if (attempt < MAX_ATTEMPTS) {
         await new Promise((r) => setTimeout(r, 500 * attempt));
-        return transcribeAudio(audioBlob, lang, attempt + 1);
+        return transcribeWavChunk(wavBlob, lang, attempt + 1);
       }
+      console.error("[transcribeAudio] Error:", err);
+      return "";
+    }
+  }
+
+  async function transcribeAudio(audioBlob: Blob, lang: string): Promise<string> {
+    try {
+      const wavBlob = await convertToWav(audioBlob);
+      const CHUNK_SECONDS = 55; // safely under Azure's ~60s REST API limit
+      const chunks = await splitWavBlob(wavBlob, CHUNK_SECONDS);
+      const parts: string[] = [];
+      for (const chunk of chunks) {
+        const text = await transcribeWavChunk(chunk, lang);
+        if (text) parts.push(text);
+      }
+      const result = parts.join(" ").trim();
+      console.log("[transcribeAudio] chunks:", chunks.length, "result:", JSON.stringify(result), "blobSize:", audioBlob.size);
+      return result;
+    } catch (err) {
       console.error("[transcribeAudio] Error:", err);
       return "";
     }
