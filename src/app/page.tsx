@@ -159,6 +159,7 @@ export default function Home() {
   }, []);
 
   async function cleanTranscript(raw: string, lang: string): Promise<string> {
+    if (!raw.trim()) return raw;
     try {
       const res = await fetch("/api/speech/clean", {
         method: "POST",
@@ -452,6 +453,13 @@ export default function Home() {
     setMicWarning(null);
     setCleaningTranscript(true);
     const lightlyCleaned = lightCleanupTranscript(combined);
+    if (!lightlyCleaned) {
+      setMicWarning("No speech detected. Please try again.");
+      setDraftTranscript("");
+      setShowReview(false);
+      setCleaningTranscript(false);
+      return;
+    }
     try {
       const startTime = Date.now();
       const cleaned = await cleanTranscript(lightlyCleaned, language);
