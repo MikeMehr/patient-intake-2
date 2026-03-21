@@ -5076,14 +5076,30 @@ export default function Home() {
                           } ${isCoarsePointer ? "opacity-100" : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"}`}
                           title={micButtonTitle}
                         >
-                          <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 1a3 3 0 00-3 3v6a3 3 0 006 0V4a3 3 0 00-3-3z" />
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 10v2a7 7 0 01-14 0v-2" />
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19v4m-4 0h8" />
-                          </svg>
-                          {micButtonLabel}
+                          {isTranscribing ? (
+                            <span className="inline-flex" aria-label="Transcribing">
+                              {"TRANSCRIBING".split("").map((letter, i) => (
+                                <span
+                                  key={i}
+                                  className="animate-bounce inline-block"
+                                  style={{ animationDelay: `${i * 0.08}s`, animationDuration: "0.96s" }}
+                                >
+                                  {letter}
+                                </span>
+                              ))}
+                            </span>
+                          ) : (
+                            <>
+                              <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 1a3 3 0 00-3 3v6a3 3 0 006 0V4a3 3 0 00-3-3z" />
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 10v2a7 7 0 01-14 0v-2" />
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19v4m-4 0h8" />
+                              </svg>
+                              {micButtonLabel}
+                            </>
+                          )}
                         </button>
-                        <div className="mt-2 flex min-h-[20px] w-full items-center justify-between gap-3 text-xs">
+                        <div className={`mt-2 flex min-h-[20px] w-full items-center gap-3 text-xs ${showListeningDecor ? "justify-center" : "justify-between"}`}>
                           {micWarning ? (
                             <p className="text-amber-600">{micWarning}</p>
                           ) : (
@@ -5100,7 +5116,7 @@ export default function Home() {
                                 </span>
                               )}
                               <p className={showListeningDecor ? "font-semibold text-red-600" : micStatusClassName}>
-                                {showListeningDecor ? "Listening..." : (isTranscribing ? <><span className="inline-block w-5 font-mono">{spinnerFrames[spinnerFrame]}</span>{micStatusText}</> : micStatusText)}
+                                {showListeningDecor ? "Listening..." : (isTranscribing ? null : micStatusText)}
                               </p>
                             </div>
                           )}
@@ -5294,10 +5310,22 @@ export default function Home() {
                         } appearance-none outline-none focus:outline-none focus-visible:outline-none focus-visible:ring-0 disabled:cursor-not-allowed disabled:bg-emerald-200 disabled:text-emerald-600`}
                         title={micButtonLabel}
                       >
-                        {micButtonLabel}
+                        {isTranscribing ? (
+                          <span className="inline-flex" aria-label="Transcribing">
+                            {"TRANSCRIBING".split("").map((letter, i) => (
+                              <span
+                                key={i}
+                                className="animate-bounce inline-block"
+                                style={{ animationDelay: `${i * 0.08}s`, animationDuration: "0.96s" }}
+                              >
+                                {letter}
+                              </span>
+                            ))}
+                          </span>
+                        ) : micButtonLabel}
                       </button>
                     </div>
-                    <div className="flex min-h-[20px] items-center justify-between gap-3 text-xs">
+                    <div className={`flex min-h-[20px] items-center gap-3 text-xs ${showListeningDecor ? "justify-center" : "justify-between"}`}>
                       {micWarning ? (
                         <p className="text-amber-600">{micWarning}</p>
                       ) : (
@@ -5314,7 +5342,7 @@ export default function Home() {
                             </span>
                           )}
                           <p className={showListeningDecor ? "font-semibold text-red-600" : micStatusClassName}>
-                            {showListeningDecor ? "Listening..." : (isTranscribing ? <><span className="inline-block w-5 font-mono">{spinnerFrames[spinnerFrame]}</span>{micStatusText}</> : micStatusText)}
+                            {showListeningDecor ? "Listening..." : (isTranscribing ? null : micStatusText)}
                           </p>
                         </div>
                       )}
