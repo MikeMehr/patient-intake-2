@@ -203,6 +203,22 @@ export default function Home() {
         for (let i = 0; i < newLen; i += 1) resampled[i] = mono[Math.round(i / ratio)] ?? 0;
         samples = resampled;
       }
+      // Trim leading/trailing silence so Azure does not hit InitialSilenceTimeout.
+      // Without this, 30+ seconds of silence at the start causes Azure to give up
+      // before the patient has said anything.
+      {
+        const SILENCE_THRESHOLD = 0.01; // ~-40 dB
+        const PAD = 1600; // 100ms padding at 16 kHz to avoid clipping word edges
+        let trimStart = 0;
+        let trimEnd = samples.length - 1;
+        while (trimStart < samples.length && Math.abs(samples[trimStart]) < SILENCE_THRESHOLD) trimStart++;
+        while (trimEnd > trimStart && Math.abs(samples[trimEnd]) < SILENCE_THRESHOLD) trimEnd--;
+        trimStart = Math.max(0, trimStart - PAD);
+        trimEnd = Math.min(samples.length - 1, trimEnd + PAD);
+        if (trimStart > 0 || trimEnd < samples.length - 1) {
+          samples = samples.slice(trimStart, trimEnd + 1);
+        }
+      }
       const numSamples = samples.length;
       const buffer = new ArrayBuffer(44 + numSamples * 2);
       const view = new DataView(buffer);
@@ -232,7 +248,8 @@ export default function Home() {
     }
   }
 
-  async function transcribeAudio(audioBlob: Blob, lang: string): Promise<string> {
+  async function transcribeAudio(audioBlob: Blob, lang: string, attempt = 1): Promise<string> {
+    const MAX_ATTEMPTS = 3;
     try {
       const wavBlob = await convertToWav(audioBlob);
       const formData = new FormData();
@@ -244,6 +261,10 @@ export default function Home() {
         body: formData,
       });
       if (!res.ok) {
+        if (attempt < MAX_ATTEMPTS) {
+          await new Promise((r) => setTimeout(r, 500 * attempt));
+          return transcribeAudio(audioBlob, lang, attempt + 1);
+        }
         console.error("[transcribeAudio] STT request failed:", res.status);
         return "";
       }
@@ -255,6 +276,10 @@ export default function Home() {
       }
       return parsed.data.text.trim();
     } catch (err) {
+      if (attempt < MAX_ATTEMPTS) {
+        await new Promise((r) => setTimeout(r, 500 * attempt));
+        return transcribeAudio(audioBlob, lang, attempt + 1);
+      }
       console.error("[transcribeAudio] Error:", err);
       return "";
     }
