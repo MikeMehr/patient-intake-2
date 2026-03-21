@@ -3656,10 +3656,14 @@ export default function Home() {
       // ── Sanitize question text ────────────────────────────────────────────────
       // If the diagram won't be shown but the AI referenced one, remove the
       // diagram-marking instructions so the patient sees a coherent question.
-      const questionContent =
-        !willShowDiagram && (turn.requiresLocationMarking || hasDiagramAction)
-          ? stripDiagramMarkingPhrases(turn.question)
-          : turn.question;
+      const questionContent = (() => {
+        if (!willShowDiagram && (turn.requiresLocationMarking || hasDiagramAction)) {
+          const stripped = stripDiagramMarkingPhrases(turn.question);
+          // Fall back to original if stripping removed everything
+          return stripped.trim() ? stripped : turn.question;
+        }
+        return turn.question;
+      })();
 
       // ── Commit message to chat ────────────────────────────────────────────────
       setMessages((current) => {
