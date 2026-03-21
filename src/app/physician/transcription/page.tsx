@@ -343,84 +343,23 @@ export default function PhysicianTranscriptionPage() {
   }
 
   /**
-   * Split a WAV blob into ≤55-second chunks (safely under Azure's 60-second limit).
-   * Each chunk is a fully valid WAV file built from the original PCM data.
-   * Audio lives only in memory — never written to disk or storage.
+   * Transcribe a WAV blob via the Fast Transcription API.
+   * Handles up to 2 hours of audio natively — no client-side chunking needed.
    */
-  async function chunkWav(wavBlob: Blob): Promise<Blob[]> {
-    const CHUNK_SECONDS = 55;
-    const SAMPLE_RATE = 16000;
-    const BYTES_PER_SAMPLE = 2; // 16-bit mono
-    const CHUNK_PCM_BYTES = CHUNK_SECONDS * SAMPLE_RATE * BYTES_PER_SAMPLE;
-
-    const wavBuffer = await wavBlob.arrayBuffer();
-    const wavBytes = new Uint8Array(wavBuffer);
-    const header = wavBytes.slice(0, 44);   // standard WAV header
-    const pcmData = wavBytes.slice(44);     // raw PCM samples
-
-    const chunks: Blob[] = [];
-    for (let offset = 0; offset < pcmData.length; offset += CHUNK_PCM_BYTES) {
-      const chunkPcm = pcmData.slice(offset, offset + CHUNK_PCM_BYTES);
-      const chunkBuf = new ArrayBuffer(44 + chunkPcm.length);
-      const chunkBytes = new Uint8Array(chunkBuf);
-      const chunkView = new DataView(chunkBuf);
-
-      chunkBytes.set(header);                                        // copy header
-      chunkView.setUint32(4, 36 + chunkPcm.length, true);          // RIFF chunk size
-      chunkView.setUint32(40, chunkPcm.length, true);               // data sub-chunk size
-      chunkBytes.set(chunkPcm, 44);                                  // PCM payload
-
-      chunks.push(new Blob([chunkBuf], { type: "audio/wav" }));
-    }
-    return chunks;
-  }
-
-  /** Transcribe a single WAV chunk via the STT API. */
-  async function transcribeChunk(chunk: Blob): Promise<string> {
-    const formData = new FormData();
-    formData.append("audio", new File([chunk], "recording.wav", { type: "audio/wav" }));
-    formData.append("language", "en");
-    const res = await fetch("/api/speech/stt", { method: "POST", body: formData });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data?.error || "Transcription failed");
-    return typeof data?.text === "string" ? data.text.trim() : "";
-  }
-
-  /**
-   * Run an array of async tasks with a concurrency limit.
-   * Returns results in the original order regardless of completion order.
-   */
-  async function parallelLimit<T>(tasks: (() => Promise<T>)[], limit: number): Promise<T[]> {
-    const results: T[] = new Array(tasks.length);
-    let nextIndex = 0;
-
-    async function worker() {
-      while (nextIndex < tasks.length) {
-        const idx = nextIndex++;
-        results[idx] = await tasks[idx]();
-      }
-    }
-
-    await Promise.all(Array.from({ length: Math.min(limit, tasks.length) }, () => worker()));
-    return results;
-  }
-
   async function transcribeAudio(audioBlob: Blob): Promise<string> {
     const wavBlob = await convertToWav(audioBlob);
     if (wavBlob.size > MAX_STT_AUDIO_BYTES) {
       throw new Error("Recording is too long. Keep each clip under 100MB and try again.");
     }
-
-    const chunks = await chunkWav(wavBlob);
-
-    // Transcribe up to 5 chunks in parallel — keeps order, ~4-5× faster
-    const CONCURRENCY = 5;
-    const tasks = chunks.map((chunk) => () => transcribeChunk(chunk));
-    const texts = await parallelLimit(tasks, CONCURRENCY);
-
-    const combined = texts.filter(Boolean).join(" ");
-    if (!combined) throw new Error("No speech detected.");
-    return cleanTranscript(combined);
+    const formData = new FormData();
+    formData.append("audio", new File([wavBlob], "recording.wav", { type: "audio/wav" }));
+    formData.append("language", "en");
+    const res = await fetch("/api/speech/stt", { method: "POST", body: formData });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data?.error || "Transcription failed");
+    const text = typeof data?.text === "string" ? data.text.trim() : "";
+    if (!text) throw new Error("No speech detected.");
+    return cleanTranscript(text);
   }
 
   /**
@@ -504,7 +443,7 @@ export default function PhysicianTranscriptionPage() {
         if (rec && rec.state === "recording" && strm) {
           flushSegment(rec, strm, false);
         }
-      }, 55_000);
+      }, 120_000);
     } catch (err) {
       setIsStartingRecording(false);
       setRecordingError(err instanceof Error ? err.message : "Unable to start recording.");
@@ -533,14 +472,14 @@ export default function PhysicianTranscriptionPage() {
         setRecordingElapsed((prev) => prev + 1);
       }, 1000);
 
-      // Flush a segment every 55 seconds for live transcription
+      // Flush a segment every 2 minutes for live transcription
       flushIntervalRef.current = window.setInterval(() => {
         const rec = mediaRecorderRef.current;
         const strm = mediaStreamRef.current;
         if (rec && rec.state === "recording" && strm) {
           flushSegment(rec, strm, false);
         }
-      }, 55_000);
+      }, 120_000);
     } catch (err) {
       setIsStartingRecording(false);
       setRecordingError(err instanceof Error ? err.message : "Unable to start recording.");
