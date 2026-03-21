@@ -412,9 +412,7 @@ export default function Home() {
     draftTranscriptRawRef.current = combined;
     setDraftTranscriptRaw(combined);
   };
-  // resetExisting: when true, replaces draftTranscript with the cleaned result instead of appending.
-  // Used after chunked Azure STT recording where raw text was already shown live in the textarea.
-  const finalizeDraftTranscript = async (resetExisting = false) => {
+  const finalizeDraftTranscript = async () => {
     const interim = interimTranscriptRef.current.trim();
     const raw = draftTranscriptRawRef.current.trim();
     const combined = `${raw} ${interim}`.replace(/\s+/g, " ").trim();
@@ -434,7 +432,7 @@ export default function Home() {
       const cleaned = await cleanTranscript(lightlyCleaned, language);
       const endTime = Date.now();
       const normalized = normalizePunctuation(cleaned);
-      const existingDraft = resetExisting ? "" : draftTranscriptRef.current.trim();
+      const existingDraft = draftTranscriptRef.current.trim();
       const nextDraft = existingDraft ? `${existingDraft} ${normalized}` : normalized;
       if (hasPendingSubmission) {
         setHasPendingSubmission(false);
@@ -445,7 +443,7 @@ export default function Home() {
       draftTranscriptRawRef.current = "";
     } catch (error) {
       const normalized = normalizePunctuation(lightlyCleaned);
-      const existingDraft = resetExisting ? "" : draftTranscriptRef.current.trim();
+      const existingDraft = draftTranscriptRef.current.trim();
       const nextDraft = existingDraft ? `${existingDraft} ${normalized}` : normalized;
       if (hasPendingSubmission) {
         setHasPendingSubmission(false);
@@ -617,6 +615,8 @@ export default function Home() {
   const flushIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const segmentIndexRef = useRef<number>(0);
   const pendingTranscriptionsRef = useRef<Promise<void>[]>([]);
+  // Captures draftTranscript at recording-start so diagram/prior text is preserved during chunked STT
+  const priorDraftBeforeRecordingRef = useRef<string>("");
   const isListeningRef = useRef<boolean>(false); // Ref for isListening state to access in callbacks
   const interimTranscriptRef = useRef<string>(""); // Ref to track interim transcript for pause detection
   const draftTranscriptRawRef = useRef<string>("");
@@ -1947,8 +1947,12 @@ export default function Home() {
         const text = await transcribeAudio(blob, language);
         if (!text) return;
         appendDraftRaw(text);
-        // Show accumulated raw text live in the patient input textarea
-        setDraftTranscript(draftTranscriptRawRef.current);
+        // Show accumulated raw text live, preserving any prior content (e.g. diagram marker text)
+        const priorDraft = priorDraftBeforeRecordingRef.current;
+        const liveText = priorDraft
+          ? `${priorDraft} ${draftTranscriptRawRef.current}`
+          : draftTranscriptRawRef.current;
+        setDraftTranscript(liveText);
         setShowReview(true);
       } catch {
         // Segment transcription failed — skip silently
@@ -1984,6 +1988,9 @@ export default function Home() {
         if (hasPendingSubmission) {
           setHasPendingSubmission(false);
         }
+        // Capture any existing text (e.g. diagram marker) before clearing raw/interim state.
+        // flushSegment will prefix live preview with this, and finalizeDraftTranscript will append to it.
+        priorDraftBeforeRecordingRef.current = draftTranscriptRef.current.trim();
         setDraftTranscriptRaw("");
         draftTranscriptRawRef.current = "";
         setInterimTranscript("");
@@ -2200,9 +2207,11 @@ export default function Home() {
             return;
           }
 
-          // resetExisting=true so the cleaned result replaces (not appends to)
-          // the raw text we've been showing live in the textarea
-          await finalizeDraftTranscript(true);
+          // Restore draftTranscriptRef to the pre-recording value (e.g. diagram text)
+          // so finalizeDraftTranscript appends the cleaned speech to it correctly,
+          // rather than appending to the raw live-preview text that was shown during recording.
+          draftTranscriptRef.current = priorDraftBeforeRecordingRef.current;
+          await finalizeDraftTranscript();
         } catch {
           // Fallback: leave whatever raw text is already visible
         } finally {
