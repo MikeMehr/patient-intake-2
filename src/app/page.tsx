@@ -573,6 +573,8 @@ export default function Home() {
   const [draftTranscriptRaw, setDraftTranscriptRaw] = useState<string>("");
   const [deferredIntentHint, setDeferredIntentHint] = useState<string | null>(null);
   const [showStillThinking, setShowStillThinking] = useState(false);
+  const [spinnerFrame, setSpinnerFrame] = useState(0);
+  const spinnerFrames = ['+', '×', '#'];
   const [showReview, setShowReview] = useState(false);
   const [isHolding, setIsHolding] = useState(false);
   const [micUiState, setMicUiState] = useState<MicUiState>("idle");
@@ -720,6 +722,16 @@ export default function Home() {
       clearTimeout(stillThinkingTimeout);
     };
   }, [status, isPaused]);
+
+  useEffect(() => {
+    const isActive = isTranscribing || (status === "awaitingAi" && !isPaused);
+    if (!isActive) return;
+    const interval = setInterval(() => {
+      setSpinnerFrame(f => (f + 1) % 3);
+    }, 300);
+    return () => clearInterval(interval);
+  }, [isTranscribing, status, isPaused]);
+
   const choosePreferredVoice = (
     voices: SpeechSynthesisVoice[],
     langTag: string,
@@ -5170,13 +5182,13 @@ export default function Home() {
                                 </span>
                               )}
                               <p className={showListeningDecor ? "font-semibold text-red-600" : micStatusClassName}>
-                                {showListeningDecor ? "Listening..." : micStatusText}
+                                {showListeningDecor ? "Listening..." : (isTranscribing ? <><span className="inline-block w-5 font-mono">{spinnerFrames[spinnerFrame]}</span>{micStatusText}</> : micStatusText)}
                               </p>
                             </div>
                           )}
                           {status === "awaitingAi" && !isPaused && (
                             <span className="text-lg font-medium text-slate-500 animate-pulse">
-                              {thinkingStatusLabel}
+                              <span className="inline-block w-5 font-mono">{spinnerFrames[spinnerFrame]}</span>{thinkingStatusLabel}
                             </span>
                           )}
                         </div>
@@ -5384,13 +5396,13 @@ export default function Home() {
                             </span>
                           )}
                           <p className={showListeningDecor ? "font-semibold text-red-600" : micStatusClassName}>
-                            {showListeningDecor ? "Listening..." : micStatusText}
+                            {showListeningDecor ? "Listening..." : (isTranscribing ? <><span className="inline-block w-5 font-mono">{spinnerFrames[spinnerFrame]}</span>{micStatusText}</> : micStatusText)}
                           </p>
                         </div>
                       )}
                       {status === "awaitingAi" && !isPaused && (
                         <span className="text-lg font-medium text-slate-500 animate-pulse">
-                          {thinkingStatusLabel}
+                          <span className="inline-block w-5 font-mono">{spinnerFrames[spinnerFrame]}</span>{thinkingStatusLabel}
                         </span>
                       )}
                     </div>
