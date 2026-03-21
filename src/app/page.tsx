@@ -1774,7 +1774,6 @@ export default function Home() {
             // User stopped manually or we stopped it programmatically - this is normal
             setIsListening(false);
             isListeningRef.current = false;
-            isListeningRef.current = false;
             setMicUiState("idle");
           } else if (event.error === "network") {
             // Network error
@@ -1798,6 +1797,7 @@ export default function Home() {
               setIsListening(false);
               isListeningRef.current = false;
               setMicUiState("idle");
+              setError("Voice input is not available on this browser.");
             }
           }
         };
@@ -1897,6 +1897,7 @@ export default function Home() {
     }
     if (useAzureStt && status === "awaitingPatient") {
       try {
+        setError(null);
         if (hasPendingSubmission) {
           setHasPendingSubmission(false);
         }
