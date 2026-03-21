@@ -275,7 +275,9 @@ export default function Home() {
         console.error("[transcribeAudio] Invalid STT response:", data);
         return "";
       }
-      return parsed.data.text.trim();
+      const result = parsed.data.text.trim();
+      console.log("[transcribeAudio] attempt:", attempt, "result:", JSON.stringify(result), "blobSize:", audioBlob.size);
+      return result;
     } catch (err) {
       if (attempt < MAX_ATTEMPTS) {
         await new Promise((r) => setTimeout(r, 500 * attempt));
@@ -442,6 +444,7 @@ export default function Home() {
     const interim = interimTranscriptRef.current.trim();
     const raw = draftTranscriptRawRef.current.trim();
     const combined = `${raw} ${interim}`.replace(/\s+/g, " ").trim();
+    console.log("[finalize] raw:", JSON.stringify(raw), "interim:", JSON.stringify(interim), "combined:", JSON.stringify(combined));
     setInterimTranscript("");
     interimTranscriptRef.current = "";
     if (!combined) {
@@ -453,6 +456,7 @@ export default function Home() {
     setMicWarning(null);
     setCleaningTranscript(true);
     const lightlyCleaned = lightCleanupTranscript(combined);
+    console.log("[finalize] lightlyCleaned:", JSON.stringify(lightlyCleaned));
     if (!lightlyCleaned) {
       setMicWarning("No speech detected. Please try again.");
       setDraftTranscript("");
