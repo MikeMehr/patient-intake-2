@@ -2659,7 +2659,11 @@ export default function Home() {
       }
 
       if (trimmed.length > 1000) {
-        setError("Your response is too long. Please keep it under 1000 characters.");
+        setError(`Your response is too long (${trimmed.length} characters). Please keep it under 1000 characters.`);
+        setDraftTranscript(trimmed);
+        setShowReview(true);
+        setPatientResponseWithRef("");
+        setHasPendingSubmission(false);
         setIsSubmittingResponse(false);
         setShowSubmitToast(false);
         return;
@@ -2694,7 +2698,11 @@ export default function Home() {
     setLastSubmittedDraft(currentResponse);
 
     if (trimmed.length > 1000) {
-      setError("Your response is too long. Please keep it under 1000 characters.");
+      setError(`Your response is too long (${trimmed.length} characters). Please keep it under 1000 characters.`);
+      setDraftTranscript(trimmed);
+      setShowReview(true);
+      setPatientResponseWithRef("");
+      setHasPendingSubmission(false);
       setIsSubmittingResponse(false);
       setShowSubmitToast(false);
       return;
