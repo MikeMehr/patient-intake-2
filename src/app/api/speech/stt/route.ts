@@ -5,14 +5,12 @@ import { getSpeechLocale, normalizeLanguageCode } from "@/lib/speech-language";
 import { assertSafeOutboundUrl } from "@/lib/outbound-url";
 
 // Allow longer timeouts for large audio upload + Azure transcription
-export const maxDuration = 60;
+export const maxDuration = 120;
 
-type AzureSpeechResponse = {
-  RecognitionStatus?: string;
-  DisplayText?: string;
-  NBest?: Array<{ Display?: string; Lexical?: string }>;
-  Offset?: number;
-  Duration?: number;
+type FastTranscriptionResponse = {
+  durationMilliseconds?: number;
+  combinedPhrases?: Array<{ text?: string }>;
+  phrases?: Array<{ text?: string }>;
 };
 
 const MAX_AUDIO_SIZE_BYTES = 100 * 1024 * 1024;
@@ -95,39 +93,31 @@ export async function POST(request: NextRequest) {
   const locale = getSpeechLocale(languageCode);
 
   try {
-    // Use dictation mode (vs conversation) — it tolerates longer mid-speech pauses
-    // and is designed for continuous, long-form speech like patient descriptions.
-    // speechsegmentationsilencetimeoutms=30000 gives Azure up to 30 seconds of
-    // end-of-speech silence before it stops — prevents cutting off after a pause.
+    // Fast Transcription API — handles up to 2 hours of audio synchronously.
+    // Uses a different base domain than the short-audio REST endpoint.
     const url =
-      `${speechConfig.endpoint}/speech/recognition/dictation/cognitiveservices/v1` +
-      `?language=${encodeURIComponent(locale)}&format=detailed&speechsegmentationsilencetimeoutms=30000`;
+      `https://${speechConfig.region}.api.cognitive.microsoft.com` +
+      `/speechtotext/transcriptions:transcribe?api-version=2024-11-15`;
     const safeUrl = assertSafeOutboundUrl(url, { label: "Speech STT endpoint URL" });
 
-    // Azure STT REST API requires the specific codec/samplerate MIME type for WAV PCM.
-    // Sending just "audio/wav" is rejected with 400 by many Azure regions.
-    const isWav = (audio.type || "").toLowerCase().includes("wav");
-    const contentType = isWav
-      ? "audio/wav; codecs=audio/pcm; samplerate=16000"
-      : (audio.type || "audio/webm");
+    const azureForm = new FormData();
+    azureForm.append("audio", audio, audio.name || "recording.wav");
+    azureForm.append("definition", JSON.stringify({ locales: [locale] }));
 
     const response = await fetch(safeUrl.toString(), {
       method: "POST",
       headers: {
         "Ocp-Apim-Subscription-Key": speechConfig.key,
-        "Content-Type": contentType,
-        Accept: "application/json",
       },
-      body: await audio.arrayBuffer(),
+      body: azureForm,
     });
 
     if (!response.ok) {
       status = response.status >= 500 ? 502 : response.status;
       const errText = await response.text().catch(() => "");
-      // Always log Azure's error body server-side for diagnosability
       console.error(
-        `[speech/stt] Azure returned ${response.status}: ${errText || response.statusText}`,
-        { locale, audioType: contentType, audioSize: audio.size },
+        `[speech/stt] Azure Fast Transcription returned ${response.status}: ${errText || response.statusText}`,
+        { locale, audioSize: audio.size },
       );
       const res = NextResponse.json(
         {
@@ -140,25 +130,20 @@ export async function POST(request: NextRequest) {
       return res;
     }
 
-    const payload = (await response.json()) as AzureSpeechResponse;
+    const payload = (await response.json()) as FastTranscriptionResponse;
 
     if (process.env.NODE_ENV === "development") {
-      console.log("[speech/stt] Azure response:", JSON.stringify(payload, null, 2));
-      console.log("[speech/stt] Audio type:", audio.type, "size:", audio.size);
+      console.log("[speech/stt] Azure Fast Transcription response:", JSON.stringify(payload, null, 2));
+      console.log("[speech/stt] Audio size:", audio.size, "duration ms:", payload.durationMilliseconds);
     }
 
-    // Prefer NBest[0].Display — it has better punctuation/spacing than DisplayText
+    // combinedPhrases[0].text is the full concatenated transcript
     const text =
-      payload.NBest?.[0]?.Display?.trim() ||
-      payload.DisplayText?.trim() ||
-      payload.NBest?.[0]?.Lexical?.trim() ||
+      payload.combinedPhrases?.[0]?.text?.trim() ||
+      payload.phrases?.map((p) => p.text?.trim()).filter(Boolean).join(" ") ||
       "";
 
-    const res = NextResponse.json({
-      text,
-      status: payload.RecognitionStatus || "Success",
-      language: locale,
-    });
+    const res = NextResponse.json({ text, language: locale });
     logRequestMeta("/api/speech/stt", requestId, status, Date.now() - started);
     return res;
   } catch (error) {
