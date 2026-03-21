@@ -4544,7 +4544,7 @@ export default function Home() {
                 </p>
               </div>
 
-              {error && <p className="text-xs text-red-600">{error}</p>}
+              {error && !error.startsWith("Your response is too long") && <p className="text-xs text-red-600">{error}</p>}
 
               <div className="mt-3 flex flex-wrap gap-3">
                 <button
@@ -5021,7 +5021,6 @@ export default function Home() {
                         <textarea
                           ref={draftTextareaRef}
                           rows={2}
-                          maxLength={1000}
                           placeholder={
                             awaitingFinalComments && finalCommentsChoice === "yes"
                               ? "Type your final comment for your provider."
@@ -5056,6 +5055,9 @@ export default function Home() {
                             "overflow-hidden",
                           ].join(" ")}
                         />
+                        {error && error.startsWith("Your response is too long") && (
+                          <p className="mt-2 text-xs text-red-600">{error}</p>
+                        )}
                         {showReviewActions && (
                           <div className="mt-2 flex items-center justify-end gap-2 whitespace-nowrap">
                             <button
