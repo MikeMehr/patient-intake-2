@@ -3550,6 +3550,14 @@ export default function Home() {
           bodyParts = detectBodyParts(chiefComplaint);
         }
       }
+
+      // Filter out any body parts that are not valid BodyPart keys (e.g. "bone", "skeleton")
+      // so they don't cause a broken diagram to appear.
+      const validBodyPartKeys = new Set([
+        "wrist", "hand", "elbow", "shoulder", "neck", "back", "lower_back", "upper_back",
+        "knee", "lower_leg", "ankle", "foot", "hip", "head", "chest", "abdomen",
+      ]);
+      bodyParts = bodyParts.filter((bp) => validBodyPartKeys.has(bp.part));
       const mskBodyPartSet = new Set([
         "back",
         "lower_back",
