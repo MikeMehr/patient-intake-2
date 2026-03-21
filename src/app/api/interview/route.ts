@@ -715,6 +715,12 @@ function parseInterviewTurn(payload: string) {
         logDebug("[interview-route] Truncating long rationale", { length: fixed.rationale.length });
         fixed.rationale = fixed.rationale.substring(0, 277) + "...";
       }
+
+      // Truncate locationBodyParts if too many items (max 4)
+      if (fixed.type === "question" && Array.isArray(fixed.locationBodyParts) && fixed.locationBodyParts.length > 4) {
+        logDebug("[interview-route] Truncating long locationBodyParts", { length: fixed.locationBodyParts.length });
+        fixed.locationBodyParts = fixed.locationBodyParts.slice(0, 4);
+      }
       
       // Truncate summary fields if too long
       if (fixed.type === "summary") {
