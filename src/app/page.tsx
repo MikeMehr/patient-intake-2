@@ -3856,7 +3856,7 @@ export default function Home() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-slate-100 px-4 py-10 text-slate-900">
       <main className="w-full max-w-5xl rounded-3xl border border-slate-200 bg-white/90 shadow-xl shadow-slate-100 backdrop-blur">
-        <header className="border-b border-slate-100 px-8 py-6">
+        <header className={`border-b border-slate-100 px-8 py-6${status !== "idle" ? " hidden sm:block" : ""}`}>
           <NextImage
             src="/LogoFinal.png"
             alt="Health Assist AI logo"
@@ -3903,6 +3903,7 @@ export default function Home() {
               </div>
             )}
             <form onSubmit={handleStart} onKeyDown={handlePreInterviewEnterKeyDown} className="space-y-4">
+              <div className={status !== "idle" ? "hidden sm:block" : ""}>
               <div className="rounded-2xl border border-slate-200 bg-slate-50/70 px-3.5 py-2.5 text-[13px] leading-[1.35rem] text-slate-800">
                 <label className="flex items-start gap-3">
                   <input
@@ -4545,6 +4546,7 @@ export default function Home() {
               </div>
 
               {error && !error.startsWith("Your response is too long") && <p className="text-xs text-red-600">{error}</p>}
+              </div>
 
               <div className="mt-3 flex flex-wrap gap-3">
                 <button
