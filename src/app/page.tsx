@@ -358,6 +358,29 @@ export default function Home() {
     }
     return /^i marked the painful spot\(s\) on the .+ diagram\.?$/.test(trimmed);
   };
+  /**
+   * Removes diagram-marking instructions from question text when no diagram will be shown.
+   * Ensures the patient is never told to "mark on the diagram" when nothing is rendered.
+   */
+  const stripDiagramMarkingPhrases = (text: string): string => {
+    return text
+      // Remove an inline diagram-marking sentence that follows sentence-ending punctuation.
+      // e.g. "Where is the pain? Please mark the area(s) on the body diagram." → "Where is the pain?"
+      .replace(
+        /([.!?])\s+(?:[Pp]lease\s+)?(?:mark|click|tap|point\s+to)\b[^.!?\n]*?\b(?:diagram|photo|image)\b[^.!?\n]*[.!?]?/g,
+        '$1',
+      )
+      // Remove a standalone diagram-marking sentence at start of string or after a newline
+      // (optionally preceded by a numbered list marker like "2. ").
+      // e.g. "Please mark the area(s) on the body diagram."
+      // e.g. "2. Mark the location on the diagram."
+      .replace(
+        /(?:^|\n)(?:\d+\.\s+)?(?:[Pp]lease\s+)?(?:mark|click|tap|point\s+to)\b[^.!?\n]*?\b(?:diagram|photo|image)\b[^.!?\n]*[.!?]?/g,
+        '\n',
+      )
+      .replace(/\n{2,}/g, '\n')
+      .trim();
+  };
   const summarizeDiagramMarkerSelection = (selection: DiagramMarkerSelection) => {
     const markerSummary = selection.markers
       .map((marker) => `(${Math.round(marker.xPct)},${Math.round(marker.yPct)})`)
@@ -3480,18 +3503,13 @@ export default function Home() {
         });
       }
       setDeferredIntentHint(turn.deferredIntentHint ?? null);
-      // Use the AI question as-is (no added greeting)
-      const questionContent = turn.question;
-      
-      setMessages((current) => {
-        const assistantMessage: ChatMessage = { role: "assistant", content: questionContent };
-        const updated: ChatMessage[] = [...current, assistantMessage];
-        messagesRef.current = updated; // Update ref immediately
-        return updated;
-      });
-      
-      // Check if the AI is asking for a photo
+
+      // ── Resolve diagram visibility BEFORE setting messages ────────────────────
+      // This lets us sanitize the question text when the diagram won't be shown,
+      // so the patient is never told to "mark on the diagram" when nothing renders.
       const questionLower = turn.question.toLowerCase();
+
+      // Check if the AI is asking for a photo
       const isRequestingPhotoFromFlag = turn.requiresPhotoUpload === true;
       const isRequestingPhoto =
         isRequestingPhotoFromFlag || isPhotoUploadRequestText(turn.question);
@@ -3499,7 +3517,7 @@ export default function Home() {
         sex: lockedProfile?.sex || sex,
         textBlocks: [chiefComplaint, turn.question],
       });
-      
+
       // Show image prompt if AI is requesting a photo and no image has been uploaded yet
       if (
         isRequestingPhoto &&
@@ -3510,7 +3528,7 @@ export default function Home() {
         setShowImagePrompt(true);
         setWantsToUploadImage(null);
       }
-      
+
       // Check if the AI is explicitly asking to mark/click/tap location on a diagram/photo.
       const diagramActionKeywords = [
         "mark where",
@@ -3598,8 +3616,10 @@ export default function Home() {
       const shouldForceLocationDiagram =
         hasMskBodyPart && hasPainMention && hasLocationIntentFallback;
 
-      // Only show the diagram when the assistant explicitly asks about location.
       const shouldShowDiagramFromFlag = turn.requiresLocationMarking === true;
+
+      // Determine which parts to show (empty means no diagram).
+      let partsToShow: Array<{ part: string; side?: "left" | "right" | "both" }> = [];
       if (bodyParts.length > 0 && (isAskingLocation || shouldForceLocationDiagram || shouldShowDiagramFromFlag)) {
         const uniqueParts = bodyParts.filter((bp, index, arr) => {
           const key = getDiagramMarkerKey(bp.part, bp.side === "both" ? undefined : bp.side);
@@ -3624,16 +3644,33 @@ export default function Home() {
         const filteredParts = shouldDropGenericBack
           ? deduplicatedParts.filter((bp) => bp.part !== "back")
           : deduplicatedParts;
-        // When chest is explicitly selected, drop neck (neck may appear as a radiation-site mention
-        // in the question text, but the diagram should show the primary pain location: chest).
         const partsForTurn =
           shouldShowDiagramFromFlag && hasChestSelection
             ? filteredParts.filter((bp) => bp.part !== "neck")
             : filteredParts;
-        const partsToShow = partsForTurn.map((bp) => ({
-          part: bp.part,
-          side: bp.side,
-        }));
+        partsToShow = partsForTurn.map((bp) => ({ part: bp.part, side: bp.side }));
+      }
+
+      const willShowDiagram = partsToShow.length > 0;
+
+      // ── Sanitize question text ────────────────────────────────────────────────
+      // If the diagram won't be shown but the AI referenced one, remove the
+      // diagram-marking instructions so the patient sees a coherent question.
+      const questionContent =
+        !willShowDiagram && (turn.requiresLocationMarking || hasDiagramAction)
+          ? stripDiagramMarkingPhrases(turn.question)
+          : turn.question;
+
+      // ── Commit message to chat ────────────────────────────────────────────────
+      setMessages((current) => {
+        const assistantMessage: ChatMessage = { role: "assistant", content: questionContent };
+        const updated: ChatMessage[] = [...current, assistantMessage];
+        messagesRef.current = updated; // Update ref immediately
+        return updated;
+      });
+
+      // ── Apply diagram state ───────────────────────────────────────────────────
+      if (willShowDiagram) {
         const nextMarkerKeys = new Set(
           partsToShow.map((part) =>
             getDiagramMarkerKey(part.part, part.side === "both" ? undefined : part.side),
@@ -3646,9 +3683,8 @@ export default function Home() {
           prev.filter((selection) => nextMarkerKeys.has(getDiagramMarkerKey(selection.part, selection.side))),
         );
       } else {
-        // Hide diagram unless the assistant is asking location.
-        // Also clear parts and markers so stale data from a previous turn is not
-        // submitted with a future answer.
+        // Hide diagram. Also clear parts and markers so stale data from a previous
+        // turn is not submitted with a future answer.
         setShowBodyDiagram(false);
         setSelectedBodyParts([]);
         setSelectedDiagramMarkersWithRef([]);
