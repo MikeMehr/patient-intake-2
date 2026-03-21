@@ -5135,6 +5135,10 @@ export default function Home() {
                                 </span>
                               ))}
                             </span>
+                          ) : status === "awaitingAi" && !isPaused ? (
+                            <span className="inline-flex items-center gap-1 animate-pulse">
+                              <span className="inline-block w-5 font-mono">{spinnerFrames[spinnerFrame]}</span>{thinkingStatusLabel}
+                            </span>
                           ) : (
                             <>
                               <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -5166,11 +5170,6 @@ export default function Home() {
                                 {showListeningDecor ? "Listening..." : (isTranscribing ? null : micStatusText)}
                               </p>
                             </div>
-                          )}
-                          {status === "awaitingAi" && !isPaused && (
-                            <span className="text-lg font-medium text-slate-500 animate-pulse">
-                              <span className="inline-block w-5 font-mono">{spinnerFrames[spinnerFrame]}</span>{thinkingStatusLabel}
-                            </span>
                           )}
                         </div>
                       </div>
@@ -5369,6 +5368,10 @@ export default function Home() {
                               </span>
                             ))}
                           </span>
+                        ) : status === "awaitingAi" && !isPaused ? (
+                          <span className="inline-flex items-center gap-1 animate-pulse">
+                            <span className="inline-block w-5 font-mono">{spinnerFrames[spinnerFrame]}</span>{thinkingStatusLabel}
+                          </span>
                         ) : micButtonLabel}
                       </button>
                     </div>
@@ -5392,11 +5395,6 @@ export default function Home() {
                             {showListeningDecor ? "Listening..." : (isTranscribing ? null : micStatusText)}
                           </p>
                         </div>
-                      )}
-                      {status === "awaitingAi" && !isPaused && (
-                        <span className="text-lg font-medium text-slate-500 animate-pulse">
-                          <span className="inline-block w-5 font-mono">{spinnerFrames[spinnerFrame]}</span>{thinkingStatusLabel}
-                        </span>
                       )}
                     </div>
                     {isSubmittingResponse && (
