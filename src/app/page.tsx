@@ -4548,7 +4548,7 @@ export default function Home() {
               {error && !error.startsWith("Your response is too long") && <p className="text-xs text-red-600">{error}</p>}
               </div>
 
-              <div className="mt-3 flex flex-wrap gap-3">
+              <div className={`mt-3 flex flex-wrap gap-3${status !== "idle" ? " hidden sm:flex" : ""}`}>
                 <button
                   type="submit"
                   className="inline-flex flex-1 items-center justify-center rounded-2xl bg-slate-900 px-5 py-2.5 text-base font-semibold text-white transition hover:bg-slate-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900 disabled:cursor-not-allowed disabled:bg-slate-400"
@@ -4556,19 +4556,6 @@ export default function Home() {
                 >
                   Start interview
                 </button>
-                {status !== "idle" && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (window.confirm("Are you sure you want to reset the conversation? All progress will be lost.")) {
-                        resetConversation();
-                      }
-                    }}
-                    className="inline-flex items-center justify-center rounded-2xl border border-slate-200 px-5 py-3 text-base font-semibold text-slate-600 transition hover:text-slate-900"
-                  >
-                    Reset conversation
-                  </button>
-                )}
               </div>
             </form>
 
@@ -5177,8 +5164,22 @@ export default function Home() {
                       </div>
                     )}
                     {/* End button and paused status - moved below Listening box */}
-                    <div className="flex items-center justify-between gap-3 mt-8 relative z-0">
+                    <div className="flex items-center justify-between gap-3 mt-4 relative z-0">
                       <div className="flex items-center gap-3">
+                        {/* Reset conversation */}
+                        {status !== "idle" && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (window.confirm("Are you sure you want to reset the conversation? All progress will be lost.")) {
+                                resetConversation();
+                              }
+                            }}
+                            className="flex items-center gap-1 px-2 py-1 text-[0.6rem] font-medium text-slate-600 bg-slate-100 rounded-md hover:bg-slate-200 transition whitespace-nowrap"
+                          >
+                            Reset conversation
+                          </button>
+                        )}
                         {/* Paused status */}
                         {status === "paused" && (
                           <span className="text-sm text-slate-500">
