@@ -684,6 +684,9 @@ export default function Home() {
   const selectedDiagramMarkersRef = useRef<DiagramMarkerSelection[]>([]);
   const [endedEarly, setEndedEarly] = useState(false);
   const [showEndInterviewConfirm, setShowEndInterviewConfirm] = useState(false);
+  const [showSttReviewModal, setShowSttReviewModal] = useState(false);
+  const [hasDismissedSttReview, setHasDismissedSttReview] = useState(false);
+  const pendingSttSubmitFnRef = useRef<(() => void) | null>(null);
   const [interviewStartTime, setInterviewStartTime] = useState<number | null>(null);
   const interviewStartTimeRef = useRef<number | null>(null);
   const [elapsedTime, setElapsedTime] = useState<number>(0);
@@ -2244,6 +2247,15 @@ export default function Home() {
     }
     draftCommitDedupeRef.current = { draft, atMs: now };
     commitDraftToResponse(autoSubmit);
+  };
+
+  const handleSubmitWithSttReview = (fn: () => void) => {
+    if (!hasDismissedSttReview) {
+      pendingSttSubmitFnRef.current = fn;
+      setShowSttReviewModal(true);
+    } else {
+      fn();
+    }
   };
 
   const redoDraftTranscript = () => {
@@ -5060,14 +5072,14 @@ export default function Home() {
                               onPointerDown={(event) => {
                                 event.preventDefault();
                                 if (!isSpeechBusy && !isSubmittingResponse && !hasPendingSubmission) {
-                                  commitDraftToResponseOnce(true);
+                                  handleSubmitWithSttReview(() => commitDraftToResponseOnce(true));
                                 }
                               }}
                               onPointerUp={() => {
                               }}
                               onClick={() => {
                                 if (!isSpeechBusy && !isSubmittingResponse && !hasPendingSubmission) {
-                                  commitDraftToResponseOnce(true);
+                                  handleSubmitWithSttReview(() => commitDraftToResponseOnce(true));
                                 }
                               }}
                             className="inline-flex min-h-[31px] sm:min-h-[26px] items-center justify-center rounded-full bg-gradient-to-t from-[#80D7FF] via-[#C0ECFC] to-[#80D7FF] px-2.5 py-1.5 sm:py-1 text-xs font-medium text-slate-900 shadow-sm transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-60"
@@ -5414,14 +5426,14 @@ export default function Home() {
                             onPointerDown={(event) => {
                               event.preventDefault();
                               if (!isSpeechBusy && !isSubmittingResponse && !hasPendingSubmission) {
-                                commitDraftToResponseOnce();
+                                handleSubmitWithSttReview(() => commitDraftToResponseOnce());
                               }
                             }}
                             onPointerUp={() => {
                             }}
                             onClick={() => {
                               if (!isSpeechBusy && !isSubmittingResponse && !hasPendingSubmission) {
-                                commitDraftToResponseOnce();
+                                handleSubmitWithSttReview(() => commitDraftToResponseOnce());
                               }
                             }}
                             className="inline-flex min-h-[108px] sm:min-h-[74px] items-center justify-center rounded-xl bg-gradient-to-t from-[#80D7FF] via-[#C0ECFC] to-[#80D7FF] px-4 py-2.5 sm:py-2 text-sm font-semibold text-slate-900 transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-60"
@@ -5635,6 +5647,46 @@ export default function Home() {
 
         </section>
       </main>
+      {showSttReviewModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="stt-review-title"
+            aria-describedby="stt-review-description"
+            className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl shadow-slate-900/20"
+          >
+            <p className="text-sm font-semibold text-slate-500">Health Assist AI</p>
+            <h2 id="stt-review-title" className="mt-2 text-xl font-semibold text-slate-900">
+              Review your answer
+            </h2>
+            <p id="stt-review-description" className="mt-3 text-sm leading-6 text-slate-600">
+              Speech-to-text may occasionally make mistakes. Please make sure your answer is accurate before sending it to your physician.
+            </p>
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setShowSttReviewModal(false)}
+                className="rounded-2xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
+              >
+                Edit answer
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setHasDismissedSttReview(true);
+                  setShowSttReviewModal(false);
+                  pendingSttSubmitFnRef.current?.();
+                  pendingSttSubmitFnRef.current = null;
+                }}
+                className="rounded-2xl bg-sky-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-sky-700"
+              >
+                Submit
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {showEndInterviewConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4">
           <div
