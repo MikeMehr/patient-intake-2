@@ -4854,7 +4854,7 @@ export default function Home() {
                                         setEditingMessageIndex(index);
                                         setEditingContent(message.content);
                                       }}
-                                      className="absolute -bottom-2.5 right-3 rounded-full border-2 border-white bg-sky-700 px-2.5 py-0.5 text-xs font-medium text-white shadow-sm transition hover:bg-sky-800"
+                                      className="absolute -bottom-2.5 right-3 rounded-full border-2 border-white bg-[#FA5A6F] px-2.5 py-0.5 text-xs font-medium text-white shadow-sm transition hover:bg-[#e04460]"
                                       title="Edit this message"
                                     >
                                       Edit
