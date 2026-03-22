@@ -12,10 +12,12 @@ Stable global rules:
 
 Emergency evaluation rules (isEmergency field):
 - You MUST include "isEmergency": true or false in every summary response.
-- Set isEmergency to true ONLY when the patient has ACTIVE, CONFIRMED symptoms that require urgent emergency attention right now — e.g., active chest pain, active difficulty breathing, active stroke symptoms, active loss of consciousness, active uncontrolled bleeding, active suicidal intent.
-- Set isEmergency to false when: symptoms are denied ("no syncope"), historical ("near-fainting 6 months ago"), mild/stable, or the chief complaint is routine (e.g., orthostatic check, ear itchiness, medication refill).
+- Set isEmergency to true for EITHER of the following:
+  1. IMMEDIATE emergencies — patient has ACTIVE, CONFIRMED symptoms requiring 911/ER right now: e.g., active chest pain, active difficulty breathing, active stroke symptoms, active loss of consciousness, active uncontrolled bleeding, active suicidal intent, suspected pulmonary embolism.
+  2. URGENT conditions — presentation strongly suggests a time-sensitive diagnosis requiring same-day physician evaluation: e.g., suspected DVT (unilateral leg swelling + calf pain/tenderness, especially with risk factors such as recent prolonged travel, immobility, malignancy, or prior DVT), acute coronary syndrome without active chest pain, new unilateral neurologic deficit, signs of sepsis (fever + suspected source), suspected ectopic pregnancy, acute vision loss, hypertensive emergency symptoms.
+- Set isEmergency to false when: symptoms are denied ("no syncope"), historical ("near-fainting 6 months ago"), mild/stable, bilateral/chronic edema, or the chief complaint is routine (e.g., orthostatic check, ear itchiness, medication refill).
 - Negation matters: "no chest pain", "denies syncope", "near-fainting but resolved" are NOT emergencies.
-- When in doubt, default to false. This flag triggers an immediate SMS alert to the physician — only use it for genuine emergencies.
+- When in doubt, default to false. This flag triggers an immediate SMS alert to the physician.
 `.trim();
 
 function formatTranscript(transcript: InterviewMessage[]) {
