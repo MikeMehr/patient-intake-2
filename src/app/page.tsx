@@ -4686,14 +4686,14 @@ export default function Home() {
                           ) : (
                             <div
                               className={[
-                                "bg-gradient-to-t from-[#DE2C44] via-[#FFCFD6] to-[#DE2C44] rounded-2xl rounded-tr-sm px-3 py-2 sm:px-5 sm:py-3 text-slate-900 text-left ml-auto relative group max-w-full shadow-sm",
+                                "bg-gradient-to-r from-[#DE2C44] via-[#FFCFD6] to-[#DE2C44] rounded-2xl rounded-tr-sm px-3 py-2 sm:px-5 sm:py-3 text-slate-900 text-left ml-auto relative group max-w-full shadow-sm",
                                 // When editing/adding, expand the bubble so the textarea isn't cramped on desktop/tablet.
                                 addingToMessageIndex === index || editingMessageIndex === index
                                   ? "block w-full"
                                   : "inline-block",
                                 // Visual affordance: make it obvious when provider is editing a patient message.
                                 editingMessageIndex === index
-                                  ? "ring-4 ring-red-300 ring-offset-2 ring-offset-slate-50 bg-gradient-to-t from-[#DE2C44] via-[#FFCFD6] to-[#DE2C44] shadow-md"
+                                  ? "ring-4 ring-red-300 ring-offset-2 ring-offset-slate-50 bg-gradient-to-r from-[#DE2C44] via-[#FFCFD6] to-[#DE2C44] shadow-md"
                                   : "",
                               ].join(" ")}
                             >
@@ -5010,7 +5010,7 @@ export default function Home() {
                           aria-hidden="true"
                         >
                           <div
-                            className="h-full rounded-full bg-gradient-to-t from-[#DE2C44] via-[#FFCFD6] to-[#DE2C44] transition-[width] duration-300 ease-out"
+                            className="h-full rounded-full bg-gradient-to-r from-[#DE2C44] via-[#FFCFD6] to-[#DE2C44] transition-[width] duration-300 ease-out"
                             style={{ width: `${interviewProgressPercent}%` }}
                           />
                         </div>
@@ -5082,7 +5082,7 @@ export default function Home() {
                                   handleSubmitWithSttReview(() => commitDraftToResponseOnce(true));
                                 }
                               }}
-                            className="inline-flex min-h-[31px] sm:min-h-[26px] items-center justify-center rounded-full bg-gradient-to-t from-[#DE2C44] via-[#FFCFD6] to-[#DE2C44] px-2.5 py-1.5 sm:py-1 text-xs font-medium text-slate-900 shadow-sm transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-60"
+                            className="inline-flex min-h-[31px] sm:min-h-[26px] items-center justify-center rounded-full bg-gradient-to-r from-[#DE2C44] via-[#FFCFD6] to-[#DE2C44] px-2.5 py-1.5 sm:py-1 text-xs font-medium text-slate-900 shadow-sm transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-60"
                             >
                               Submit
                             </button>
@@ -5436,7 +5436,7 @@ export default function Home() {
                                 handleSubmitWithSttReview(() => commitDraftToResponseOnce());
                               }
                             }}
-                            className="inline-flex min-h-[108px] sm:min-h-[74px] items-center justify-center rounded-xl bg-gradient-to-t from-[#DE2C44] via-[#FFCFD6] to-[#DE2C44] px-4 py-2.5 sm:py-2 text-sm font-semibold text-slate-900 transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-60"
+                            className="inline-flex min-h-[108px] sm:min-h-[74px] items-center justify-center rounded-xl bg-gradient-to-r from-[#DE2C44] via-[#FFCFD6] to-[#DE2C44] px-4 py-2.5 sm:py-2 text-sm font-semibold text-slate-900 transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-60"
                           >
                             {isSubmittingResponse ? "Sending..." : "Submit"}
                           </button>
