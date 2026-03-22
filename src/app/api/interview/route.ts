@@ -24,6 +24,7 @@ import {
 } from "./prompt-helpers";
 import { buildPrompt as buildInterviewPrompt } from "./prompt-builder";
 import { buildInterviewState } from "./state-builder";
+import { summarySystemPrompt } from "./prompt-summary";
 import { sendEmergencyAlertSMS } from "@/lib/sms";
 import { getPhysicianPhone } from "@/lib/physician-lookup";
 
@@ -384,7 +385,7 @@ export async function POST(request: Request) {
     const completion = await azure.client.chat.completions.create({
       model: azure.deployment,
       messages: [
-        { role: "system", content: `${systemInstruction}\n\n${languageInstruction}` },
+        { role: "system", content: `${systemInstruction}\n\n${summarySystemPrompt}\n\n${languageInstruction}` },
         { role: "user", content: prompt },
       ],
       max_completion_tokens: 1200,

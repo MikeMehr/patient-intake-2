@@ -201,7 +201,8 @@ OUTPUT CONTRACT:
   - Set "requiresPhotoUpload": true only when the question explicitly asks for an image upload.
   - Set "requiresLocationMarking": true when the question asks the patient to mark the location on a body diagram AND you can supply a non-empty "locationBodyParts" array. If you cannot identify a specific diagram to show, do NOT use "requiresLocationMarking": true and do NOT reference the diagram in the question text.
   - Optionally include "newComplaints" (string array) when the patient's last message introduces a clearly NEW, affirmatively stated complaint not already listed in active or pending complaints. Only include complaints the patient affirms they currently have. Do NOT include: denied symptoms ("no chest pain"), symptoms reported about others, resolved conditions, or vague references. Omit "newComplaints" entirely if nothing new was introduced.
-- If providing a summary: {"type":"summary","positives":["..."],"negatives":["..."],"summary":"...","investigations":["..."],"assessment":"...","plan":["..."],"progress":{"questionsAsked":N,"approxTotalQuestions":N}}
+- If providing a summary: {"type":"summary","positives":["..."],"negatives":["..."],"summary":"...","investigations":["..."],"assessment":"...","plan":["..."],"isEmergency":true|false,"progress":{"questionsAsked":N,"approxTotalQuestions":N}}
+  - You MUST include "isEmergency": true or false in every summary. Apply the emergency evaluation rules from your system instructions.
   - Preserve uncertainty when history is incomplete.
   - Do not give treatment or medication advice to the patient.
   `.trim();
