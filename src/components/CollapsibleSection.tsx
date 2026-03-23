@@ -9,6 +9,7 @@ type CollapsibleSectionProps = {
   defaultOpen?: boolean;
   previewText?: string;
   headerRight?: React.ReactNode;
+  showIndicator?: boolean;
   children: React.ReactNode;
 };
 
@@ -45,6 +46,7 @@ export default function CollapsibleSection({
   defaultOpen = false,
   previewText,
   headerRight,
+  showIndicator = false,
   children,
 }: CollapsibleSectionProps) {
   const [open, setOpen] = useState(defaultOpen);
@@ -68,6 +70,9 @@ export default function CollapsibleSection({
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0 space-y-1">
             <div className="flex items-center gap-2">
+              {showIndicator && (
+                <span className="text-red-500 text-base leading-none" title="Contains patient-entered information">●</span>
+              )}
               <span className="text-sm font-medium text-slate-800">{title}</span>
               <ChevronIcon open={open} />
             </div>

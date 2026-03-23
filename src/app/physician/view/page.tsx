@@ -2136,6 +2136,19 @@ function PhysicianViewContent() {
                 id="patient-medical-history"
                 title="Medical History (PMHx, Medications, Allergies)"
                 defaultOpen={false}
+                showIndicator={[
+                  session.patientProfile?.pmh,
+                  session.patientProfile?.familyHistory,
+                  session.patientProfile?.currentMedications,
+                  session.patientProfile?.allergies,
+                  session.patientProfile?.familyDoctor,
+                  session.patientProfile?.pharmacyName,
+                  session.patientProfile?.pharmacyNumber,
+                  session.patientProfile?.pharmacyAddress,
+                  session.patientProfile?.pharmacyCity,
+                  session.patientProfile?.pharmacyPhone,
+                  session.patientProfile?.pharmacyFax,
+                ].some((v) => v?.trim())}
               >
                 <div className="grid grid-cols-1 gap-3 text-sm md:grid-cols-2">
                   <div className="md:col-span-2">
