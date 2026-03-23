@@ -4631,7 +4631,7 @@ export default function Home() {
 
             <section className="mt-2 rounded-3xl border border-slate-100 bg-white/80 px-3 py-4 sm:px-5 sm:py-6 shadow-slate-100">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
-                <div className="flex items-center gap-2">
+                <div className="flex w-full items-center justify-center sm:w-auto sm:justify-start">
                   <h2 className="text-2xl font-semibold text-slate-900">
                     Guided Interview
                   </h2>
