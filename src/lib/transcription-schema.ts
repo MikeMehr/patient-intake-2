@@ -29,6 +29,11 @@ export const finalizeSoapRequestSchema = z.object({
   soapVersionId: z.string().uuid(),
 });
 
+export const associatePatientRequestSchema = z.object({
+  encounterId: z.string().uuid(),
+  patientId: z.string().uuid(),
+});
+
 export const markExportedRequestSchema = z.object({
   soapVersionId: z.string().uuid(),
   idempotencyKey: z.string().trim().min(8).max(200),

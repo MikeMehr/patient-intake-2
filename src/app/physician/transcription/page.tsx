@@ -669,6 +669,25 @@ export default function PhysicianTranscriptionPage() {
     setActionError(null);
     setActionSuccess(null);
     try {
+      // If patient was selected after SOAP generation, associate them now
+      if (!soapHasPatient && selectedPatient?.id && encounterId) {
+        const assocRes = await fetch("/api/physician/transcription/associate-patient", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ encounterId, patientId: selectedPatient.id }),
+        });
+        const assocData = await assocRes.json().catch(() => ({}));
+        if (!assocRes.ok) {
+          throw new Error(assocData?.error || "Failed to associate patient with SOAP");
+        }
+        setSoapHasPatient(true);
+        const updatedCases = [...soapCases];
+        if (updatedCases[activeCaseIndex]) {
+          updatedCases[activeCaseIndex] = { ...updatedCases[activeCaseIndex], hasPatient: true };
+          setSoapCases(updatedCases);
+        }
+      }
+
       if (lifecycleState !== "FINALIZED_FOR_EXPORT") {
         const finalizeRes = await fetch("/api/physician/transcription/finalize", {
           method: "POST",
@@ -1089,8 +1108,8 @@ export default function PhysicianTranscriptionPage() {
                       <button
                         type="button"
                         onClick={finalizeAndSaveToEmr}
-                        disabled={!soapVersionId || !soapHasPatient || actionLoading}
-                        title={!soapHasPatient ? "Add patient name and DOB to finalize and save to EMR." : undefined}
+                        disabled={!soapVersionId || (!soapHasPatient && !hasPatientIdentity) || actionLoading}
+                        title={(!soapHasPatient && !hasPatientIdentity) ? "Add patient name and DOB to finalize and save to EMR." : undefined}
                         className="px-4 py-2 text-sm font-medium text-white bg-emerald-700 rounded-lg hover:bg-emerald-800 disabled:bg-slate-400"
                       >
                         Finalize &amp; Save to EMR
@@ -1103,7 +1122,7 @@ export default function PhysicianTranscriptionPage() {
                         Start New
                       </button>
                     </div>
-                    {!soapHasPatient && soapVersionId && (
+                    {!soapHasPatient && !hasPatientIdentity && soapVersionId && (
                       <p className="text-xs text-amber-600">Patient name required to finalize and save to EMR.</p>
                     )}
                     <p className="text-xs text-slate-500">

@@ -268,6 +268,33 @@ export async function finalizeSoapVersion(params: {
   return { encounterId: row.encounter_id, patientId: row.patient_id, version: row.version };
 }
 
+export async function updateEncounterPatient(params: {
+  encounterId: string;
+  patientId: string;
+  physicianId: string;
+  scope: Scope;
+}): Promise<void> {
+  // Only update rows that still have no patient to prevent overwriting existing associations
+  await query(
+    `UPDATE patient_encounters
+     SET patient_id = $1
+     WHERE id = $2 AND physician_id = $3 AND patient_id IS NULL`,
+    [params.patientId, params.encounterId, params.physicianId],
+  );
+  await query(
+    `UPDATE soap_note_versions
+     SET patient_id = $1
+     WHERE encounter_id = $2 AND patient_id IS NULL`,
+    [params.patientId, params.encounterId],
+  );
+  await query(
+    `UPDATE physician_transcription_sessions
+     SET patient_id = $1
+     WHERE encounter_id = $2 AND patient_id IS NULL`,
+    [params.patientId, params.encounterId],
+  );
+}
+
 export async function upsertTranscriptionSessionPointer(params: {
   physicianId: string;
   patientId: string | null;
