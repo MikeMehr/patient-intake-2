@@ -146,6 +146,10 @@ export default function PhysicianTranscriptionPage() {
   const [showStartNewConfirm, setShowStartNewConfirm] = useState(false);
   const [patientSectionOpen, setPatientSectionOpen] = useState(false);
   const [snapshotSectionOpen, setSnapshotSectionOpen] = useState(false);
+  const [snapshotFilterDate, setSnapshotFilterDate] = useState<string>(
+    () => new Date().toISOString().slice(0, 10),
+  );
+  const [snapshotAnonOnly, setSnapshotAnonOnly] = useState(false);
 
   const hasNewPatientIdentity = useMemo(
     () => newPatientFullName.trim().length >= 3 && /^\d{4}-\d{2}-\d{2}$/.test(newPatientDob.trim()),
@@ -167,6 +171,18 @@ export default function PhysicianTranscriptionPage() {
     if (transcript.trim().length < 10) return "Add transcript text first.";
     return null;
   }, [transcript]);
+  const visibleItems = useMemo(
+    () =>
+      historyItems
+        .filter((item) => item.lifecycleState !== "FINALIZED_FOR_EXPORT")
+        .filter((item) => !snapshotAnonOnly || item.patientId === null)
+        .filter(
+          (item) =>
+            !snapshotFilterDate ||
+            item.createdAt.startsWith(snapshotFilterDate),
+        ),
+    [historyItems, snapshotAnonOnly, snapshotFilterDate],
+  );
   const canCopySoap = useMemo(() => reviewText.trim().length > 0, [reviewText]);
 
   useEffect(() => {
@@ -1289,30 +1305,65 @@ export default function PhysicianTranscriptionPage() {
                 className="flex-1 flex items-center justify-between px-6 py-3 text-sm font-medium text-slate-700 hover:bg-slate-50 rounded-lg"
               >
                 <span>
-                  Recent snapshots{historyItems.length > 0 ? ` (${historyItems.length})` : ""}
+                  Recent snapshots{visibleItems.length > 0 ? ` (${visibleItems.length})` : ""}
                 </span>
                 <span className="text-slate-400">{snapshotSectionOpen ? "∧" : "›"}</span>
               </button>
             </div>
             {snapshotSectionOpen && (
               <div className="px-6 pb-5 pt-1 border-t border-slate-100 space-y-3">
-                <div className="flex justify-end">
-                  <button
-                    type="button"
-                    onClick={deleteAllSnapshots}
-                    disabled={historyLoading || historyItems.length === 0 || deletingAllSnapshots}
-                    className="px-3 py-1.5 text-xs font-medium text-red-700 bg-white border border-red-300 rounded-lg hover:bg-red-50 disabled:opacity-60"
-                  >
-                    {deletingAllSnapshots ? "Deleting..." : "Delete All"}
-                  </button>
+                {/* Filter bar */}
+                <div className="flex flex-wrap items-center gap-3">
+                  <div className="flex items-center gap-1.5">
+                    <label className="text-xs text-slate-500">Date</label>
+                    <input
+                      type="date"
+                      value={snapshotFilterDate}
+                      onChange={(e) => setSnapshotFilterDate(e.target.value)}
+                      className="text-xs border border-slate-300 rounded px-2 py-1 text-slate-700 focus:outline-none focus:ring-1 focus:ring-slate-400"
+                    />
+                    {snapshotFilterDate && (
+                      <button
+                        type="button"
+                        onClick={() => setSnapshotFilterDate("")}
+                        className="text-xs text-slate-400 hover:text-slate-600"
+                        title="Clear date filter"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+                  <label className="flex items-center gap-1.5 text-xs text-slate-500 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={snapshotAnonOnly}
+                      onChange={(e) => setSnapshotAnonOnly(e.target.checked)}
+                      className="rounded"
+                    />
+                    Anonymous only
+                  </label>
+                  <div className="ml-auto">
+                    <button
+                      type="button"
+                      onClick={deleteAllSnapshots}
+                      disabled={historyLoading || historyItems.length === 0 || deletingAllSnapshots}
+                      className="px-3 py-1.5 text-xs font-medium text-red-700 bg-white border border-red-300 rounded-lg hover:bg-red-50 disabled:opacity-60"
+                    >
+                      {deletingAllSnapshots ? "Deleting..." : "Delete All"}
+                    </button>
+                  </div>
                 </div>
                 {historyLoading ? (
                   <p className="text-sm text-slate-600">Loading...</p>
-                ) : historyItems.length === 0 ? (
-                  <p className="text-sm text-slate-600">No transcription snapshots yet.</p>
+                ) : visibleItems.length === 0 ? (
+                  <p className="text-sm text-slate-600">
+                    {historyItems.length === 0
+                      ? "No transcription snapshots yet."
+                      : "No snapshots match the current filters."}
+                  </p>
                 ) : (
                   <div className="space-y-2">
-                    {historyItems.map((item) => (
+                    {visibleItems.map((item) => (
                       <div
                         key={item.transcriptionSessionId}
                         className="rounded-lg border border-slate-200 px-3 py-2"
@@ -1323,9 +1374,16 @@ export default function PhysicianTranscriptionPage() {
                             onClick={() => loadSoapVersion(item.soapVersionId)}
                             className="flex-1 text-left hover:bg-slate-50 rounded-md"
                           >
-                            <div className="text-sm font-medium text-slate-900">{item.patientName || <span className="italic text-slate-400">Anonymous</span>}</div>
-                            <div className="text-xs text-slate-500">
-                              v{item.version} • {item.lifecycleState} • {formatDateTime(item.createdAt)}
+                            <div className="text-sm font-medium text-slate-900">
+                              {item.patientName || <span className="italic text-slate-400">Anonymous</span>}
+                            </div>
+                            {item.chiefComplaint && (
+                              <div className="text-xs font-medium text-slate-500 mt-0.5">
+                                {item.chiefComplaint}
+                              </div>
+                            )}
+                            <div className="text-xs text-slate-400 mt-0.5">
+                              {formatDateTime(item.createdAt)}
                             </div>
                             {item.previewSummary && (
                               <div className="text-xs text-slate-600 mt-1 line-clamp-2">{item.previewSummary}</div>
