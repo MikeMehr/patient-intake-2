@@ -280,8 +280,7 @@ export default function InvitationTokenIntakePage() {
           alt="Health Assist AI logo"
           width={240}
           height={56}
-          className="mx-auto mb-5 h-[60px] w-[183px] object-cover sm:h-20 sm:w-[245px]"
-          style={{ objectPosition: "78% center" }}
+          className="mx-auto mb-5 h-[60px] w-[183px] object-contain sm:h-20 sm:w-[245px]"
           priority
         />
         <h1 className="text-xl font-semibold text-slate-900">Verify your invitation</h1>
