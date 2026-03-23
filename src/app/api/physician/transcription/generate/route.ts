@@ -23,8 +23,8 @@ Return valid JSON only: an array of objects, each with keys: label, subjective, 
 - "label": brief case identifier (e.g. "Headache", "Left Elbow Pain")
 - "subjective": patient symptoms, history, and relevant context
 - "objective": exam findings and vitals (if documented)
-- "assessment": diagnosis or differential
-- "plan": treatment and follow-up
+- "assessment": likely diagnosis and differentials
+- "plan": recommended investigations if appropriate, treatment, and follow-up
 If there is only one case, still return a single-element array.
 Do not include markdown, code fences, or extra keys.
 Each field should be clinically useful and concise.`;
