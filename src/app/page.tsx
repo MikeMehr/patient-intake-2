@@ -5178,6 +5178,8 @@ export default function Home() {
                               ? "gi-animate-mic-pulse border border-red-700 bg-red-600 text-white shadow-red-300/60 focus-visible:outline-red-600"
                               : micUiState === "starting"
                                 ? "bg-amber-500 text-white border border-amber-500 focus-visible:outline-amber-500"
+                              : (status === "awaitingAi" && !isPaused)
+                                ? "bg-orange-500 text-white border border-orange-500 focus-visible:outline-orange-500"
                               : "border border-[#04D670] bg-[#04D670] text-white focus-visible:outline-[#04D670]"
                           } ${isCoarsePointer ? "opacity-100" : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"}`}
                           title={micButtonTitle}
