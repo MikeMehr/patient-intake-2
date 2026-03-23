@@ -2,7 +2,7 @@ import { createHash } from "crypto";
 import { getClient, query } from "@/lib/db";
 import type { SoapDraft } from "@/lib/transcription-schema";
 import { EMR_EXPORT_STATUS, SOAP_LIFECYCLE_STATES } from "@/lib/transcription-policy";
-import { getPhiRetentionHours } from "@/lib/phi-retention";
+import { getFinalizedRetentionHours, getPhiRetentionHours } from "@/lib/phi-retention";
 
 type Scope = { organizationId: string; physicianId?: never } | { organizationId?: never; physicianId: string };
 
@@ -619,6 +619,11 @@ export async function cleanupExpiredPhiRecords(): Promise<{
   patients: number;
 }> {
   const hours = Math.floor(getPhiRetentionHours());
+  // FINALIZED_FOR_EXPORT SOAP notes use a longer retention window.
+  // BUSINESS SETTING — default 7 years (RETENTION_YEARS env var).
+  // Review with legal counsel before reducing; jurisdiction-specific medical
+  // record laws may require longer retention periods.
+  const finalizedHours = Math.floor(getFinalizedRetentionHours());
   const client = await getClient();
   try {
     await client.query("BEGIN");
@@ -641,34 +646,81 @@ export async function cleanupExpiredPhiRecords(): Promise<{
       [hours],
     );
 
+    // Protect emr_exports linked to finalized SOAPs still within 7-year retention.
     const emrRes = await client.query(
       `DELETE FROM emr_exports
-       WHERE created_at < NOW() - ($1::int * INTERVAL '1 hour')`,
-      [hours],
+       WHERE created_at < NOW() - ($1::int * INTERVAL '1 hour')
+         AND soap_version_id NOT IN (
+           SELECT id FROM soap_note_versions
+           WHERE lifecycle_state = 'FINALIZED_FOR_EXPORT'
+             AND (
+               finalized_for_export_at IS NULL
+               OR finalized_for_export_at >= NOW() - ($2::int * INTERVAL '1 hour')
+             )
+         )`,
+      [hours, finalizedHours],
     );
 
+    // Protect sessions linked to encounters that still have live finalized SOAPs.
     const txRes = await client.query(
       `DELETE FROM physician_transcription_sessions
-       WHERE created_at < NOW() - ($1::int * INTERVAL '1 hour')`,
-      [hours],
+       WHERE created_at < NOW() - ($1::int * INTERVAL '1 hour')
+         AND encounter_id NOT IN (
+           SELECT DISTINCT encounter_id FROM soap_note_versions
+           WHERE lifecycle_state = 'FINALIZED_FOR_EXPORT'
+             AND (
+               finalized_for_export_at IS NULL
+               OR finalized_for_export_at >= NOW() - ($2::int * INTERVAL '1 hour')
+             )
+         )`,
+      [hours, finalizedHours],
     );
 
+    // DRAFT notes: expire after the standard PHI retention window (3 years default).
+    // FINALIZED_FOR_EXPORT notes: expire after the longer clinical retention window
+    //   (7 years default), measured from finalized_for_export_at.
     const soapRes = await client.query(
       `DELETE FROM soap_note_versions
-       WHERE created_at < NOW() - ($1::int * INTERVAL '1 hour')`,
-      [hours],
+       WHERE (
+         lifecycle_state = 'DRAFT'
+         AND created_at < NOW() - ($1::int * INTERVAL '1 hour')
+       ) OR (
+         lifecycle_state = 'FINALIZED_FOR_EXPORT'
+         AND finalized_for_export_at IS NOT NULL
+         AND finalized_for_export_at < NOW() - ($2::int * INTERVAL '1 hour')
+       )`,
+      [hours, finalizedHours],
     );
 
+    // Only delete encounters that have no remaining live finalized SOAP notes.
     const encRes = await client.query(
       `DELETE FROM patient_encounters
-       WHERE created_at < NOW() - ($1::int * INTERVAL '1 hour')`,
-      [hours],
+       WHERE created_at < NOW() - ($1::int * INTERVAL '1 hour')
+         AND id NOT IN (
+           SELECT DISTINCT encounter_id FROM soap_note_versions
+           WHERE lifecycle_state = 'FINALIZED_FOR_EXPORT'
+             AND (
+               finalized_for_export_at IS NULL
+               OR finalized_for_export_at >= NOW() - ($2::int * INTERVAL '1 hour')
+             )
+         )`,
+      [hours, finalizedHours],
     );
 
+    // Only delete patients who have no remaining live finalized SOAP notes.
     const patRes = await client.query(
       `DELETE FROM patients
-       WHERE created_at < NOW() - ($1::int * INTERVAL '1 hour')`,
-      [hours],
+       WHERE created_at < NOW() - ($1::int * INTERVAL '1 hour')
+         AND id NOT IN (
+           SELECT DISTINCT patient_id FROM soap_note_versions
+           WHERE lifecycle_state = 'FINALIZED_FOR_EXPORT'
+             AND patient_id IS NOT NULL
+             AND (
+               finalized_for_export_at IS NULL
+               OR finalized_for_export_at >= NOW() - ($2::int * INTERVAL '1 hour')
+             )
+         )`,
+      [hours, finalizedHours],
     );
 
     await client.query("COMMIT");
