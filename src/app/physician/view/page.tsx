@@ -176,6 +176,7 @@ const composeUnifiedHpiText = (history: PatientSession["history"]): string => {
   const subjective = stripOptionalNone(history?.summary || "");
   const assessment = stripOptionalNone(history?.assessment || "");
   const physicalFindings = toStringList((history as any)?.physicalFindings);
+  const investigations = toStringList((history as any)?.investigations);
   const plan = toStringList((history as any)?.plan);
   const patientFinalComments = stripOptionalNone(
     history?.patientFinalQuestionsCommentsEnglish?.trim()
@@ -193,6 +194,9 @@ const composeUnifiedHpiText = (history: PatientSession["history"]): string => {
     "Assessment:",
     assessment || "None",
     "",
+    "Investigations:",
+    formatListSection(investigations),
+    "",
     "Plan:",
     formatListSection(plan),
     "",
@@ -205,6 +209,7 @@ type ParsedUnifiedHpi = {
   subjective: string;
   assessment: string;
   physicalFindings: string[];
+  investigations: string[];
   plan: string[];
   patientFinalComments: string;
 };
@@ -212,6 +217,8 @@ type ParsedUnifiedHpi = {
 const parseUnifiedHpiText = (value: string): ParsedUnifiedHpi | null => {
   const normalized = value.replace(/\r\n/g, "\n").trim();
   const currentOrderPattern =
+    /Subjective:\s*([\s\S]*?)\n\s*Physical Findings:\s*([\s\S]*?)\n\s*Assessment:\s*([\s\S]*?)\n\s*Investigations:\s*([\s\S]*?)\n\s*Plan:\s*([\s\S]*?)\n\s*Patient Final Comments:\s*([\s\S]*)$/i;
+  const noInvestigationsPattern =
     /Subjective:\s*([\s\S]*?)\n\s*Physical Findings:\s*([\s\S]*?)\n\s*Assessment:\s*([\s\S]*?)\n\s*Plan:\s*([\s\S]*?)\n\s*Patient Final Comments:\s*([\s\S]*)$/i;
   const legacyOrderPattern =
     /Subjective:\s*([\s\S]*?)\n\s*Assessment:\s*([\s\S]*?)\n\s*Physical Findings:\s*([\s\S]*?)\n\s*Plan:\s*([\s\S]*?)\n\s*Patient Final Comments:\s*([\s\S]*)$/i;
@@ -222,8 +229,21 @@ const parseUnifiedHpiText = (value: string): ParsedUnifiedHpi | null => {
       subjective: stripOptionalNone(currentMatch[1] || ""),
       physicalFindings: normalizeListBlock(currentMatch[2] || ""),
       assessment: stripOptionalNone(currentMatch[3] || ""),
-      plan: normalizeListBlock(currentMatch[4] || ""),
-      patientFinalComments: stripOptionalNone(currentMatch[5] || ""),
+      investigations: normalizeListBlock(currentMatch[4] || ""),
+      plan: normalizeListBlock(currentMatch[5] || ""),
+      patientFinalComments: stripOptionalNone(currentMatch[6] || ""),
+    };
+  }
+
+  const noInvestigationsMatch = normalized.match(noInvestigationsPattern);
+  if (noInvestigationsMatch) {
+    return {
+      subjective: stripOptionalNone(noInvestigationsMatch[1] || ""),
+      physicalFindings: normalizeListBlock(noInvestigationsMatch[2] || ""),
+      assessment: stripOptionalNone(noInvestigationsMatch[3] || ""),
+      investigations: [],
+      plan: normalizeListBlock(noInvestigationsMatch[4] || ""),
+      patientFinalComments: stripOptionalNone(noInvestigationsMatch[5] || ""),
     };
   }
 
@@ -233,6 +253,7 @@ const parseUnifiedHpiText = (value: string): ParsedUnifiedHpi | null => {
     subjective: stripOptionalNone(legacyMatch[1] || ""),
     assessment: stripOptionalNone(legacyMatch[2] || ""),
     physicalFindings: normalizeListBlock(legacyMatch[3] || ""),
+    investigations: [],
     plan: normalizeListBlock(legacyMatch[4] || ""),
     patientFinalComments: stripOptionalNone(legacyMatch[5] || ""),
   };
@@ -251,6 +272,7 @@ type HpiSections = {
   subjective: string;
   physicalFindings: string[];
   assessment: string;
+  investigations: string[];
   plan: string[];
   patientFinalComments: string;
 };
@@ -259,6 +281,7 @@ const getHpiSections = (history?: PatientSession["history"]): HpiSections => {
   const subjective = stripOptionalNone(history?.summary || "");
   const assessment = stripOptionalNone(history?.assessment || "");
   const physicalFindings = toStringList((history as any)?.physicalFindings);
+  const investigations = toStringList((history as any)?.investigations).map((item) => item.replace(/^[-*•]\s*/, "").trim());
   const plan = toStringList((history as any)?.plan).map((item) => item.replace(/^[-*•]\s*/, "").trim());
   const patientFinalComments = stripOptionalNone(
     history?.patientFinalQuestionsCommentsEnglish?.trim()
@@ -270,6 +293,7 @@ const getHpiSections = (history?: PatientSession["history"]): HpiSections => {
     subjective: subjective || "None",
     physicalFindings,
     assessment: assessment || "None",
+    investigations,
     plan,
     patientFinalComments: patientFinalComments || "None",
   };
@@ -855,7 +879,7 @@ function PhysicianViewContent() {
     const parsed = parseUnifiedHpiText(hpiCombinedDraft);
     if (!parsed) {
       setHpiSaveError(
-        "Invalid HPI format. Keep the section headers: Subjective, Physical Findings, Assessment, Plan, Patient Final Comments.",
+        "Invalid HPI format. Keep the section headers: Subjective, Physical Findings, Assessment, Investigations, Plan, Patient Final Comments.",
       );
       return;
     }
@@ -897,6 +921,7 @@ function PhysicianViewContent() {
           historyAssessment: parsed.assessment,
           historyPlan: parsed.plan,
           historyPhysicalFindings: parsed.physicalFindings,
+          historyInvestigations: parsed.investigations,
           historyPatientFinalComments: parsed.patientFinalComments,
         }),
       });
@@ -919,6 +944,7 @@ function PhysicianViewContent() {
             summary: parsed.subjective,
             assessment: parsed.assessment,
             physicalFindings: parsed.physicalFindings,
+            investigations: parsed.investigations,
             plan: parsed.plan,
             patientFinalQuestionsComments: parsed.patientFinalComments || undefined,
             patientFinalQuestionsCommentsEnglish: parsed.patientFinalComments
@@ -2289,6 +2315,19 @@ function PhysicianViewContent() {
                         <p className="text-sm font-medium text-slate-700">Assessment</p>
                         <div className="mt-1 h-px bg-slate-200" />
                         <p className="mt-2 text-base text-slate-900 whitespace-pre-wrap">{hpiSections.assessment}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-slate-700">Investigations</p>
+                        <div className="mt-1 h-px bg-slate-200" />
+                        {hpiSections.investigations.length > 0 ? (
+                          <ul className="mt-2 space-y-1 text-base text-slate-900">
+                            {hpiSections.investigations.map((item, index) => (
+                              <li key={`${item}-${index}`}>• {item}</li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <p className="mt-2 text-base text-slate-900">None</p>
+                        )}
                       </div>
                       <div>
                         <p className="text-sm font-medium text-slate-700">Plan</p>

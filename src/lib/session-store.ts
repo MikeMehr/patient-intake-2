@@ -296,6 +296,7 @@ export async function updateSessionHistoryFields(
     assessment: string;
     plan: string[];
     physicalFindings: string[];
+    investigations: string[];
     patientFinalQuestionsComments: string;
     hpiUpdatedAt: string;
   }
@@ -306,11 +307,13 @@ export async function updateSessionHistoryFields(
       assessment,
       plan,
       physicalFindings,
+      investigations,
       patientFinalQuestionsComments,
       hpiUpdatedAt,
     } = updates;
     const planJson = JSON.stringify(plan);
     const physicalFindingsJson = JSON.stringify(physicalFindings);
+    const investigationsJson = JSON.stringify(investigations);
     const result = await query(
       `UPDATE patient_sessions
        SET history = jsonb_set(
@@ -319,29 +322,34 @@ export async function updateSessionHistoryFields(
              jsonb_set(
                jsonb_set(
                  jsonb_set(
-                   COALESCE(history, '{}'::jsonb),
-                   '{summary}',
-                   to_jsonb($2::text),
+                   jsonb_set(
+                     COALESCE(history, '{}'::jsonb),
+                     '{summary}',
+                     to_jsonb($2::text),
+                     true
+                   ),
+                   '{assessment}',
+                   to_jsonb($3::text),
                    true
                  ),
-                 '{assessment}',
-                 to_jsonb($3::text),
+                 '{plan}',
+                 $4::jsonb,
                  true
                ),
-               '{plan}',
-               $4::jsonb,
+               '{physicalFindings}',
+               $5::jsonb,
                true
              ),
-             '{physicalFindings}',
-             $5::jsonb,
+             '{investigations}',
+             $6::jsonb,
              true
            ),
            '{patientFinalQuestionsComments}',
-           to_jsonb($6::text),
+           to_jsonb($7::text),
            true
          ),
          '{hpiUpdatedAt}',
-         to_jsonb($7::text),
+         to_jsonb($8::text),
          true
        )
        WHERE session_code = $1`,
@@ -351,6 +359,7 @@ export async function updateSessionHistoryFields(
         assessment,
         planJson,
         physicalFindingsJson,
+        investigationsJson,
         patientFinalQuestionsComments,
         hpiUpdatedAt,
       ]

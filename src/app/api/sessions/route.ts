@@ -412,6 +412,7 @@ export async function PUT(request: Request) {
       historyAssessment,
       historyPlan,
       historyPhysicalFindings,
+      historyInvestigations,
       historyPatientFinalComments,
       pharmacyName,
       pharmacyNumber,
@@ -425,6 +426,7 @@ export async function PUT(request: Request) {
       historyAssessment?: string;
       historyPlan?: string[];
       historyPhysicalFindings?: string[];
+      historyInvestigations?: string[];
       historyPatientFinalComments?: string;
       pharmacyName?: string;
       pharmacyNumber?: string;
@@ -472,6 +474,7 @@ export async function PUT(request: Request) {
     let trimmedAssessment = "";
     let trimmedPlan: string[] = [];
     let trimmedPhysicalFindings: string[] = [];
+    let trimmedInvestigations: string[] = [];
     let trimmedPatientFinalComments = "";
 
     if (wantsHistoryUpdate) {
@@ -499,6 +502,12 @@ export async function PUT(request: Request) {
         logRequestMeta("/api/sessions", requestId, status, Date.now() - started);
         return res;
       }
+      if (historyInvestigations !== undefined && !Array.isArray(historyInvestigations)) {
+        status = 400;
+        const res = NextResponse.json({ error: "historyInvestigations must be an array of strings" }, { status });
+        logRequestMeta("/api/sessions", requestId, status, Date.now() - started);
+        return res;
+      }
       if (
         historyPatientFinalComments !== undefined &&
         typeof historyPatientFinalComments !== "string"
@@ -515,6 +524,9 @@ export async function PUT(request: Request) {
         .map((item) => (typeof item === "string" ? item.trim() : ""))
         .filter((item) => item.length > 0);
       trimmedPhysicalFindings = (historyPhysicalFindings ?? [])
+        .map((item) => (typeof item === "string" ? item.trim() : ""))
+        .filter((item) => item.length > 0);
+      trimmedInvestigations = (historyInvestigations ?? [])
         .map((item) => (typeof item === "string" ? item.trim() : ""))
         .filter((item) => item.length > 0);
       trimmedPatientFinalComments = (historyPatientFinalComments ?? "").trim();
@@ -595,6 +607,7 @@ export async function PUT(request: Request) {
         assessment: trimmedAssessment,
         plan: trimmedPlan,
         physicalFindings: trimmedPhysicalFindings,
+        investigations: trimmedInvestigations,
         patientFinalQuestionsComments: trimmedPatientFinalComments,
         hpiUpdatedAt,
       });
