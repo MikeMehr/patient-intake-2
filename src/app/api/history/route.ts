@@ -11,7 +11,9 @@ import { parseJsonValue } from "@/lib/safe-json";
 
 const model = process.env.GEMINI_MODEL ?? "gemini-2.5-flash";
 
-const systemInstruction = `You are a meticulous clinical intake assistant. Collect relevant history of present illness data from short prompts. Respond ONLY in JSON with keys: positives (array of strings), negatives (array of strings), physicalFindings (array of strings, optional), summary (string), investigations (array of strings), assessment (string), and plan (array of strings). Summaries must remain one paragraph, concise, and professional. Include physicalFindings only if virtual physical exam findings were gathered. Do not mention that you are an AI or provide disclaimers.`;
+const systemInstruction = `You are a meticulous clinical intake assistant. Collect relevant history of present illness data from short prompts. Respond ONLY in JSON with keys: positives (array of strings), negatives (array of strings), physicalFindings (array of strings, optional), summary (string), investigations (array of strings), assessment (string), and plan (array of strings). Summaries must remain one paragraph, concise, and professional. Include physicalFindings only if virtual physical exam findings were gathered. Do not mention that you are an AI or provide disclaimers.
+
+For the investigations field: always consider and list relevant diagnostic workup based on the chief complaint and clinical context. Include appropriate labs (e.g. CBC, BMP, TSH), imaging, ECG, or other studies that a clinician would reasonably order for this presentation. Only leave investigations empty if the complaint is clearly self-limited and no workup is indicated (e.g. minor cold, paper cut). When in doubt, suggest rather than omit.`;
 
 const shouldMock = () =>
   process.env.MOCK_AI === "true" || process.env.NODE_ENV === "test";
@@ -86,7 +88,7 @@ export async function POST(request: Request) {
   });
 
   try {
-    const prompt = `Chief complaint: ${parsed.data.chiefComplaint}\n\nProvide pertinent positives and negatives addressing onset, duration, associated symptoms, modifying factors, and critical red flags. Include suggested investigations (if any), a concise assessment, and a clear plan.`;
+    const prompt = `Chief complaint: ${parsed.data.chiefComplaint}\n\nProvide pertinent positives and negatives addressing onset, duration, associated symptoms, modifying factors, and critical red flags. Include recommended investigations (labs, imaging, ECG, or other studies appropriate to rule in or out likely diagnoses), a concise assessment, and a clear plan.`;
 
     const result = await geminiModel.generateContent(prompt);
     const response = await result.response;
