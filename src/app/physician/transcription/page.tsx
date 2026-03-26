@@ -4,6 +4,7 @@ import Image from "next/image";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import SessionKeepAlive from "@/components/auth/SessionKeepAlive";
+import { languageOptions } from "@/lib/speech-language";
 
 type PatientSearchResult = {
   id: string;
@@ -150,6 +151,7 @@ export default function PhysicianTranscriptionPage() {
     () => new Date().toISOString().slice(0, 10),
   );
   const [snapshotAnonOnly, setSnapshotAnonOnly] = useState(false);
+  const [language, setLanguage] = useState<string>("en");
 
   const hasNewPatientIdentity = useMemo(
     () => newPatientFullName.trim().length >= 3 && /^\d{4}-\d{2}-\d{2}$/.test(newPatientDob.trim()),
@@ -348,7 +350,7 @@ export default function PhysicianTranscriptionPage() {
       const res = await fetch("/api/speech/clean", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: raw, language: "English" }),
+        body: JSON.stringify({ text: raw, language: languageOptions.find(o => o.value === language)?.label.replace(" (default)", "") ?? "English" }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) return raw;
@@ -369,7 +371,7 @@ export default function PhysicianTranscriptionPage() {
     }
     const formData = new FormData();
     formData.append("audio", new File([wavBlob], "recording.wav", { type: "audio/wav" }));
-    formData.append("language", "en");
+    formData.append("language", language);
     const res = await fetch("/api/speech/stt", { method: "POST", body: formData });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data?.error || "Transcription failed");
@@ -999,6 +1001,22 @@ export default function PhysicianTranscriptionPage() {
                 </div>
                 {activeWorkflowTab === "capture" && (
                   <>
+                    <div className="flex items-center gap-3">
+                      <label htmlFor="transcription-language" className="text-sm font-medium text-slate-700 whitespace-nowrap">
+                        Transcription language
+                      </label>
+                      <select
+                        id="transcription-language"
+                        value={language}
+                        disabled={isRecording}
+                        onChange={(e) => setLanguage(e.target.value)}
+                        className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {languageOptions.map((opt) => (
+                          <option key={opt.value} value={opt.value}>{opt.label}</option>
+                        ))}
+                      </select>
+                    </div>
                     <div className="flex flex-wrap items-center gap-3">
                       {isRecording ? (
                         <>
