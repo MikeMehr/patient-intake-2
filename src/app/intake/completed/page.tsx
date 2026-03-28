@@ -7,14 +7,26 @@ import { Suspense, useEffect, useMemo, useState } from "react";
 const AUTO_REDIRECT_MS = 30000;
 const DEFAULT_REDIRECT_URL = "https://www.health-assist.org/";
 
+/**
+ * Domains that are allowed as post-intake redirect targets.
+ * The `organizationWebsiteUrl` field set by clinic admins is the only
+ * other source of redirect URLs — restricting to this allowlist prevents
+ * open-redirect phishing even if a malicious or compromised admin sets
+ * an arbitrary URL.
+ */
+const ALLOWED_REDIRECT_HOSTS = new Set([
+  "health-assist.org",
+  "www.health-assist.org",
+  "mymd.health-assist.org",
+]);
+
 function resolveRedirectUrl(raw: string | null): string {
   const value = (raw || "").trim();
   if (!value) return DEFAULT_REDIRECT_URL;
   try {
     const parsed = new URL(value);
-    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-      return DEFAULT_REDIRECT_URL;
-    }
+    if (parsed.protocol !== "https:") return DEFAULT_REDIRECT_URL;
+    if (!ALLOWED_REDIRECT_HOSTS.has(parsed.hostname)) return DEFAULT_REDIRECT_URL;
     return parsed.toString();
   } catch {
     return DEFAULT_REDIRECT_URL;
