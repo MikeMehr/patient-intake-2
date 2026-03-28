@@ -175,6 +175,19 @@ export default function PhysicianDashboard() {
   const [patientLookupError, setPatientLookupError] = useState<string | null>(null);
   const [patientLookupResults, setPatientLookupResults] = useState<PatientSearchResult[]>([]);
 
+  const LS_SESSIONS = "physicianDashboard.sessionsDefaultOpen";
+  const LS_INVITATIONS = "physicianDashboard.invitationsDefaultOpen";
+  const [settingsMenuOpen, setSettingsMenuOpen] = useState(false);
+  const settingsMenuRef = useRef<HTMLDivElement>(null);
+  const [sessionsDefaultOpen, setSessionsDefaultOpen] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    return localStorage.getItem("physicianDashboard.sessionsDefaultOpen") === "true";
+  });
+  const [invitationsDefaultOpen, setInvitationsDefaultOpen] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    return localStorage.getItem("physicianDashboard.invitationsDefaultOpen") === "true";
+  });
+
   useEffect(() => {
     // Fetch sessions
     fetch("/api/sessions/list")
@@ -247,6 +260,28 @@ export default function PhysicianDashboard() {
 
     fetchInvitations();
   }, [router]);
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (settingsMenuRef.current && !settingsMenuRef.current.contains(e.target as Node)) {
+        setSettingsMenuOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  function toggleSessionsDefault() {
+    const next = !sessionsDefaultOpen;
+    setSessionsDefaultOpen(next);
+    localStorage.setItem(LS_SESSIONS, String(next));
+  }
+
+  function toggleInvitationsDefault() {
+    const next = !invitationsDefaultOpen;
+    setInvitationsDefaultOpen(next);
+    localStorage.setItem(LS_INVITATIONS, String(next));
+  }
 
   const handleLogout = async () => {
     setMobileMenuOpen(false);
@@ -742,6 +777,66 @@ export default function PhysicianDashboard() {
               >
                 Sign Out
               </button>
+              {/* View preferences menu */}
+              <div className="relative" ref={settingsMenuRef}>
+                <button
+                  type="button"
+                  aria-label="View preferences"
+                  aria-expanded={settingsMenuOpen}
+                  onClick={() => setSettingsMenuOpen((o) => !o)}
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+                >
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className="h-5 w-5"
+                    aria-hidden="true"
+                  >
+                    <line x1="3" y1="6" x2="21" y2="6" />
+                    <line x1="3" y1="12" x2="21" y2="12" />
+                    <line x1="3" y1="18" x2="21" y2="18" />
+                  </svg>
+                </button>
+                {settingsMenuOpen && (
+                  <div className="absolute right-0 mt-2 w-64 rounded-lg border border-slate-200 bg-white shadow-md z-50 p-3">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-3 px-1">
+                      Open on page load
+                    </p>
+                    <label className="flex items-center justify-between gap-3 rounded-md px-1 py-2 hover:bg-slate-50 cursor-pointer">
+                      <span className="text-sm text-slate-700">Patient Sessions</span>
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={sessionsDefaultOpen}
+                        onClick={toggleSessionsDefault}
+                        className={`relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors focus:outline-none ${sessionsDefaultOpen ? "bg-slate-800" : "bg-slate-200"}`}
+                      >
+                        <span
+                          className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow transition-transform ${sessionsDefaultOpen ? "translate-x-4" : "translate-x-0"}`}
+                        />
+                      </button>
+                    </label>
+                    <label className="flex items-center justify-between gap-3 rounded-md px-1 py-2 hover:bg-slate-50 cursor-pointer">
+                      <span className="text-sm text-slate-700">Invited Patients</span>
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={invitationsDefaultOpen}
+                        onClick={toggleInvitationsDefault}
+                        className={`relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors focus:outline-none ${invitationsDefaultOpen ? "bg-slate-800" : "bg-slate-200"}`}
+                      >
+                        <span
+                          className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow transition-transform ${invitationsDefaultOpen ? "translate-x-4" : "translate-x-0"}`}
+                        />
+                      </button>
+                    </label>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>
@@ -1072,9 +1167,10 @@ export default function PhysicianDashboard() {
         {/* Sessions List */}
         <div className="mt-6">
           <CollapsibleSection
+            key={sessionsDefaultOpen ? "sessions-open" : "sessions-closed"}
             id="patient-sessions"
             title={`Patient Sessions${sessions.length ? ` (${sessions.length})` : ""}`}
-            defaultOpen={false}
+            defaultOpen={sessionsDefaultOpen}
           >
             {error ? (
               <div className="bg-red-50 border border-red-200 rounded-lg p-4">
@@ -1198,9 +1294,10 @@ export default function PhysicianDashboard() {
         {/* Invitations List */}
         <div className="mt-6">
           <CollapsibleSection
+            key={invitationsDefaultOpen ? "invitations-open" : "invitations-closed"}
             id="invited-patients"
             title={`Invited Patients${invitations.length ? ` (${invitations.length})` : ""}`}
-            defaultOpen={false}
+            defaultOpen={invitationsDefaultOpen}
             headerRight={invitationsLoading ? <span className="text-sm text-slate-500">Loading...</span> : null}
           >
             <div className="mb-3 flex flex-wrap gap-2 text-xs">
