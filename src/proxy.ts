@@ -6,11 +6,13 @@ function buildCspHeader(pathname: string, nonce: string) {
   const isDevelopment = process.env.NODE_ENV !== "production";
   const isLegacyEformPath = pathname.startsWith("/eforms/");
   // Development: keep unsafe-inline + unsafe-eval for HMR/fast-refresh.
-  // Production: nonce-based CSP removes unsafe-inline; strict-dynamic lets
-  // nonce-tagged scripts load further chunks without per-chunk nonces.
+  // Production: 'self' covers static /_next/static/chunks/*.js files loaded
+  // via <script src>. The nonce covers any inline scripts Next.js generates
+  // for hydration. Do NOT use 'strict-dynamic' here — it causes 'self' to be
+  // ignored for <script src> elements, which breaks all chunk loading.
   const scriptSrc = isDevelopment || isLegacyEformPath
     ? "script-src 'self' 'unsafe-inline' 'unsafe-eval'"
-    : `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'`;
+    : `script-src 'self' 'nonce-${nonce}'`;
   return [
     "default-src 'self'",
     "base-uri 'self'",
