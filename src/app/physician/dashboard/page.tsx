@@ -704,41 +704,6 @@ export default function PhysicianDashboard() {
         <div className="max-w-7xl mx-auto px-4 py-8">
         {/* Header */}
         <div className="relative bg-white rounded-lg shadow-sm border border-slate-200 p-6 mb-6">
-          <div className="absolute left-4 top-4 sm:hidden">
-            <button
-              type="button"
-              aria-label="Open menu"
-              aria-expanded={mobileMenuOpen}
-              onClick={() => setMobileMenuOpen((open) => !open)}
-              className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
-            >
-              <svg
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                className="h-5 w-5"
-                aria-hidden="true"
-              >
-                <line x1="3" y1="6" x2="21" y2="6" />
-                <line x1="3" y1="12" x2="21" y2="12" />
-                <line x1="3" y1="18" x2="21" y2="18" />
-              </svg>
-            </button>
-            {mobileMenuOpen ? (
-              <div className="absolute left-0 mt-2 w-40 rounded-lg border border-slate-200 bg-white p-1 shadow-md">
-                <button
-                  type="button"
-                  onClick={handleLogout}
-                  className="block w-full rounded-md px-3 py-2 text-left text-sm font-medium text-slate-700 hover:bg-slate-50"
-                >
-                  Sign Out
-                </button>
-              </div>
-            ) : null}
-          </div>
           <Image
             src="/LogoFinal.png"
             alt="Health Assist AI logo"
@@ -765,23 +730,11 @@ export default function PhysicianDashboard() {
               >
                 Transcribe
               </button>
-              <button
-                onClick={handleScrollToPatientLookup}
-                className="hidden sm:inline-flex px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50"
-              >
-                Patient Lookup
-              </button>
-              <button
-                onClick={handleLogout}
-                className="hidden sm:inline-flex px-3 py-1.5 sm:px-4 sm:py-2 text-[0.8rem] sm:text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50"
-              >
-                Sign Out
-              </button>
-              {/* View preferences menu */}
+              {/* Hamburger menu */}
               <div className="relative" ref={settingsMenuRef}>
                 <button
                   type="button"
-                  aria-label="View preferences"
+                  aria-label="Open menu"
                   aria-expanded={settingsMenuOpen}
                   onClick={() => setSettingsMenuOpen((o) => !o)}
                   className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
@@ -803,10 +756,25 @@ export default function PhysicianDashboard() {
                 </button>
                 {settingsMenuOpen && (
                   <div className="absolute right-0 mt-2 w-64 rounded-lg border border-slate-200 bg-white shadow-md z-50 p-3">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-3 px-1">
+                    <button
+                      type="button"
+                      onClick={() => { setSettingsMenuOpen(false); handleScrollToPatientLookup(); }}
+                      className="flex w-full items-center rounded-md px-2 py-2 text-sm text-slate-700 hover:bg-slate-50"
+                    >
+                      Patient Lookup
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleLogout}
+                      className="flex w-full items-center rounded-md px-2 py-2 text-sm text-slate-700 hover:bg-slate-50"
+                    >
+                      Sign Out
+                    </button>
+                    <div className="my-2 border-t border-slate-100" />
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2 px-2">
                       Open on page load
                     </p>
-                    <label className="flex items-center justify-between gap-3 rounded-md px-1 py-2 hover:bg-slate-50 cursor-pointer">
+                    <label className="flex items-center justify-between gap-3 rounded-md px-2 py-2 hover:bg-slate-50 cursor-pointer">
                       <span className="text-sm text-slate-700">Patient Sessions</span>
                       <button
                         type="button"
@@ -820,7 +788,7 @@ export default function PhysicianDashboard() {
                         />
                       </button>
                     </label>
-                    <label className="flex items-center justify-between gap-3 rounded-md px-1 py-2 hover:bg-slate-50 cursor-pointer">
+                    <label className="flex items-center justify-between gap-3 rounded-md px-2 py-2 hover:bg-slate-50 cursor-pointer">
                       <span className="text-sm text-slate-700">Invited Patients</span>
                       <button
                         type="button"
