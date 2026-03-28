@@ -62,16 +62,33 @@ export async function POST(request: NextRequest) {
         metadata: { reason: verification.reason || "unknown" },
       });
 
-      status = verification.reason === "cooldown" ? 429 : 400;
-      const res = NextResponse.json(
-        {
-          error:
-            verification.reason === "cooldown"
-              ? "Too many OTP attempts. Please wait and try again."
-              : "Invalid or expired OTP code.",
-        },
-        { status },
-      );
+      // cooldown and max_attempts are rate-limiting conditions → 429.
+      // expired and missing → 400 (the code itself is gone; patient needs a new one).
+      // invalid → 400 (wrong code entered).
+      const isRateLimited =
+        verification.reason === "cooldown" || verification.reason === "max_attempts";
+      status = isRateLimited ? 429 : 400;
+
+      let errorMessage: string;
+      switch (verification.reason) {
+        case "cooldown":
+          errorMessage =
+            "Too many incorrect attempts. Please wait a few minutes, then request a new code.";
+          break;
+        case "max_attempts":
+          errorMessage =
+            "Maximum attempts reached. Please request a new verification code to continue.";
+          break;
+        case "expired":
+          errorMessage =
+            "Your verification code has expired. Please request a new one.";
+          break;
+        default:
+          // "invalid" | "missing" | undefined
+          errorMessage = "Invalid verification code. Please check the code and try again.";
+      }
+
+      const res = NextResponse.json({ error: errorMessage }, { status });
       logRequestMeta("/api/invitations/otp/verify", requestId, status, Date.now() - started);
       return res;
     }

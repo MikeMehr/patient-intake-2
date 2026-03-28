@@ -2,12 +2,15 @@ import { NextResponse, type NextRequest } from "next/server";
 
 // ── Security headers ─────────────────────────────────────────────────────────
 
-function buildCspHeader(pathname: string) {
+function buildCspHeader(pathname: string, nonce: string) {
   const isDevelopment = process.env.NODE_ENV !== "production";
   const isLegacyEformPath = pathname.startsWith("/eforms/");
+  // Development: keep unsafe-inline + unsafe-eval for HMR/fast-refresh.
+  // Production: nonce-based CSP removes unsafe-inline; strict-dynamic lets
+  // nonce-tagged scripts load further chunks without per-chunk nonces.
   const scriptSrc = isDevelopment || isLegacyEformPath
     ? "script-src 'self' 'unsafe-inline' 'unsafe-eval'"
-    : "script-src 'self' 'unsafe-inline'";
+    : `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'`;
   return [
     "default-src 'self'",
     "base-uri 'self'",
@@ -20,12 +23,14 @@ function buildCspHeader(pathname: string) {
     "media-src 'self' blob: data:",
     "style-src 'self' 'unsafe-inline'",
     scriptSrc,
-    "connect-src 'self' https: wss:",
+    // All external API calls (Azure OpenAI, Speech, Document Intelligence, Resend)
+    // are made server-side. The browser only connects back to this origin.
+    "connect-src 'self'",
   ].join("; ");
 }
 
-function applySecurityHeaders(res: NextResponse, pathname: string): void {
-  res.headers.set("Content-Security-Policy", buildCspHeader(pathname));
+function applySecurityHeaders(res: NextResponse, pathname: string, nonce: string): void {
+  res.headers.set("Content-Security-Policy", buildCspHeader(pathname, nonce));
   res.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
   res.headers.set("X-Content-Type-Options", "nosniff");
   res.headers.set("X-Frame-Options", "DENY");
@@ -107,6 +112,12 @@ export function proxy(req: NextRequest) {
       ? crypto.randomUUID()
       : Math.random().toString(36).slice(2));
 
+  // One random nonce per request, base64-encoded. Used in script-src in
+  // production so we can drop 'unsafe-inline'. Next.js reads x-nonce from
+  // the request headers and automatically stamps it onto its own generated
+  // script tags (hydration bundles, route prefetch, etc.).
+  const nonce = Buffer.from(crypto.randomUUID()).toString("base64");
+
   // ── Physician page routes ──────────────────────────────────────────────
   // Redirect to login so unauthenticated users never see even the page shell.
   if (pathname.startsWith("/physician")) {
@@ -114,7 +125,7 @@ export function proxy(req: NextRequest) {
       const loginUrl = new URL("/auth/login", req.url);
       loginUrl.searchParams.set("returnTo", encodeURIComponent(pathname));
       const res = NextResponse.redirect(loginUrl);
-      applySecurityHeaders(res, pathname);
+      applySecurityHeaders(res, pathname, nonce);
       return res;
     }
   }
@@ -127,7 +138,7 @@ export function proxy(req: NextRequest) {
         { error: "Authentication required" },
         { status: 401 },
       );
-      applySecurityHeaders(res, pathname);
+      applySecurityHeaders(res, pathname, nonce);
       return res;
     }
   }
@@ -135,6 +146,9 @@ export function proxy(req: NextRequest) {
   // ── All other routes ───────────────────────────────────────────────────
   const requestHeaders = new Headers(req.headers);
   requestHeaders.set("x-request-id", incomingId);
+  // Forward nonce so Next.js server components can read it via headers() and
+  // pass it to any <Script nonce={nonce}> elements they render.
+  requestHeaders.set("x-nonce", nonce);
 
   const res = NextResponse.next({
     request: {
@@ -143,7 +157,7 @@ export function proxy(req: NextRequest) {
   });
 
   res.headers.set("x-request-id", incomingId);
-  applySecurityHeaders(res, pathname);
+  applySecurityHeaders(res, pathname, nonce);
   return res;
 }
 
