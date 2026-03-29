@@ -4735,8 +4735,8 @@ export default function Home() {
                         >
                           {message.role === "assistant" ? (
                             <>
-                              <div className="bg-white rounded-2xl rounded-tl-sm px-3 py-2 sm:px-5 sm:py-3 shadow-sm border border-slate-200">
-                                <p className="text-slate-900 leading-relaxed whitespace-pre-wrap">
+                              <div className="rounded-2xl rounded-tl-sm px-3 py-2 sm:px-5 sm:py-3 shadow-sm border border-transparent" style={{background: 'linear-gradient(90deg, #52A882 0%, #9EDEC2 50%, #509473 100%)'}}>
+                                <p className="text-white leading-relaxed whitespace-pre-wrap">
                                   {getDisplayMessageContent(message)}
                                 </p>
                               </div>
@@ -4940,9 +4940,10 @@ export default function Home() {
                       <div
                         className={`max-w-xs rounded-2xl px-4 py-2 flex items-start gap-2 ${
                           message.role === "assistant"
-                            ? "bg-white text-slate-900 shadow"
+                            ? "text-white shadow"
                             : "bg-slate-900 text-white"
                         }`}
+                        style={message.role === "assistant" ? {background: 'linear-gradient(90deg, #52A882 0%, #9EDEC2 50%, #509473 100%)'} : undefined}
                       >
                         <p className="flex-1">{getDisplayMessageContent(message)}</p>
                         {message.role === "assistant" && index === messages.length - 1 && isSpeaking && (
