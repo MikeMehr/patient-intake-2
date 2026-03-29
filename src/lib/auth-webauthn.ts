@@ -235,6 +235,7 @@ export async function verifyAuthentication(params: {
   );
 
   if (challengeResult.rows.length === 0) {
+    console.error("[webauthn/auth] challenge_invalid_or_expired", { challenge: params.expectedChallenge.slice(0, 8) + "…" });
     auditWebAuthnEvent({
       action: "authentication_verify",
       outcome: "failure",
@@ -260,6 +261,7 @@ export async function verifyAuthentication(params: {
   );
 
   if (credResult.rows.length === 0) {
+    console.error("[webauthn/auth] credential_not_found", { credentialId: params.response.id });
     auditWebAuthnEvent({
       action: "authentication_verify",
       outcome: "failure",
@@ -285,6 +287,7 @@ export async function verifyAuthentication(params: {
       },
     });
   } catch (error) {
+    console.error("[webauthn/auth] verification_error", error instanceof Error ? error.message : error);
     auditWebAuthnEvent({
       action: "authentication_verify",
       outcome: "failure",
@@ -296,6 +299,7 @@ export async function verifyAuthentication(params: {
   }
 
   if (!verification.verified) {
+    console.error("[webauthn/auth] not_verified");
     auditWebAuthnEvent({
       action: "authentication_verify",
       outcome: "failure",
