@@ -3600,35 +3600,10 @@ export default function Home() {
         setWantsToUploadImage(null);
       }
 
-      // Check if the AI is explicitly asking to mark/click/tap location on a diagram/photo.
-      const diagramActionKeywords = [
-        "mark where",
-        "mark the area",
-        "mark the painful area",
-        "mark on the diagram",
-        "mark on the photo",
-        "mark on the image",
-        "click on the diagram",
-        "click on the photo",
-        "click on the image",
-        "tap on the diagram",
-        "tap on the photo",
-        "tap on the image",
-        "place an x",
-        "place a mark",
-        "point to",
-      ];
-      const painLocationKeywords = [
-        "where is the pain",
-        "site of pain",
-        "pain location",
-      ];
-      const hasDiagramReference = /\b(diagram|photo|image)\b/.test(questionLower);
-      const hasDiagramAction = diagramActionKeywords.some((keyword) => questionLower.includes(keyword));
-      const hasPainLocationCue = painLocationKeywords.some((keyword) => questionLower.includes(keyword));
-      const isAskingLocation = hasDiagramAction || (hasDiagramReference && hasPainLocationCue);
+      // Diagrams are shown only when the LLM explicitly sets requiresLocationMarking: true.
+      const shouldShowDiagramFromFlag = turn.requiresLocationMarking === true;
 
-      // Use LLM-provided body parts when available, otherwise detect from text.
+      // Use LLM-provided body parts; no keyword-based fallback to avoid false positives.
       let bodyParts: ReturnType<typeof detectBodyParts>;
       if (
         turn.requiresLocationMarking &&
@@ -3646,10 +3621,7 @@ export default function Home() {
               : undefined,
         }));
       } else {
-        bodyParts = detectBodyParts(turn.question);
-        if (bodyParts.length === 0) {
-          bodyParts = detectBodyParts(chiefComplaint);
-        }
+        bodyParts = [];
       }
 
       // Filter out any body parts that are not valid BodyPart keys (e.g. "bone", "skeleton")
@@ -3659,39 +3631,10 @@ export default function Home() {
         "knee", "lower_leg", "ankle", "foot", "hip", "head", "chest", "abdomen",
       ]);
       bodyParts = bodyParts.filter((bp) => validBodyPartKeys.has(bp.part));
-      const mskBodyPartSet = new Set([
-        "back",
-        "lower_back",
-        "upper_back",
-        "neck",
-        "shoulder",
-        "elbow",
-        "wrist",
-        "hand",
-        "hip",
-        "knee",
-        "lower_leg",
-        "ankle",
-        "foot",
-      ]);
-      const hasMskBodyPart = bodyParts.some((part) => mskBodyPartSet.has(part.part));
-      const hasPainMention = questionLower.includes("pain");
-      const hasLocationIntentFallback = [
-        "where does it hurt",
-        "where on",
-        "where in",
-        "which spot",
-        "painful spot",
-        "pain spot",
-      ].some((phrase) => questionLower.includes(phrase));
-      const shouldForceLocationDiagram =
-        hasMskBodyPart && hasPainMention && hasLocationIntentFallback;
-
-      const shouldShowDiagramFromFlag = turn.requiresLocationMarking === true;
 
       // Determine which parts to show (empty means no diagram).
       let partsToShow: Array<{ part: string; side?: "left" | "right" | "both" }> = [];
-      if (bodyParts.length > 0 && (isAskingLocation || shouldForceLocationDiagram || shouldShowDiagramFromFlag)) {
+      if (bodyParts.length > 0 && shouldShowDiagramFromFlag) {
         const uniqueParts = bodyParts.filter((bp, index, arr) => {
           const key = getDiagramMarkerKey(bp.part, bp.side === "both" ? undefined : bp.side);
           return index === arr.findIndex((candidate) => {
@@ -3728,7 +3671,7 @@ export default function Home() {
       // If the diagram won't be shown but the AI referenced one, remove the
       // diagram-marking instructions so the patient sees a coherent question.
       const questionContent = (() => {
-        if (!willShowDiagram && (turn.requiresLocationMarking || hasDiagramAction)) {
+        if (!willShowDiagram && turn.requiresLocationMarking) {
           const stripped = stripDiagramMarkingPhrases(turn.question);
           // Fall back to original if stripping removed everything
           return stripped.trim() ? stripped : turn.question;
