@@ -4645,7 +4645,7 @@ export default function Home() {
                         if (lastAssistant) speakText(getSpokenMessageContent(lastAssistant));
                       }}
                       disabled={isSpeaking}
-                      className="inline-flex items-center justify-center rounded-lg px-3 py-1.5 text-sm font-medium transition-colors bg-slate-100 text-slate-700 hover:bg-slate-200 disabled:opacity-60 disabled:cursor-not-allowed"
+                      className="inline-flex items-center justify-center rounded-lg px-3 py-1.5 text-sm font-medium transition-colors bg-[#F2FCF8] text-slate-700 hover:bg-[#d8f5e9] disabled:opacity-60 disabled:cursor-not-allowed"
                       title="Replay the last question"
                     >
                       🔊 Hear again
@@ -4658,7 +4658,7 @@ export default function Home() {
                     className={`inline-flex items-center justify-center rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
                       isMuted
                         ? "bg-red-100 text-red-700 hover:bg-red-200"
-                        : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                        : "bg-[#F2FCF8] text-slate-700 hover:bg-[#d8f5e9]"
                     }`}
                     title={isMuted ? "Unmute AI voice" : "Mute AI voice"}
                   >
@@ -5248,7 +5248,7 @@ export default function Home() {
                                 resetConversation();
                               }
                             }}
-                            className="hidden sm:flex items-center gap-1 px-2 py-1 text-[0.6rem] font-medium text-slate-600 bg-slate-100 rounded-md hover:bg-slate-200 transition whitespace-nowrap"
+                            className="hidden sm:flex items-center gap-1 px-2 py-1 text-[0.6rem] font-medium text-slate-600 bg-[#F2FCF8] rounded-md hover:bg-[#d8f5e9] transition whitespace-nowrap"
                           >
                             Reset conversation
                           </button>
