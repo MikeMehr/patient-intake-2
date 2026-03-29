@@ -682,6 +682,10 @@ export default function Home() {
   const [selectedBodyParts, setSelectedBodyParts] = useState<Array<{ part: string; side?: "left" | "right" | "both" }>>([]);
   const [selectedDiagramMarkers, setSelectedDiagramMarkers] = useState<DiagramMarkerSelection[]>([]);
   const selectedDiagramMarkersRef = useRef<DiagramMarkerSelection[]>([]);
+  const committedBodyDiagramRef = useRef<{
+    selectedParts: Array<{ part: string; side?: "left" | "right" | "both" }>;
+    markersByPart: DiagramMarkerSelection[];
+  }>({ selectedParts: [], markersByPart: [] });
   const [endedEarly, setEndedEarly] = useState(false);
   const [showEndInterviewConfirm, setShowEndInterviewConfirm] = useState(false);
   const [showHamburgerMenu, setShowHamburgerMenu] = useState(false);
@@ -1044,8 +1048,14 @@ export default function Home() {
       .map((name) => name?.trim())
       .filter((name): name is string => Boolean(name));
 
+    // Use live state if available; fall back to last committed diagram data.
+    const effectiveSelectedParts =
+      selectedBodyParts.length > 0
+        ? selectedBodyParts
+        : committedBodyDiagramRef.current.selectedParts;
+
     const selectedParts: Array<{ part: string; side?: "left" | "right" | "both" }> = [];
-    for (const part of selectedBodyParts) {
+    for (const part of effectiveSelectedParts) {
       const trimmedPart = part.part?.trim();
       if (!trimmedPart) continue;
       selectedParts.push({
@@ -1054,10 +1064,14 @@ export default function Home() {
       });
     }
 
-    const currentDiagramMarkerSelections =
+    const liveMarkers =
       selectedDiagramMarkersRef.current.length > 0
         ? selectedDiagramMarkersRef.current
         : selectedDiagramMarkers;
+    const currentDiagramMarkerSelections =
+      liveMarkers.length > 0
+        ? liveMarkers
+        : committedBodyDiagramRef.current.markersByPart;
 
     const bodyDiagramNoteParts: string[] = [];
     if (selectedParts.length > 0) {
@@ -3063,6 +3077,7 @@ export default function Home() {
     setShowBodyDiagram(false);
     setSelectedBodyParts([]);
     setSelectedDiagramMarkersWithRef([]);
+    committedBodyDiagramRef.current = { selectedParts: [], markersByPart: [] };
     setPmhPhoto(null);
     setPmhPreview(null);
     setPmhExtracted("");
@@ -3449,6 +3464,7 @@ export default function Home() {
     setShowBodyDiagram(false);
     setSelectedBodyParts([]);
     setSelectedDiagramMarkersWithRef([]);
+    committedBodyDiagramRef.current = { selectedParts: [], markersByPart: [] };
   }
 
   async function searchPharmacy(details?: {
@@ -3701,6 +3717,13 @@ export default function Home() {
           prev.filter((selection) => nextMarkerKeys.has(getDiagramMarkerKey(selection.part, selection.side))),
         );
       } else {
+        // Persist diagram data for session save before clearing the UI state.
+        if (selectedBodyParts.length > 0 || selectedDiagramMarkersRef.current.length > 0) {
+          committedBodyDiagramRef.current = {
+            selectedParts: [...selectedBodyParts],
+            markersByPart: [...selectedDiagramMarkersRef.current],
+          };
+        }
         // Hide diagram. Also clear parts and markers so stale data from a previous
         // turn is not submitted with a future answer.
         setShowBodyDiagram(false);
