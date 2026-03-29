@@ -5181,7 +5181,7 @@ export default function Home() {
                                 ? "bg-amber-500 text-white border border-amber-500 focus-visible:outline-amber-500"
                               : (status === "awaitingAi" && !isPaused)
                                 ? "bg-orange-500 text-white border border-orange-500 focus-visible:outline-orange-500"
-                              : "border border-[#04D670] bg-[#04D670] text-white focus-visible:outline-[#04D670]"
+                              : "border border-[#52A882] bg-[#52A882] text-white focus-visible:outline-[#52A882]"
                           } ${isCoarsePointer ? "opacity-100" : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"}`}
                           title={micButtonTitle}
                         >
@@ -5428,8 +5428,8 @@ export default function Home() {
                             ? "gi-animate-mic-pulse border border-red-700 bg-red-600 text-white shadow-sm shadow-red-300/60 hover:bg-red-700"
                             : micUiState === "starting"
                               ? "bg-amber-500 text-white hover:bg-amber-600"
-                            : "bg-emerald-600 text-white hover:bg-emerald-500"
-                        } appearance-none outline-none focus:outline-none focus-visible:outline-none focus-visible:ring-0 disabled:cursor-not-allowed disabled:bg-emerald-200 disabled:text-emerald-600`}
+                            : "bg-[#52A882] text-white hover:bg-[#459970]"
+                        } appearance-none outline-none focus:outline-none focus-visible:outline-none focus-visible:ring-0 disabled:cursor-not-allowed disabled:bg-[#a8d4bc] disabled:text-white`}
                         title={micButtonLabel}
                       >
                         {isTranscribing ? (
