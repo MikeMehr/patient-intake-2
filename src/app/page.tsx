@@ -4704,7 +4704,7 @@ export default function Home() {
               </div>
               <div
                 ref={chatRef}
-                className={`mt-5 space-y-4 overflow-y-auto rounded-2xl border border-slate-100 bg-[#E3FCF2] px-2 py-3 sm:px-4 sm:py-4 text-sm text-slate-800 max-h-[360px] ${
+                className={`mt-5 space-y-4 overflow-y-auto rounded-2xl border border-slate-100 bg-white px-2 py-3 sm:px-4 sm:py-4 text-sm text-slate-800 max-h-[360px] ${
                   interviewMode === "conversation" ? "conversation-mode" : ""
                 }`}
               >
