@@ -3816,9 +3816,9 @@ export default function Home() {
           <NextImage
             src="/LogoFinal.png"
             alt="Health Assist AI logo"
-            width={260}
-            height={64}
-            className="mx-auto mb-5 h-[72px] w-[218px] object-contain sm:h-24 sm:w-[289px]"
+            width={195}
+            height={48}
+            className="mx-auto mb-5 h-[54px] w-[164px] object-contain sm:h-[72px] sm:w-[217px]"
             priority
           />
           {clinicName && (
