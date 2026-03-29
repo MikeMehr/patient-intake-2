@@ -4564,7 +4564,7 @@ export default function Home() {
               <div className={`mt-3 flex flex-wrap gap-3${status !== "idle" ? " hidden sm:flex" : ""}`}>
                 <button
                   type="submit"
-                  className="inline-flex flex-1 items-center justify-center rounded-2xl bg-[#52A882] px-5 py-2.5 text-base font-semibold text-white transition hover:bg-[#459970] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#52A882] disabled:cursor-not-allowed disabled:bg-[#C4FFE9] disabled:text-[#3a7a5e]"
+                  className="inline-flex flex-1 items-center justify-center rounded-2xl bg-[#52A882] px-5 py-2.5 text-base font-semibold text-white transition hover:bg-[#459970] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#52A882] disabled:cursor-not-allowed disabled:bg-[#E3FCF2] disabled:text-[#3a7a5e]"
                   disabled={status !== "idle" || chiefComplaint.length < 3}
                 >
                   Start interview
