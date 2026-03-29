@@ -4521,67 +4521,68 @@ export default function Home() {
 
             <div className={`mt-2 h-px w-full bg-slate-200/70${status !== "idle" ? " hidden sm:block" : ""}`} aria-hidden="true" />
 
-            {/* Hamburger menu — mobile only, shown during interview, floats above the section border */}
-            {status !== "idle" && (
-              <div className="relative sm:hidden mt-2 mb-[-0.5rem]">
-                <button
-                  type="button"
-                  onClick={() => setShowHamburgerMenu((v) => !v)}
-                  className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-600 hover:bg-slate-100 transition"
-                  aria-label="Menu"
-                >
-                  <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-                  </svg>
-                </button>
-                {showHamburgerMenu && (
-                  <>
-                    <div className="fixed inset-0 z-10" onClick={() => setShowHamburgerMenu(false)} />
-                    <div className="absolute left-0 top-9 z-20 min-w-[180px] rounded-xl border border-slate-200 bg-white py-1 shadow-lg">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setShowHamburgerMenu(false);
-                          if (window.confirm("Are you sure you want to reset the conversation? All progress will be lost.")) {
-                            resetConversation();
-                          }
-                        }}
-                        className="flex w-full items-center gap-2 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 whitespace-nowrap"
-                      >
-                        <svg className="h-4 w-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                        </svg>
-                        Reset conversation
-                      </button>
-                      {(status === "awaitingPatient" || status === "awaitingAi" || status === "paused") &&
-                        !awaitingFinalComments &&
-                        !isEndingInterview && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setShowHamburgerMenu(false);
-                            setShowEndInterviewConfirm(true);
-                          }}
-                          className="flex w-full items-center gap-2 px-4 py-2.5 text-sm text-red-600 hover:bg-red-50"
-                        >
-                          <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 24 24">
-                            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" />
-                          </svg>
-                          End Early
-                        </button>
-                      )}
-                    </div>
-                  </>
-                )}
-              </div>
-            )}
-
             <section className="mt-2 rounded-3xl border border-slate-100 bg-white/80 px-3 py-4 sm:px-5 sm:py-6 shadow-slate-100">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
-                <div className="flex w-full items-center justify-center sm:w-auto sm:justify-start">
-                  <h2 className="text-2xl font-semibold text-slate-900">
+                <div className="flex items-center sm:block">
+                  {/* Hamburger menu — mobile only, inside section header row */}
+                  {status !== "idle" && (
+                    <div className="relative sm:hidden flex-shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => setShowHamburgerMenu((v) => !v)}
+                        className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-600 hover:bg-slate-100 transition"
+                        aria-label="Menu"
+                      >
+                        <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                        </svg>
+                      </button>
+                      {showHamburgerMenu && (
+                        <>
+                          <div className="fixed inset-0 z-10" onClick={() => setShowHamburgerMenu(false)} />
+                          <div className="absolute left-0 top-9 z-20 min-w-[180px] rounded-xl border border-slate-200 bg-white py-1 shadow-lg">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setShowHamburgerMenu(false);
+                                if (window.confirm("Are you sure you want to reset the conversation? All progress will be lost.")) {
+                                  resetConversation();
+                                }
+                              }}
+                              className="flex w-full items-center gap-2 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 whitespace-nowrap"
+                            >
+                              <svg className="h-4 w-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                              </svg>
+                              Reset conversation
+                            </button>
+                            {(status === "awaitingPatient" || status === "awaitingAi" || status === "paused") &&
+                              !awaitingFinalComments &&
+                              !isEndingInterview && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setShowHamburgerMenu(false);
+                                  setShowEndInterviewConfirm(true);
+                                }}
+                                className="flex w-full items-center gap-2 px-4 py-2.5 text-sm text-red-600 hover:bg-red-50"
+                              >
+                                <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 24 24">
+                                  <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" />
+                                </svg>
+                                End Early
+                              </button>
+                            )}
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  )}
+                  <h2 className="flex-1 text-center text-[1.05rem] sm:flex-none sm:text-left sm:text-2xl font-semibold text-slate-900">
                     Guided Interview
                   </h2>
+                  {/* Spacer to balance hamburger and keep title centred on mobile */}
+                  {status !== "idle" && <div className="w-8 flex-shrink-0 sm:hidden" />}
                 </div>
                 <div className="flex w-full flex-wrap items-center justify-center gap-2 sm:w-auto sm:justify-end">
                   {status === "awaitingPatient" && !isSpeaking && messages.some(m => m.role === "assistant") && (
