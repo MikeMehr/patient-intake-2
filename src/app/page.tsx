@@ -3917,7 +3917,7 @@ export default function Home() {
             )}
             <form onSubmit={handleStart} onKeyDown={handlePreInterviewEnterKeyDown} className="space-y-4">
               <div className={status !== "idle" ? "hidden sm:block" : ""}>
-              <div className="rounded-2xl border border-slate-200 bg-[#E3FCF2] px-3.5 py-2.5 text-[13px] leading-[1.35rem] text-slate-800">
+              <div className="rounded-2xl border border-slate-200 bg-[#F2FCF8] px-3.5 py-2.5 text-[13px] leading-[1.35rem] text-slate-800">
                 <label className="flex items-start gap-3">
                   <input
                     type="checkbox"
@@ -3978,7 +3978,7 @@ export default function Home() {
                     readOnly={isInvitedFlow}
                     onChange={(event) => setPatientName(event.target.value)}
                     placeholder="e.g., John Doe"
-                    className="w-full rounded-2xl border border-slate-200 bg-[#E3FCF2] px-4 py-3 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white disabled:cursor-not-allowed disabled:opacity-70"
+                    className="w-full rounded-2xl border border-slate-200 bg-[#F2FCF8] px-4 py-3 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white disabled:cursor-not-allowed disabled:opacity-70"
                     required
                   />
                 </div>
@@ -3999,7 +3999,7 @@ export default function Home() {
                     readOnly={isInvitedFlow}
                     onChange={(event) => setPatientEmail(event.target.value)}
                     placeholder="e.g., john@example.com"
-                    className="w-full rounded-2xl border border-slate-200 bg-[#E3FCF2] px-4 py-3 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white disabled:cursor-not-allowed disabled:opacity-70"
+                    className="w-full rounded-2xl border border-slate-200 bg-[#F2FCF8] px-4 py-3 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white disabled:cursor-not-allowed disabled:opacity-70"
                     required
                   />
                 </div>
@@ -4025,7 +4025,7 @@ export default function Home() {
                   value={chiefComplaint}
                   disabled={status !== "idle"}
                   onChange={(event) => setChiefComplaint(event.target.value)}
-                  className="w-full rounded-2xl border border-slate-200 bg-[#E3FCF2] px-4 py-3 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white disabled:cursor-not-allowed disabled:opacity-70"
+                  className="w-full rounded-2xl border border-slate-200 bg-[#F2FCF8] px-4 py-3 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white disabled:cursor-not-allowed disabled:opacity-70"
                   required
                 />
               </div>
@@ -4046,7 +4046,7 @@ export default function Home() {
                     onChange={(event) =>
                       setSex(event.target.value as PatientProfile["sex"])
                     }
-                    className="w-full rounded-2xl border border-slate-200 bg-[#E3FCF2] px-4 py-3 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white disabled:cursor-not-allowed disabled:opacity-70"
+                    className="w-full rounded-2xl border border-slate-200 bg-[#F2FCF8] px-4 py-3 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white disabled:cursor-not-allowed disabled:opacity-70"
                   >
                     <option value="female">Female</option>
                     <option value="male">Male</option>
@@ -4072,7 +4072,7 @@ export default function Home() {
                     disabled={status !== "idle"}
                     onChange={(event) => setAgeInput(event.target.value)}
                     placeholder="e.g., 34"
-                    className="w-full rounded-2xl border border-slate-200 bg-[#E3FCF2] px-4 py-3 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white disabled:cursor-not-allowed disabled:opacity-70"
+                    className="w-full rounded-2xl border border-slate-200 bg-[#F2FCF8] px-4 py-3 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white disabled:cursor-not-allowed disabled:opacity-70"
                     required
                   />
                 </div>
@@ -4121,7 +4121,7 @@ export default function Home() {
                         disabled={status !== "idle"}
                         onChange={(event) => setAllergies(event.target.value)}
                         placeholder='e.g., penicillin (rash) (leave blank for "None")'
-                        className="w-full rounded-2xl border border-slate-200 bg-[#E3FCF2] px-4 py-3 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white disabled:cursor-not-allowed disabled:opacity-70"
+                        className="w-full rounded-2xl border border-slate-200 bg-[#F2FCF8] px-4 py-3 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white disabled:cursor-not-allowed disabled:opacity-70"
                       />
                     </div>
 
@@ -4152,7 +4152,7 @@ export default function Home() {
                         onChange={(event) => setPmh(event.target.value)}
                         aria-label="Past medical history"
                         placeholder="e.g., asthma, hypertension on lisinopril (leave blank for 'None')"
-                        className="w-full rounded-2xl border border-slate-200 bg-[#E3FCF2] px-4 py-3 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white disabled:cursor-not-allowed disabled:opacity-70"
+                        className="w-full rounded-2xl border border-slate-200 bg-[#F2FCF8] px-4 py-3 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white disabled:cursor-not-allowed disabled:opacity-70"
                       />
                       <div className="space-y-2">
                         <input
@@ -4266,7 +4266,7 @@ export default function Home() {
                         onChange={(event) => setCurrentMedications(event.target.value)}
                         aria-label="Current medications"
                         placeholder="e.g., amlodipine 5 mg daily, metformin 500 mg BID (leave blank for 'None')"
-                        className="w-full rounded-2xl border border-slate-200 bg-[#E3FCF2] px-4 py-3 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white disabled:cursor-not-allowed disabled:opacity-70"
+                        className="w-full rounded-2xl border border-slate-200 bg-[#F2FCF8] px-4 py-3 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white disabled:cursor-not-allowed disabled:opacity-70"
                       />
                       <div className="space-y-2">
                         <input
@@ -4369,7 +4369,7 @@ export default function Home() {
                         onChange={(event) => setFamilyHistory(event.target.value)}
                         aria-label="Family history"
                         placeholder="e.g., mother with HTN, father with type 2 diabetes (leave blank for 'None')"
-                        className="w-full rounded-2xl border border-slate-200 bg-[#E3FCF2] px-4 py-3 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white disabled:cursor-not-allowed disabled:opacity-70"
+                        className="w-full rounded-2xl border border-slate-200 bg-[#F2FCF8] px-4 py-3 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white disabled:cursor-not-allowed disabled:opacity-70"
                       />
                     </div>
 
@@ -4389,7 +4389,7 @@ export default function Home() {
                         onChange={(event) => setFamilyDoctor(event.target.value)}
                         aria-label="Family doctor"
                         placeholder='e.g., Dr. Kim Lee (leave blank for "Unknown")'
-                        className="w-full rounded-2xl border border-slate-200 bg-[#E3FCF2] px-4 py-3 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white disabled:cursor-not-allowed disabled:opacity-70"
+                        className="w-full rounded-2xl border border-slate-200 bg-[#F2FCF8] px-4 py-3 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white disabled:cursor-not-allowed disabled:opacity-70"
                       />
                     </div>
 
@@ -4415,7 +4415,7 @@ export default function Home() {
                           disabled={status !== "idle"}
                           onChange={(event) => setPharmacyNameInput(event.target.value)}
                           placeholder="e.g., Shoppers Drug Mart"
-                          className="w-full rounded-2xl border border-slate-200 bg-[#E3FCF2] px-4 py-3 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white disabled:cursor-not-allowed disabled:opacity-70"
+                          className="w-full rounded-2xl border border-slate-200 bg-[#F2FCF8] px-4 py-3 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white disabled:cursor-not-allowed disabled:opacity-70"
                         />
                       </div>
 
@@ -4434,7 +4434,7 @@ export default function Home() {
                           disabled={status !== "idle"}
                           onChange={(event) => setPharmacyNumberInput(event.target.value)}
                           placeholder="e.g., 12345"
-                          className="w-full rounded-2xl border border-slate-200 bg-[#E3FCF2] px-4 py-3 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white disabled:cursor-not-allowed disabled:opacity-70"
+                          className="w-full rounded-2xl border border-slate-200 bg-[#F2FCF8] px-4 py-3 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white disabled:cursor-not-allowed disabled:opacity-70"
                         />
                       </div>
 
@@ -4453,7 +4453,7 @@ export default function Home() {
                           disabled={status !== "idle"}
                           onChange={(event) => setPharmacyAddressInput(event.target.value)}
                           placeholder="e.g., 1221 Lynn Valley Rd"
-                          className="w-full rounded-2xl border border-slate-200 bg-[#E3FCF2] px-4 py-3 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white disabled:cursor-not-allowed disabled:opacity-70"
+                          className="w-full rounded-2xl border border-slate-200 bg-[#F2FCF8] px-4 py-3 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white disabled:cursor-not-allowed disabled:opacity-70"
                         />
                       </div>
 
@@ -4472,7 +4472,7 @@ export default function Home() {
                           disabled={status !== "idle"}
                           onChange={(event) => setPharmacyCityInput(event.target.value)}
                           placeholder="e.g., North Vancouver"
-                          className="w-full rounded-2xl border border-slate-200 bg-[#E3FCF2] px-4 py-3 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white disabled:cursor-not-allowed disabled:opacity-70"
+                          className="w-full rounded-2xl border border-slate-200 bg-[#F2FCF8] px-4 py-3 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white disabled:cursor-not-allowed disabled:opacity-70"
                         />
                       </div>
 
@@ -4545,7 +4545,7 @@ export default function Home() {
                   value={language}
                   disabled={status !== "idle"}
                   onChange={(event) => setLanguage(event.target.value)}
-                  className="w-full rounded-2xl border border-slate-200 bg-[#E3FCF2] px-4 py-3 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white disabled:cursor-not-allowed disabled:opacity-70"
+                  className="w-full rounded-2xl border border-slate-200 bg-[#F2FCF8] px-4 py-3 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white disabled:cursor-not-allowed disabled:opacity-70"
                 >
                   {languageOptions.map((opt) => (
                     <option key={opt.value} value={opt.value}>
@@ -4564,7 +4564,7 @@ export default function Home() {
               <div className={`mt-3 flex flex-wrap gap-3${status !== "idle" ? " hidden sm:flex" : ""}`}>
                 <button
                   type="submit"
-                  className="inline-flex flex-1 items-center justify-center rounded-2xl bg-[#52A882] px-5 py-2.5 text-base font-semibold text-white transition hover:bg-[#459970] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#52A882] disabled:cursor-not-allowed disabled:bg-[#E3FCF2] disabled:text-[#3a7a5e]"
+                  className="inline-flex flex-1 items-center justify-center rounded-2xl bg-[#52A882] px-5 py-2.5 text-base font-semibold text-white transition hover:bg-[#459970] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#52A882] disabled:cursor-not-allowed disabled:bg-[#F2FCF8] disabled:text-[#3a7a5e]"
                   disabled={status !== "idle" || chiefComplaint.length < 3}
                 >
                   Start interview
@@ -5398,7 +5398,7 @@ export default function Home() {
                         onMouseUp={(event) => updateSelectionRef(event.target as HTMLTextAreaElement)}
                         onFocus={(event) => updateSelectionRef(event.target as HTMLTextAreaElement)}
                         disabled={status !== "awaitingPatient" || isSpeaking}
-                        className={`w-full rounded-2xl border bg-[#E3FCF2] px-4 py-3 text-base text-slate-900 outline-none transition focus:bg-white disabled:cursor-not-allowed disabled:opacity-70 ${
+                        className={`w-full rounded-2xl border bg-[#F2FCF8] px-4 py-3 text-base text-slate-900 outline-none transition focus:bg-white disabled:cursor-not-allowed disabled:opacity-70 ${
                           isListening
                             ? "border-[#80D7FF] ring-2 ring-[#C0ECFC]"
                             : "border-slate-200 focus:border-slate-400"
