@@ -4603,8 +4603,13 @@ export default function Home() {
                       🔊 Hear again
                     </button>
                   )}
-                  {/* Mute + Video: stacked vertically on mobile (Mute above video), inline on desktop */}
-                  <div className="flex flex-col items-center gap-2 sm:flex-row sm:items-center sm:gap-2">
+                  {/* Mute + Video: on mobile — video on top, Mute below (flex-col-reverse);
+                      gap only when video is visible so Mute stays aligned with Hear again otherwise.
+                      On desktop: Mute then Video inline (sm:flex-row restores DOM order). */}
+                  <div
+                    className="flex flex-col-reverse items-center sm:flex-row sm:items-center sm:gap-2"
+                    style={{ gap: isSpeaking && !isPaused && language.toLowerCase().startsWith("en") ? "0.5rem" : "0" }}
+                  >
                     <button
                       onClick={() => {
                         setIsMuted(!isMuted);
