@@ -4078,6 +4078,32 @@ export default function Home() {
                 </div>
               </div>
 
+              <div className="space-y-2">
+                <label
+                  htmlFor="language"
+                  className="text-sm font-medium text-slate-800"
+                >
+                  Interview language
+                </label>
+                <select
+                  id="language"
+                  name="language"
+                  value={language}
+                  disabled={status !== "idle"}
+                  onChange={(event) => setLanguage(event.target.value)}
+                  className="w-full rounded-2xl border border-slate-200 bg-[#F2FCF8] px-4 py-3 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white disabled:cursor-not-allowed disabled:opacity-70"
+                >
+                  {languageOptions.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs text-slate-500">
+                  Assistant questions and patient-facing text will use this language (fallback to English if translation fails).
+                </p>
+              </div>
+
               <div className="space-y-2 mt-3">
                 <button
                   type="button"
@@ -4530,32 +4556,6 @@ export default function Home() {
                     </div>
                   </div>
                 )}
-              </div>
-
-              <div className="space-y-2">
-                <label
-                  htmlFor="language"
-                  className="text-sm font-medium text-slate-800"
-                >
-                  Interview language
-                </label>
-                <select
-                  id="language"
-                  name="language"
-                  value={language}
-                  disabled={status !== "idle"}
-                  onChange={(event) => setLanguage(event.target.value)}
-                  className="w-full rounded-2xl border border-slate-200 bg-[#F2FCF8] px-4 py-3 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white disabled:cursor-not-allowed disabled:opacity-70"
-                >
-                  {languageOptions.map((opt) => (
-                    <option key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </option>
-                  ))}
-                </select>
-                <p className="text-xs text-slate-500">
-                  Assistant questions and patient-facing text will use this language (fallback to English if translation fails).
-                </p>
               </div>
 
               {error && !error.startsWith("Your response is too long") && <p className="text-xs text-red-600">{error}</p>}
