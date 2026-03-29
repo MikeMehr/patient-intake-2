@@ -4521,69 +4521,73 @@ export default function Home() {
 
             <div className={`mt-2 h-px w-full bg-slate-200/70${status !== "idle" ? " hidden sm:block" : ""}`} aria-hidden="true" />
 
+            {/* Mobile only: hamburger + "Guided Interview" title ABOVE the box border */}
+            {status !== "idle" && (
+              <div className="sm:hidden flex items-center mt-3 mb-1">
+                <div className="relative flex-shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setShowHamburgerMenu((v) => !v)}
+                    className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-600 hover:bg-slate-100 transition"
+                    aria-label="Menu"
+                  >
+                    <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                    </svg>
+                  </button>
+                  {showHamburgerMenu && (
+                    <>
+                      <div className="fixed inset-0 z-10" onClick={() => setShowHamburgerMenu(false)} />
+                      <div className="absolute left-0 top-9 z-20 min-w-[180px] rounded-xl border border-slate-200 bg-white py-1 shadow-lg">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowHamburgerMenu(false);
+                            if (window.confirm("Are you sure you want to reset the conversation? All progress will be lost.")) {
+                              resetConversation();
+                            }
+                          }}
+                          className="flex w-full items-center gap-2 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 whitespace-nowrap"
+                        >
+                          <svg className="h-4 w-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                          </svg>
+                          Reset conversation
+                        </button>
+                        {(status === "awaitingPatient" || status === "awaitingAi" || status === "paused") &&
+                          !awaitingFinalComments &&
+                          !isEndingInterview && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShowHamburgerMenu(false);
+                              setShowEndInterviewConfirm(true);
+                            }}
+                            className="flex w-full items-center gap-2 px-4 py-2.5 text-sm text-red-600 hover:bg-red-50"
+                          >
+                            <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 24 24">
+                              <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" />
+                            </svg>
+                            End Early
+                          </button>
+                        )}
+                      </div>
+                    </>
+                  )}
+                </div>
+                <h2 className="flex-1 text-center text-[1.05rem] font-semibold text-slate-900">
+                  Guided Interview
+                </h2>
+                <div className="w-8 flex-shrink-0" />
+              </div>
+            )}
+
             <section className="mt-2 rounded-3xl border border-slate-100 bg-white/80 px-3 py-4 sm:px-5 sm:py-6 shadow-slate-100">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
-                <div className="flex items-center sm:block">
-                  {/* Hamburger menu — mobile only, inside section header row */}
-                  {status !== "idle" && (
-                    <div className="relative sm:hidden flex-shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => setShowHamburgerMenu((v) => !v)}
-                        className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-600 hover:bg-slate-100 transition"
-                        aria-label="Menu"
-                      >
-                        <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-                        </svg>
-                      </button>
-                      {showHamburgerMenu && (
-                        <>
-                          <div className="fixed inset-0 z-10" onClick={() => setShowHamburgerMenu(false)} />
-                          <div className="absolute left-0 top-9 z-20 min-w-[180px] rounded-xl border border-slate-200 bg-white py-1 shadow-lg">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setShowHamburgerMenu(false);
-                                if (window.confirm("Are you sure you want to reset the conversation? All progress will be lost.")) {
-                                  resetConversation();
-                                }
-                              }}
-                              className="flex w-full items-center gap-2 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 whitespace-nowrap"
-                            >
-                              <svg className="h-4 w-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                              </svg>
-                              Reset conversation
-                            </button>
-                            {(status === "awaitingPatient" || status === "awaitingAi" || status === "paused") &&
-                              !awaitingFinalComments &&
-                              !isEndingInterview && (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setShowHamburgerMenu(false);
-                                  setShowEndInterviewConfirm(true);
-                                }}
-                                className="flex w-full items-center gap-2 px-4 py-2.5 text-sm text-red-600 hover:bg-red-50"
-                              >
-                                <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 24 24">
-                                  <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" />
-                                </svg>
-                                End Early
-                              </button>
-                            )}
-                          </div>
-                        </>
-                      )}
-                    </div>
-                  )}
-                  <h2 className="flex-1 text-center text-[1.05rem] sm:flex-none sm:text-left sm:text-2xl font-semibold text-slate-900">
-                    Guided Interview
-                  </h2>
-                  {/* Spacer to balance hamburger and keep title centred on mobile */}
-                  {status !== "idle" && <div className="w-8 flex-shrink-0 sm:hidden" />}
-                </div>
+                {/* Title — desktop only (mobile title is above the box) */}
+                <h2 className="hidden sm:block text-2xl font-semibold text-slate-900">
+                  Guided Interview
+                </h2>
                 <div className="flex w-full flex-wrap items-center justify-center gap-2 sm:w-auto sm:justify-end">
                   {status === "awaitingPatient" && !isSpeaking && messages.some(m => m.role === "assistant") && (
                     <button
@@ -4599,55 +4603,58 @@ export default function Home() {
                       🔊 Hear again
                     </button>
                   )}
-                  <button
-                    onClick={() => {
-                      setIsMuted(!isMuted);
-                    }}
-                    className={`inline-flex items-center justify-center rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
-                      isMuted
-                        ? "bg-red-100 text-red-700 hover:bg-red-200"
-                        : "bg-[#F2FCF8] text-slate-700 hover:bg-[#d8f5e9]"
-                    }`}
-                    title={isMuted ? "Unmute AI voice" : "Mute AI voice"}
-                  >
-                    {isMuted ? (
-                      <>
-                        <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" clipPath="url(#clip0)" />
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" />
-                        </svg>
-                        Muted
-                      </>
-                    ) : (
-                      <>
-                        <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072M18.364 5.636a9 9 0 010 12.728M12 9l-6 6H4a1 1 0 01-1-1v-4a1 1 0 011-1h2l6-6v14z" />
-                        </svg>
-                        Mute
-                      </>
-                    )}
-                  </button>
-                  {/* Video runs continuously (autoPlay muted) — shown/hidden via visibility CSS only.
-                      Never call video.play()/pause() from JS: any JS-triggered media state change
-                      during active AudioContext playback causes iOS to reconfigure AVAudioSession
-                      and interrupt TTS audio. */}
-                  <video
-                    ref={ttsVideoRef}
-                    className="w-full max-w-40 rounded-xl border border-slate-200 object-cover shadow-sm sm:w-40"
-                    style={
-                      isSpeaking && !isPaused && language.toLowerCase().startsWith("en")
-                        ? { visibility: "visible" as const, height: "6rem" }
-                        : { visibility: "hidden" as const, height: 0, overflow: "hidden", border: "none" }
-                    }
-                    autoPlay
-                    loop
-                    muted
-                    playsInline
-                    preload="auto"
-                  >
-                    <source src="/Confident_Busines_woman.mp4" type="video/mp4" />
-                    Your browser does not support the video tag.
-                  </video>
+                  {/* Mute + Video: stacked vertically on mobile (Mute above video), inline on desktop */}
+                  <div className="flex flex-col items-center gap-2 sm:flex-row sm:items-center sm:gap-2">
+                    <button
+                      onClick={() => {
+                        setIsMuted(!isMuted);
+                      }}
+                      className={`inline-flex items-center justify-center rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+                        isMuted
+                          ? "bg-red-100 text-red-700 hover:bg-red-200"
+                          : "bg-[#F2FCF8] text-slate-700 hover:bg-[#d8f5e9]"
+                      }`}
+                      title={isMuted ? "Unmute AI voice" : "Mute AI voice"}
+                    >
+                      {isMuted ? (
+                        <>
+                          <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" clipPath="url(#clip0)" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" />
+                          </svg>
+                          Muted
+                        </>
+                      ) : (
+                        <>
+                          <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072M18.364 5.636a9 9 0 010 12.728M12 9l-6 6H4a1 1 0 01-1-1v-4a1 1 0 011-1h2l6-6v14z" />
+                          </svg>
+                          Mute
+                        </>
+                      )}
+                    </button>
+                    {/* Video runs continuously (autoPlay muted) — shown/hidden via visibility CSS only.
+                        Never call video.play()/pause() from JS: any JS-triggered media state change
+                        during active AudioContext playback causes iOS to reconfigure AVAudioSession
+                        and interrupt TTS audio. */}
+                    <video
+                      ref={ttsVideoRef}
+                      className="w-full max-w-40 rounded-xl border border-slate-200 object-cover shadow-sm sm:w-40"
+                      style={
+                        isSpeaking && !isPaused && language.toLowerCase().startsWith("en")
+                          ? { visibility: "visible" as const, height: "6rem" }
+                          : { visibility: "hidden" as const, height: 0, overflow: "hidden", border: "none" }
+                      }
+                      autoPlay
+                      loop
+                      muted
+                      playsInline
+                      preload="auto"
+                    >
+                      <source src="/Confident_Busines_woman.mp4" type="video/mp4" />
+                      Your browser does not support the video tag.
+                    </video>
+                  </div>
                 </div>
               </div>
               <div
