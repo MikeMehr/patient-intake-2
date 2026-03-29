@@ -3813,22 +3813,26 @@ export default function Home() {
     <div className="flex min-h-screen items-center justify-center bg-slate-100 px-4 py-10 text-slate-900">
       <main className="w-full max-w-5xl rounded-3xl border border-slate-200 bg-white/90 shadow-xl shadow-slate-100 backdrop-blur">
         <header className={`border-b border-slate-100 px-8 py-6${status !== "idle" ? " hidden sm:block" : ""}`}>
-          <NextImage
-            src="/LogoFinal.png"
-            alt="Health Assist AI logo"
-            width={195}
-            height={48}
-            className="mx-auto mb-5 h-[54px] w-[164px] object-contain sm:h-[72px] sm:w-[217px]"
-            priority
-          />
-          {clinicName && (
-            <p className="text-sm font-semibold uppercase tracking-wide text-slate-500">
-              {clinicName}
-            </p>
-          )}
-          <h1 className="mt-1 text-[1.35rem] font-semibold tracking-tight text-slate-900">
-            AI-Powered Medical History Intake
-          </h1>
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              {clinicName && (
+                <p className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+                  {clinicName}
+                </p>
+              )}
+              <h1 className="mt-1 text-[1.08rem] font-semibold tracking-tight text-slate-900">
+                AI-Powered History Intake
+              </h1>
+            </div>
+            <NextImage
+              src="/LogoFinal.png"
+              alt="Health Assist AI logo"
+              width={146}
+              height={36}
+              className="h-[40px] w-[123px] object-contain sm:h-[54px] sm:w-[163px] flex-shrink-0"
+              priority
+            />
+          </div>
         </header>
 
         <section className="px-8 py-8">
