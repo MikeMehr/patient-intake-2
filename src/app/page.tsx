@@ -3619,7 +3619,7 @@ export default function Home() {
       // Diagrams are shown only when the LLM explicitly sets requiresLocationMarking: true.
       const shouldShowDiagramFromFlag = turn.requiresLocationMarking === true;
 
-      // Use LLM-provided body parts; no keyword-based fallback to avoid false positives.
+      // Use LLM-provided body parts; fall back to detection from context when AI omits locationBodyParts.
       let bodyParts: ReturnType<typeof detectBodyParts>;
       if (
         turn.requiresLocationMarking &&
@@ -3636,6 +3636,9 @@ export default function Home() {
               ? ("left" as const)
               : undefined,
         }));
+      } else if (turn.requiresLocationMarking) {
+        // AI set requiresLocationMarking but omitted locationBodyParts — detect from context.
+        bodyParts = detectBodyParts(`${chiefComplaint} ${turn.question}`);
       } else {
         bodyParts = [];
       }
