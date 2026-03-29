@@ -4078,14 +4078,14 @@ export default function Home() {
                 </div>
               </div>
 
-              <div className="space-y-2">
+              <div className="space-y-2 mt-3">
                 <button
                   type="button"
                   aria-expanded={showAdditionalMedicalHistory}
                   onClick={() => setShowAdditionalMedicalHistory((prev) => !prev)}
                   className="w-full cursor-pointer rounded-xl px-1 py-1 text-left transition-colors hover:bg-slate-50/80"
                 >
-                  <span className="inline-flex items-center gap-2 text-sm font-medium text-slate-800">
+                  <span className="inline-flex items-center gap-2 text-base font-medium text-slate-800">
                     <span
                       className={[
                         "text-[17px] font-semibold leading-none text-slate-500 transition-transform",
