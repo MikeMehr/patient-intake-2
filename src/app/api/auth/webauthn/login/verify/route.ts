@@ -31,7 +31,7 @@ export async function POST(request: NextRequest) {
     const result = await verifyAuthentication({ response, expectedChallenge });
 
     if (!result.verified || !result.user) {
-      return NextResponse.json({ error: "Authentication failed" }, { status: 401 });
+      return NextResponse.json({ error: "Authentication failed", reason: result.reason }, { status: 401 });
     }
 
     const user = await getAuthUserByTypeAndId(result.user.userType, result.user.userId);

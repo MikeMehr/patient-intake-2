@@ -220,6 +220,7 @@ export async function verifyAuthentication(params: {
   expectedChallenge: string;
 }): Promise<{
   verified: boolean;
+  reason?: string;
   user?: { userType: UserType; userId: string };
   credentialId?: string;
 }> {
@@ -244,7 +245,7 @@ export async function verifyAuthentication(params: {
       outcome: "failure",
       reason: "challenge_invalid_or_expired",
     });
-    return { verified: false };
+    return { verified: false, reason: "challenge_invalid_or_expired" };
   }
 
   // Look up credential
@@ -270,7 +271,7 @@ export async function verifyAuthentication(params: {
       outcome: "failure",
       reason: "credential_not_found",
     });
-    return { verified: false };
+    return { verified: false, reason: "credential_not_found" };
   }
 
   const cred = credResult.rows[0];
@@ -290,15 +291,16 @@ export async function verifyAuthentication(params: {
       },
     });
   } catch (error) {
-    console.error("[webauthn/auth] verification_error", error instanceof Error ? error.message : error);
+    const msg = error instanceof Error ? error.message : "verification_error";
+    console.error("[webauthn/auth] verification_error", msg);
     auditWebAuthnEvent({
       action: "authentication_verify",
       outcome: "failure",
       userType: cred.user_type,
       userId: cred.user_id,
-      reason: error instanceof Error ? error.message : "verification_error",
+      reason: msg,
     });
-    return { verified: false };
+    return { verified: false, reason: msg };
   }
 
   if (!verification.verified) {
@@ -310,7 +312,7 @@ export async function verifyAuthentication(params: {
       userId: cred.user_id,
       reason: "not_verified",
     });
-    return { verified: false };
+    return { verified: false, reason: "not_verified" };
   }
 
   // Update counter and last_used_at
