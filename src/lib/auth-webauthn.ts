@@ -194,13 +194,16 @@ export async function verifyRegistration(params: {
 
 export async function generateAuthenticationOpts(params?: {
   ipAddress?: string | null;
+  allowCredentials?: Array<{ id: string; transports?: AuthenticatorTransportFuture[] }>;
 }): Promise<{ options: ReturnType<typeof generateAuthOptions> extends Promise<infer T> ? T : never; challenge: string }> {
   const { rpID } = getWebAuthnConfig();
 
   const options = await generateAuthOptions({
     rpID,
     userVerification: "preferred",
-    // Empty allowCredentials = discoverable credential flow (passkey)
+    // If allowCredentials is provided, Chrome will only offer those credentials.
+    // Empty array = discoverable credential flow (browser decides which passkey to present).
+    allowCredentials: params?.allowCredentials ?? [],
   });
 
   await query(

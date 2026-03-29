@@ -41,7 +41,7 @@ export default function LoginPage() {
     setLoading(true);
     try {
       const { authenticateWithPasskey } = await import("@/lib/webauthn-client");
-      const result = await authenticateWithPasskey();
+      const result = await authenticateWithPasskey(username || undefined);
       if (result.success && result.data) {
         redirectByUserType(result.data.userType);
       } else {

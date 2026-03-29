@@ -51,15 +51,18 @@ export async function registerPasskey(
   return { success: true };
 }
 
-export async function authenticateWithPasskey(): Promise<{
+export async function authenticateWithPasskey(username?: string): Promise<{
   success: boolean;
   data?: any;
   error?: string;
 }> {
-  // Step 1: Get authentication options
+  // Step 1: Get authentication options.
+  // If a username is provided, the server will look up that user's registered credential IDs
+  // and include them as allowCredentials, so the browser presents the correct passkey directly.
   const optionsRes = await fetch("/api/auth/webauthn/login/options", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username: username?.trim().toLowerCase() || undefined }),
   });
   if (!optionsRes.ok) {
     const data = await optionsRes.json().catch(() => ({}));
