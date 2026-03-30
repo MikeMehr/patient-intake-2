@@ -139,6 +139,7 @@ export async function verifyRegistration(params: {
       expectedChallenge: params.expectedChallenge,
       expectedOrigin: origin,
       expectedRPID: rpID,
+      requireUserVerification: false, // userVerification is "preferred", not "required"
     });
   } catch (error) {
     auditWebAuthnEvent({
@@ -283,6 +284,7 @@ export async function verifyAuthentication(params: {
       expectedChallenge: params.expectedChallenge,
       expectedOrigin: origin,
       expectedRPID: rpID,
+      requireUserVerification: false, // userVerification is "preferred", not "required"
       credential: {
         id: cred.credential_id,
         publicKey: new Uint8Array(cred.public_key),
