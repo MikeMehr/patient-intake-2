@@ -318,6 +318,15 @@ This matrix links launch controls to objective evidence, owner, and closure crit
   - Last review: 2026-03-02
   - Closure criteria: completion threshold met
 
+- Control ID: A-04
+  - Control: Internet and Email Usage Policy documented and acknowledged by all workforce members
+  - Evidence: `docs/compliance/runbooks/internet-email-usage-policy.md`, `docs/compliance/evidence/internet-email-policy-acknowledgment-2026-03-30.md`
+  - Owner: Security Officer / Manucher Mehraein
+  - Status: implemented
+  - Last review: 2026-03-30
+  - Next review: 2027-03-30
+  - Closure criteria: policy published; all workforce members have signed acknowledgment on file; policy refreshed annually and after material changes
+
 - Control ID: A-03
   - Control: Sanctions policy and officer designation
   - Evidence: `docs/compliance/administrative-safeguards.md`, `docs/compliance/evidence/officer-designation-2026-03-02.md`, `docs/compliance/evidence/training-and-sanctions-attestation-2026-03-02.md`
@@ -325,6 +334,15 @@ This matrix links launch controls to objective evidence, owner, and closure crit
   - Status: implemented
   - Last review: 2026-03-02
   - Closure criteria: policy approved and communicated
+
+- Control ID: A-05
+  - Control: Content takedown and intellectual property complaints procedure (DMCA / Canadian Copyright Act / defamation / trademark)
+  - Evidence: `docs/compliance/runbooks/content-takedown-and-ip-complaints.md`, `src/app/terms/page.tsx` (§19 — IP Complaints and Content Takedown)
+  - Owner: Security/Privacy Officer / Manucher Mehraein
+  - Status: implemented
+  - Last review: 2026-03-30
+  - Next review: 2027-03-30
+  - Closure criteria: internal runbook published with designated agent, response timeline, and counter-notification process; public-facing procedure present in Terms of Use §19; annual review completed
 
 ## Risk Acceptance Tracking
 

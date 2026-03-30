@@ -15,6 +15,8 @@
   - Incident response policy
   - Access management policy
   - Sanctions policy
+  - Internet and Email Usage Policy (`docs/compliance/runbooks/internet-email-usage-policy.md`)
+  - Content Takedown and IP Complaints Procedure (`docs/compliance/runbooks/content-takedown-and-ip-complaints.md`)
 
 ## Workforce Management
 

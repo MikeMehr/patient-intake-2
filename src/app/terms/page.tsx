@@ -124,7 +124,19 @@ export default function TermsPage() {
           <P>We may update these Terms from time to time. Updated Terms will be posted at this URL with a revised effective date. Material changes will be communicated to registered users by email or in-platform notice at least 14 days before taking effect. Continued use of the Platform after the effective date constitutes acceptance of the updated Terms.</P>
         </Section>
 
-        <Section title="19. Contact">
+        <Section title="19. Intellectual Property Complaints and Content Takedown">
+          <P>Health Assist AI respects intellectual property rights and expects users to do the same. If you believe that content on or produced by the Platform infringes your copyright, trademark, or other intellectual property rights, or is defamatory or otherwise unlawful, please notify us using the procedure below.</P>
+          <P><strong>Designated Agent for IP and Content Complaints:</strong><br />
+          Manucher Mehraein, Security &amp; Privacy Officer<br />
+          <a href="mailto:info@health-assist.org" className="text-blue-600 underline">info@health-assist.org</a></P>
+          <P><strong>Copyright Infringement (DMCA / Canadian Copyright Act).</strong> To submit a copyright infringement notice, your written notification must include: (1) identification of the copyrighted work claimed to be infringed; (2) identification of the allegedly infringing material and its location on the Platform (URL or sufficient description); (3) your contact information (name, address, telephone, email); (4) a good-faith statement that the use is not authorized by the copyright owner, its agent, or law; (5) a statement under penalty of perjury that the information is accurate and that you are authorized to act on behalf of the copyright owner; and (6) your physical or electronic signature. Send notices to <a href="mailto:info@health-assist.org" className="text-blue-600 underline">info@health-assist.org</a> with subject line: <strong>COPYRIGHT INFRINGEMENT NOTICE</strong>.</P>
+          <P><strong>Trademark, Defamation, and Other Complaints.</strong> Complaints regarding trademark infringement, defamatory content, or privacy violations must identify the specific content at issue, the right alleged to be violated, and your contact information. Send to <a href="mailto:info@health-assist.org" className="text-blue-600 underline">info@health-assist.org</a> with an appropriate subject line (e.g., <strong>TRADEMARK COMPLAINT</strong> or <strong>DEFAMATION COMPLAINT</strong>).</P>
+          <P><strong>Response.</strong> We will acknowledge receipt within 5 business days and provide a substantive response or take appropriate action within 15 business days. Content found to infringe third-party rights will be removed or modified. Content controlled by a healthcare organization customer will be referred to that organization.</P>
+          <P><strong>Counter-Notification.</strong> If your content was removed in response to a copyright notice and you believe the removal was in error, you may submit a counter-notification to <a href="mailto:info@health-assist.org" className="text-blue-600 underline">info@health-assist.org</a> including: identification of the removed material and its prior location, a statement under penalty of perjury that removal was by mistake or misidentification, your contact information, consent to jurisdiction, and your signature. Upon receipt of a valid counter-notification, we will forward it to the original complainant and may restore the material within 10–14 business days unless a court action is filed.</P>
+          <P><strong>Repeat Infringers.</strong> We will terminate accounts of users found to be repeat infringers of third-party intellectual property rights in appropriate circumstances.</P>
+        </Section>
+
+        <Section title="20. Contact">
           <P>For legal inquiries or questions about these Terms:</P>
           <P><strong>Health Assist AI</strong><br /><a href="mailto:info@health-assist.org" className="text-blue-600 underline">info@health-assist.org</a></P>
         </Section>
