@@ -3,6 +3,7 @@ export const languageOptions = [
   { value: "am", label: "Amharic" },
   { value: "ar", label: "Arabic" },
   { value: "bn", label: "Bengali" },
+  { value: "bla", label: "Blackfoot" },
   { value: "bs", label: "Bosnian" },
   { value: "my", label: "Burmese" },
   { value: "yue", label: "Cantonese" },
@@ -10,21 +11,48 @@ export const languageOptions = [
   { value: "cr", label: "Cree" },
   { value: "hr", label: "Croatian" },
   { value: "cs", label: "Czech" },
+  { value: "den", label: "Dene (Athabaskan languages)" },
   { value: "nl", label: "Dutch" },
-  { value: "es", label: "Spanish" },
-  { value: "fa", label: "Farsi (Persian)" },
   { value: "fr", label: "French" },
   { value: "de", label: "German" },
   { value: "el", label: "Greek" },
   { value: "gu", label: "Gujarati" },
+  { value: "gwi", label: "Gwich'in" },
+  { value: "hai", label: "Haida" },
   { value: "he", label: "Hebrew" },
   { value: "hi", label: "Hindi" },
   { value: "hu", label: "Hungarian" },
+  { value: "iu", label: "Inuktitut" },
   { value: "it", label: "Italian" },
   { value: "ja", label: "Japanese" },
   { value: "ko", label: "Korean" },
+  { value: "ml", label: "Malayalam" },
+  { value: "zh", label: "Mandarin Chinese" },
+  { value: "mic", label: "Mi'kmaq" },
+  { value: "moh", label: "Mohawk" },
+  { value: "nuk", label: "Nuu-chah-nulth" },
+  { value: "oj", label: "Ojibwe (Anishinaabemowin)" },
+  { value: "fa", label: "Persian (Farsi)" },
+  { value: "pl", label: "Polish" },
   { value: "pt", label: "Portuguese" },
-  { value: "zh", label: "Chinese (Simplified)" },
+  { value: "pa", label: "Punjabi" },
+  { value: "ro", label: "Romanian" },
+  { value: "ru", label: "Russian" },
+  { value: "sal", label: "Salish languages" },
+  { value: "sr", label: "Serbian" },
+  { value: "scs", label: "Slavey" },
+  { value: "so", label: "Somali" },
+  { value: "es", label: "Spanish" },
+  { value: "sw", label: "Swahili" },
+  { value: "tl", label: "Tagalog (Filipino)" },
+  { value: "ta", label: "Tamil" },
+  { value: "te", label: "Telugu" },
+  { value: "th", label: "Thai" },
+  { value: "ti", label: "Tigrinya" },
+  { value: "tr", label: "Turkish" },
+  { value: "uk", label: "Ukrainian" },
+  { value: "ur", label: "Urdu" },
+  { value: "vi", label: "Vietnamese" },
 ] as const;
 
 export const supportedLanguageNames: Record<string, string> =
@@ -84,6 +112,38 @@ export function getSpeechLocale(code: string): string {
       return "ar-SA";
     case "hi":
       return "hi-IN";
+    case "ml":
+      return "ml-IN";
+    case "pa":
+      return "pa-IN";
+    case "pl":
+      return "pl-PL";
+    case "ro":
+      return "ro-RO";
+    case "ru":
+      return "ru-RU";
+    case "so":
+      return "so-SO";
+    case "sr":
+      return "sr-RS";
+    case "sw":
+      return "sw-KE";
+    case "ta":
+      return "ta-IN";
+    case "te":
+      return "te-IN";
+    case "th":
+      return "th-TH";
+    case "tl":
+      return "fil-PH";
+    case "tr":
+      return "tr-TR";
+    case "uk":
+      return "uk-UA";
+    case "ur":
+      return "ur-PK";
+    case "vi":
+      return "vi-VN";
     default:
       return "en-US";
   }
@@ -124,6 +184,38 @@ export function getAzureTtsVoiceName(locale: string): string {
       return "hi-IN-SwaraNeural";
     case "fa-ir":
       return "fa-IR-DilaraNeural";
+    case "fil-ph":
+      return "fil-PH-BlessicaNeural";
+    case "ml-in":
+      return "ml-IN-SobhanaNeural";
+    case "pa-in":
+      return "pa-IN-OjasNeural";
+    case "pl-pl":
+      return "pl-PL-ZofiaNeural";
+    case "ro-ro":
+      return "ro-RO-AlinaNeural";
+    case "ru-ru":
+      return "ru-RU-SvetlanaNeural";
+    case "so-so":
+      return "so-SO-UbaxNeural";
+    case "sr-rs":
+      return "sr-RS-SophieNeural";
+    case "sw-ke":
+      return "sw-KE-ZuriNeural";
+    case "ta-in":
+      return "ta-IN-PallaviNeural";
+    case "te-in":
+      return "te-IN-ShrutiNeural";
+    case "th-th":
+      return "th-TH-PremwadeeNeural";
+    case "tr-tr":
+      return "tr-TR-EmelNeural";
+    case "uk-ua":
+      return "uk-UA-PolinaNeural";
+    case "ur-pk":
+      return "ur-PK-UzmaNeural";
+    case "vi-vn":
+      return "vi-VN-HoaiMyNeural";
     default:
       return "en-US-JennyNeural";
   }
