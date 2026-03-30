@@ -4609,12 +4609,8 @@ export default function Home() {
             )}
 
             <section className="mt-2 rounded-3xl border border-slate-100 bg-white/80 px-3 py-4 sm:px-5 sm:py-6 shadow-slate-100">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
-                {/* Title — desktop only (mobile title is above the box) */}
-                <h2 className="hidden sm:block text-2xl font-semibold text-slate-900">
-                  Guided Interview
-                </h2>
-                <div className="flex w-full flex-wrap items-center justify-center gap-2 sm:w-auto sm:justify-end">
+              <div className="flex flex-col gap-3 sm:flex-col sm:items-center sm:justify-center sm:gap-4">
+                <div className="flex w-full flex-wrap items-center justify-center gap-2 sm:w-full sm:justify-center">
                   {status === "awaitingPatient" && !isSpeaking && messages.some(m => m.role === "assistant") && (
                     <button
                       type="button"
@@ -4633,7 +4629,7 @@ export default function Home() {
                       gap only when video is visible so Mute stays aligned with Hear again otherwise.
                       On desktop: Mute then Video inline (sm:flex-row restores DOM order). */}
                   <div
-                    className="flex flex-col-reverse items-center sm:flex-row sm:items-center sm:gap-2"
+                    className="flex flex-col-reverse items-center sm:flex-col-reverse sm:items-center sm:gap-2"
                     style={{ gap: isSpeaking && !isPaused && language.toLowerCase().startsWith("en") ? "0.5rem" : "0" }}
                   >
                     <button
@@ -4670,10 +4666,10 @@ export default function Home() {
                         and interrupt TTS audio. */}
                     <video
                       ref={ttsVideoRef}
-                      className="w-full max-w-40 rounded-xl border border-slate-200 object-cover shadow-sm sm:w-40"
+                      className="w-full max-w-40 rounded-xl border border-slate-200 object-cover shadow-sm sm:w-56"
                       style={
                         isSpeaking && !isPaused && language.toLowerCase().startsWith("en")
-                          ? { visibility: "visible" as const, height: "6rem" }
+                          ? { visibility: "visible" as const, height: "auto" }
                           : { visibility: "hidden" as const, height: 0, overflow: "hidden", border: "none" }
                       }
                       autoPlay
