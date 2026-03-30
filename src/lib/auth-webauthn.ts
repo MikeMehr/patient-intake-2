@@ -83,7 +83,7 @@ export async function generateRegistrationOpts(params: {
     excludeCredentials,
     authenticatorSelection: {
       residentKey: "preferred",
-      userVerification: "preferred",
+      userVerification: "required",
     },
     attestationType: "none",
   });
@@ -139,7 +139,7 @@ export async function verifyRegistration(params: {
       expectedChallenge: params.expectedChallenge,
       expectedOrigin: origin,
       expectedRPID: rpID,
-      requireUserVerification: false, // userVerification is "preferred", not "required"
+      requireUserVerification: true,
     });
   } catch (error) {
     auditWebAuthnEvent({
@@ -201,7 +201,7 @@ export async function generateAuthenticationOpts(params?: {
 
   const options = await generateAuthOptions({
     rpID,
-    userVerification: "preferred",
+    userVerification: "required",
     // If allowCredentials is provided, Chrome will only offer those credentials.
     // Empty array = discoverable credential flow (browser decides which passkey to present).
     allowCredentials: params?.allowCredentials ?? [],
@@ -284,7 +284,7 @@ export async function verifyAuthentication(params: {
       expectedChallenge: params.expectedChallenge,
       expectedOrigin: origin,
       expectedRPID: rpID,
-      requireUserVerification: false, // userVerification is "preferred", not "required"
+      requireUserVerification: true,
       credential: {
         id: cred.credential_id,
         publicKey: new Uint8Array(cred.public_key),
