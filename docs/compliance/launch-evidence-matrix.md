@@ -327,6 +327,15 @@ This matrix links launch controls to objective evidence, owner, and closure crit
   - Last review: 2026-03-02
   - Closure criteria: completion threshold met
 
+- Control ID: A-06
+  - Control: Vulnerability assessment program — SAST (CodeQL), dependency scanning (npm audit CI gate), and annual penetration test cadence
+  - Evidence: `docs/compliance/runbooks/vulnerability-assessment-program.md`, `.github/workflows/codeql.yml`, `.github/workflows/main_healt-assist-ai-prod.yml`, `docs/compliance/evidence/technical-gates-2026-03-02.md`
+  - Owner: Security Officer / Manucher Mehraein
+  - Status: implemented (dependency scan + SAST); scheduled (pen test — first due 2027-03-02)
+  - Last review: 2026-03-30
+  - Next review: 2027-03-30
+  - Closure criteria: CodeQL workflow active on main and PRs; npm audit gate passing in CI; pen test completed and findings documented annually
+
 - Control ID: A-04
   - Control: Internet and Email Usage Policy documented and acknowledged by all workforce members
   - Evidence: `docs/compliance/runbooks/internet-email-usage-policy.md`, `docs/compliance/evidence/internet-email-policy-acknowledgment-2026-03-30.md`

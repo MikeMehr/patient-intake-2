@@ -17,6 +17,7 @@
   - Sanctions policy
   - Internet and Email Usage Policy (`docs/compliance/runbooks/internet-email-usage-policy.md`)
   - Content Takedown and IP Complaints Procedure (`docs/compliance/runbooks/content-takedown-and-ip-complaints.md`)
+  - Vulnerability Assessment Program (`docs/compliance/runbooks/vulnerability-assessment-program.md`)
 
 ## Workforce Management
 
