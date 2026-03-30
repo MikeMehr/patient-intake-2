@@ -274,6 +274,15 @@ This matrix links launch controls to objective evidence, owner, and closure crit
 
 ## Physical Safeguard Controls
 
+- Control ID: P-04
+  - Control: Endpoint malware protection — macOS native AV (XProtect, Gatekeeper, MRT) on developer endpoints; fail-closed file upload gate as production compensating control
+  - Evidence: `docs/compliance/evidence/endpoint-malware-protection-attestation-2026-03-30.md`, `docs/compliance/runbooks/file-upload-security.md`, `docs/compliance/physical-safeguards.md` (§P-04)
+  - Owner: Security/Operations / Manucher Mehraein
+  - Status: implemented_attested
+  - Last review: 2026-03-30
+  - Next review: 2026-06-30
+  - Closure criteria: macOS native AV controls remain enabled on all developer endpoints; production file upload endpoint remains fail-closed in HIPAA mode; attestation refreshed quarterly
+
 - Control ID: P-01
   - Control: Facility access and workspace controls for PHI administration
   - Evidence: `docs/compliance/physical-safeguards.md`, `docs/compliance/evidence/physical-safeguards-attestation-2026-03-02.md`
