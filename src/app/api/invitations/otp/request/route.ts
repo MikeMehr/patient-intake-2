@@ -54,7 +54,7 @@ export async function POST(request: NextRequest) {
 
     const subject = `${invitation.clinicName} intake verification code`;
     const text = `Your intake verification code is ${otp}. It expires in 10 minutes.`;
-    if (resend && process.env.HIPAA_MODE !== "true") {
+    if (resend && process.env.HIPAA_MODE !== "true" && process.env.DISABLE_SCAN_EMAILS !== "true") {
       await resend.emails.send({
         from: process.env.RESEND_FROM_EMAIL || "onboarding@resend.dev",
         to: invitation.patientEmail,

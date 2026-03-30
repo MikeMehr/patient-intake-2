@@ -111,7 +111,7 @@ async function sendOtpEmail(params: {
   otpCode: string;
   purpose: MfaPurpose;
 }): Promise<boolean> {
-  if (!resend || process.env.HIPAA_MODE === "true") return false;
+  if (!resend || process.env.HIPAA_MODE === "true" || process.env.DISABLE_SCAN_EMAILS === "true") return false;
   const subject =
     params.purpose === "login"
       ? "Your Health Assist sign-in verification code"
