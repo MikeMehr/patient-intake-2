@@ -807,6 +807,96 @@ function PhysicianViewContent() {
     }
   };
 
+  const handleDownloadPatientImages = async () => {
+    const patientName = session?.patientName || "patient";
+    const safeName = patientName.replace(/\s+/g, "-").toLowerCase();
+    const downloads: { url: string; filename: string }[] = [];
+
+    // Collect lesion/uploaded photo
+    if (hpiLesionImageUrl) {
+      const ext = hpiLesionImageName ? hpiLesionImageName.split(".").pop() || "jpg" : "jpg";
+      downloads.push({ url: hpiLesionImageUrl, filename: `${safeName}-lesion-image.${ext}` });
+    }
+
+    // Render each body diagram with markers onto a canvas
+    for (let i = 0; i < hpiDiagramSelectionsToRender.length; i++) {
+      const selection = hpiDiagramSelectionsToRender[i];
+      const image = getBodyDiagramImage(
+        selection.part,
+        selection.side,
+        session?.patientProfile?.sex === "male" || session?.patientProfile?.sex === "female"
+          ? session.patientProfile.sex
+          : undefined,
+      );
+      const partLabel = selection.side
+        ? `${selection.side}-${selection.part}`
+        : selection.part;
+
+      await new Promise<void>((resolve) => {
+        const img = document.createElement("img");
+        img.onload = () => {
+          const SIZE = 576;
+          const canvas = document.createElement("canvas");
+          canvas.width = SIZE;
+          canvas.height = SIZE;
+          const ctx = canvas.getContext("2d");
+          if (!ctx) { resolve(); return; }
+
+          // Draw white background
+          ctx.fillStyle = "#ffffff";
+          ctx.fillRect(0, 0, SIZE, SIZE);
+
+          // Draw image with object-contain behavior
+          const scale = Math.min(SIZE / img.naturalWidth, SIZE / img.naturalHeight);
+          const drawW = img.naturalWidth * scale;
+          const drawH = img.naturalHeight * scale;
+          const offsetX = (SIZE - drawW) / 2;
+          const offsetY = (SIZE - drawH) / 2;
+          ctx.drawImage(img, offsetX, offsetY, drawW, drawH);
+
+          // Draw markers
+          ctx.fillStyle = "#dc2626";
+          ctx.font = `bold ${Math.round(SIZE * 0.07)}px sans-serif`;
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          for (const marker of selection.markers) {
+            const mx = offsetX + (marker.xPct / 100) * drawW;
+            const my = offsetY + (marker.yPct / 100) * drawH;
+            ctx.fillText("X", mx, my);
+          }
+
+          canvas.toBlob((blob) => {
+            if (blob) {
+              downloads.push({
+                url: URL.createObjectURL(blob),
+                filename: `${safeName}-body-diagram-${partLabel}.png`,
+              });
+            }
+            resolve();
+          }, "image/png");
+        };
+        img.onerror = () => resolve();
+        img.src = image.src;
+      });
+    }
+
+    // Trigger downloads sequentially
+    for (const dl of downloads) {
+      const a = document.createElement("a");
+      a.href = dl.url;
+      a.download = dl.filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      await new Promise((r) => setTimeout(r, 150));
+    }
+
+    // Revoke blob URLs
+    for (const dl of downloads) {
+      if (dl.url.startsWith("blob:")) URL.revokeObjectURL(dl.url);
+    }
+  };
+
   const [reviewing, setReviewing] = useState(false);
   const [reviewError, setReviewError] = useState<string | null>(null);
 
@@ -2354,9 +2444,21 @@ function PhysicianViewContent() {
                 </div>
                 {hasPatientUploadedContext && (
                   <div>
-                    <p className="text-sm font-medium text-slate-700 mb-2">
-                      Patient Uploaded Context
-                    </p>
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="text-sm font-medium text-slate-700">
+                        Patient Uploaded Context
+                      </p>
+                      <button
+                        onClick={() => { void handleDownloadPatientImages(); }}
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors"
+                        title="Download body diagrams and uploaded images for EMR upload"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                        </svg>
+                        Download
+                      </button>
+                    </div>
                     <div className="space-y-3 rounded-md border border-slate-200 bg-slate-50/60 p-3">
                       {hpiMedPmhSummary && (
                         <div>
