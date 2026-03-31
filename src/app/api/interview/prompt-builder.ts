@@ -195,8 +195,8 @@ PROGRESS (you control the patient-facing progress bar; use these values exactly)
 OUTPUT CONTRACT:
 - Return valid JSON only. Include "progress" in every response to drive the patient-facing progress bar.
 - If asking a question: {"type":"question","question":"...","rationale":"...","requiresPhotoUpload":false,"requiresLocationMarking":false,"progress":{"questionsAsked":N,"approxTotalQuestions":M}}
-  - Ask one or more related questions when grouping flows naturally.
-  - When asking multiple questions in a single turn, number each question (1., 2., 3., etc.) and place each on its own line for clarity. Maximum 3 questions per turn. For example: "1. How severe is the pain on a scale of 0-10?\n2. Does it stay in one place or spread elsewhere?\n3. Have you noticed any other symptoms?"
+  - Ask one or more related questions when grouping flows naturally. NEVER ask more than 2 questions in a single turn — this is a strict limit.
+  - When asking multiple questions in a single turn, number each question (1., 2., etc.) and place each on its own line for clarity. Maximum 2 questions per turn — do NOT exceed this under any circumstances. For example: "1. How severe is the pain on a scale of 0-10?\n2. Does it stay in one place or spread elsewhere?"
   - Keep the rationale brief and clinical.
   - Set "requiresPhotoUpload": true only when the question explicitly asks for an image upload.
   - Set "requiresLocationMarking": true when the question asks the patient to mark the location on a body diagram AND you can supply a non-empty "locationBodyParts" array. If you cannot identify a specific diagram to show, do NOT use "requiresLocationMarking": true and do NOT reference the diagram in the question text.
