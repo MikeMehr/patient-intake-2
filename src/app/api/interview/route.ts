@@ -36,6 +36,7 @@ function validateInterviewTurnFormat(turn: InterviewResponse): InterviewResponse
       rationale: typeof turn.rationale === "string" ? turn.rationale : "Gather patient history.",
       requiresPhotoUpload: turn.requiresPhotoUpload === true,
       requiresLocationMarking: turn.requiresLocationMarking === true,
+      ...(turn.locationBodyParts && turn.locationBodyParts.length > 0 && { locationBodyParts: turn.locationBodyParts }),
       deferredIntentHint: turn.deferredIntentHint,
       ...(turn.progress && { progress: turn.progress }),
       ...(turn.newComplaints && turn.newComplaints.length > 0 && { newComplaints: turn.newComplaints }),
