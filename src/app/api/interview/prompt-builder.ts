@@ -86,8 +86,8 @@ export function buildPrompt(
       deferredIntentHint,
     });
 
-  const recentTranscript = transcript.length > 30 ? transcript.slice(-30) : transcript;
-  const recentQuestions = interviewState.allQuestionsAsked.slice(-16);
+  const recentTranscript = transcript.length > 12 ? transcript.slice(-12) : transcript;
+  const recentQuestions = interviewState.allQuestionsAsked.slice(-8);
   const activeFacts = interviewState.activePatientFacts.informationSummary || "No concise fact summary captured yet.";
   const pendingComplaints = interviewState.pendingComplaints.length
     ? interviewState.pendingComplaints.map((complaint) => `- ${complaint}`).join("\n")

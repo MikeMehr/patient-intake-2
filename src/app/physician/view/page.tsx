@@ -854,14 +854,15 @@ function PhysicianViewContent() {
           const offsetY = (SIZE - drawH) / 2;
           ctx.drawImage(img, offsetX, offsetY, drawW, drawH);
 
-          // Draw markers
+          // Draw markers — coordinates are stored relative to the full container
+          // (same as how the web view renders them), so apply to full canvas SIZE.
           ctx.fillStyle = "#dc2626";
           ctx.font = `bold ${Math.round(SIZE * 0.07)}px sans-serif`;
           ctx.textAlign = "center";
           ctx.textBaseline = "middle";
           for (const marker of selection.markers) {
-            const mx = offsetX + (marker.xPct / 100) * drawW;
-            const my = offsetY + (marker.yPct / 100) * drawH;
+            const mx = (marker.xPct / 100) * SIZE;
+            const my = (marker.yPct / 100) * SIZE;
             ctx.fillText("X", mx, my);
           }
 
