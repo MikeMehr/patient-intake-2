@@ -3849,11 +3849,6 @@ export default function Home() {
               priority
             />
             <div className="sm:order-first">
-              {clinicName && (
-                <p className="text-sm font-semibold uppercase tracking-wide text-slate-500">
-                  {clinicName}
-                </p>
-              )}
               <h1 className="mt-1 text-[1.08rem] font-semibold tracking-tight text-slate-900">
                 AI-Powered History Intake
               </h1>
@@ -3908,11 +3903,7 @@ export default function Home() {
                     className="mt-1 h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 disabled:cursor-not-allowed"
                   />
                   <span>
-                    Do not proceed with this interview if this is a medical emergency, call 911 instead. I consent to{" "}
-                    {clinicName ? <strong>{clinicName}</strong> : "my clinic/organization"} collecting my health
-                    information using Health Assist AI to prepare an AI-assisted intake summary for my physician. My
-                    information will be processed on Microsoft Azure (including servers in the USA). This tool does not
-                    provide medical advice and is not a substitute for care from your physician. I agree to the{" "}
+                    Do not proceed with this interview if this is a medical emergency. Call 911 instead. I consent to the collection of my health information using Health Assist AI to prepare an AI-assisted intake summary for my physician. My information will be processed on Microsoft Azure, including servers in the United States. This tool does not provide medical advice and is not a substitute for care from your physician. I agree to the{" "}
                     <a
                       href="https://www.health-assist.org/terms"
                       target="_blank"
