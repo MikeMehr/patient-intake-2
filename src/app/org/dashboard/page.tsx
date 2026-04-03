@@ -151,6 +151,39 @@ export default function OrgDashboard() {
           </div>
         )}
 
+        <div className="grid grid-cols-1 gap-4 mb-6 sm:grid-cols-3">
+          <Link
+            href="/org/booking-settings"
+            className="flex items-center gap-3 bg-white border border-slate-200 rounded-lg px-5 py-4 hover:border-blue-400 hover:shadow-sm transition"
+          >
+            <span className="text-2xl">📅</span>
+            <div>
+              <p className="text-sm font-semibold text-slate-900">Online Booking</p>
+              <p className="text-xs text-slate-500">Manage booking settings &amp; slots</p>
+            </div>
+          </Link>
+          <Link
+            href="/org/slots"
+            className="flex items-center gap-3 bg-white border border-slate-200 rounded-lg px-5 py-4 hover:border-blue-400 hover:shadow-sm transition"
+          >
+            <span className="text-2xl">🕐</span>
+            <div>
+              <p className="text-sm font-semibold text-slate-900">Appointment Slots</p>
+              <p className="text-xs text-slate-500">Add &amp; manage available times</p>
+            </div>
+          </Link>
+          <Link
+            href="/org/appointments"
+            className="flex items-center gap-3 bg-white border border-slate-200 rounded-lg px-5 py-4 hover:border-blue-400 hover:shadow-sm transition"
+          >
+            <span className="text-2xl">📋</span>
+            <div>
+              <p className="text-sm font-semibold text-slate-900">Appointments</p>
+              <p className="text-xs text-slate-500">View booked appointments</p>
+            </div>
+          </Link>
+        </div>
+
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-1">
             <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-6">
