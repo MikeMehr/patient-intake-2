@@ -63,7 +63,8 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { physicianId, startTime, endTime, slotStatus } = body as Record<string, string | undefined>;
+    const { physicianId, startTime, endTime, slotStatus, intervalMinutes } =
+      body as Record<string, string | number | undefined>;
 
     if (!physicianId || !startTime || !endTime) {
       status = 400;
@@ -72,7 +73,7 @@ export async function POST(request: NextRequest) {
       return res;
     }
 
-    if (!ISO_RE.test(startTime) || !ISO_RE.test(endTime)) {
+    if (!ISO_RE.test(String(startTime)) || !ISO_RE.test(String(endTime))) {
       status = 400;
       const res = NextResponse.json({ error: "startTime and endTime must be ISO datetime strings" }, { status });
       logRequestMeta("/api/org/slots", requestId, status, Date.now() - started);
@@ -82,11 +83,45 @@ export async function POST(request: NextRequest) {
     const resolvedStatus: "OPEN" | "BLOCKED" =
       slotStatus === "BLOCKED" ? "BLOCKED" : "OPEN";
 
+    // Bulk generation: if intervalMinutes is provided, create multiple slots
+    const interval = intervalMinutes ? Number(intervalMinutes) : 0;
+    if (interval > 0) {
+      const blockStart = new Date(String(startTime));
+      const blockEnd = new Date(String(endTime));
+      const intervalMs = interval * 60 * 1000;
+
+      if (blockEnd.getTime() <= blockStart.getTime() + intervalMs) {
+        status = 400;
+        const res = NextResponse.json({ error: "Time range is shorter than the slot interval" }, { status });
+        logRequestMeta("/api/org/slots", requestId, status, Date.now() - started);
+        return res;
+      }
+
+      const slotIds: string[] = [];
+      let slotStart = blockStart;
+      while (slotStart.getTime() + intervalMs <= blockEnd.getTime()) {
+        const slotEnd = new Date(slotStart.getTime() + intervalMs);
+        const id = await createSlot(
+          session.organizationId,
+          String(physicianId),
+          slotStart.toISOString(),
+          slotEnd.toISOString(),
+          resolvedStatus,
+        );
+        slotIds.push(id);
+        slotStart = slotEnd;
+      }
+
+      const res = NextResponse.json({ slotIds, count: slotIds.length }, { status });
+      logRequestMeta("/api/org/slots", requestId, status, Date.now() - started);
+      return res;
+    }
+
     const slotId = await createSlot(
       session.organizationId,
-      physicianId,
-      startTime,
-      endTime,
+      String(physicianId),
+      String(startTime),
+      String(endTime),
       resolvedStatus,
     );
 

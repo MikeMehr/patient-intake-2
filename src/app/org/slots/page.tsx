@@ -28,6 +28,18 @@ function formatLocalDT(iso: string): string {
   }
 }
 
+function formatTime(iso: string): string {
+  try {
+    return new Intl.DateTimeFormat("en-CA", {
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    }).format(new Date(iso));
+  } catch {
+    return iso;
+  }
+}
+
 function toInputDT(iso: string): string {
   // Strip timezone for datetime-local input
   return iso.substring(0, 16);
@@ -53,6 +65,8 @@ export default function SlotsPage() {
     endTime: "",
     slotStatus: "OPEN",
   });
+  const [bulkMode, setBulkMode] = useState(false);
+  const [intervalMinutes, setIntervalMinutes] = useState(15);
   const [adding, setAdding] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
 
@@ -117,21 +131,21 @@ export default function SlotsPage() {
     setAdding(true);
     setAddError(null);
 
-    // Convert datetime-local (local time) to ISO — append :00Z is wrong;
-    // send as-is and let the server parse (it will treat as UTC if no TZ).
-    // datetime-local values are local time — convert to UTC for storage
     const startISO = new Date(newSlot.startTime).toISOString();
     const endISO = new Date(newSlot.endTime).toISOString();
+
+    const body: Record<string, unknown> = {
+      physicianId: newSlot.physicianId,
+      startTime: startISO,
+      endTime: endISO,
+      slotStatus: newSlot.slotStatus,
+    };
+    if (bulkMode) body.intervalMinutes = intervalMinutes;
 
     const res = await fetch("/api/org/slots", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        physicianId: newSlot.physicianId,
-        startTime: startISO,
-        endTime: endISO,
-        slotStatus: newSlot.slotStatus,
-      }),
+      body: JSON.stringify(body),
     });
 
     const data = await res.json();
@@ -228,7 +242,10 @@ export default function SlotsPage() {
               <tbody>
                 {slots.map((slot) => (
                   <tr key={slot.id} className="border-b border-gray-100 last:border-0">
-                    <td className="px-4 py-3 text-gray-800">{formatLocalDT(slot.startTime)}</td>
+                    <td className="px-4 py-3 text-gray-800">
+                      {formatLocalDT(slot.startTime)}
+                      <span className="text-gray-400"> – {formatTime(slot.endTime)}</span>
+                    </td>
                     <td className="px-4 py-3 text-gray-700">{slot.physicianName}</td>
                     <td className="px-4 py-3">
                       <span
@@ -319,6 +336,42 @@ export default function SlotsPage() {
                   <option value="OPEN">OPEN (bookable)</option>
                   <option value="BLOCKED">BLOCKED (unavailable)</option>
                 </select>
+              </div>
+              <div className="border border-blue-100 bg-blue-50 rounded-lg p-3 space-y-3">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={bulkMode}
+                    onChange={(e) => setBulkMode(e.target.checked)}
+                    className="accent-blue-600 w-4 h-4"
+                  />
+                  <span className="text-sm font-medium text-gray-700">
+                    Generate multiple slots (split by interval)
+                  </span>
+                </label>
+                {bulkMode && (
+                  <div>
+                    <label className="block text-xs text-gray-600 mb-1">Slot length</label>
+                    <select
+                      value={intervalMinutes}
+                      onChange={(e) => setIntervalMinutes(Number(e.target.value))}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                    >
+                      {[10, 15, 20, 30, 45, 60].map((n) => (
+                        <option key={n} value={n}>{n} minutes</option>
+                      ))}
+                    </select>
+                    {newSlot.startTime && newSlot.endTime && (
+                      <p className="text-xs text-blue-600 mt-1">
+                        {Math.floor(
+                          (new Date(newSlot.endTime).getTime() - new Date(newSlot.startTime).getTime()) /
+                            (intervalMinutes * 60 * 1000),
+                        )}{" "}
+                        slots will be created
+                      </p>
+                    )}
+                  </div>
+                )}
               </div>
               <div className="flex gap-3 pt-2">
                 <button
