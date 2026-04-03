@@ -119,8 +119,9 @@ export default function SlotsPage() {
 
     // Convert datetime-local (local time) to ISO — append :00Z is wrong;
     // send as-is and let the server parse (it will treat as UTC if no TZ).
-    const startISO = newSlot.startTime + ":00";
-    const endISO = newSlot.endTime + ":00";
+    // datetime-local values are local time — convert to UTC for storage
+    const startISO = new Date(newSlot.startTime).toISOString();
+    const endISO = new Date(newSlot.endTime).toISOString();
 
     const res = await fetch("/api/org/slots", {
       method: "POST",
