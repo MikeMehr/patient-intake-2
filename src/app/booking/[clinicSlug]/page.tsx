@@ -201,9 +201,6 @@ export default function ClinicBookingPage({
       <div className="max-w-3xl mx-auto">
         {/* Header */}
         <div className="mb-6">
-          <button onClick={() => router.push("/booking")} className="text-blue-600 text-sm mb-3 flex items-center gap-1">
-            ← All clinics
-          </button>
           <h1 className="text-2xl font-bold text-gray-900">{clinic?.name}</h1>
           {clinic?.address && <p className="text-gray-500 text-sm mt-1">{clinic.address}</p>}
           {settings?.bookingInstructions && (
