@@ -1,4 +1,4 @@
-import { detectBodyParts } from "@/lib/body-parts";
+import { detectBodyParts, type BodyPart } from "@/lib/body-parts";
 import type {
   InterviewMessage,
   InterviewProgress,
@@ -25,6 +25,7 @@ import {
   type ProtocolTopicKey,
 } from "./protocol-types";
 import { classifyVisitStage } from "./visit-stage";
+import { hasMarkerSignal } from "./location-signals";
 
 const BASE_QUESTION_BUDGET = 15;
 const NEW_COMPLAINT_BUDGET_BONUS = 8;
@@ -1538,6 +1539,24 @@ export function buildInterviewState(params: {
     .map((message) => message.content.trim())
     .filter(Boolean);
 
+  const completedDiagramParts: BodyPart[] = [];
+  for (let i = 0; i < params.transcript.length - 1; i++) {
+    const msg = params.transcript[i];
+    const next = params.transcript[i + 1];
+    if (
+      msg.role === "assistant" &&
+      next.role === "patient" &&
+      /\b(mark|diagram)\b/i.test(msg.content) &&
+      hasMarkerSignal(next.content.toLowerCase())
+    ) {
+      for (const p of detectBodyParts(msg.content)) {
+        if (!completedDiagramParts.includes(p.part)) {
+          completedDiagramParts.push(p.part);
+        }
+      }
+    }
+  }
+
   const topicsCovered = new Set<ProtocolTopicKey>();
   allQuestionsAsked.forEach((question) => {
     extractTopics(question).forEach((topic) => topicsCovered.add(topic));
@@ -1740,6 +1759,7 @@ export function buildInterviewState(params: {
     complaintClarificationHint: activeEvaluation.complaintClarificationHint,
     deferredIntentHint: params.deferredIntentHint,
     forceSummary: params.forceSummary,
+    completedDiagramParts,
   };
 
   return {

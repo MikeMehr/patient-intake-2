@@ -29,7 +29,7 @@ export function hasLocationQuestionIntent(questionLower: string): boolean {
   return locationQuestionTopicPattern.test(questionLower);
 }
 
-function hasMarkerSignal(answerLower: string): boolean {
+export function hasMarkerSignal(answerLower: string): boolean {
   const hasEnglishMarkerAction =
     /\b(marked|mark|clicked|tapped|placed an x|placed x)\b/.test(answerLower);
   const hasEnglishMarkerTarget = /\b(diagram|photo|image|spot|area)\b/.test(answerLower);

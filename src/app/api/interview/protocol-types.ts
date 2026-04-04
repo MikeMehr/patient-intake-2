@@ -1,4 +1,5 @@
 import type { InterviewProgress } from "@/lib/interview-schema";
+import type { BodyPart } from "@/lib/body-parts";
 
 export type ComplaintClass =
   | "MSK"
@@ -192,5 +193,6 @@ export type InterviewState = {
   complaintClarificationHint: string | null;
   deferredIntentHint: string | null;
   forceSummary: boolean;
+  completedDiagramParts: BodyPart[];
   progress: InterviewProgress;
 };

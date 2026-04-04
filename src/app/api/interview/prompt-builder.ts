@@ -86,8 +86,8 @@ export function buildPrompt(
       deferredIntentHint,
     });
 
-  const recentTranscript = transcript.length > 12 ? transcript.slice(-12) : transcript;
-  const recentQuestions = interviewState.allQuestionsAsked.slice(-8);
+  const recentTranscript = transcript.length > 30 ? transcript.slice(-30) : transcript;
+  const recentQuestions = interviewState.allQuestionsAsked.slice(-16);
   const activeFacts = interviewState.activePatientFacts.informationSummary || "No concise fact summary captured yet.";
   const pendingComplaints = interviewState.pendingComplaints.length
     ? interviewState.pendingComplaints.map((complaint) => `- ${complaint}`).join("\n")
@@ -130,6 +130,9 @@ ${previousLabReportSummary ? `Previous summary: ${previousLabReportSummary}` : "
   const bodyDiagramSection = getBodyDiagramPromptSection(
     profile.sex === "male" ? "male" : profile.sex === "female" ? "female" : undefined,
   );
+  const bodyDiagramDirective = interviewState.completedDiagramParts.length > 0
+    ? `\nBODY DIAGRAM STATUS: The patient has ALREADY marked the following diagrams: ${interviewState.completedDiagramParts.join(", ")}. Do NOT ask them to mark these diagrams again. Set "requiresLocationMarking": false for any question about these body parts. You may still use diagrams for OTHER body parts not in this list.`
+    : "";
 
   const mvaAdminSection = getMvaAdminPromptSection(chiefComplaint);
 
@@ -180,7 +183,7 @@ ${formSection}
 ${guidanceSection}
 ${sensitivePhotoDirective}
 
-${bodyDiagramSection}
+${bodyDiagramSection}${bodyDiagramDirective}
 ${mvaAdminSection}
 
 RECENT TRANSCRIPT:
