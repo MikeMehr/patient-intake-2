@@ -15,7 +15,13 @@ import { sendBookingConfirmation } from "@/lib/booking-email";
 import { query } from "@/lib/db";
 
 const HOLD_COOKIE = "booking_hold_key";
-const COVERAGE_TYPES = ["CANADIAN_HEALTH_CARD", "PRIVATE_PAY", "TRAVEL_INSURANCE", "UNINSURED"] as const;
+const COVERAGE_TYPES = [
+  "CANADIAN_HEALTH_CARD",
+  "PRIVATE_PAY",
+  "TRAVEL_INSURANCE",
+  "UNINSURED",
+  "EXISTING_OSCAR_PATIENT",
+] as const;
 const DOB_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 export async function POST(
@@ -42,6 +48,7 @@ export async function POST(
     healthCardNumber,
     billingNote,
     consentGiven,
+    oscarDemographicNo,
   } = body as Record<string, string | boolean | undefined>;
 
   // Validate required fields
@@ -72,8 +79,12 @@ export async function POST(
     return NextResponse.json({ error: "Clinic not found or booking not enabled" }, { status: 404 });
   }
 
-  // Enforce health card requirement
-  if (clinic.settings.healthCardRequired && coverageType === "CANADIAN_HEALTH_CARD" && !healthCardNumber) {
+  // Enforce health card requirement (not applicable to existing Oscar patients)
+  if (
+    clinic.settings.healthCardRequired &&
+    coverageType === "CANADIAN_HEALTH_CARD" &&
+    !healthCardNumber
+  ) {
     return NextResponse.json({ error: "Health card number is required for this clinic" }, { status: 400 });
   }
 
@@ -91,6 +102,7 @@ export async function POST(
     billingNote: billingNote ? String(billingNote) : undefined,
     manageTokenHash,
     manageTokenExpiresAt,
+    oscarDemographicNo: oscarDemographicNo ? String(oscarDemographicNo) : undefined,
   });
 
   if (!result) {

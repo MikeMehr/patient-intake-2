@@ -392,6 +392,7 @@ export type ConfirmAppointmentData = {
   billingNote?: string;
   manageTokenHash: string;
   manageTokenExpiresAt: Date;
+  oscarDemographicNo?: string;
 };
 
 export async function confirmAppointment(
@@ -426,10 +427,10 @@ export async function confirmAppointment(
        INSERT INTO appointments
          (organization_id, physician_id, slot_id, first_name, last_name, date_of_birth,
           email, coverage_type, province, health_card_number_enc, billing_note,
-          manage_token_hash, manage_token_expires_at)
+          manage_token_hash, manage_token_expires_at, oscar_demographic_no)
        SELECT
          hc.organization_id, su.physician_id, hc.id, $4, $5, $6::DATE,
-         $7, $8, $9, $10, $11, $12, $13::TIMESTAMPTZ
+         $7, $8, $9, $10, $11, $12, $13::TIMESTAMPTZ, $14
        FROM hold_check hc
        JOIN slot_update su ON TRUE
        RETURNING id AS appointment_id, physician_id
@@ -449,6 +450,7 @@ export async function confirmAppointment(
       data.billingNote ?? null,
       data.manageTokenHash,
       data.manageTokenExpiresAt.toISOString(),
+      data.oscarDemographicNo ?? null,
     ],
   );
 
