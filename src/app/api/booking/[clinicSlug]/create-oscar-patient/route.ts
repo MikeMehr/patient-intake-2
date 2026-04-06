@@ -52,7 +52,7 @@ async function oscarPost(
     tokenSecret: creds.tokenSecret,
   });
 
-  const doFetch = (useHeader: boolean) => {
+  const doFetch = async (useHeader: boolean) => {
     const fetchUrl = useHeader
       ? signed.signedUrl
       : (() => {
