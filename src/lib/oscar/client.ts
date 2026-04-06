@@ -1,22 +1,60 @@
+import https from "node:https";
 import { signOAuth1Request, parseFormEncoded } from "./oauth1";
 import { assertSafeOutboundUrl } from "@/lib/outbound-url";
 
 // ---------------------------------------------------------------------------
 // SSL-tolerant fetch for Oscar EMR
 // Oscar instances commonly use self-signed or expired TLS certificates.
-// We use a dedicated undici Agent that disables cert verification only for
-// Oscar API calls — all other server-side fetch calls are unaffected.
+// We use a dedicated node:https.Agent that disables cert verification only
+// for Oscar API calls — all other server-side fetch calls are unaffected.
+// node:https is a true Node.js built-in and is never webpack-bundled.
 // ---------------------------------------------------------------------------
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const { Agent } = require("undici") as typeof import("undici");
-const _oscarTlsAgent = new Agent({ connect: { rejectUnauthorized: false } });
+const _oscarTlsAgent = new https.Agent({ rejectUnauthorized: false });
 
-export async function oscarFetch(url: string, options: RequestInit): Promise<Response> {
-  return fetch(url, {
-    ...options,
-    // undici dispatcher is not in the standard TypeScript fetch types
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ...(({ dispatcher: _oscarTlsAgent }) as any),
+export async function oscarFetch(url: string, options: RequestInit = {}): Promise<Response> {
+  return new Promise<Response>((resolve, reject) => {
+    const u = new URL(url);
+    const reqHeaders = options.headers as Record<string, string> | undefined;
+    const reqOptions: https.RequestOptions = {
+      hostname: u.hostname,
+      port: u.port || "443",
+      path: u.pathname + u.search,
+      method: (options.method || "GET").toUpperCase(),
+      headers: reqHeaders,
+      agent: _oscarTlsAgent,
+    };
+
+    const req = https.request(reqOptions, (res) => {
+      const chunks: Buffer[] = [];
+      res.on("data", (chunk: Buffer) => chunks.push(chunk));
+      res.on("end", () => {
+        const bodyBuf = Buffer.concat(chunks);
+        const headers = new Headers();
+        for (const [k, v] of Object.entries(res.headers)) {
+          if (v === undefined) continue;
+          if (Array.isArray(v)) v.forEach((val) => headers.append(k, val));
+          else headers.set(k, v);
+        }
+        resolve(
+          new Response(bodyBuf, {
+            status: res.statusCode ?? 200,
+            statusText: res.statusMessage ?? "",
+            headers,
+          }),
+        );
+      });
+      res.on("error", reject);
+    });
+
+    req.on("error", reject);
+
+    const { body } = options;
+    if (body != null) {
+      if (typeof body === "string" || Buffer.isBuffer(body)) {
+        req.write(body);
+      }
+    }
+    req.end();
   });
 }
 

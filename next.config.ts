@@ -9,7 +9,6 @@ const nextConfig: NextConfig = {
     "applicationinsights",
     "diagnostic-channel",
     "diagnostic-channel-publishers",
-    "undici",
   ],
   // Produces a minimal runtime bundle at `.next/standalone` suitable for
   // container/App Service deployments (smaller than shipping the whole repo).
