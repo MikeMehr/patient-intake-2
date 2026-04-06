@@ -123,8 +123,9 @@ async function oscarGet(
           Accept: "application/json",
         },
       });
-    } catch {
-      return null; // network/DNS error
+    } catch (fetchErr) {
+      console.error("[lookup-patient] fetch() threw (network/DNS/TLS error):", fetchErr);
+      return null;
     }
   };
 
