@@ -16,22 +16,42 @@ const OSCAR_FETCH_TIMEOUT_MS = 20_000; // 20 s — avoids infinite hangs when Os
 export async function oscarFetch(url: string, options: RequestInit = {}): Promise<Response> {
   return new Promise<Response>((resolve, reject) => {
     const u = new URL(url);
-    const reqHeaders = options.headers as Record<string, string> | undefined;
+
+    // Build headers — include Content-Length when a body is present so that
+    // Oscar (Tomcat) doesn't reject the request due to chunked encoding.
+    const outHeaders: Record<string, string> = {
+      ...(options.headers as Record<string, string> | undefined),
+    };
+    const bodyStr =
+      options.body != null
+        ? typeof options.body === "string"
+          ? options.body
+          : Buffer.isBuffer(options.body)
+            ? (options.body as Buffer).toString("utf-8")
+            : undefined
+        : undefined;
+    if (bodyStr != null) {
+      outHeaders["Content-Length"] = Buffer.byteLength(bodyStr, "utf-8").toString();
+    }
+
     const reqOptions: https.RequestOptions = {
       hostname: u.hostname,
       port: u.port || "443",
       path: u.pathname + u.search,
       method: (options.method || "GET").toUpperCase(),
-      headers: reqHeaders,
+      headers: outHeaders,
       agent: _oscarTlsAgent,
       timeout: OSCAR_FETCH_TIMEOUT_MS,
     };
+
+    console.log(`[oscarFetch] ${reqOptions.method} ${url} (timeout ${OSCAR_FETCH_TIMEOUT_MS}ms)`);
 
     const req = https.request(reqOptions, (res) => {
       const chunks: Buffer[] = [];
       res.on("data", (chunk: Buffer) => chunks.push(chunk));
       res.on("end", () => {
         const bodyBuf = Buffer.concat(chunks);
+        console.log(`[oscarFetch] ${reqOptions.method} ${url} → ${res.statusCode} (${bodyBuf.length} bytes)`);
         const headers = new Headers();
         for (const [k, v] of Object.entries(res.headers)) {
           if (v === undefined) continue;
@@ -46,21 +66,25 @@ export async function oscarFetch(url: string, options: RequestInit = {}): Promis
           }),
         );
       });
-      res.on("error", reject);
+      res.on("error", (err) => {
+        console.error(`[oscarFetch] response error for ${url}:`, err.message);
+        reject(err);
+      });
     });
 
     // timeout event fires when the socket is idle for too long — destroy to trigger "error"
     req.on("timeout", () => {
+      console.error(`[oscarFetch] TIMEOUT after ${OSCAR_FETCH_TIMEOUT_MS}ms: ${url}`);
       req.destroy(new Error(`Oscar request timed out after ${OSCAR_FETCH_TIMEOUT_MS}ms: ${url}`));
     });
 
-    req.on("error", reject);
+    req.on("error", (err) => {
+      console.error(`[oscarFetch] request error for ${url}:`, err.message);
+      reject(err);
+    });
 
-    const { body } = options;
-    if (body != null) {
-      if (typeof body === "string" || Buffer.isBuffer(body)) {
-        req.write(body);
-      }
+    if (bodyStr != null) {
+      req.write(bodyStr);
     }
     req.end();
   });
