@@ -107,7 +107,7 @@ async function oscarGet(
     tokenSecret: creds.tokenSecret,
   });
 
-  const doFetch = (useHeader: boolean) => {
+  const doFetch = async (useHeader: boolean) => {
     const fetchUrl = useHeader
       ? signed.signedUrl
       : (() => {
@@ -115,17 +115,27 @@ async function oscarGet(
           for (const [k, v] of Object.entries(signed.oauthParams)) u.searchParams.set(k, v);
           return u.toString();
         })();
-    return fetch(fetchUrl, {
-      method: "GET",
-      headers: {
-        ...(useHeader ? { Authorization: signed.authorizationHeader } : {}),
-        Accept: "application/json",
-      },
-    });
+    try {
+      return await fetch(fetchUrl, {
+        method: "GET",
+        headers: {
+          ...(useHeader ? { Authorization: signed.authorizationHeader } : {}),
+          Accept: "application/json",
+        },
+      });
+    } catch {
+      return null; // network/DNS error
+    }
   };
 
-  let res = await doFetch(true);
-  if (!res.ok && res.status === 401) res = await doFetch(false);
+  const res1 = await doFetch(true);
+  if (!res1) return { ok: false, status: 503 }; // network error
+  let res = res1;
+  if (!res.ok && res.status === 401) {
+    const res2 = await doFetch(false);
+    if (!res2) return { ok: false, status: 503 };
+    res = res2;
+  }
   if (!res.ok) return { ok: false, status: res.status };
   try {
     return { ok: true, json: await res.json() };
@@ -197,6 +207,7 @@ export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ clinicSlug: string }> }
 ) {
+  try {
   const { clinicSlug } = await params;
 
   // Security: require an active hold cookie — proves the caller has a real slot hold
@@ -365,4 +376,14 @@ export async function POST(
 
   // Multiple unresolvable matches
   return NextResponse.json({ oscarConnected: true, ambiguous: true, clinicEmail });
+
+  } catch (err) {
+    console.error("[lookup-patient] Unhandled error:", err);
+    // Return lookupError so the frontend blocks gracefully with clinic contact info
+    // We don't have clinicEmail here, so return null — the UI still shows the block message.
+    return NextResponse.json(
+      { oscarConnected: true, lookupError: true, clinicEmail: null },
+      { status: 200 } // intentionally 200 — client logic reads the body, not the status
+    );
+  }
 }

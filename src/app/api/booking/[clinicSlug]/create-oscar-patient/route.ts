@@ -60,19 +60,29 @@ async function oscarPost(
           for (const [k, v] of Object.entries(signed.oauthParams)) u.searchParams.set(k, v);
           return u.toString();
         })();
-    return fetch(fetchUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json",
-        ...(useHeader ? { Authorization: signed.authorizationHeader } : {}),
-      },
-      body: bodyStr,
-    });
+    try {
+      return await fetch(fetchUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+          ...(useHeader ? { Authorization: signed.authorizationHeader } : {}),
+        },
+        body: bodyStr,
+      });
+    } catch {
+      return null; // network/DNS error
+    }
   };
 
-  let res = await doFetch(true);
-  if (!res.ok && res.status === 401) res = await doFetch(false);
+  const res1 = await doFetch(true);
+  if (!res1) return { ok: false, status: 503, detail: "Network error reaching Oscar" };
+  let res = res1;
+  if (!res.ok && res.status === 401) {
+    const res2 = await doFetch(false);
+    if (!res2) return { ok: false, status: 503, detail: "Network error reaching Oscar" };
+    res = res2;
+  }
 
   const text = await res.text();
   if (!res.ok) {
@@ -104,6 +114,7 @@ export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ clinicSlug: string }> }
 ) {
+  try {
   const { clinicSlug } = await params;
 
   // Security: require an active hold cookie
@@ -249,4 +260,12 @@ export async function POST(
   }
 
   return NextResponse.json({ demographicNo });
+
+  } catch (err) {
+    console.error("[create-oscar-patient] Unhandled error:", err);
+    return NextResponse.json(
+      { error: "An unexpected error occurred. Please contact the clinic." },
+      { status: 500 }
+    );
+  }
 }
