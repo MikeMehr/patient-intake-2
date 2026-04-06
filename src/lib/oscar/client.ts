@@ -11,6 +11,8 @@ import { assertSafeOutboundUrl } from "@/lib/outbound-url";
 // ---------------------------------------------------------------------------
 const _oscarTlsAgent = new https.Agent({ rejectUnauthorized: false });
 
+const OSCAR_FETCH_TIMEOUT_MS = 20_000; // 20 s — avoids infinite hangs when Oscar is unreachable
+
 export async function oscarFetch(url: string, options: RequestInit = {}): Promise<Response> {
   return new Promise<Response>((resolve, reject) => {
     const u = new URL(url);
@@ -22,6 +24,7 @@ export async function oscarFetch(url: string, options: RequestInit = {}): Promis
       method: (options.method || "GET").toUpperCase(),
       headers: reqHeaders,
       agent: _oscarTlsAgent,
+      timeout: OSCAR_FETCH_TIMEOUT_MS,
     };
 
     const req = https.request(reqOptions, (res) => {
@@ -44,6 +47,11 @@ export async function oscarFetch(url: string, options: RequestInit = {}): Promis
         );
       });
       res.on("error", reject);
+    });
+
+    // timeout event fires when the socket is idle for too long — destroy to trigger "error"
+    req.on("timeout", () => {
+      req.destroy(new Error(`Oscar request timed out after ${OSCAR_FETCH_TIMEOUT_MS}ms: ${url}`));
     });
 
     req.on("error", reject);
