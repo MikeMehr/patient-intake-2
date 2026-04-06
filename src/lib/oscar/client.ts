@@ -1,6 +1,25 @@
 import { signOAuth1Request, parseFormEncoded } from "./oauth1";
 import { assertSafeOutboundUrl } from "@/lib/outbound-url";
 
+// ---------------------------------------------------------------------------
+// SSL-tolerant fetch for Oscar EMR
+// Oscar instances commonly use self-signed or expired TLS certificates.
+// We use a dedicated undici Agent that disables cert verification only for
+// Oscar API calls — all other server-side fetch calls are unaffected.
+// ---------------------------------------------------------------------------
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { Agent } = require("undici") as typeof import("undici");
+const _oscarTlsAgent = new Agent({ connect: { rejectUnauthorized: false } });
+
+export async function oscarFetch(url: string, options: RequestInit): Promise<Response> {
+  return fetch(url, {
+    ...options,
+    // undici dispatcher is not in the standard TypeScript fetch types
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ...(({ dispatcher: _oscarTlsAgent }) as any),
+  });
+}
+
 export type OscarOAuthEndpoints = {
   initiateUrl: string; // /ws/oauth/initiate
   authorizeUrl: string; // /ws/oauth/authorize
@@ -57,7 +76,7 @@ export async function oscarInitiate(args: {
       headers["Content-Type"] = "application/x-www-form-urlencoded";
       body = new URLSearchParams(signed.oauthParams).toString();
     }
-    const res = await fetch(url.toString(), { method: "POST", headers, body });
+    const res = await oscarFetch(url.toString(), { method: "POST", headers, body });
     const text = await res.text();
     return { res, text };
   };
@@ -130,7 +149,7 @@ export async function oscarExchangeAccessToken(args: {
         body = new URLSearchParams(signed.oauthParams).toString();
       }
     }
-    const res = await fetch(url.toString(), { method: "POST", headers, body });
+    const res = await oscarFetch(url.toString(), { method: "POST", headers, body });
     const text = await res.text();
     return { res, text };
   };
@@ -195,7 +214,7 @@ export async function oscarSignedFetch(args: {
         url.searchParams.set(k, v);
       }
     }
-    return fetch(url.toString(), {
+    return oscarFetch(url.toString(), {
       method: args.method,
       headers,
       body: args.body,

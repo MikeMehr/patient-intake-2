@@ -18,7 +18,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getClinicBySlug } from "@/lib/booking-store";
 import { query } from "@/lib/db";
 import { decryptString } from "@/lib/encrypted-field";
-import { getOscarRestBase } from "@/lib/oscar/client";
+import { getOscarRestBase, oscarFetch } from "@/lib/oscar/client";
 import { signOAuth1Request } from "@/lib/oscar/oauth1";
 
 export const runtime = "nodejs";
@@ -61,7 +61,7 @@ async function oscarPost(
           return u.toString();
         })();
     try {
-      return await fetch(fetchUrl, {
+      return await oscarFetch(fetchUrl, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
