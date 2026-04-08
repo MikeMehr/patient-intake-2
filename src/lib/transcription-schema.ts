@@ -15,7 +15,7 @@ export const generateSoapFromTranscriptRequestSchema = z.object({
       dateOfBirth: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/),
     })
     .optional(),
-  transcript: z.string().trim().min(10).max(20000),
+  transcript: z.string().trim().min(10).max(80000),
   chiefComplaint: z.string().trim().max(1000).optional(),
   encounterId: z.string().uuid().optional(),
 });
