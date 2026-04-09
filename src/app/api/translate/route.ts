@@ -36,7 +36,7 @@ const supportedLanguages: Record<string, string> = {
   moh: "Mohawk",
   nuk: "Nuu-chah-nulth",
   oj: "Ojibwe (Anishinaabemowin)",
-  fa: "Persian (Farsi)",
+  fa: "Farsi (Persian)",
   pl: "Polish",
   pt: "Portuguese",
   pa: "Punjabi",
