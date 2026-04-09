@@ -529,6 +529,7 @@ export default function Home() {
   const [result, setResult] = useState<HistoryResponse | null>(null);
   const [translatedSummary, setTranslatedSummary] = useState<string | null>(null);
   const [uiT, setUiT] = useState<Record<string, string>>({});
+  const [isUiTranslating, setIsUiTranslating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [patientName, setPatientName] = useState("");
   const [patientEmail, setPatientEmail] = useState("");
@@ -881,10 +882,12 @@ export default function Home() {
   useEffect(() => {
     if (!language || isEnglishLanguage(language)) {
       setUiT({});
+      setIsUiTranslating(false);
       lastUiTranslatedLangRef.current = "";
       return;
     }
     if (lastUiTranslatedLangRef.current === language) return;
+    setIsUiTranslating(true);
     const strings: Record<string, string> = {
       consentBody:
         "Do not proceed with this interview if this is a medical emergency. Call 911 instead. This AI-guided interview is optional — you may decline and provide your history directly to your physician. I consent to the collection of my health information using Health Assist AI to prepare an AI-assisted intake summary for my physician. My information will be processed on Microsoft Azure, including servers in the United States. This tool does not provide medical advice and is not a substitute for care from your physician. I agree to the",
@@ -917,6 +920,9 @@ export default function Home() {
       })
       .catch(() => {
         // fall back silently to English
+      })
+      .finally(() => {
+        setIsUiTranslating(false);
       });
   }, [language]);
 
@@ -3950,7 +3956,15 @@ export default function Home() {
                     </option>
                   ))}
                 </select>
-                {!language && status === "idle" ? (
+                {isUiTranslating ? (
+                  <p className="flex items-center gap-1.5 text-xs text-emerald-700 font-medium">
+                    <svg className="h-3.5 w-3.5 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    </svg>
+                    Loading language...
+                  </p>
+                ) : !language && status === "idle" ? (
                   <p className="text-xs text-amber-600 font-medium">{uiT.pleaseSelectLang || "Please select a language before starting the interview."}</p>
                 ) : (
                   <p className="text-xs text-slate-500">
