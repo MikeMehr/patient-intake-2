@@ -545,7 +545,7 @@ export default function Home() {
   const [sessionSaveError, setSessionSaveError] = useState<string | null>(null);
   const [sessionSavePendingHistory, setSessionSavePendingHistory] = useState<HistoryResponse | null>(null);
   const [sex, setSex] = useState<PatientProfile["sex"]>("female");
-  const [language, setLanguage] = useState<string>("en");
+  const [language, setLanguage] = useState<string>("");
   const [ageInput, setAgeInput] = useState("");
   const [pmh, setPmh] = useState("");
   const [familyHistory, setFamilyHistory] = useState("");
@@ -4055,17 +4055,22 @@ export default function Home() {
                   value={language}
                   disabled={status !== "idle"}
                   onChange={(event) => setLanguage(event.target.value)}
-                  className="w-full rounded-2xl border border-slate-200 bg-[#F2FCF8] px-4 py-3 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white disabled:cursor-not-allowed disabled:opacity-70"
+                  className={`w-full rounded-2xl border px-4 py-3 text-base text-slate-900 outline-none transition disabled:cursor-not-allowed disabled:opacity-70 ${!language && status === "idle" ? "border-amber-400 bg-amber-50 ring-2 ring-amber-100 focus:border-amber-500" : "border-slate-200 bg-[#F2FCF8] focus:border-slate-400 focus:bg-white"}`}
                 >
+                  <option value="" disabled>Select language...</option>
                   {languageOptions.map((opt) => (
                     <option key={opt.value} value={opt.value}>
                       {opt.label}
                     </option>
                   ))}
                 </select>
-                <p className="text-xs text-slate-500">
-                  Assistant questions and patient-facing text will use this language (fallback to English if translation fails).
-                </p>
+                {!language && status === "idle" ? (
+                  <p className="text-xs text-amber-600 font-medium">Please select a language before starting the interview.</p>
+                ) : (
+                  <p className="text-xs text-slate-500">
+                    Assistant questions and patient-facing text will use this language (fallback to English if translation fails).
+                  </p>
+                )}
               </div>
 
               <div className="space-y-2 mt-3">
@@ -4529,7 +4534,7 @@ export default function Home() {
                 <button
                   type="submit"
                   className="inline-flex flex-1 items-center justify-center rounded-2xl bg-[#52A882] px-5 py-2.5 text-base font-semibold text-white transition hover:bg-[#459970] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#52A882] disabled:cursor-not-allowed disabled:bg-[#F2FCF8] disabled:text-[#3a7a5e]"
-                  disabled={status !== "idle" || chiefComplaint.length < 3}
+                  disabled={status !== "idle" || chiefComplaint.length < 3 || !language}
                 >
                   Start interview
                 </button>
