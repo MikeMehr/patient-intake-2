@@ -716,6 +716,17 @@ export async function GET(request: NextRequest) {
     form_pdf_data: Buffer | null;
     form_pdf_filename: string | null;
   }>(
+    // Pick the invitation whose form the patient was actually filling out
+    // for THIS session: the newest invitation with sent_at at or before the
+    // session's completed_at. Previously this query just grabbed the newest
+    // invitation for the patient regardless of which visit it belonged to,
+    // so when the same patient was given two different forms across two
+    // visits, both sessions returned the most recently-sent form.
+    //
+    // Tie-break on pi.id to keep results deterministic if two invitations
+    // happen to share a sent_at timestamp. Falls back to the newest
+    // invitation overall if none has sent_at <= completed_at (e.g. legacy
+    // invitations with NULL sent_at, or clock skew).
     `SELECT pi.form_pdf_data, pi.form_pdf_filename
      FROM patient_sessions ps
      JOIN patient_invitations pi
@@ -724,7 +735,13 @@ export async function GET(request: NextRequest) {
      WHERE ps.session_code = $1
        AND pi.form_pdf_data IS NOT NULL
        AND pi.form_pdf_deleted_at IS NULL
-     ORDER BY pi.sent_at DESC NULLS LAST
+     ORDER BY
+       -- 1. Invitations sent at/before this session's completion come first
+       CASE WHEN pi.sent_at IS NOT NULL AND pi.sent_at <= ps.completed_at THEN 0 ELSE 1 END,
+       -- 2. Among those, newest sent_at wins (the form active at that visit)
+       pi.sent_at DESC NULLS LAST,
+       -- 3. Deterministic tie-break
+       pi.id DESC
      LIMIT 1`,
     [sessionCode],
   );
@@ -744,6 +761,7 @@ export async function GET(request: NextRequest) {
   }
 
   const { form_pdf_data, form_pdf_filename } = pdfResult.rows[0];
+  console.log(`[fill-form-pdf] Session ${sessionCode} matched to invitation filename="${form_pdf_filename ?? "(none)"}"`);
 
   try {
     // Pre-load the PDF to get actual page heights for accurate Y-coordinate flipping.
