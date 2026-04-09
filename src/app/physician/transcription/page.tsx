@@ -1032,6 +1032,17 @@ export default function PhysicianTranscriptionPage() {
                             {formatElapsed(recordingElapsed)}
                           </span>
                         </>
+                      ) : transcript.trim().length > 0 && soapVersionId ? (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => setShowStartNewConfirm(true)}
+                            disabled={transcriptLoading}
+                            className="px-4 py-2 text-sm font-medium text-white rounded-lg bg-slate-900 hover:bg-slate-800 disabled:bg-slate-400"
+                          >
+                            Start New
+                          </button>
+                        </>
                       ) : transcript.trim().length > 0 && !soapVersionId ? (
                         <>
                           <button
