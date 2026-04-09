@@ -902,6 +902,10 @@ export default function Home() {
       addMedHistory: "Add Medical History (Optional)",
       addMedHistorySubtitle: "Allergies, medications, past history, and pharmacy.",
       pleaseSelectLang: "Please select a language before starting the interview.",
+      sttReviewTitle: "Review your answer",
+      sttReviewBody: "Speech-to-text may occasionally make mistakes. Please make sure your answer is accurate before sending it to your physician.",
+      sttReviewEdit: "Edit answer",
+      sttReviewSubmit: "Submit",
     };
     Promise.all(
       Object.entries(strings).map(async ([key, text]) => {
@@ -5755,10 +5759,10 @@ export default function Home() {
           >
             <p className="text-sm font-semibold text-slate-500">Health Assist AI</p>
             <h2 id="stt-review-title" className="mt-2 text-xl font-semibold text-slate-900">
-              Review your answer
+              {uiT.sttReviewTitle || "Review your answer"}
             </h2>
             <p id="stt-review-description" className="mt-3 text-sm leading-6 text-slate-600">
-              Speech-to-text may occasionally make mistakes. Please make sure your answer is accurate before sending it to your physician.
+              {uiT.sttReviewBody || "Speech-to-text may occasionally make mistakes. Please make sure your answer is accurate before sending it to your physician."}
             </p>
             <div className="mt-6 flex justify-end gap-3">
               <button
@@ -5766,7 +5770,7 @@ export default function Home() {
                 onClick={() => setShowSttReviewModal(false)}
                 className="rounded-2xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
               >
-                Edit answer
+                {uiT.sttReviewEdit || "Edit answer"}
               </button>
               <button
                 type="button"
@@ -5778,7 +5782,7 @@ export default function Home() {
                 }}
                 className="rounded-2xl bg-sky-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-sky-700"
               >
-                Submit
+                {uiT.sttReviewSubmit || "Submit"}
               </button>
             </div>
           </div>
