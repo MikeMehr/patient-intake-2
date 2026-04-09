@@ -30,7 +30,7 @@ export default function BodyPartDiagram({
 }: BodyPartDiagramProps) {
   const [isSaved, setIsSaved] = useState(false);
   const image = getBodyDiagramImage(bodyPart, side, sex);
-  const diagramSizeClass = "w-full max-w-96 aspect-square";
+  const diagramSizeClass = "w-full max-w-96 h-56 sm:h-72";
 
   const handleDiagramClick = (event: MouseEvent<HTMLDivElement>) => {
     if (!onMarkerAdd) return;
