@@ -206,7 +206,6 @@ If omitted, the raw answer text will be used.`;
         { role: "user", content: userPrompt },
       ],
       max_completion_tokens: 2000,
-      temperature: 0.2,
     });
 
     const raw = completion.choices?.[0]?.message?.content?.trim() || "[]";
