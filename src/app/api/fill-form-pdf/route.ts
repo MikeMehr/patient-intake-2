@@ -221,7 +221,7 @@ If omitted, the raw answer text will be used.`;
 
     // Validate and filter
     const validFieldIndices = new Set(candidates.map((c) => c.index));
-    const result = parsed.filter(
+    const validated = parsed.filter(
       (m) =>
         typeof m.answerIndex === "number" &&
         typeof m.fieldIndex === "number" &&
@@ -230,7 +230,21 @@ If omitted, the raw answer text will be used.`;
         validFieldIndices.has(m.fieldIndex),
     );
 
-    console.log(`[fill-form-pdf] AI returned ${parsed.length} mappings, ${result.length} valid after filter`);
+    // Deduplicate: keep only the FIRST mapping per fieldIndex so two answers
+    // don't overlap on the same blank area. Also deduplicate per answerIndex
+    // in case the AI produced redundant duplicates for a single answer.
+    const usedFields = new Set<number>();
+    const usedAnswers = new Set<number>();
+    const result: typeof validated = [];
+    for (const m of validated) {
+      if (usedFields.has(m.fieldIndex)) continue;
+      if (usedAnswers.has(m.answerIndex)) continue;
+      usedFields.add(m.fieldIndex);
+      usedAnswers.add(m.answerIndex);
+      result.push(m);
+    }
+
+    console.log(`[fill-form-pdf] AI returned ${parsed.length} mappings, ${validated.length} valid, ${result.length} after dedup`);
     return result;
   } catch (err) {
     console.warn("[fill-form-pdf] OpenAI mapping failed:", err);
@@ -414,21 +428,41 @@ function buildCandidatesFromLines(
       // ── Option B: blank gap between this line and the next ────────────────
       // Walk forward through subsequent lines to find the next one that starts
       // far enough below — the intervening space is the fill area.
+      //
+      // BUGFIX: if we encounter another LABEL line before finding a large gap,
+      // this current label is part of a "group" (e.g., a Y/N question followed
+      // by a "give examples:" label) and the LATER label will claim the real
+      // fill area. Skip creating a candidate for the current one to avoid two
+      // labels competing for the same blank region.
+      let superseded = false;
       if (!valueBounds) {
         let gapStart = lineBottom;
         let gapEnd: number | null = null;
 
         for (let j = i + 1; j < lines.length; j++) {
-          const nextPoly = lines[j].polygon;
+          const nextLine = lines[j];
+          const nextPoly = nextLine.polygon;
           if (!Array.isArray(nextPoly) || nextPoly.length < 8) continue;
           const nextTop = Math.min(nextPoly[1], nextPoly[3], nextPoly[5], nextPoly[7]);
           const gap = nextTop - gapStart;
 
+          // Large gap found → this is our fill area.
           if (gap >= MIN_GAP) {
             gapEnd = nextTop;
             break;
           }
-          // This next line is tightly spaced — advance gapStart past it.
+
+          // No large gap yet — check whether this next line is itself a label.
+          // If so, the current label is "superseded" (it's part of a group of
+          // prompts with no blank area between them); skip creating a candidate.
+          const nextText = nextLine.content?.trim() || "";
+          const nextIsLabel = /[:?]\s*$/.test(nextText) || /:\s+_+/.test(nextText);
+          if (nextIsLabel) {
+            superseded = true;
+            break;
+          }
+
+          // Tightly-spaced non-label content — advance gapStart past it.
           gapStart = Math.max(nextPoly[1], nextPoly[3], nextPoly[5], nextPoly[7]);
         }
 
@@ -447,6 +481,10 @@ function buildCandidatesFromLines(
         }
       }
 
+      // Only accept candidates that actually have a detectable fill area, AND
+      // were not superseded by a later label in the same group.
+      if (superseded || !valueBounds) continue;
+
       const keyBounds: DIBoundingRegion = { pageNumber: page.pageNumber, polygon: poly };
       candidates.push({
         index: idx++,
@@ -454,7 +492,7 @@ function buildCandidatesFromLines(
         pageNumber: page.pageNumber,
         valueBounds,
         keyBounds,
-        hasValueArea: valueBounds !== null,
+        hasValueArea: true,
       });
       pageCandidates++;
     }
@@ -749,6 +787,11 @@ export async function GET(request: NextRequest) {
           }
 
           console.log(`[fill-form-pdf] Total candidates for AI mapping: ${candidates.length}`);
+          // Log per-page breakdown and a few samples so we can verify coverage
+          const byPage = new Map<number, number>();
+          for (const c of candidates) byPage.set(c.pageNumber, (byPage.get(c.pageNumber) || 0) + 1);
+          console.log(`[fill-form-pdf] Candidates per page: ${[...byPage.entries()].map(([p,n]) => `p${p}:${n}`).join(", ")}`);
+          console.log(`[fill-form-pdf] First 5 candidates: ${candidates.slice(0, 5).map((c) => `[${c.index}] p${c.pageNumber} "${c.keyText.slice(0, 60)}"`).join(" | ")}`);
 
           if (candidates.length > 0) {
             // Step 2: Use OpenAI to map answers → DI fields
