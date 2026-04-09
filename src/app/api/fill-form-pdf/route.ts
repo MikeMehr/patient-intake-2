@@ -7,6 +7,7 @@
  */
 
 import { type NextRequest, NextResponse } from "next/server";
+import { PDFDocument } from "pdf-lib";
 import { getCurrentSession } from "@/lib/auth";
 import { getSession } from "@/lib/session-store";
 import { canAccessSessionInScope, loadSessionAccessScope } from "@/lib/session-access";
@@ -29,6 +30,22 @@ interface DIPage {
   unit?: string;
 }
 
+interface DIWord {
+  content: string;
+  polygon: number[];
+}
+
+interface DILine {
+  content: string;
+  polygon: number[];
+  words?: DIWord[];
+}
+
+interface DIPageExtended extends DIPage {
+  lines?: DILine[];
+  words?: DIWord[];
+}
+
 interface DIBoundingRegion {
   pageNumber: number;
   polygon: number[];
@@ -40,7 +57,7 @@ interface DIKeyValuePair {
 }
 
 interface DIAnalyzeResult {
-  pages?: DIPage[];
+  pages?: DIPageExtended[];
   keyValuePairs?: DIKeyValuePair[];
 }
 
@@ -49,7 +66,7 @@ interface DIAnalyzeResult {
 // ---------------------------------------------------------------------------
 
 async function analyzeFormLayout(pdfBytes: Buffer): Promise<{
-  pages: DIPage[];
+  pages: DIPageExtended[];
   keyValuePairs: DIKeyValuePair[];
 }> {
   ensureProdEnv(["AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT", "AZURE_DOCUMENT_INTELLIGENCE_API_KEY"]);
@@ -106,7 +123,7 @@ async function analyzeFormLayout(pdfBytes: Buffer): Promise<{
     const st = (payload.status || "").toLowerCase();
     if (st === "succeeded") {
       return {
-        pages: payload.analyzeResult?.pages || [],
+        pages: (payload.analyzeResult?.pages || []) as DIPageExtended[],
         keyValuePairs: payload.analyzeResult?.keyValuePairs || [],
       };
     }
@@ -130,6 +147,7 @@ interface TextFieldCandidate {
   pageNumber: number;
   valueBounds: DIBoundingRegion | null;
   keyBounds: DIBoundingRegion | null;
+  hasValueArea: boolean; // true when a blank value region was detected
 }
 
 async function mapAnswersToFields(
@@ -142,22 +160,33 @@ async function mapAnswersToFields(
 
   // Build the prompt with field labels and form Q&A
   const fieldLabels = candidates
-    .map((c) => `  ${c.index}. [page ${c.pageNumber}] "${c.keyText}"`)
+    .map((c) => `  ${c.index}. [page ${c.pageNumber}] "${c.keyText}"${c.hasValueArea ? " [has blank area]" : " [key only]"}`)
     .join("\n");
 
   const qaPairs = formAnswers
     .map((qa, i) => `  ${i}. Q: ${qa.question}\n     A: ${qa.answer}`)
     .join("\n");
 
-  const systemPrompt = `You are mapping patient interview answers to a medical form's field labels.
-You will receive a list of form field labels (detected from a PDF form) and a list of interview Q&A pairs.
+  const systemPrompt = `You are mapping patient interview answers to a medical intake form's field labels.
+Form labels use clinical shorthand; interview questions use natural language. They often mean the same thing expressed differently.
+
+Examples of equivalent pairs (form label ↔ interview question):
+- "C/C:" or "Chief Complaint:" ↔ "What brings you in today?"
+- "Date of Injury:" or "DOI:" ↔ "When did your injury occur?"
+- "Mechanism of Injury:" or "MOI:" ↔ "How did the injury happen?"
+- "Current Medications:" or "Meds:" ↔ "Are you taking any medications?"
+- "Allergies:" or "NKA:" ↔ "Do you have any allergies?"
+- "Past Medical History:" or "PMH:" ↔ "Do you have any past medical conditions?"
+- "Date of Birth:" or "DOB:" ↔ "What is your date of birth?"
+- "Referring Physician:" ↔ "Who referred you?"
 
 Rules:
-- Map each interview answer to the form field label(s) it should fill.
+- Use your medical knowledge to match clinical abbreviations and shorthand to interview answers.
+- When in doubt between two fields for the same answer, include both — the physician will review.
+- Prefer fields marked [has blank area] over [key only] when both could match.
 - Only map to TEXT fields — skip checkbox-type fields (Yes/No/Left/Right/Full/Modified etc.)
 - If a field label specifies a date format like (dd/mmm/yyyy), reformat the answer to match.
-- If an answer says "Not discussed during interview" or "Not applicable", skip it.
-- If no good match exists for an answer, omit it.
+- Only skip an answer if it explicitly says "Not discussed during interview" or "Not applicable".
 - One answer may map to multiple fields (e.g. symptoms might fill both subjective findings and diagnosis).
 - Return ONLY a JSON array, no other text.
 
@@ -177,6 +206,7 @@ If omitted, the raw answer text will be used.`;
         { role: "user", content: userPrompt },
       ],
       max_completion_tokens: 2000,
+      temperature: 0.2,
     });
 
     const raw = completion.choices?.[0]?.message?.content?.trim() || "[]";
@@ -191,14 +221,18 @@ If omitted, the raw answer text will be used.`;
     }>;
 
     // Validate and filter
-    return parsed.filter(
+    const validFieldIndices = new Set(candidates.map((c) => c.index));
+    const result = parsed.filter(
       (m) =>
         typeof m.answerIndex === "number" &&
         typeof m.fieldIndex === "number" &&
         m.answerIndex >= 0 &&
         m.answerIndex < formAnswers.length &&
-        candidates.some((c) => c.index === m.fieldIndex),
+        validFieldIndices.has(m.fieldIndex),
     );
+
+    console.log(`[fill-form-pdf] AI returned ${parsed.length} mappings, ${result.length} valid after filter`);
+    return result;
   } catch (err) {
     console.warn("[fill-form-pdf] OpenAI mapping failed:", err);
     return [];
@@ -279,6 +313,145 @@ Use the exact internal field name (the "name" attribute, not the label).`;
 }
 
 // ---------------------------------------------------------------------------
+// Step 2c: Gap-based fallback — build candidates from blank regions between DI lines.
+// Used when KVP detection returns too few candidates for a flat form.
+//
+// Many medical forms (e.g. CRA DTC questionnaire) have large BLANK areas below
+// each prompt where the practitioner writes the answer. DI returns no content for
+// these blank regions, so KVP detection finds nothing. This function finds those
+// blank gaps by looking for large vertical spaces between consecutive DI text blocks
+// that follow a "label" line (one ending with ":" or "?").
+// ---------------------------------------------------------------------------
+
+function buildCandidatesFromLines(
+  pages: DIPageExtended[],
+  startIndex: number,
+): TextFieldCandidate[] {
+  const candidates: TextFieldCandidate[] = [];
+  let idx = startIndex;
+
+  // Minimum blank gap (in DI coordinate units) to qualify as a fill area.
+  // DI uses inches by default; 0.22 in ≈ 16 pts — larger than normal line-spacing
+  // but small enough to catch compact fill areas.
+  const MIN_GAP = 0.22;
+
+  for (const page of pages) {
+    const rawLines = page.lines || [];
+
+    // Sort lines top-to-bottom by their minimum Y (DI Y increases downward from top).
+    const lines = [...rawLines].sort((a, b) => {
+      const aY = Math.min(a.polygon[1], a.polygon[3], a.polygon[5], a.polygon[7]);
+      const bY = Math.min(b.polygon[1], b.polygon[3], b.polygon[5], b.polygon[7]);
+      return aY - bY;
+    });
+
+    // Pre-compute bottom-Y for each line (max Y = bottom of line in DI coords).
+    const lineBottoms = lines.map((l) =>
+      Math.max(l.polygon[1], l.polygon[3], l.polygon[5], l.polygon[7]),
+    );
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const text = line.content?.trim() || "";
+      if (!text || line.polygon.length < 8) continue;
+
+      // Identify label / prompt lines:
+      //   • ends with ":" or "?"   (e.g. "give examples specific to your patient:")
+      //   • contains inline underscores (e.g. "Name: ___________")
+      const isLabel = /[:?]\s*$/.test(text) || /:\s+_+/.test(text);
+      if (!isLabel) continue;
+
+      // Clean the label text (strip trailing colon/question-mark).
+      const keyText = text.replace(/[:?]\s*$/, "").trim();
+      if (keyText.length < 2) continue;
+
+      const poly = line.polygon;
+      const lineMinX = Math.min(poly[0], poly[2], poly[4], poly[6]);
+      const lineMaxX = Math.max(poly[0], poly[2], poly[4], poly[6]);
+      const lineBottom = lineBottoms[i]; // bottom edge of this label line
+
+      // ── Option A: inline underscore words on this line ────────────────────
+      let valueBounds: DIBoundingRegion | null = null;
+
+      if (/_{3,}/.test(text) && page.words) {
+        const lineMinY = Math.min(poly[1], poly[3], poly[5], poly[7]);
+        const lineMaxY = lineBottom;
+        const underscoreWords = page.words.filter((w) => {
+          if (!/_+/.test(w.content) || w.polygon.length < 8) return false;
+          const wY = Math.min(w.polygon[1], w.polygon[3], w.polygon[5], w.polygon[7]);
+          return wY >= lineMinY - 1 && wY <= lineMaxY + 1;
+        });
+        if (underscoreWords.length > 0) {
+          const allXs = underscoreWords.flatMap((w) => [w.polygon[0], w.polygon[2], w.polygon[4], w.polygon[6]]);
+          const allYs = underscoreWords.flatMap((w) => [w.polygon[1], w.polygon[3], w.polygon[5], w.polygon[7]]);
+          valueBounds = {
+            pageNumber: page.pageNumber,
+            polygon: [
+              Math.min(...allXs), Math.min(...allYs),
+              Math.max(...allXs), Math.min(...allYs),
+              Math.max(...allXs), Math.max(...allYs),
+              Math.min(...allXs), Math.max(...allYs),
+            ],
+          };
+        }
+      }
+
+      // ── Option B: blank gap between this line and the next ────────────────
+      // Walk forward through subsequent lines to find the next one that starts
+      // far enough below — the intervening space is the fill area.
+      if (!valueBounds) {
+        // Find the top of the next text block that is meaningfully below us
+        let gapStart = lineBottom;
+        let gapEnd: number | null = null;
+
+        for (let j = i + 1; j < lines.length; j++) {
+          const nextPoly = lines[j].polygon;
+          if (nextPoly.length < 8) continue;
+          const nextTop = Math.min(nextPoly[1], nextPoly[3], nextPoly[5], nextPoly[7]);
+          const gap = nextTop - gapStart;
+
+          if (gap >= MIN_GAP) {
+            gapEnd = nextTop;
+            break;
+          }
+          // This next line is tightly spaced (part of the same paragraph) — advance gapStart.
+          gapStart = Math.max(nextPoly[1], nextPoly[3], nextPoly[5], nextPoly[7]);
+        }
+
+        if (gapEnd !== null) {
+          // Use the full horizontal extent of the label line (expanded to page margins)
+          // so the overlay covers the typical answer area width.
+          const fillX0 = Math.min(lineMinX, 0.35); // at most 0.35 in from left
+          const fillX1 = Math.max(lineMaxX, (page.width || 8.27) - 0.35);
+          valueBounds = {
+            pageNumber: page.pageNumber,
+            polygon: [
+              fillX0, gapStart + 0.02,
+              fillX1, gapStart + 0.02,
+              fillX1, gapEnd - 0.02,
+              fillX0, gapEnd - 0.02,
+            ],
+          };
+        }
+      }
+
+      const keyBounds: DIBoundingRegion = { pageNumber: page.pageNumber, polygon: poly };
+
+      candidates.push({
+        index: idx++,
+        keyText,
+        pageNumber: page.pageNumber,
+        valueBounds,
+        keyBounds,
+        hasValueArea: valueBounds !== null,
+      });
+    }
+  }
+
+  return candidates;
+}
+
+// ---------------------------------------------------------------------------
 // Step 3: Convert DI coordinates → FieldLocation[]
 // ---------------------------------------------------------------------------
 
@@ -286,7 +459,8 @@ function buildFieldLocations(
   mappings: Array<{ answerIndex: number; fieldIndex: number; formattedValue?: string }>,
   candidates: TextFieldCandidate[],
   formAnswers: { question: string; answer: string }[],
-  pages: DIPage[],
+  pages: DIPageExtended[],
+  pdfPageHeights: number[],
 ): FieldLocation[] {
   const locations: FieldLocation[] = [];
   const candidateMap = new Map(candidates.map((c) => [c.index, c]));
@@ -305,8 +479,16 @@ function buildFieldLocations(
     const pageInfo = pages.find((p) => p.pageNumber === bounds.pageNumber);
     if (!pageInfo) continue;
 
-    const unitScale = pageInfo.unit === "pixel" ? 72 / 96 : 72; // inches → points
-    const pageHeightPts = pageInfo.height * unitScale;
+    // Determine unit scale: DI reports in "inch" (default) or "pixel"
+    const unitScale = pageInfo.unit === "pixel" ? 72 / 96 : 72; // → PDF points
+
+    // Use actual pdf-lib page height for Y-flip so DI page size differences don't shift text.
+    // pdfPageHeights is 0-based; bounds.pageNumber is 1-based.
+    const pageIdx0 = bounds.pageNumber - 1;
+    const pageHeightPts =
+      pdfPageHeights[pageIdx0] !== undefined
+        ? pdfPageHeights[pageIdx0]
+        : pageInfo.height * unitScale;
 
     const poly = bounds.polygon;
     const xs = [poly[0], poly[2], poly[4], poly[6]];
@@ -322,22 +504,30 @@ function buildFieldLocations(
     let height = (maxY - minY) * unitScale;
 
     // If using key bounds (no value region), place answer directly below the key label.
-    // Convention used throughout: loc.y = box bottom, loc.y + loc.height = box top.
-    // We must therefore set loc.y + loc.height = (key label bottom) - 2 pts gap, then
-    // extend loc.y downward by the reserved height.  Without this anchor the "top"
-    // of the box overshoots above the key label and text is drawn above it.
     if (!candidate.valueBounds) {
-      const labelBottomPdf = y;                 // bottom of key label in PDF coords
-      const answerAreaTop = labelBottomPdf - 2; // 2 pt gap below key label
-      const reservedH = Math.max(height * 3, 72); // ~4 lines of text maximum
-      y = answerAreaTop - reservedH;            // bottom of answer area
+      const labelBottomPdf = y;
+      const answerAreaTop = labelBottomPdf - 2;
+      const reservedH = Math.max(height * 3, 72);
+      y = answerAreaTop - reservedH;
       width = Math.max(width, 300);
       height = reservedH;
     }
 
+    // Sanity check: skip coordinates that land off-page (indicates unit conversion error)
+    if (x < 0 || x > 2000 || y < -200 || y > pageHeightPts + 50) {
+      console.warn(
+        `[fill-form-pdf] Skipping field "${candidate.keyText}" — computed coords out of range: x=${x.toFixed(1)}, y=${y.toFixed(1)}, pageHeight=${pageHeightPts}`,
+      );
+      continue;
+    }
+
+    console.log(
+      `[fill-form-pdf] Field "${candidate.keyText}" → x=${x.toFixed(1)}, y=${y.toFixed(1)}, w=${width.toFixed(1)}, h=${height.toFixed(1)}, page=${pageIdx0} (${candidate.valueBounds ? "value bounds" : "key bounds"})`,
+    );
+
     locations.push({
-      keyText: answer, // Store the ANSWER text (not the key) for the builder to draw
-      pageIndex: bounds.pageNumber - 1,
+      keyText: answer,
+      pageIndex: pageIdx0,
       x,
       y,
       width,
@@ -346,6 +536,29 @@ function buildFieldLocations(
   }
 
   return locations;
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Returns true when DI's detected value is "real" content the physician
+ * already typed (e.g. a name, a valid date).  We skip those fields to avoid
+ * overlaying patient-interview answers on top of intentionally pre-filled data.
+ * Values like "undefined/undefined/", blank strings, checkbox marks, underscore
+ * lines, or single punctuation characters are treated as empty so we DO fill them.
+ */
+function hasRealContent(val: string): boolean {
+  if (!val || !val.trim()) return false;
+  const lower = val.toLowerCase().trim();
+  if (lower.includes("undefined")) return false;
+  if (lower === "n/a" || lower === "na" || lower === "none" || lower === "-") return false;
+  // Single character (punctuation artifact)
+  if (lower.length === 1) return false;
+  // All punctuation/whitespace/underscores — DI reading blank lines or fill-in underscores
+  if (/^[_\-./,\s]+$/.test(lower)) return false;
+  return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -452,6 +665,17 @@ export async function GET(request: NextRequest) {
   const { form_pdf_data, form_pdf_filename } = pdfResult.rows[0];
 
   try {
+    // Pre-load the PDF to get actual page heights for accurate Y-coordinate flipping.
+    // This avoids relying solely on DI's reported page dimensions (which can differ slightly).
+    let pdfPageHeights: number[] = [];
+    try {
+      const pdfDocForSize = await PDFDocument.load(form_pdf_data!, { ignoreEncryption: true });
+      pdfPageHeights = pdfDocForSize.getPages().map((p) => p.getSize().height);
+      console.log(`[fill-form-pdf] PDF page heights (pts): [${pdfPageHeights.map((h) => h.toFixed(1)).join(", ")}]`);
+    } catch {
+      console.warn("[fill-form-pdf] Could not pre-read PDF page sizes; DI page heights will be used as fallback");
+    }
+
     // Step 1a: Check for interactive AcroForm fields and use AI to map answers → fields.
     // This path works even without Azure Document Intelligence.
     let acroFieldMappings: AcroFieldMapping[] = [];
@@ -474,37 +698,18 @@ export async function GET(request: NextRequest) {
         const { pages, keyValuePairs } = await analyzeFormLayout(form_pdf_data!);
         console.log(`[fill-form-pdf] DI detected ${keyValuePairs.length} KVPs on ${pages.length} pages`);
 
-        if (keyValuePairs.length > 0) {
-          // Filter to text-field candidates (skip selection marks / checkboxes)
+        if (pages.length > 0) {
           const selectionValues = new Set([":selected:", ":unselected:"]);
           const checkboxKeys = new Set(["yes", "no", "left", "right", "bilat.", "none", "full", "modified"]);
 
-          /**
-           * Returns true when DI's detected value is "real" content the physician
-           * already typed (e.g. a name, a valid date).  We skip those fields to avoid
-           * overlaying patient-interview answers on top of intentionally pre-filled data.
-           * Values like "undefined/undefined/", blank strings, or checkbox marks are
-           * treated as empty so we DO fill them.
-           */
-          function hasRealContent(val: string): boolean {
-            if (!val || !val.trim()) return false;
-            const lower = val.toLowerCase().trim();
-            if (lower.includes("undefined")) return false;
-            if (lower === "n/a" || lower === "na" || lower === "none" || lower === "-") return false;
-            return true;
-          }
-
+          // Build KVP-based candidates
           const candidates: TextFieldCandidate[] = [];
           keyValuePairs.forEach((kvp, idx) => {
             const keyText = kvp.key?.content?.trim() || "";
             const valContent = kvp.value?.content?.trim() || "";
             if (!keyText) return;
-            // Skip checkbox/radio fields
             if (checkboxKeys.has(keyText.toLowerCase())) return;
             if (selectionValues.has(valContent)) return;
-            // Skip fields that are already filled with meaningful content —
-            // overlaying interview answers on top of real existing data creates
-            // unreadable overlapping text.
             if (hasRealContent(valContent)) return;
 
             candidates.push({
@@ -513,17 +718,32 @@ export async function GET(request: NextRequest) {
               pageNumber: kvp.key?.boundingRegions?.[0]?.pageNumber || 1,
               valueBounds: kvp.value?.boundingRegions?.[0] || null,
               keyBounds: kvp.key?.boundingRegions?.[0] || null,
+              hasValueArea: !!(kvp.value?.boundingRegions?.[0]),
             });
           });
 
-          console.log(`[fill-form-pdf] ${candidates.length} text-field candidates for AI mapping`);
+          console.log(`[fill-form-pdf] KVP candidates after filtering: ${candidates.length} (raw KVPs: ${keyValuePairs.length})`);
 
-          // Step 2: Use OpenAI to map answers → DI fields
-          const mappings = await mapAnswersToFields(formAnswers, candidates);
-          console.log(`[fill-form-pdf] AI mapped ${mappings.length} answer→DI field pairs`);
+          // If KVPs are insufficient for the number of form answers, supplement with
+          // line-scan detection (catches fields DI didn't recognise as key-value pairs).
+          const lineFallbackThreshold = Math.ceil(formAnswers.length / 3);
+          if (candidates.length < lineFallbackThreshold) {
+            const lineCandidates = buildCandidatesFromLines(pages, keyValuePairs.length);
+            console.log(`[fill-form-pdf] KVP candidates (${candidates.length}) below threshold (${lineFallbackThreshold}); line-scan added ${lineCandidates.length} additional candidates`);
+            candidates.push(...lineCandidates);
+          }
 
-          // Step 3: Convert to FieldLocation[]
-          fieldLocations = buildFieldLocations(mappings, candidates, formAnswers, pages);
+          console.log(`[fill-form-pdf] Total candidates for AI mapping: ${candidates.length}`);
+
+          if (candidates.length > 0) {
+            // Step 2: Use OpenAI to map answers → DI fields
+            const mappings = await mapAnswersToFields(formAnswers, candidates);
+            console.log(`[fill-form-pdf] ${mappings.length} answer→field pairs after AI mapping`);
+
+            // Step 3: Convert to FieldLocation[]
+            fieldLocations = buildFieldLocations(mappings, candidates, formAnswers, pages, pdfPageHeights);
+            console.log(`[fill-form-pdf] ${fieldLocations.length} field locations built for overlay`);
+          }
         }
       } catch (diErr) {
         console.warn("[fill-form-pdf] DI/AI field analysis failed, using appended pages only", diErr);
