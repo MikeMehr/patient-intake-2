@@ -528,6 +528,7 @@ export default function Home() {
   };
   const [result, setResult] = useState<HistoryResponse | null>(null);
   const [translatedSummary, setTranslatedSummary] = useState<string | null>(null);
+  const [uiT, setUiT] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [patientName, setPatientName] = useState("");
   const [patientEmail, setPatientEmail] = useState("");
@@ -661,6 +662,7 @@ export default function Home() {
   const pendingStopOnResultRef = useRef<boolean>(false);
   const hadResultRef = useRef<boolean>(false);
   const lastTranslatedSummaryKeyRef = useRef<string | null>(null);
+  const lastUiTranslatedLangRef = useRef<string>("");
   const consentCheckboxRef = useRef<HTMLInputElement | null>(null);
   const micStartingUiTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const draftTextareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -875,6 +877,48 @@ export default function Home() {
       isActive = false;
     };
   }, [result?.summary, language, translatedSummary]);
+
+  useEffect(() => {
+    if (!language || isEnglishLanguage(language)) {
+      setUiT({});
+      lastUiTranslatedLangRef.current = "";
+      return;
+    }
+    if (lastUiTranslatedLangRef.current === language) return;
+    const strings: Record<string, string> = {
+      consentBody:
+        "Do not proceed with this interview if this is a medical emergency. Call 911 instead. This AI-guided interview is optional — you may decline and provide your history directly to your physician. I consent to the collection of my health information using Health Assist AI to prepare an AI-assisted intake summary for my physician. My information will be processed on Microsoft Azure, including servers in the United States. This tool does not provide medical advice and is not a substitute for care from your physician. I agree to the",
+      startInterview: "Start interview",
+      nameLabel: "Your Name (Required)",
+      emailLabel: "Your Email (Required)",
+      chiefComplaintLabel: "Chief complaint (Required)",
+      chiefComplaintPlaceholder: "Describe your main concern (e.g., \"3 days of sore throat with fever\")",
+      sexLabel: "Sex (Required)",
+      ageLabel: "Age (years)",
+      languageLabel: "Interview language",
+      addMedHistory: "Add Medical History (Optional)",
+      addMedHistorySubtitle: "Allergies, medications, past history, and pharmacy.",
+      pleaseSelectLang: "Please select a language before starting the interview.",
+    };
+    Promise.all(
+      Object.entries(strings).map(async ([key, text]) => {
+        const res = await fetch("/api/translate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text, language }),
+        });
+        const data = await res.json();
+        return [key, typeof data.translation === "string" ? data.translation : text] as const;
+      })
+    )
+      .then((entries) => {
+        setUiT(Object.fromEntries(entries));
+        lastUiTranslatedLangRef.current = language;
+      })
+      .catch(() => {
+        // fall back silently to English
+      });
+  }, [language]);
 
   useEffect(() => {
     if (isMuted) {
@@ -3884,6 +3928,36 @@ export default function Home() {
               </div>
             )}
             <form onSubmit={handleStart} onKeyDown={handlePreInterviewEnterKeyDown} className="space-y-4">
+              <div className="space-y-2">
+                <label
+                  htmlFor="language"
+                  className="text-sm font-medium text-slate-800"
+                >
+                  {uiT.languageLabel || "Interview language"}
+                </label>
+                <select
+                  id="language"
+                  name="language"
+                  value={language}
+                  disabled={status !== "idle"}
+                  onChange={(event) => setLanguage(event.target.value)}
+                  className={`w-full rounded-2xl border px-4 py-3 text-base text-slate-900 outline-none transition disabled:cursor-not-allowed disabled:opacity-70 ${!language && status === "idle" ? "border-amber-400 bg-amber-50 ring-2 ring-amber-100 focus:border-amber-500" : "border-slate-200 bg-[#F2FCF8] focus:border-slate-400 focus:bg-white"}`}
+                >
+                  <option value="" disabled>Select language...</option>
+                  {languageOptions.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+                {!language && status === "idle" ? (
+                  <p className="text-xs text-amber-600 font-medium">{uiT.pleaseSelectLang || "Please select a language before starting the interview."}</p>
+                ) : (
+                  <p className="text-xs text-slate-500">
+                    Assistant questions and patient-facing text will use this language (fallback to English if translation fails).
+                  </p>
+                )}
+              </div>
               <div className={status !== "idle" ? "hidden sm:block" : ""}>
               <div className="rounded-2xl border border-slate-200 bg-[#F2FCF8] px-3.5 py-2.5 text-[13px] leading-[1.35rem] text-slate-800">
                 <label className="flex items-start gap-3">
@@ -3903,7 +3977,7 @@ export default function Home() {
                     className="mt-1 h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 disabled:cursor-not-allowed"
                   />
                   <span>
-                    Do not proceed with this interview if this is a medical emergency. Call 911 instead. I consent to the collection of my health information using Health Assist AI to prepare an AI-assisted intake summary for my physician. My information will be processed on Microsoft Azure, including servers in the United States. This tool does not provide medical advice and is not a substitute for care from your physician. I agree to the{" "}
+                    {uiT.consentBody || "Do not proceed with this interview if this is a medical emergency. Call 911 instead. This AI-guided interview is optional — you may decline and provide your history directly to your physician. I consent to the collection of my health information using Health Assist AI to prepare an AI-assisted intake summary for my physician. My information will be processed on Microsoft Azure, including servers in the United States. This tool does not provide medical advice and is not a substitute for care from your physician. I agree to the"}{" "}
                     <a
                       href="https://www.health-assist.org/terms"
                       target="_blank"
@@ -3931,7 +4005,7 @@ export default function Home() {
                   htmlFor="patient-name"
                   className="text-sm font-medium text-slate-800"
                 >
-                  Your Name (Required)
+                  {uiT.nameLabel || "Your Name (Required)"}
                 </label>
                   <input
                     id="patient-name"
@@ -3952,7 +4026,7 @@ export default function Home() {
                   htmlFor="patient-email"
                   className="text-sm font-medium text-slate-800"
                 >
-                  Your Email (Required)
+                  {uiT.emailLabel || "Your Email (Required)"}
                 </label>
                   <input
                     id="patient-email"
@@ -3979,13 +4053,14 @@ export default function Home() {
                   htmlFor="chief-complaint"
                   className="text-sm font-medium text-slate-800"
                 >
-                  Chief complaint (Required)
+                  {uiT.chiefComplaintLabel || 'Chief complaint (Required)'}
                 </label>
                 <textarea
                   id="chief-complaint"
                   name="chiefComplaint"
                   rows={2}
-                  placeholder="Describe your main concern (e.g., “3 days of sore throat with fever”)"
+                  placeholder={uiT.chiefComplaintPlaceholder || 'Describe your main concern (e.g., “3 days of sore throat with fever”)'}
+
                   value={chiefComplaint}
                   disabled={status !== "idle"}
                   onChange={(event) => setChiefComplaint(event.target.value)}
@@ -4000,7 +4075,7 @@ export default function Home() {
                   htmlFor="sex"
                   className="text-sm font-medium text-slate-800"
                 >
-                  Sex (Required)
+                  {uiT.sexLabel || "Sex (Required)"}
                 </label>
                   <select
                     id="sex"
@@ -4024,7 +4099,7 @@ export default function Home() {
                   htmlFor="age"
                   className="text-sm font-medium text-slate-800"
                 >
-                  Age (years)
+                  {uiT.ageLabel || "Age (years)"}
                 </label>
                   <input
                     id="age"
@@ -4040,37 +4115,6 @@ export default function Home() {
                     required
                   />
                 </div>
-              </div>
-
-              <div className="space-y-2">
-                <label
-                  htmlFor="language"
-                  className="text-sm font-medium text-slate-800"
-                >
-                  Interview language
-                </label>
-                <select
-                  id="language"
-                  name="language"
-                  value={language}
-                  disabled={status !== "idle"}
-                  onChange={(event) => setLanguage(event.target.value)}
-                  className={`w-full rounded-2xl border px-4 py-3 text-base text-slate-900 outline-none transition disabled:cursor-not-allowed disabled:opacity-70 ${!language && status === "idle" ? "border-amber-400 bg-amber-50 ring-2 ring-amber-100 focus:border-amber-500" : "border-slate-200 bg-[#F2FCF8] focus:border-slate-400 focus:bg-white"}`}
-                >
-                  <option value="" disabled>Select language...</option>
-                  {languageOptions.map((opt) => (
-                    <option key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </option>
-                  ))}
-                </select>
-                {!language && status === "idle" ? (
-                  <p className="text-xs text-amber-600 font-medium">Please select a language before starting the interview.</p>
-                ) : (
-                  <p className="text-xs text-slate-500">
-                    Assistant questions and patient-facing text will use this language (fallback to English if translation fails).
-                  </p>
-                )}
               </div>
 
               <div className="space-y-2 mt-3">
@@ -4090,12 +4134,12 @@ export default function Home() {
                     >
                       ▸
                     </span>
-                    <span>Add Medical History (Optional)</span>
+                    <span>{uiT.addMedHistory || "Add Medical History (Optional)"}</span>
                   </span>
                 </button>
                 {!showAdditionalMedicalHistory && (
                   <p className="ml-6 -mt-0.5 text-xs text-slate-500">
-                    Allergies, medications, past history, and pharmacy.
+                    {uiT.addMedHistorySubtitle || "Allergies, medications, past history, and pharmacy."}
                   </p>
                 )}
 
@@ -4536,7 +4580,7 @@ export default function Home() {
                   className="inline-flex flex-1 items-center justify-center rounded-2xl bg-[#52A882] px-5 py-2.5 text-base font-semibold text-white transition hover:bg-[#459970] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#52A882] disabled:cursor-not-allowed disabled:bg-[#F2FCF8] disabled:text-[#3a7a5e]"
                   disabled={status !== "idle" || chiefComplaint.length < 3 || !language}
                 >
-                  Start interview
+                  {uiT.startInterview || "Start interview"}
                 </button>
               </div>
             </form>
