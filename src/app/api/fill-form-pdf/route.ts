@@ -148,6 +148,10 @@ interface TextFieldCandidate {
   valueBounds: DIBoundingRegion | null;
   keyBounds: DIBoundingRegion | null;
   hasValueArea: boolean; // true when a blank value region was detected
+  /** Up to ~4 lines of preceding non-label text (the actual question or
+   *  section header the label refers to). Gives the AI enough context to
+   *  distinguish repeated labels across sections. */
+  contextBefore?: string;
 }
 
 async function mapAnswersToFields(
@@ -158,9 +162,15 @@ async function mapAnswersToFields(
 
   const azure = getAzureOpenAIClient();
 
-  // Build the prompt with field labels and form Q&A
+  // Build the prompt with field labels and form Q&A.
+  // For labels that come from the line-scan path, include the preceding
+  // "context" lines (the section header + question the label refers to) so
+  // the AI can distinguish identical labels that appear in multiple sections.
   const fieldLabels = candidates
-    .map((c) => `  ${c.index}. [page ${c.pageNumber}] "${c.keyText}"${c.hasValueArea ? " [has blank area]" : " [key only]"}`)
+    .map((c) => {
+      const ctx = c.contextBefore ? `\n      context: "${c.contextBefore}"` : "";
+      return `  ${c.index}. [page ${c.pageNumber}] "${c.keyText}"${ctx}`;
+    })
     .join("\n");
 
   const qaPairs = formAnswers
@@ -169,6 +179,12 @@ async function mapAnswersToFields(
 
   const systemPrompt = `You are mapping patient interview answers to a medical intake form's field labels.
 Form labels use clinical shorthand; interview questions use natural language. They often mean the same thing expressed differently.
+
+CRITICAL: Many forms (e.g. CRA DTC) have IDENTICAL label text repeated in multiple sections
+(e.g., the label "If you answered no or sometimes, you must give examples specific to your patient:"
+appears under both WALKING and MENTAL FUNCTIONS). When a field has a "context:" line, that context
+is the actual section/question the label refers to — use it to disambiguate which interview answer
+belongs there. DO NOT match by label text alone; always prefer context when present.
 
 Examples of equivalent pairs (form label ↔ interview question):
 - "C/C:" or "Chief Complaint:" ↔ "What brings you in today?"
@@ -182,12 +198,11 @@ Examples of equivalent pairs (form label ↔ interview question):
 
 Rules:
 - Use your medical knowledge to match clinical abbreviations and shorthand to interview answers.
-- When in doubt between two fields for the same answer, include both — the physician will review.
-- Prefer fields marked [has blank area] over [key only] when both could match.
+- When two fields have identical label text, use the "context:" line to pick the right one.
+- Each fieldIndex can only receive ONE answer; each answerIndex can only be used ONCE.
 - Only map to TEXT fields — skip checkbox-type fields (Yes/No/Left/Right/Full/Modified etc.)
 - If a field label specifies a date format like (dd/mmm/yyyy), reformat the answer to match.
-- Only skip an answer if it explicitly says "Not discussed during interview" or "Not applicable".
-- One answer may map to multiple fields (e.g. symptoms might fill both subjective findings and diagnosis).
+- Skip any answer that says "Not discussed during interview" or "Not applicable".
 - Return ONLY a JSON array, no other text.
 
 Return format:
@@ -485,6 +500,20 @@ function buildCandidatesFromLines(
       // were not superseded by a later label in the same group.
       if (superseded || !valueBounds) continue;
 
+      // Collect the preceding ~4 non-empty lines as context. This is the
+      // actual question + section header that the label refers to — critical
+      // for forms where the same label text appears in multiple sections.
+      const contextLines: string[] = [];
+      for (let k = i - 1; k >= 0 && contextLines.length < 4; k--) {
+        const prevText = lines[k]?.content?.trim();
+        if (!prevText) continue;
+        contextLines.unshift(prevText);
+        // Stop if we run into the previous label's fill area (another ":" / "?" line)
+        // with a big gap before it — that marks the previous field's boundary.
+        if (/[:?]\s*$/.test(prevText) && contextLines.length >= 2) break;
+      }
+      const contextBefore = contextLines.join(" ").slice(0, 400);
+
       const keyBounds: DIBoundingRegion = { pageNumber: page.pageNumber, polygon: poly };
       candidates.push({
         index: idx++,
@@ -493,6 +522,7 @@ function buildCandidatesFromLines(
         valueBounds,
         keyBounds,
         hasValueArea: true,
+        contextBefore,
       });
       pageCandidates++;
     }
