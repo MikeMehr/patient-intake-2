@@ -148,10 +148,13 @@ interface TextFieldCandidate {
   valueBounds: DIBoundingRegion | null;
   keyBounds: DIBoundingRegion | null;
   hasValueArea: boolean; // true when a blank value region was detected
-  /** Up to ~4 lines of preceding non-label text (the actual question or
-   *  section header the label refers to). Gives the AI enough context to
-   *  distinguish repeated labels across sections. */
-  contextBefore?: string;
+  /** Nearest preceding ALL-CAPS line — the section header (e.g. "WALKING",
+   *  "MENTAL FUNCTIONS NECESSARY FOR EVERYDAY LIFE"). Used to disambiguate
+   *  identical labels repeated across sections. */
+  sectionHeader?: string;
+  /** The immediately preceding question or prompt that this label refers to.
+   *  Collected from non-empty lines between the section header and the label. */
+  contextQuestion?: string;
 }
 
 async function mapAnswersToFields(
@@ -163,13 +166,16 @@ async function mapAnswersToFields(
   const azure = getAzureOpenAIClient();
 
   // Build the prompt with field labels and form Q&A.
-  // For labels that come from the line-scan path, include the preceding
-  // "context" lines (the section header + question the label refers to) so
-  // the AI can distinguish identical labels that appear in multiple sections.
+  // Each candidate is printed with SECTION (the all-caps header that scopes
+  // this field) + QUESTION (the actual prompt text above the label) + LABEL
+  // on one line so the AI can't miss the disambiguating context.
   const fieldLabels = candidates
     .map((c) => {
-      const ctx = c.contextBefore ? `\n      context: "${c.contextBefore}"` : "";
-      return `  ${c.index}. [page ${c.pageNumber}] "${c.keyText}"${ctx}`;
+      const parts: string[] = [`[p${c.pageNumber}]`];
+      if (c.sectionHeader) parts.push(`SECTION="${c.sectionHeader}"`);
+      if (c.contextQuestion) parts.push(`QUESTION="${c.contextQuestion}"`);
+      parts.push(`LABEL="${c.keyText}"`);
+      return `  ${c.index}. ${parts.join(" ")}`;
     })
     .join("\n");
 
@@ -177,31 +183,36 @@ async function mapAnswersToFields(
     .map((qa, i) => `  ${i}. Q: ${qa.question}\n     A: ${qa.answer}`)
     .join("\n");
 
-  const systemPrompt = `You are mapping patient interview answers to a medical intake form's field labels.
-Form labels use clinical shorthand; interview questions use natural language. They often mean the same thing expressed differently.
+  const systemPrompt = `You are mapping patient interview answers to fields in a medical intake form.
 
-CRITICAL: Many forms (e.g. CRA DTC) have IDENTICAL label text repeated in multiple sections
-(e.g., the label "If you answered no or sometimes, you must give examples specific to your patient:"
-appears under both WALKING and MENTAL FUNCTIONS). When a field has a "context:" line, that context
-is the actual section/question the label refers to — use it to disambiguate which interview answer
-belongs there. DO NOT match by label text alone; always prefer context when present.
+Each form field is printed with three pieces of context:
+  SECTION="..."   — the form section header it belongs to (e.g. WALKING, MENTAL FUNCTIONS NECESSARY FOR EVERYDAY LIFE)
+  QUESTION="..."  — the actual prompt/question that appears above the blank on the form
+  LABEL="..."     — a short instruction next to the blank (often identical across many fields, e.g.
+                    "If you answered no or sometimes, you must give examples specific to your patient")
 
-Examples of equivalent pairs (form label ↔ interview question):
-- "C/C:" or "Chief Complaint:" ↔ "What brings you in today?"
-- "Date of Injury:" or "DOI:" ↔ "When did your injury occur?"
-- "Mechanism of Injury:" or "MOI:" ↔ "How did the injury happen?"
-- "Current Medications:" or "Meds:" ↔ "Are you taking any medications?"
-- "Allergies:" or "NKA:" ↔ "Do you have any allergies?"
-- "Past Medical History:" or "PMH:" ↔ "Do you have any past medical conditions?"
-- "Date of Birth:" or "DOB:" ↔ "What is your date of birth?"
-- "Referring Physician:" ↔ "Who referred you?"
+**CRITICAL RULE**: LABEL text is often IDENTICAL across unrelated sections of the form.
+Many medical forms (e.g. the CRA Disability Tax Credit questionnaire) repeat the same
+"give examples specific to your patient" label under WALKING, MENTAL FUNCTIONS, HEARING, etc.
+Matching by LABEL alone will place answers in the wrong section.
 
-Rules:
-- Use your medical knowledge to match clinical abbreviations and shorthand to interview answers.
-- When two fields have identical label text, use the "context:" line to pick the right one.
+You MUST match primarily on SECTION and QUESTION. Use LABEL only as a secondary signal
+(e.g. to pick the right sub-field within a section). An interview answer about walking
+MUST be mapped to a field whose SECTION/QUESTION is about walking, never to a field in
+MENTAL FUNCTIONS, HEARING, etc., no matter how similar the LABEL text is.
+
+Examples of equivalent pairs (form QUESTION ↔ interview question):
+- "Chief Complaint" ↔ "What brings you in today?"
+- "Date of Injury" ↔ "When did your injury occur?"
+- "Mechanism of Injury" ↔ "How did the injury happen?"
+- "Current Medications" ↔ "Are you taking any medications?"
+- "Allergies" / "NKA" ↔ "Do you have any allergies?"
+- "Past Medical History" / "PMH" ↔ "Do you have any past medical conditions?"
+
+Additional rules:
 - Each fieldIndex can only receive ONE answer; each answerIndex can only be used ONCE.
-- Only map to TEXT fields — skip checkbox-type fields (Yes/No/Left/Right/Full/Modified etc.)
-- If a field label specifies a date format like (dd/mmm/yyyy), reformat the answer to match.
+- Only map to TEXT fields — skip checkbox-type fields (Yes / No / Left / Right / Full / Modified, etc.)
+- If a QUESTION specifies a date format like (dd/mmm/yyyy), reformat the answer to match.
 - Skip any answer that says "Not discussed during interview" or "Not applicable".
 - Return ONLY a JSON array, no other text.
 
@@ -500,19 +511,52 @@ function buildCandidatesFromLines(
       // were not superseded by a later label in the same group.
       if (superseded || !valueBounds) continue;
 
-      // Collect the preceding ~4 non-empty lines as context. This is the
-      // actual question + section header that the label refers to — critical
-      // for forms where the same label text appears in multiple sections.
-      const contextLines: string[] = [];
-      for (let k = i - 1; k >= 0 && contextLines.length < 4; k--) {
+      // Collect preceding context in TWO distinct parts:
+      //
+      //   1. sectionHeader — the nearest ALL-CAPS line above this label
+      //      (e.g. "WALKING", "MENTAL FUNCTIONS NECESSARY FOR EVERYDAY LIFE").
+      //      This is the strongest disambiguator when identical labels appear
+      //      in multiple sections of the same form.
+      //
+      //   2. contextQuestion — the question/prompt immediately above this
+      //      label, collected from lines between the section header and the
+      //      label itself.
+      //
+      // Presenting these as separate fields in the AI prompt makes them much
+      // more visible than burying them in a single free-form "context" string.
+      const isSectionHeader = (t: string): boolean => {
+        if (t.length < 4) return false;
+        // Must contain at least 2 uppercase letters and no lowercase letters.
+        // Allows digits, spaces, punctuation.
+        const upperCount = (t.match(/[A-Z]/g) || []).length;
+        const lowerCount = (t.match(/[a-z]/g) || []).length;
+        return upperCount >= 2 && lowerCount === 0;
+      };
+
+      let sectionHeader = "";
+      const maxLookback = 40;
+      for (let k = i - 1; k >= Math.max(0, i - maxLookback); k--) {
         const prevText = lines[k]?.content?.trim();
         if (!prevText) continue;
-        contextLines.unshift(prevText);
-        // Stop if we run into the previous label's fill area (another ":" / "?" line)
-        // with a big gap before it — that marks the previous field's boundary.
-        if (/[:?]\s*$/.test(prevText) && contextLines.length >= 2) break;
+        if (isSectionHeader(prevText)) {
+          sectionHeader = prevText;
+          break;
+        }
       }
-      const contextBefore = contextLines.join(" ").slice(0, 400);
+
+      // Collect question lines between the section header and the label.
+      // Walk backward, stopping either at the section header or after ~5
+      // non-empty lines or when we cross another label's boundary.
+      const questionLines: string[] = [];
+      for (let k = i - 1; k >= 0 && questionLines.length < 5; k--) {
+        const prevText = lines[k]?.content?.trim();
+        if (!prevText) continue;
+        if (sectionHeader && prevText === sectionHeader) break;
+        questionLines.unshift(prevText);
+        // Don't keep walking back past another label (end of previous field's scope)
+        if (/[:?]\s*$/.test(prevText) && questionLines.length >= 2) break;
+      }
+      const contextQuestion = questionLines.join(" ").slice(0, 400);
 
       const keyBounds: DIBoundingRegion = { pageNumber: page.pageNumber, polygon: poly };
       candidates.push({
@@ -522,7 +566,8 @@ function buildCandidatesFromLines(
         valueBounds,
         keyBounds,
         hasValueArea: true,
-        contextBefore,
+        sectionHeader: sectionHeader || undefined,
+        contextQuestion: contextQuestion || undefined,
       });
       pageCandidates++;
     }
