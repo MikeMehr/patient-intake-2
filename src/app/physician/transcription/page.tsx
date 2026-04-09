@@ -842,6 +842,7 @@ export default function PhysicianTranscriptionPage() {
     setActiveWorkflowTab("capture");
     setActionError(null);
     setActionSuccess(null);
+    setLanguage("");
   }
 
   async function deleteSnapshot(item: TranscriptionListItem) {
