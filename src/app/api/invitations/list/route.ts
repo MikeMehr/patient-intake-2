@@ -11,6 +11,7 @@ type ActivityStatus =
   | "opened"
   | "in_progress"
   | "active_recently"
+  | "started"
   | "completed"
   | "expired"
   | "revoked";
@@ -106,11 +107,13 @@ export async function GET() {
       const isActiveRecently = Boolean(
         lastAccessedAt && Date.now() - lastAccessedAt.getTime() <= ACTIVE_RECENTLY_WINDOW_MS && hasEngaged,
       );
-      const isCompleted = Boolean(usedAt || sessionSavedAt);
+      const isCompleted = Boolean(sessionSavedAt);
+      const isStartedOnly = Boolean(usedAt && !sessionSavedAt);
       let activityStatus: ActivityStatus = "sent";
       if (revokedAt) activityStatus = "revoked";
       else if (expired) activityStatus = "expired";
       else if (isCompleted) activityStatus = "completed";
+      else if (isStartedOnly) activityStatus = "started";
       else if (isActiveRecently) activityStatus = "active_recently";
       else if (hasEngaged) activityStatus = "in_progress";
       else if (openedAt) activityStatus = "opened";

@@ -14,6 +14,7 @@ type InvitationActivityStatus =
   | "opened"
   | "in_progress"
   | "active_recently"
+  | "started"
   | "completed"
   | "expired"
   | "revoked";
@@ -44,6 +45,11 @@ const invitationStatusMeta: Record<
     label: "Active Recently",
     className: "text-emerald-800 bg-emerald-100",
     hint: "Recent activity detected",
+  },
+  started: {
+    label: "Started — Not Submitted",
+    className: "text-yellow-800 bg-yellow-100",
+    hint: "Patient began the intake but did not submit",
   },
   completed: {
     label: "Completed",
