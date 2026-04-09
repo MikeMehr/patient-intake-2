@@ -911,6 +911,9 @@ export default function Home() {
       muted: "Muted",
       muteTitle: "Mute AI voice",
       unmuteTitle: "Unmute AI voice",
+      finalCommentsQuestion: "Do you have any last comments or questions for your provider?",
+      finalCommentsYes: "Yes",
+      finalCommentsNo: "No",
     };
     Promise.all(
       Object.entries(strings).map(async ([key, text]) => {
@@ -5037,7 +5040,7 @@ export default function Home() {
                     {awaitingFinalComments && (
                       <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-3">
                         <p className="text-sm font-medium text-slate-800">
-                          Do you have any last comments or questions for your provider?
+                          {uiT.finalCommentsQuestion || "Do you have any last comments or questions for your provider?"}
                         </p>
                         <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
                           <button
@@ -5056,7 +5059,7 @@ export default function Home() {
                                 : "border border-slate-300 bg-white text-slate-700 hover:bg-slate-100"
                             } disabled:cursor-not-allowed disabled:opacity-60`}
                           >
-                            Yes
+                            {uiT.finalCommentsYes || "Yes"}
                           </button>
                           <button
                             type="button"
@@ -5080,7 +5083,7 @@ export default function Home() {
                                 : "border border-slate-300 bg-white text-slate-700 hover:bg-slate-100"
                             } disabled:cursor-not-allowed disabled:opacity-60`}
                           >
-                            No
+                            {uiT.finalCommentsNo || "No"}
                           </button>
                         </div>
                       </div>
