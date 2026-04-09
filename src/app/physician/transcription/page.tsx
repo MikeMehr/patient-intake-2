@@ -151,7 +151,7 @@ export default function PhysicianTranscriptionPage() {
     () => new Date().toISOString().slice(0, 10),
   );
   const [snapshotAnonOnly, setSnapshotAnonOnly] = useState(false);
-  const [language, setLanguage] = useState<string>("en");
+  const [language, setLanguage] = useState<string>("");
 
   const hasNewPatientIdentity = useMemo(
     () => newPatientFullName.trim().length >= 3 && /^\d{4}-\d{2}-\d{2}$/.test(newPatientDob.trim()),
@@ -1010,8 +1010,9 @@ export default function PhysicianTranscriptionPage() {
                         value={language}
                         disabled={isRecording}
                         onChange={(e) => setLanguage(e.target.value)}
-                        className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200 disabled:cursor-not-allowed disabled:opacity-60"
+                        className={`rounded-lg border bg-white px-3 py-1.5 text-sm text-slate-900 outline-none transition focus:ring-2 disabled:cursor-not-allowed disabled:opacity-60 ${!language && !isRecording ? "border-amber-400 ring-2 ring-amber-100 focus:border-amber-500 focus:ring-amber-200" : "border-slate-300 focus:border-slate-400 focus:ring-slate-200"}`}
                       >
+                        <option value="" disabled>Select language...</option>
                         {languageOptions.map((opt) => (
                           <option key={opt.value} value={opt.value}>{opt.label}</option>
                         ))}
@@ -1068,14 +1069,20 @@ export default function PhysicianTranscriptionPage() {
                           )}
                         </>
                       ) : (
-                        <button
-                          type="button"
-                          onClick={() => { setRecordingElapsed(0); setIsStartingRecording(true); startRecording(); }}
-                          disabled={transcriptLoading || isStartingRecording}
-                          className={`px-4 py-2 text-sm font-medium text-white rounded-lg disabled:bg-slate-400 ${isStartingRecording ? "bg-orange-500" : "bg-slate-900 hover:bg-slate-800"}`}
-                        >
-                          {isStartingRecording ? "Starting..." : "Start transcription"}
-                        </button>
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => { setRecordingElapsed(0); setIsStartingRecording(true); startRecording(); }}
+                            disabled={transcriptLoading || isStartingRecording || !language}
+                            title={!language ? "Please select a transcription language first" : undefined}
+                            className={`px-4 py-2 text-sm font-medium text-white rounded-lg disabled:bg-slate-400 disabled:cursor-not-allowed ${isStartingRecording ? "bg-orange-500" : "bg-slate-900 hover:bg-slate-800"}`}
+                          >
+                            {isStartingRecording ? "Starting..." : "Start transcription"}
+                          </button>
+                          {!language && (
+                            <span className="text-sm text-amber-600 font-medium">← Please select a language</span>
+                          )}
+                        </>
                       )}
                       {transcriptLoading && <span className="text-sm text-slate-600">Transcribing...</span>}
                     </div>
