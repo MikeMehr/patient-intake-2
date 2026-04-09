@@ -330,16 +330,31 @@ function buildCandidatesFromLines(
   const candidates: TextFieldCandidate[] = [];
   let idx = startIndex;
 
-  // Minimum blank gap (in DI coordinate units) to qualify as a fill area.
-  // DI uses inches by default; 0.22 in ≈ 16 pts — larger than normal line-spacing
-  // but small enough to catch compact fill areas.
-  const MIN_GAP = 0.22;
+  // Log DI page structure so we can diagnose if lines are missing.
+  console.log(
+    `[fill-form-pdf] buildCandidatesFromLines: ${pages.length} pages, lines per page: [${pages
+      .map((p) => `p${p.pageNumber}:${(p.lines || []).length}`)
+      .join(", ")}]`,
+  );
 
+  // Minimum blank gap (in DI coordinate units) to qualify as a fill area.
+  // DI uses inches for PDF inputs; 0.22 in ≈ 16 pts — larger than normal line-spacing.
+  // We also handle the "pixel" unit case by using a proportional threshold.
   for (const page of pages) {
     const rawLines = page.lines || [];
+    if (rawLines.length === 0) continue;
+
+    // Determine unit-appropriate minimum gap
+    const isPixels = (page.unit || "inch") === "pixel";
+    const MIN_GAP = isPixels ? 20 : 0.22; // 20 px ≈ 15 pts  |  0.22 in ≈ 16 pts
+
+    // Filter out lines with missing/short polygons before sorting (defensive).
+    const validLines = rawLines.filter(
+      (l) => Array.isArray(l.polygon) && l.polygon.length >= 8,
+    );
 
     // Sort lines top-to-bottom by their minimum Y (DI Y increases downward from top).
-    const lines = [...rawLines].sort((a, b) => {
+    const lines = [...validLines].sort((a, b) => {
       const aY = Math.min(a.polygon[1], a.polygon[3], a.polygon[5], a.polygon[7]);
       const bY = Math.min(b.polygon[1], b.polygon[3], b.polygon[5], b.polygon[7]);
       return aY - bY;
@@ -350,10 +365,11 @@ function buildCandidatesFromLines(
       Math.max(l.polygon[1], l.polygon[3], l.polygon[5], l.polygon[7]),
     );
 
+    let pageCandidates = 0;
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
       const text = line.content?.trim() || "";
-      if (!text || line.polygon.length < 8) continue;
+      if (!text) continue;
 
       // Identify label / prompt lines:
       //   • ends with ":" or "?"   (e.g. "give examples specific to your patient:")
@@ -377,7 +393,7 @@ function buildCandidatesFromLines(
         const lineMinY = Math.min(poly[1], poly[3], poly[5], poly[7]);
         const lineMaxY = lineBottom;
         const underscoreWords = page.words.filter((w) => {
-          if (!/_+/.test(w.content) || w.polygon.length < 8) return false;
+          if (!Array.isArray(w.polygon) || !/_+/.test(w.content) || w.polygon.length < 8) return false;
           const wY = Math.min(w.polygon[1], w.polygon[3], w.polygon[5], w.polygon[7]);
           return wY >= lineMinY - 1 && wY <= lineMaxY + 1;
         });
@@ -400,13 +416,12 @@ function buildCandidatesFromLines(
       // Walk forward through subsequent lines to find the next one that starts
       // far enough below — the intervening space is the fill area.
       if (!valueBounds) {
-        // Find the top of the next text block that is meaningfully below us
         let gapStart = lineBottom;
         let gapEnd: number | null = null;
 
         for (let j = i + 1; j < lines.length; j++) {
           const nextPoly = lines[j].polygon;
-          if (nextPoly.length < 8) continue;
+          if (!Array.isArray(nextPoly) || nextPoly.length < 8) continue;
           const nextTop = Math.min(nextPoly[1], nextPoly[3], nextPoly[5], nextPoly[7]);
           const gap = nextTop - gapStart;
 
@@ -414,29 +429,26 @@ function buildCandidatesFromLines(
             gapEnd = nextTop;
             break;
           }
-          // This next line is tightly spaced (part of the same paragraph) — advance gapStart.
+          // This next line is tightly spaced — advance gapStart past it.
           gapStart = Math.max(nextPoly[1], nextPoly[3], nextPoly[5], nextPoly[7]);
         }
 
         if (gapEnd !== null) {
-          // Use the full horizontal extent of the label line (expanded to page margins)
-          // so the overlay covers the typical answer area width.
-          const fillX0 = Math.min(lineMinX, 0.35); // at most 0.35 in from left
-          const fillX1 = Math.max(lineMaxX, (page.width || 8.27) - 0.35);
+          const fillX0 = Math.min(lineMinX, isPixels ? 25 : 0.35);
+          const fillX1 = Math.max(lineMaxX, (page.width || (isPixels ? 595 : 8.27)) - (isPixels ? 25 : 0.35));
           valueBounds = {
             pageNumber: page.pageNumber,
             polygon: [
-              fillX0, gapStart + 0.02,
-              fillX1, gapStart + 0.02,
-              fillX1, gapEnd - 0.02,
-              fillX0, gapEnd - 0.02,
+              fillX0, gapStart + (isPixels ? 2 : 0.02),
+              fillX1, gapStart + (isPixels ? 2 : 0.02),
+              fillX1, gapEnd  - (isPixels ? 2 : 0.02),
+              fillX0, gapEnd  - (isPixels ? 2 : 0.02),
             ],
           };
         }
       }
 
       const keyBounds: DIBoundingRegion = { pageNumber: page.pageNumber, polygon: poly };
-
       candidates.push({
         index: idx++,
         keyText,
@@ -445,7 +457,9 @@ function buildCandidatesFromLines(
         keyBounds,
         hasValueArea: valueBounds !== null,
       });
+      pageCandidates++;
     }
+    console.log(`[fill-form-pdf] buildCandidatesFromLines page ${page.pageNumber}: ${validLines.length} valid lines → ${pageCandidates} label candidates`);
   }
 
   return candidates;
@@ -697,6 +711,8 @@ export async function GET(request: NextRequest) {
       try {
         const { pages, keyValuePairs } = await analyzeFormLayout(form_pdf_data!);
         console.log(`[fill-form-pdf] DI detected ${keyValuePairs.length} KVPs on ${pages.length} pages`);
+        // Critical diagnostic: show whether DI returned line data per page
+        console.log(`[fill-form-pdf] DI lines per page: [${pages.map((p) => `p${p.pageNumber}:${(p.lines || []).length}`).join(", ")}]`);
 
         if (pages.length > 0) {
           const selectionValues = new Set([":selected:", ":unselected:"]);
