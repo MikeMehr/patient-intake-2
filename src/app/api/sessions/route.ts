@@ -283,6 +283,21 @@ export async function POST(request: Request) {
           }
         }
       }
+      // Also translate chief complaint to English for physician display.
+      const chiefComplaintOriginal = chiefComplaint?.trim() || "";
+      const hasEnglishCC =
+        typeof historyToStore.chiefComplaintEnglish === "string" &&
+        historyToStore.chiefComplaintEnglish.trim().length > 0;
+      if (chiefComplaintOriginal && !hasEnglishCC) {
+        if (interviewIsEnglish) {
+          historyToStore = { ...historyToStore, chiefComplaintEnglish: chiefComplaintOriginal };
+        } else if (process.env.HIPAA_MODE !== "true") {
+          const translatedCC = await translatePatientTextToEnglish(chiefComplaintOriginal);
+          if (translatedCC.trim()) {
+            historyToStore = { ...historyToStore, chiefComplaintEnglish: translatedCC.trim() };
+          }
+        }
+      }
     } catch (err) {
       // Never block session saving on translation failure.
       console.error("[api/sessions] Final comments translation failed:", err);

@@ -2363,7 +2363,7 @@ function PhysicianViewContent() {
                 <div>
                   <p className="text-sm font-medium text-slate-700 mb-2">Chief Complaint</p>
                   <p className="text-base text-slate-900 whitespace-pre-wrap">
-                    {session.chiefComplaint || "—"}
+                    {session.history?.chiefComplaintEnglish || session.chiefComplaint || "—"}
                   </p>
                 </div>
                 <div>
