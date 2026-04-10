@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentSession } from "@/lib/auth";
+import { getEffectivePhysicianId } from "@/lib/auth-helpers";
 import { query } from "@/lib/db";
 
 export const runtime = "nodejs";
@@ -16,7 +17,7 @@ export async function DELETE(_req: NextRequest, context: { params: Promise<Param
       return NextResponse.json({ error: "Only providers can delete invitations" }, { status: 403 });
     }
 
-    const physicianId = (session as any).physicianId || session.userId;
+    const physicianId = getEffectivePhysicianId(session);
 
     const { invitationId } = await context.params;
 

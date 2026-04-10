@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentSession } from "@/lib/auth";
+import { getEffectivePhysicianId } from "@/lib/auth-helpers";
 import { getRequestIp } from "@/lib/invitation-security";
 import { logPhysicianPhiAudit } from "@/lib/phi-audit";
 import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
@@ -23,7 +24,7 @@ export async function GET(
     }
     const scope = resolveWorkforceScope({
       userType: auth.userType,
-      userId: auth.userId,
+      userId: getEffectivePhysicianId(auth),
       organizationId: auth.organizationId || null,
     });
     if (!scope) {
@@ -33,7 +34,7 @@ export async function GET(
       return res;
     }
     const { soapVersionId } = await ctx.params;
-    const soap = await getSoapVersionByIdForScope({ soapVersionId, scope, physicianId: auth.userId });
+    const soap = await getSoapVersionByIdForScope({ soapVersionId, scope, physicianId: getEffectivePhysicianId(auth) });
     if (!soap) {
       status = 404;
       const res = NextResponse.json({ error: "SOAP version not found." }, { status });
@@ -58,7 +59,7 @@ export async function GET(
     });
     try {
       await logPhysicianPhiAudit({
-        physicianId: auth.userId,
+        physicianId: getEffectivePhysicianId(auth),
         patientId: soap.patient_id,
         encounterId: soap.encounter_id,
         soapVersionId: soap.id,

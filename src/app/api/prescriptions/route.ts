@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createHash } from "node:crypto";
 import { getCurrentSession } from "@/lib/auth";
+import { getEffectivePhysicianId } from "@/lib/auth-helpers";
 import { query } from "@/lib/db";
 import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
 import { logPhysicianPhiAudit } from "@/lib/phi-audit";
@@ -286,7 +287,7 @@ export async function POST(request: NextRequest) {
       }
       if (columnNames.has("authorized_by")) {
         setClauses.push(`authorized_by = $${paramIndex++}`);
-        params.push(session.userId);
+        params.push(getEffectivePhysicianId(session));
       }
       if (columnNames.has("authorized_at")) {
         setClauses.push(`authorized_at = $${paramIndex++}`);
@@ -310,7 +311,7 @@ export async function POST(request: NextRequest) {
     try {
       const patientId = await loadSessionPatientId(sessionCode);
       await logPhysicianPhiAudit({
-        physicianId: session.userId,
+        physicianId: getEffectivePhysicianId(session),
         patientId,
         eventType: "prescription_saved",
         ipAddress: getRequestIp(request.headers),
@@ -522,7 +523,7 @@ export async function GET(request: NextRequest) {
     try {
       const patientId = await loadSessionPatientId(sessionCode);
       await logPhysicianPhiAudit({
-        physicianId: session.userId,
+        physicianId: getEffectivePhysicianId(session),
         patientId,
         eventType: "prescription_viewed",
         ipAddress: getRequestIp(request.headers),

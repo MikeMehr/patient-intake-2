@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentSession } from "@/lib/auth";
+import { getEffectivePhysicianId } from "@/lib/auth-helpers";
 import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
 import { getRequestIp } from "@/lib/invitation-security";
 import { logPhysicianPhiAudit } from "@/lib/phi-audit";
@@ -27,7 +28,7 @@ export async function POST(request: NextRequest) {
     }
     const scope = resolveWorkforceScope({
       userType: auth.userType,
-      userId: auth.userId,
+      userId: getEffectivePhysicianId(auth),
       organizationId: auth.organizationId || null,
     });
     if (!scope) {
@@ -45,7 +46,7 @@ export async function POST(request: NextRequest) {
       return res;
     }
 
-    const physicianId = auth.userId;
+    const physicianId = getEffectivePhysicianId(auth);
     const finalized = await finalizeSoapVersion({
       soapVersionId: parsed.data.soapVersionId,
       scope,

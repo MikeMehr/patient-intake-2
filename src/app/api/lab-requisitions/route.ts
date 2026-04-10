@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentSession } from "@/lib/auth";
+import { getEffectivePhysicianId } from "@/lib/auth-helpers";
 import { query } from "@/lib/db";
 import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
 import { logPhysicianPhiAudit } from "@/lib/phi-audit";
@@ -114,7 +115,7 @@ export async function POST(request: NextRequest) {
     try {
       const patientId = await loadSessionPatientId(sessionCode);
       await logPhysicianPhiAudit({
-        physicianId: session.userId,
+        physicianId: getEffectivePhysicianId(session),
         patientId,
         eventType: "lab_requisition_saved",
         ipAddress: getRequestIp(request.headers),
@@ -217,7 +218,7 @@ export async function GET(request: NextRequest) {
         try {
           const patientId = await loadSessionPatientId(sessionCode);
           await logPhysicianPhiAudit({
-            physicianId: session.userId,
+            physicianId: getEffectivePhysicianId(session),
             patientId,
             eventType: "lab_requisition_viewed",
             ipAddress: getRequestIp(request.headers),
@@ -257,7 +258,7 @@ export async function GET(request: NextRequest) {
       try {
         const patientId = await loadSessionPatientId(sessionCode);
         await logPhysicianPhiAudit({
-          physicianId: session.userId,
+          physicianId: getEffectivePhysicianId(session),
           patientId,
           eventType: "lab_requisition_viewed",
           ipAddress: getRequestIp(request.headers),
@@ -310,7 +311,7 @@ export async function GET(request: NextRequest) {
       try {
         const patientId = await loadSessionPatientId(sessionCode);
         await logPhysicianPhiAudit({
-          physicianId: session.userId,
+          physicianId: getEffectivePhysicianId(session),
           patientId,
           eventType: "lab_requisition_viewed",
           ipAddress: getRequestIp(request.headers),
@@ -397,7 +398,7 @@ export async function DELETE(request: NextRequest) {
     try {
       const patientId = await loadSessionPatientId(sessionCode);
       await logPhysicianPhiAudit({
-        physicianId: session.userId,
+        physicianId: getEffectivePhysicianId(session),
         patientId,
         eventType: "lab_requisition_deleted",
         ipAddress: getRequestIp(request.headers),

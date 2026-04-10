@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentSession } from "@/lib/auth";
+import { getEffectivePhysicianId } from "@/lib/auth-helpers";
 import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
 import {
   deleteTranscriptionSessionByIdForScope,
@@ -28,7 +29,7 @@ export async function DELETE(
     }
     const scope = resolveWorkforceScope({
       userType: auth.userType,
-      userId: auth.userId,
+      userId: getEffectivePhysicianId(auth),
       organizationId: auth.organizationId || null,
     });
     if (!scope) {
@@ -60,7 +61,7 @@ export async function DELETE(
     const deleted = await deleteTranscriptionSessionByIdForScope({
       transcriptionSessionId: targetId,
       scope,
-      physicianId: auth.userId,
+      physicianId: getEffectivePhysicianId(auth),
     });
     if (!deleted.deleted) {
       status = 404;

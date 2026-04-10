@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentSession } from "@/lib/auth";
+import { getEffectivePhysicianId } from "@/lib/auth-helpers";
 import { getSession } from "@/lib/session-store";
 import { getAzureOpenAIClient } from "@/lib/azure-openai";
 import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
@@ -119,7 +120,7 @@ export async function POST(request: NextRequest) {
     return res;
   }
 
-  if (patientSession.physicianId !== session.userId) {
+  if (patientSession.physicianId !== getEffectivePhysicianId(session)) {
     status = 403;
     const res = NextResponse.json(
       { error: "You do not have access to this session" },

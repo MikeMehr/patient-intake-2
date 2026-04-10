@@ -5,6 +5,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentSession } from "@/lib/auth";
+import { getEffectivePhysicianId } from "@/lib/auth-helpers";
 import { query } from "@/lib/db";
 import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
 
@@ -34,7 +35,7 @@ export async function GET(request: NextRequest) {
       return res;
     }
 
-    const physicianId = (session as any).physicianId || session.userId;
+    const physicianId = getEffectivePhysicianId(session);
 
     const result = await query<{ interview_guidance: string | null }>(
       `SELECT interview_guidance
@@ -106,7 +107,7 @@ export async function PUT(request: NextRequest) {
       return res;
     }
 
-    const physicianId = (session as any).physicianId || session.userId;
+    const physicianId = getEffectivePhysicianId(session);
 
     await query(
       `UPDATE physicians

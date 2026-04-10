@@ -50,6 +50,7 @@ export interface UserSession {
   clinicName?: string; // For providers (legacy support)
   clinicAddress?: string | null;
   expiresAt: number;
+  linkedPhysicianId?: string | null; // Set for assistant accounts; absent for real providers
 }
 
 // Legacy interface for backward compatibility
@@ -162,6 +163,7 @@ function hashSessionToken(rawToken: string): string {
 /**
  * Create a session and set cookie
  * Supports all user types: super_admin, org_admin, provider
+ * Pass linkedPhysicianId for assistant accounts so data scoping resolves correctly.
  */
 export async function createSession(
   userId: string,
@@ -171,7 +173,8 @@ export async function createSession(
   lastName: string,
   organizationId?: string | null,
   clinicName?: string,
-  clinicAddress?: string | null
+  clinicAddress?: string | null,
+  linkedPhysicianId?: string | null
 ): Promise<string> {
   const token = generateSessionToken();
   const expiresAt = Date.now() + IDLE_TIMEOUT_MS;
@@ -186,6 +189,7 @@ export async function createSession(
     clinicName: clinicName || undefined,
     clinicAddress: clinicAddress ?? null,
     expiresAt,
+    ...(linkedPhysicianId ? { linkedPhysicianId } : {}),
   };
 
   // Store session in database FIRST
@@ -218,7 +222,7 @@ export async function createSession(
         userId,
         userType,
         organizationId || null,
-        userType === "provider" ? userId : null, // Keep physician_id for backward compatibility
+        userType === "provider" ? (linkedPhysicianId || userId) : null, // Keep physician_id for backward compatibility; use linked physician for assistants
         new Date(expiresAt),
         JSON.stringify(session)
       ]

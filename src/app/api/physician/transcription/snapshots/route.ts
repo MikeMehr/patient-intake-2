@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentSession } from "@/lib/auth";
+import { getEffectivePhysicianId } from "@/lib/auth-helpers";
 import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
 import { deleteAllTranscriptionSessionsForScope, resolveWorkforceScope } from "@/lib/transcription-store";
 
@@ -17,7 +18,7 @@ export async function DELETE(request: NextRequest) {
     }
     const scope = resolveWorkforceScope({
       userType: auth.userType,
-      userId: auth.userId,
+      userId: getEffectivePhysicianId(auth),
       organizationId: auth.organizationId || null,
     });
     if (!scope) {
@@ -26,7 +27,7 @@ export async function DELETE(request: NextRequest) {
       logRequestMeta("/api/physician/transcription/snapshots", requestId, status, Date.now() - started);
       return res;
     }
-    const result = await deleteAllTranscriptionSessionsForScope({ scope, physicianId: auth.userId });
+    const result = await deleteAllTranscriptionSessionsForScope({ scope, physicianId: getEffectivePhysicianId(auth) });
     const res = NextResponse.json({
       success: true,
       deletedCount: result.deletedCount,

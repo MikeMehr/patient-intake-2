@@ -5,7 +5,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentSession } from "@/lib/auth";
-import { getOrganizationById } from "@/lib/auth-helpers";
+import { getOrganizationById, isAssistantSession } from "@/lib/auth-helpers";
 import { query } from "@/lib/db";
 import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
 
@@ -46,16 +46,35 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    const res = NextResponse.json({
+    const isAssistant = isAssistantSession(session);
+    const responseBody: Record<string, unknown> = {
       physician: {
-        id: session.userId,
+        id: isAssistant ? session.linkedPhysicianId : session.userId,
         username: session.username,
         firstName: session.firstName,
         lastName: session.lastName,
         clinicName: session.clinicName,
         clinicAddress,
       },
-    });
+    };
+
+    if (isAssistant) {
+      // Fetch the assistant's own name for display
+      const assistantRow = await query<{ first_name: string; last_name: string }>(
+        `SELECT first_name, last_name FROM provider_assistants WHERE id = $1`,
+        [session.userId]
+      );
+      responseBody.isAssistant = true;
+      responseBody.assistant = assistantRow.rows[0]
+        ? {
+            id: session.userId,
+            firstName: assistantRow.rows[0].first_name,
+            lastName: assistantRow.rows[0].last_name,
+          }
+        : null;
+    }
+
+    const res = NextResponse.json(responseBody);
     logRequestMeta("/api/auth/me", requestId, status, Date.now() - started);
     return res;
   } catch (error) {

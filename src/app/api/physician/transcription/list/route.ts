@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentSession } from "@/lib/auth";
+import { getEffectivePhysicianId } from "@/lib/auth-helpers";
 import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
 import { getRequestIp } from "@/lib/invitation-security";
 import { logPhysicianPhiAudit } from "@/lib/phi-audit";
@@ -24,7 +25,7 @@ export async function GET(request: NextRequest) {
     }
     const scope = resolveWorkforceScope({
       userType: auth.userType,
-      userId: auth.userId,
+      userId: getEffectivePhysicianId(auth),
       organizationId: auth.organizationId || null,
     });
     if (!scope) {
@@ -35,10 +36,10 @@ export async function GET(request: NextRequest) {
     }
     // Clean up expired anonymous snapshots (best-effort)
     try { await deleteExpiredAnonymousSnapshots(); } catch { /* ignore */ }
-    const items = await getTranscriptionSessionsForScope(scope, auth.userId);
+    const items = await getTranscriptionSessionsForScope(scope, getEffectivePhysicianId(auth));
     try {
       await logPhysicianPhiAudit({
-        physicianId: auth.userId,
+        physicianId: getEffectivePhysicianId(auth),
         eventType: "transcription_list_viewed",
         ipAddress: getRequestIp(request.headers),
         userAgent: request.headers.get("user-agent"),

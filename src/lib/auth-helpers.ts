@@ -4,7 +4,7 @@
  */
 
 import { query } from "./db";
-import type { UserType } from "./auth";
+import type { UserType, UserSession } from "./auth";
 
 /**
  * Get super admin by username
@@ -145,6 +145,70 @@ export async function getAuthUserByTypeAndId(userType: UserType, userId: string)
     [userId],
   );
   return result.rows[0] || null;
+}
+
+/**
+ * Get provider (physician) by ID
+ */
+export async function getProviderById(physicianId: string) {
+  const result = await query<{
+    id: string;
+    organization_id: string | null;
+    username: string;
+    email: string | null;
+    first_name: string;
+    last_name: string;
+    clinic_name: string;
+    clinic_address: string | null;
+    unique_slug: string;
+    phone: string | null;
+    mfa_enabled: boolean;
+  }>(
+    `SELECT id, organization_id, username, email, first_name, last_name, clinic_name, clinic_address, unique_slug, phone, mfa_enabled
+     FROM physicians
+     WHERE id = $1`,
+    [physicianId]
+  );
+  return result.rows[0] || null;
+}
+
+/**
+ * Get assistant (provider_assistants) by username
+ */
+export async function getAssistantByUsername(username: string) {
+  const result = await query<{
+    id: string;
+    physician_id: string;
+    username: string;
+    password_hash: string;
+    email: string | null;
+    first_name: string;
+    last_name: string;
+    is_active: boolean;
+    mfa_enabled: boolean;
+  }>(
+    `SELECT id, physician_id, username, password_hash, email, first_name, last_name, is_active, mfa_enabled
+     FROM provider_assistants
+     WHERE username = $1`,
+    [username.toLowerCase().trim()]
+  );
+  return result.rows[0] || null;
+}
+
+/**
+ * Returns the effective physician ID for data scoping.
+ * For assistant sessions, this is the linked physician's ID.
+ * For regular provider sessions, this is the provider's own ID.
+ */
+export function getEffectivePhysicianId(session: UserSession): string {
+  return session.linkedPhysicianId ?? session.userId;
+}
+
+/**
+ * Returns true if this session belongs to an assistant (not a direct provider login).
+ */
+export function isAssistantSession(session: UserSession): boolean {
+  return !!session.linkedPhysicianId;
 }
 
 /**

@@ -10,6 +10,8 @@ import {
   getSuperAdminByUsername,
   getOrgAdminByUsername,
   getProviderByUsername,
+  getAssistantByUsername,
+  getProviderById,
 } from "@/lib/auth-helpers";
 import { issueMfaChallenge } from "@/lib/auth-mfa";
 import { AUTH_MFA_POLICY } from "@/lib/auth-policy";
@@ -78,9 +80,10 @@ export async function POST(request: NextRequest) {
       return res;
     }
 
-    // Try to find user in order: super_admin, org_admin, provider
+    // Try to find user in order: super_admin, org_admin, provider, assistant
     let user: any = null;
     let userType: "super_admin" | "org_admin" | "provider" | null = null;
+    let linkedPhysicianId: string | null = null;
 
     // Check super admin first
     const superAdmin = await getSuperAdminByUsername(username);
@@ -115,6 +118,37 @@ export async function POST(request: NextRequest) {
           user = provider;
           userType = "provider";
           await query(`UPDATE physicians SET last_login = NOW() WHERE id = $1`, [user.id]);
+        }
+      }
+    }
+
+    // Check assistant if not found
+    if (!user) {
+      const assistant = await getAssistantByUsername(username);
+      if (assistant && assistant.is_active) {
+        const isValid = await verifyPassword(password, assistant.password_hash);
+        if (isValid) {
+          // Fetch the linked physician to populate session metadata
+          const physician = await getProviderById(assistant.physician_id);
+          if (physician) {
+            // The assistant logs in as 'provider' but with linkedPhysicianId set
+            user = {
+              id: assistant.id,
+              username: assistant.username,
+              first_name: assistant.first_name,
+              last_name: assistant.last_name,
+              email: assistant.email,
+              mfa_enabled: assistant.mfa_enabled,
+              // Physician metadata for session
+              clinic_name: physician.clinic_name,
+              clinic_address: physician.clinic_address,
+              organization_id: physician.organization_id,
+              unique_slug: physician.unique_slug,
+            };
+            userType = "provider";
+            linkedPhysicianId = assistant.physician_id;
+            await query(`UPDATE provider_assistants SET last_login = NOW() WHERE id = $1`, [assistant.id]);
+          }
         }
       }
     }
@@ -181,7 +215,7 @@ export async function POST(request: NextRequest) {
         user.organization_id
       );
     } else {
-      // provider
+      // provider (or assistant logging in as provider)
       token = await createSession(
         user.id,
         userType,
@@ -190,7 +224,8 @@ export async function POST(request: NextRequest) {
         user.last_name,
         user.organization_id,
         user.clinic_name,
-        (user as any).clinic_address ?? null
+        (user as any).clinic_address ?? null,
+        linkedPhysicianId
       );
     }
 

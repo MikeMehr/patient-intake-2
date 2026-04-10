@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getCurrentSession } from "@/lib/auth";
+import { getEffectivePhysicianId } from "@/lib/auth-helpers";
 import { query } from "@/lib/db";
 import { startInvitationCleanup } from "@/lib/invitations-cleanup";
 
@@ -60,7 +61,7 @@ export async function GET() {
       return NextResponse.json({ error: "Only providers can list invitations" }, { status: 403 });
     }
 
-    const physicianId = (session as any).physicianId || session.userId;
+    const physicianId = getEffectivePhysicianId(session);
     const result = await query<InvitationRow>(
       `SELECT pi.id,
               pi.patient_name,

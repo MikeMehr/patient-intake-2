@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentSession } from "@/lib/auth";
+import { getEffectivePhysicianId } from "@/lib/auth-helpers";
 import { query } from "@/lib/db";
 import { logPhysicianPhiAudit } from "@/lib/phi-audit";
 import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
@@ -74,7 +75,7 @@ export async function POST(request: NextRequest) {
     try {
       const patientId = await loadSessionPatientId(sessionCode);
       await logPhysicianPhiAudit({
-        physicianId: session.userId,
+        physicianId: getEffectivePhysicianId(session),
         patientId,
         eventType: "session_marked_reviewed",
         ipAddress: getRequestIp(request.headers),

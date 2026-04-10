@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentSession } from "@/lib/auth";
+import { getEffectivePhysicianId } from "@/lib/auth-helpers";
 import { getSessionsByScope } from "@/lib/session-store";
 import { query } from "@/lib/db";
 import { logPhysicianPhiAudit } from "@/lib/phi-audit";
@@ -48,7 +49,7 @@ export async function GET(request: NextRequest) {
       return res;
     }
 
-    const physicianId = (session as any).physicianId || session.userId;
+    const physicianId = getEffectivePhysicianId(session);
     const orgId = session.organizationId || null;
 
     if (session.userType === "org_admin" && !orgId) {
@@ -146,7 +147,7 @@ export async function GET(request: NextRequest) {
 
     try {
       await logPhysicianPhiAudit({
-        physicianId: session.userId,
+        physicianId: getEffectivePhysicianId(session),
         eventType: "session_list_viewed",
         ipAddress: getRequestIp(request.headers),
         userAgent: request.headers.get("user-agent"),

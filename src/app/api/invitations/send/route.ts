@@ -5,6 +5,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentSession } from "@/lib/auth";
+import { getEffectivePhysicianId } from "@/lib/auth-helpers";
 import { query } from "@/lib/db";
 import { Resend } from "resend";
 import { logDebug } from "@/lib/secure-logger";
@@ -143,8 +144,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Get physician details including slug
-    // Use userId for the new session format, or fall back to physicianId for legacy sessions
-    const physicianId = (session as any).physicianId || session.userId;
+    const physicianId = getEffectivePhysicianId(session);
     
     const physicianResult = await query<{
       first_name: string;

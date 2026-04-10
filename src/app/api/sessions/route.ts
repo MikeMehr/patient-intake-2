@@ -13,6 +13,7 @@ import type { SessionHistory } from "@/lib/session-store";
 import type { PatientProfile } from "@/lib/interview-schema";
 import { getAzureOpenAIClient } from "@/lib/azure-openai";
 import { getCurrentSession } from "@/lib/auth";
+import { getEffectivePhysicianId } from "@/lib/auth-helpers";
 import { logPhysicianPhiAudit } from "@/lib/phi-audit";
 import { logDebug } from "@/lib/secure-logger";
 import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
@@ -665,7 +666,7 @@ export async function PUT(request: Request) {
     try {
       const patientId = await loadSessionPatientId(sessionCode);
       await logPhysicianPhiAudit({
-        physicianId: session.userId,
+        physicianId: getEffectivePhysicianId(session),
         patientId,
         eventType: "session_updated",
         ipAddress: getRequestIp(request.headers),

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentSession } from "@/lib/auth";
+import { getEffectivePhysicianId } from "@/lib/auth-helpers";
 import { query } from "@/lib/db";
 import { computeHinHash } from "@/lib/patient-phi";
 import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
@@ -61,7 +62,7 @@ export async function POST(request: NextRequest) {
       return res;
     }
 
-    const physicianId = (session as any).physicianId || session.userId;
+    const physicianId = getEffectivePhysicianId(session);
     const orgId = session.organizationId || null;
 
     const where: string[] = [];

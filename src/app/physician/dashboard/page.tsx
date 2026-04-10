@@ -139,6 +139,14 @@ export default function PhysicianDashboard() {
     clinicAddress?: string | null;
     slug: string | null;
   } | null>(null);
+  const [isAssistantSession, setIsAssistantSession] = useState(false);
+  const [assistantInfo, setAssistantInfo] = useState<{ id: string; firstName: string; lastName: string } | null>(null);
+  const [showAssistantsPanel, setShowAssistantsPanel] = useState(false);
+  const [assistants, setAssistants] = useState<{ id: string; username: string; email: string | null; firstName: string; lastName: string; isActive: boolean }[]>([]);
+  const [assistantsLoading, setAssistantsLoading] = useState(false);
+  const [assistantForm, setAssistantForm] = useState({ firstName: "", lastName: "", username: "", email: "", password: "" });
+  const [assistantFormError, setAssistantFormError] = useState<string | null>(null);
+  const [assistantFormSubmitting, setAssistantFormSubmitting] = useState(false);
   const [invitePatientName, setInvitePatientName] = useState("");
   const [invitePatientDob, setInvitePatientDob] = useState("");
   const [invitePatientEmail, setInvitePatientEmail] = useState("");
@@ -233,6 +241,10 @@ export default function PhysicianDashboard() {
             slug: data.physician.slug || null,
           });
         }
+        if (data.isAssistant && data.assistant) {
+          setIsAssistantSession(true);
+          setAssistantInfo(data.assistant);
+        }
       })
       .catch(() => {
         // Ignore errors
@@ -293,6 +305,68 @@ export default function PhysicianDashboard() {
     setMobileMenuOpen(false);
     await fetch("/api/auth/logout", { method: "POST" });
     router.push("/auth/login");
+  };
+
+  const loadAssistants = async () => {
+    setAssistantsLoading(true);
+    try {
+      const res = await fetch("/api/physician/assistants");
+      if (res.ok) {
+        const data = await res.json();
+        setAssistants(data.assistants || []);
+      }
+    } catch {}
+    setAssistantsLoading(false);
+  };
+
+  const handleOpenAssistants = () => {
+    setSettingsMenuOpen(false);
+    setShowAssistantsPanel(true);
+    loadAssistants();
+  };
+
+  const handleAssistantSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAssistantFormError(null);
+    setAssistantFormSubmitting(true);
+    try {
+      const res = await fetch("/api/physician/assistants", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          firstName: assistantForm.firstName,
+          lastName: assistantForm.lastName,
+          username: assistantForm.username,
+          password: assistantForm.password,
+          email: assistantForm.email || undefined,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setAssistantFormError(data.error || "Failed to create assistant");
+      } else {
+        setAssistantForm({ firstName: "", lastName: "", username: "", email: "", password: "" });
+        loadAssistants();
+      }
+    } catch {
+      setAssistantFormError("Network error");
+    }
+    setAssistantFormSubmitting(false);
+  };
+
+  const handleDeactivateAssistant = async (id: string, isActive: boolean) => {
+    await fetch(`/api/physician/assistants/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ isActive: !isActive }),
+    });
+    loadAssistants();
+  };
+
+  const handleDeleteAssistant = async (id: string) => {
+    if (!confirm("Delete this assistant? This cannot be undone.")) return;
+    await fetch(`/api/physician/assistants/${id}`, { method: "DELETE" });
+    loadAssistants();
   };
 
   const handleViewSession = (sessionCode: string) => {
@@ -728,6 +802,11 @@ export default function PhysicianDashboard() {
                   Dr. {physician.firstName} {physician.lastName} - {physician.clinicName}
                 </p>
               )}
+              {isAssistantSession && assistantInfo && (
+                <p className="text-[0.62rem] sm:text-[0.75rem] text-amber-600 mt-0.5 font-medium">
+                  Acting as assistant: {assistantInfo.firstName} {assistantInfo.lastName}
+                </p>
+              )}
             </div>
             <div className="flex items-center gap-2">
               <button
@@ -769,6 +848,15 @@ export default function PhysicianDashboard() {
                     >
                       Patient Lookup
                     </button>
+                    {!isAssistantSession && (
+                      <button
+                        type="button"
+                        onClick={handleOpenAssistants}
+                        className="flex w-full items-center rounded-md px-2 py-2 text-sm text-slate-700 hover:bg-slate-50"
+                      >
+                        Manage Assistants
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={handleLogout}
@@ -816,6 +904,79 @@ export default function PhysicianDashboard() {
         </div>
 
         <PasskeyEnrollmentBanner />
+
+        {/* Manage Assistants Modal */}
+        {showAssistantsPanel && (
+          <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 pt-16 px-4">
+            <div className="bg-white rounded-xl shadow-xl w-full max-w-lg max-h-[80vh] overflow-y-auto p-6">
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-lg font-semibold text-slate-900">Manage Assistants</h2>
+                <button type="button" onClick={() => setShowAssistantsPanel(false)} className="text-slate-400 hover:text-slate-600 text-xl font-bold leading-none">&times;</button>
+              </div>
+
+              {/* Add assistant form */}
+              <form onSubmit={handleAssistantSubmit} className="mb-6 space-y-3 border-b border-slate-100 pb-6">
+                <p className="text-sm font-medium text-slate-700">Add New Assistant</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs text-slate-500 mb-1">First Name</label>
+                    <input required value={assistantForm.firstName} onChange={e => setAssistantForm(f => ({ ...f, firstName: e.target.value }))} className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-slate-500 mb-1">Last Name</label>
+                    <input required value={assistantForm.lastName} onChange={e => setAssistantForm(f => ({ ...f, lastName: e.target.value }))} className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-500 mb-1">Username</label>
+                  <input required value={assistantForm.username} onChange={e => setAssistantForm(f => ({ ...f, username: e.target.value }))} className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" autoComplete="off" />
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-500 mb-1">Email (optional)</label>
+                  <input type="email" value={assistantForm.email} onChange={e => setAssistantForm(f => ({ ...f, email: e.target.value }))} className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" autoComplete="off" />
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-500 mb-1">Password (8+ chars, letters &amp; numbers)</label>
+                  <input required type="password" value={assistantForm.password} onChange={e => setAssistantForm(f => ({ ...f, password: e.target.value }))} className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" autoComplete="new-password" />
+                </div>
+                {assistantFormError && <p className="text-sm text-red-600">{assistantFormError}</p>}
+                <button type="submit" disabled={assistantFormSubmitting} className="w-full rounded-md bg-slate-800 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50">
+                  {assistantFormSubmitting ? "Creating…" : "Create Assistant"}
+                </button>
+              </form>
+
+              {/* Existing assistants list */}
+              <p className="text-sm font-medium text-slate-700 mb-3">Current Assistants</p>
+              {assistantsLoading ? (
+                <p className="text-sm text-slate-500">Loading…</p>
+              ) : assistants.length === 0 ? (
+                <p className="text-sm text-slate-500">No assistants yet.</p>
+              ) : (
+                <div className="space-y-2">
+                  {assistants.map(a => (
+                    <div key={a.id} className="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2">
+                      <div>
+                        <p className="text-sm font-medium text-slate-800">{a.firstName} {a.lastName}</p>
+                        <p className="text-xs text-slate-500">{a.username}{a.email ? ` · ${a.email}` : ""}</p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className={`text-xs px-2 py-0.5 rounded-full ${a.isActive ? "bg-green-100 text-green-700" : "bg-slate-100 text-slate-500"}`}>
+                          {a.isActive ? "Active" : "Inactive"}
+                        </span>
+                        <button type="button" onClick={() => handleDeactivateAssistant(a.id, a.isActive)} className="text-xs text-slate-500 hover:text-slate-700 underline">
+                          {a.isActive ? "Deactivate" : "Activate"}
+                        </button>
+                        <button type="button" onClick={() => handleDeleteAssistant(a.id)} className="text-xs text-red-500 hover:text-red-700 underline">
+                          Delete
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Invite Patient Form */}
         <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6 mb-6">
