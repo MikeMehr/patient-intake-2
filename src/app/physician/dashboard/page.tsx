@@ -799,7 +799,7 @@ export default function PhysicianDashboard() {
               </h1>
               {physician && (
                 <p className="text-[0.64rem] sm:text-[0.8rem] text-slate-600 mt-1">
-                  Dr. {physician.firstName} {physician.lastName} - {physician.clinicName}
+                  {isAssistantSession ? "" : "Dr. "}{physician.firstName} {physician.lastName} - {physician.clinicName}
                 </p>
               )}
               {isAssistantSession && assistantInfo && (
