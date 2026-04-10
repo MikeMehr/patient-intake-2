@@ -1,9 +1,62 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { mergeDiagramSelectionsForDisplay, type DiagramSelectionInput } from "@/lib/body-diagram-display";
+
+// ── HPI helpers (mirrors physician/view) ────────────────────────────────────
+function stripOptionalNone(value: string): string {
+  return /^none\.?$/i.test(value.trim()) ? "" : value;
+}
+
+function toStringList(value: unknown): string[] {
+  if (Array.isArray(value)) return value.map(String).filter(Boolean);
+  if (typeof value === "string" && value.trim()) return [value.trim()];
+  return [];
+}
+
+type HpiSections = {
+  subjective: string;
+  physicalFindings: string[];
+  assessment: string;
+  investigations: string[];
+  plan: string[];
+  patientFinalComments: string;
+};
+
+function getHpiSections(hpi: any): HpiSections {
+  const subjective = stripOptionalNone(hpi?.summary || "");
+  const assessment = stripOptionalNone(hpi?.assessment || "");
+  const physicalFindings = toStringList(hpi?.physicalFindings);
+  const investigations = toStringList(hpi?.investigations).map((s) => s.replace(/^[-*•]\s*/, "").trim());
+  const plan = toStringList(hpi?.plan).map((s) => s.replace(/^[-*•]\s*/, "").trim());
+  const patientFinalComments = stripOptionalNone(
+    hpi?.patientFinalQuestionsCommentsEnglish?.trim()
+      ? hpi.patientFinalQuestionsCommentsEnglish
+      : hpi?.patientFinalQuestionsComments || "",
+  );
+  return {
+    subjective: subjective || "None",
+    physicalFindings,
+    assessment: assessment || "None",
+    investigations,
+    plan,
+    patientFinalComments: patientFinalComments || "None",
+  };
+}
+
+function getHpiAiSummary(sections: HpiSections): string {
+  const firstSentence = sections.subjective
+    .split(/(?<=[.!?])\s+/)
+    .map((p) => p.trim())
+    .find((p) => p.length > 0 && p.toLowerCase() !== "none");
+  if (firstSentence) return firstSentence;
+  return [sections.assessment, ...sections.physicalFindings, ...sections.plan]
+    .map((p) => p.trim())
+    .find((p) => p.length > 0 && p.toLowerCase() !== "none") || "Clinical summary not available.";
+}
+// ────────────────────────────────────────────────────────────────────────────
 
 type Encounter = {
   id: string;
@@ -152,6 +205,12 @@ export default function PatientChartPage() {
   const [encounters, setEncounters] = useState<Encounter[]>([]);
   const [labRequisitions, setLabRequisitions] = useState<LabRequisition[]>([]);
 
+  // Per-encounter form answers: encounterId → loaded answers or "loading" or "error"
+  const [formAnswersMap, setFormAnswersMap] = useState<
+    Map<string, { question: string; answer: string }[] | "loading" | string>
+  >(new Map());
+  const loadingFormAnswersRef = useRef<Set<string>>(new Set());
+
   const age = useMemo(() => computeAgeFromDob(patient?.dateOfBirth || null), [patient?.dateOfBirth]);
 
   useEffect(() => {
@@ -237,6 +296,26 @@ export default function PatientChartPage() {
       cancelled = true;
     };
   }, [patientId, router]);
+
+  async function loadFormAnswers(encounterId: string, sessionCode: string) {
+    if (loadingFormAnswersRef.current.has(encounterId)) return;
+    loadingFormAnswersRef.current.add(encounterId);
+    setFormAnswersMap((prev) => new Map(prev).set(encounterId, "loading"));
+    try {
+      const res = await fetch("/api/generate-form-answers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionCode }),
+      });
+      const data = await res.json().catch(() => ({})) as { formAnswers?: { question: string; answer: string }[]; error?: string };
+      if (!res.ok) throw new Error(data?.error || "Failed to load form responses");
+      setFormAnswersMap((prev) => new Map(prev).set(encounterId, Array.isArray(data.formAnswers) ? data.formAnswers : []));
+    } catch (err) {
+      setFormAnswersMap((prev) => new Map(prev).set(encounterId, err instanceof Error ? err.message : "Failed to load"));
+    } finally {
+      loadingFormAnswersRef.current.delete(encounterId);
+    }
+  }
 
   if (loading) {
     return (
@@ -338,10 +417,6 @@ export default function PatientChartPage() {
             <div className="divide-y divide-slate-200">
               {encounters.map((enc) => {
                 const hpi = enc.hpi || {};
-                const plan = Array.isArray(hpi?.plan) ? (hpi.plan as string[]) : [];
-                const physicalFindings = Array.isArray(hpi?.physicalFindings) ? (hpi.physicalFindings as string[]) : [];
-                const positives = Array.isArray(hpi?.positives) ? (hpi.positives as string[]) : [];
-                const negatives = Array.isArray(hpi?.negatives) ? (hpi.negatives as string[]) : [];
                 const interviewEndedEarly = hpi?.interviewEndedEarly === true;
                 const patientUploads = hpi?.patientUploads || {};
                 const lesionSummary = patientUploads?.lesionImage?.summary || "";
@@ -434,79 +509,105 @@ export default function PatientChartPage() {
                           Interview ended early by patient request.
                         </div>
                       )}
-                      <div>
-                        <div className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Summary</div>
-                        <div className="mt-1 whitespace-pre-wrap">{hpi?.summary || "—"}</div>
-                      </div>
 
-                      {(physicalFindings.length > 0 || positives.length > 0 || negatives.length > 0) && (
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                          <div>
-                            <div className="text-xs font-semibold text-slate-600 uppercase tracking-wide">
-                              Physical findings
+                      {(() => {
+                        const sections = getHpiSections(hpi);
+                        const aiSummary = getHpiAiSummary(sections);
+                        const encFormAnswersState = formAnswersMap.get(enc.id);
+                        const cachedFormAnswers = Array.isArray(hpi?.formAnswers) ? hpi.formAnswers as { question: string; answer: string }[] : null;
+                        const loadedFormAnswers = Array.isArray(encFormAnswersState) ? encFormAnswersState : null;
+                        const formAnswersToShow = loadedFormAnswers ?? cachedFormAnswers;
+                        return (
+                          <div className="space-y-5">
+                            <div>
+                              <p className="text-sm font-medium text-slate-700">AI Summary</p>
+                              <div className="mt-1 h-px bg-slate-200" />
+                              <p className="mt-2 text-base text-slate-900">{aiSummary}</p>
                             </div>
-                            {physicalFindings.length === 0 ? (
-                              <div className="mt-1">—</div>
-                            ) : (
-                              <ul className="mt-1 list-disc pl-5 space-y-1">
-                                {physicalFindings.map((item, idx) => (
-                                  <li key={idx} className="whitespace-pre-wrap">
-                                    {item}
-                                  </li>
-                                ))}
-                              </ul>
-                            )}
-                          </div>
-                          <div>
-                            <div className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Positives</div>
-                            {positives.length === 0 ? (
-                              <div className="mt-1">—</div>
-                            ) : (
-                              <ul className="mt-1 list-disc pl-5 space-y-1">
-                                {positives.map((item, idx) => (
-                                  <li key={idx} className="whitespace-pre-wrap">
-                                    {item}
-                                  </li>
-                                ))}
-                              </ul>
-                            )}
-                          </div>
-                          <div>
-                            <div className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Negatives</div>
-                            {negatives.length === 0 ? (
-                              <div className="mt-1">—</div>
-                            ) : (
-                              <ul className="mt-1 list-disc pl-5 space-y-1">
-                                {negatives.map((item, idx) => (
-                                  <li key={idx} className="whitespace-pre-wrap">
-                                    {item}
-                                  </li>
-                                ))}
-                              </ul>
-                            )}
-                          </div>
-                        </div>
-                      )}
+                            <div>
+                              <p className="text-sm font-medium text-slate-700">Subjective</p>
+                              <div className="mt-1 h-px bg-slate-200" />
+                              <p className="mt-2 text-base text-slate-900 whitespace-pre-wrap">{sections.subjective}</p>
+                            </div>
+                            <div>
+                              <p className="text-sm font-medium text-slate-700">Physical Findings</p>
+                              <div className="mt-1 h-px bg-slate-200" />
+                              {sections.physicalFindings.length > 0 ? (
+                                <ul className="mt-2 space-y-1 text-base text-slate-900">
+                                  {sections.physicalFindings.map((item, idx) => <li key={idx}>• {item}</li>)}
+                                </ul>
+                              ) : (
+                                <p className="mt-2 text-base text-slate-900">None</p>
+                              )}
+                            </div>
+                            <div>
+                              <p className="text-sm font-medium text-slate-700">Assessment</p>
+                              <div className="mt-1 h-px bg-slate-200" />
+                              <p className="mt-2 text-base text-slate-900 whitespace-pre-wrap">{sections.assessment}</p>
+                            </div>
+                            <div>
+                              <p className="text-sm font-medium text-slate-700">Investigations</p>
+                              <div className="mt-1 h-px bg-slate-200" />
+                              {sections.investigations.length > 0 ? (
+                                <ul className="mt-2 space-y-1 text-base text-slate-900">
+                                  {sections.investigations.map((item, idx) => <li key={idx}>• {item}</li>)}
+                                </ul>
+                              ) : (
+                                <p className="mt-2 text-base text-slate-900">None</p>
+                              )}
+                            </div>
+                            <div>
+                              <p className="text-sm font-medium text-slate-700">Plan</p>
+                              <div className="mt-1 h-px bg-slate-200" />
+                              {sections.plan.length > 0 ? (
+                                <ul className="mt-2 space-y-1 text-base text-slate-900">
+                                  {sections.plan.map((item, idx) => <li key={idx}>• {item}</li>)}
+                                </ul>
+                              ) : (
+                                <p className="mt-2 text-base text-slate-900">None</p>
+                              )}
+                            </div>
+                            <div>
+                              <p className="text-sm font-medium text-slate-700">Patient Final Comments</p>
+                              <div className="mt-1 h-px bg-slate-200" />
+                              <p className="mt-2 text-base text-slate-900 whitespace-pre-wrap">{sections.patientFinalComments}</p>
+                            </div>
 
-                      <div>
-                        <div className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Assessment</div>
-                        <div className="mt-1 whitespace-pre-wrap">{hpi?.assessment || "—"}</div>
-                      </div>
-
-                      <div>
-                        <div className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Plan</div>
-                        {plan.length === 0 ? (
-                          <div className="mt-1">—</div>
-                        ) : (
-                          <ul className="mt-1 list-disc pl-5 space-y-1">
-                            {plan.map((item, idx) => (
-                              <li key={idx} className="whitespace-pre-wrap">
-                                {item}
-                              </li>
-                            ))}
-                          </ul>
-                        )}
-                      </div>
+                            {hpi?.formSummary && (
+                              <div>
+                                <p className="text-sm font-medium text-slate-700">Form Responses</p>
+                                <div className="mt-1 h-px bg-slate-200" />
+                                {formAnswersToShow ? (
+                                  formAnswersToShow.length > 0 ? (
+                                    <div className="mt-2 space-y-3">
+                                      {formAnswersToShow.map((qa, idx) => (
+                                        <div key={idx} className="rounded-md border border-slate-100 bg-slate-50/60 px-4 py-3">
+                                          <p className="text-sm font-medium text-slate-700">{idx + 1}. {qa.question}</p>
+                                          <p className="mt-1 text-base text-slate-900 whitespace-pre-wrap">{qa.answer}</p>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  ) : (
+                                    <p className="mt-2 text-sm text-slate-500">No form responses extracted.</p>
+                                  )
+                                ) : encFormAnswersState === "loading" ? (
+                                  <p className="mt-2 text-sm text-slate-500 animate-pulse">Loading form responses…</p>
+                                ) : typeof encFormAnswersState === "string" ? (
+                                  <p className="mt-2 text-sm text-red-600">{encFormAnswersState}</p>
+                                ) : enc.sourceSessionCode ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => loadFormAnswers(enc.id, enc.sourceSessionCode!)}
+                                    className="mt-2 px-3 py-1.5 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50"
+                                  >
+                                    Load Form Responses
+                                  </button>
+                                ) : null}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
 
                       {hasUploadedContext && (
                         <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">

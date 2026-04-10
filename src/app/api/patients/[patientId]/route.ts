@@ -247,6 +247,12 @@ export async function GET(
                 soapLifecycleState: e.soap_lifecycle_state || null,
                 soapVersion: e.soap_version || null,
                 finalizedForExportAt: toIso(e.soap_finalized_for_export_at),
+                // Carry form data from hpi_json even on SOAP encounters
+                formSummary: e.hpi_json?.formSummary ?? null,
+                formAnswers: e.hpi_json?.formAnswers ?? null,
+                investigations: e.hpi_json?.investigations ?? [],
+                patientFinalQuestionsComments: e.hpi_json?.patientFinalQuestionsComments ?? null,
+                patientFinalQuestionsCommentsEnglish: e.hpi_json?.patientFinalQuestionsCommentsEnglish ?? null,
               }
             : e.hpi_json,
         createdAt: toIso(e.created_at),
