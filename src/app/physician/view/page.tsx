@@ -2714,6 +2714,53 @@ function PhysicianViewContent() {
               </div>
             )}
 
+        {/* Complete Intake History (Guided Interview Transcript) */}
+        <div className="mb-6">
+          <CollapsibleSection
+            id="complete-intake-history"
+            title="Complete Intake History"
+            description="Guided Interview Questions & Answers"
+            defaultOpen={false}
+          >
+            {completeIntakeTranscript.length > 0 ? (
+                <div>
+                  <p className="text-sm font-medium text-slate-700 mb-3">
+                    Guided Interview Questions & Answers ({completeIntakeTranscript.length} messages)
+                  </p>
+                  <div className="space-y-4 border-t border-slate-200 pt-4">
+                    {completeIntakeTranscript.map((message, index) => (
+                      <div
+                        key={index}
+                        className={`p-3 rounded-lg ${
+                          message.role === "assistant"
+                            ? "bg-blue-50 border border-blue-200"
+                            : "bg-slate-50 border border-slate-200"
+                        }`}
+                      >
+                        <p className="text-xs font-semibold text-slate-600 mb-1 uppercase tracking-wide">
+                          {message.role === "assistant" ? "Assistant" : "Patient"}
+                        </p>
+                        <p className="text-base text-slate-900 whitespace-pre-wrap">
+                          {message.content}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="text-sm text-slate-500 italic">
+                  No interview transcript available for this session.
+                  {process.env.NODE_ENV === "development" && (
+                    <div className="mt-2 text-xs text-slate-400 space-y-1">
+                      <div>Debug: transcript is an empty array (length: {completeIntakeTranscript.length})</div>
+                      <div>This session may have been saved before the transcript feature was added, or the interview had no messages.</div>
+                    </div>
+                  )}
+                </div>
+            )}
+          </CollapsibleSection>
+        </div>
+
             <div className="mb-6">
               <CollapsibleSection
                 id="ai-help-with-hpi"
@@ -3431,53 +3478,6 @@ function PhysicianViewContent() {
           </div>
           </>
         )}
-
-        {/* Complete Intake History (Guided Interview Transcript) */}
-        <div className="mb-6">
-          <CollapsibleSection
-            id="complete-intake-history"
-            title="Complete Intake History"
-            description="Guided Interview Questions & Answers"
-            defaultOpen={false}
-          >
-            {completeIntakeTranscript.length > 0 ? (
-                <div>
-                  <p className="text-sm font-medium text-slate-700 mb-3">
-                    Guided Interview Questions & Answers ({completeIntakeTranscript.length} messages)
-                  </p>
-                  <div className="space-y-4 border-t border-slate-200 pt-4">
-                    {completeIntakeTranscript.map((message, index) => (
-                      <div
-                        key={index}
-                        className={`p-3 rounded-lg ${
-                          message.role === "assistant"
-                            ? "bg-blue-50 border border-blue-200"
-                            : "bg-slate-50 border border-slate-200"
-                        }`}
-                      >
-                        <p className="text-xs font-semibold text-slate-600 mb-1 uppercase tracking-wide">
-                          {message.role === "assistant" ? "Assistant" : "Patient"}
-                        </p>
-                        <p className="text-base text-slate-900 whitespace-pre-wrap">
-                          {message.content}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ) : (
-                <div className="text-sm text-slate-500 italic">
-                  No interview transcript available for this session.
-                  {process.env.NODE_ENV === "development" && (
-                    <div className="mt-2 text-xs text-slate-400 space-y-1">
-                      <div>Debug: transcript is an empty array (length: {completeIntakeTranscript.length})</div>
-                      <div>This session may have been saved before the transcript feature was added, or the interview had no messages.</div>
-                    </div>
-                  )}
-                </div>
-            )}
-          </CollapsibleSection>
-        </div>
 
         {/* Image Analysis */}
         {shouldShowLegacyImageAnalysisCard && (
