@@ -637,6 +637,7 @@ export default function Home() {
   const patientResponseInputRef = useRef<HTMLTextAreaElement | null>(null);
   const patientResponseRef = useRef<string>("");
   const pendingHistoryResultRef = useRef<HistoryResponse | null>(null);
+  const requestPhqGadRef = useRef(false);
   const draftTranscriptRef = useRef<string>("");
   const draftCommitDedupeRef = useRef<{ draft: string; atMs: number } | null>(null);
   const mutedWhileSpeakingRef = useRef(false);
@@ -1273,6 +1274,7 @@ export default function Home() {
             }
             if (data.requestPhqGad) {
               setRequestPhqGad(true);
+              requestPhqGadRef.current = true;
             }
           })
           .catch((err) => {
@@ -2710,7 +2712,7 @@ export default function Home() {
       setFinalCommentsChoice(null);
 
       // If PHQ/GAD screening was requested, park the history and show the form instead of saving.
-      if (requestPhqGad) {
+      if (requestPhqGadRef.current) {
         setPhqGadPendingHistory(historyWithFinal);
         setAwaitingPhqGad(true);
         setSavingSession(false);
@@ -3141,6 +3143,7 @@ export default function Home() {
     setAwaitingPhqGad(false);
     setPhqGadPendingHistory(null);
     setRequestPhqGad(false);
+    requestPhqGadRef.current = false;
     setPatientResponse("");
     patientResponseRef.current = "";
     setDetectedComplaints([]);
