@@ -1214,7 +1214,7 @@ export default function PhysicianDashboard() {
                     disabled={inviteLoading}
                     rows={3}
                     className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200 disabled:cursor-not-allowed disabled:opacity-70"
-                    placeholder="E.g., ask PHQ-9/GAD-7, follow-up for hypertension; last visit 3 months ago; discuss med adherence and side effects."
+                    placeholder="E.g., follow-up for hypertension; last visit 3 months ago; discuss med adherence and side effects. Use checkbox below to request PHQ-9/GAD-7 screening."
                   />
                   <p className="text-xs text-slate-500 mt-1">
                     Optional context to help the AI focus (e.g., prior visit summary, pertinent history).
