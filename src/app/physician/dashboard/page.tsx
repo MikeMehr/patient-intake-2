@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import type { PatientSession } from "@/lib/session-store";
 import SessionKeepAlive from "@/components/auth/SessionKeepAlive";
 import PasskeyEnrollmentBanner from "@/components/auth/PasskeyEnrollmentBanner";
+import PasskeyManagement from "@/components/auth/PasskeyManagement";
 import CollapsibleSection from "@/components/CollapsibleSection";
 
 type PatientSessionWithChartLink = PatientSession & { patientId?: string | null; hasPdfForm?: boolean };
@@ -142,6 +143,7 @@ export default function PhysicianDashboard() {
   const [isAssistantSession, setIsAssistantSession] = useState(false);
   const [assistantInfo, setAssistantInfo] = useState<{ id: string; firstName: string; lastName: string } | null>(null);
   const [showAssistantsPanel, setShowAssistantsPanel] = useState(false);
+  const [showPasskeysPanel, setShowPasskeysPanel] = useState(false);
   const [assistants, setAssistants] = useState<{ id: string; username: string; email: string | null; firstName: string; lastName: string; isActive: boolean }[]>([]);
   const [assistantsLoading, setAssistantsLoading] = useState(false);
   const [assistantForm, setAssistantForm] = useState({ firstName: "", lastName: "", username: "", email: "", password: "" });
@@ -859,6 +861,13 @@ export default function PhysicianDashboard() {
                     )}
                     <button
                       type="button"
+                      onClick={() => { setSettingsMenuOpen(false); setShowPasskeysPanel(true); }}
+                      className="flex w-full items-center rounded-md px-2 py-2 text-sm text-slate-700 hover:bg-slate-50"
+                    >
+                      Manage Passkeys
+                    </button>
+                    <button
+                      type="button"
                       onClick={handleLogout}
                       className="flex w-full items-center rounded-md px-2 py-2 text-sm text-slate-700 hover:bg-slate-50"
                     >
@@ -904,6 +913,19 @@ export default function PhysicianDashboard() {
         </div>
 
         <PasskeyEnrollmentBanner />
+
+        {/* Manage Passkeys Modal */}
+        {showPasskeysPanel && (
+          <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 pt-16 px-4">
+            <div className="bg-white rounded-xl shadow-xl w-full max-w-lg max-h-[80vh] overflow-y-auto p-6">
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-lg font-semibold text-slate-900">Manage Passkeys</h2>
+                <button type="button" onClick={() => setShowPasskeysPanel(false)} className="text-slate-400 hover:text-slate-600 text-xl font-bold leading-none">&times;</button>
+              </div>
+              <PasskeyManagement />
+            </div>
+          </div>
+        )}
 
         {/* Manage Assistants Modal */}
         {showAssistantsPanel && (
