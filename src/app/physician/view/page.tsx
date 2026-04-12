@@ -760,6 +760,121 @@ function PhysicianViewContent() {
     router.push("/physician/dashboard");
   };
 
+  function scoreToLabel(score: number): string {
+    return (
+      ["Not at all", "Several days", "More than half the days", "Nearly every day"][score] ??
+      String(score)
+    );
+  }
+
+  const handleDownloadPhqGadPdf = async () => {
+    const r = (session?.history as any)?.phqGadResults as import("@/lib/history-schema").PhqGadResults | undefined;
+    if (!r) return;
+    const { jsPDF } = await import("jspdf");
+    const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+    const pageW = doc.internal.pageSize.getWidth();
+    const contentX = 15;
+    const contentW = pageW - 30;
+    let y = 15;
+    const lh = 6;
+
+    const phq9SeverityLabel: Record<string, string> = {
+      minimal: "Minimal/No Depression",
+      mild: "Mild Depression",
+      moderate: "Moderate Depression",
+      moderately_severe: "Moderately Severe Depression",
+      severe: "Severe Depression",
+    };
+    const gad7SeverityLabel: Record<string, string> = {
+      minimal: "Minimal Anxiety",
+      mild: "Mild Anxiety",
+      moderate: "Moderate Anxiety",
+      severe: "Severe Anxiety",
+    };
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(14);
+    doc.text("PHQ-9 / GAD-7 Screening Results", contentX, y);
+    y += lh + 2;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    doc.text(`Patient: ${session?.patientName || "N/A"}`, contentX, y);
+    y += lh;
+    doc.text(
+      `Date: ${r.completedAt ? new Date(r.completedAt).toLocaleDateString() : "N/A"}`,
+      contentX,
+      y,
+    );
+    y += lh + 4;
+
+    // PHQ-9
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(11);
+    doc.text(
+      `PHQ-9 — Total Score: ${r.phq9.total}/27 (${phq9SeverityLabel[r.phq9.severity] ?? r.phq9.severity})`,
+      contentX,
+      y,
+    );
+    y += lh + 1;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    for (let i = 0; i < r.phq9.items.length; i++) {
+      const item = r.phq9.items[i];
+      const isQ9Alert = i === 8 && item.score > 0;
+      if (isQ9Alert) {
+        doc.setTextColor(200, 0, 0);
+        const lines = doc.splitTextToSize(
+          `${i + 1}. ${item.question}: ${scoreToLabel(item.score)} (${item.score}) ⚠ Requires clinical attention`,
+          contentW,
+        ) as string[];
+        doc.text(lines, contentX, y);
+        doc.setTextColor(0, 0, 0);
+        y += lines.length * lh;
+      } else {
+        const lines = doc.splitTextToSize(
+          `${i + 1}. ${item.question}: ${scoreToLabel(item.score)} (${item.score})`,
+          contentW,
+        ) as string[];
+        doc.text(lines, contentX, y);
+        y += lines.length * lh;
+      }
+      if (y > 270) {
+        doc.addPage();
+        y = 15;
+      }
+    }
+
+    y += 4;
+    // GAD-7
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(11);
+    doc.text(
+      `GAD-7 — Total Score: ${r.gad7.total}/21 (${gad7SeverityLabel[r.gad7.severity] ?? r.gad7.severity})`,
+      contentX,
+      y,
+    );
+    y += lh + 1;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    for (let i = 0; i < r.gad7.items.length; i++) {
+      const item = r.gad7.items[i];
+      const lines = doc.splitTextToSize(
+        `${i + 1}. ${item.question}: ${scoreToLabel(item.score)} (${item.score})`,
+        contentW,
+      ) as string[];
+      doc.text(lines, contentX, y);
+      y += lines.length * lh;
+      if (y > 270) {
+        doc.addPage();
+        y = 15;
+      }
+    }
+
+    const safeName = (session?.patientName || "patient").replace(/\s+/g, "-").toLowerCase();
+    const dateStr = new Date().toISOString().slice(0, 10);
+    doc.save(`phq-gad-${safeName}-${dateStr}.pdf`);
+  };
+
   const handleDownloadFormAnswers = () => {
     if (!formAnswers || formAnswers.length === 0) return;
     const patientName = session?.patientName || "patient";
@@ -2618,6 +2733,95 @@ function PhysicianViewContent() {
                 )}
               </div>
             </div>
+
+            {/* PHQ-9 / GAD-7 Screening Results */}
+            {(session.history as any)?.phqGadResults && (() => {
+              const r = (session.history as any).phqGadResults as import("@/lib/history-schema").PhqGadResults;
+              const phq9SeverityLabel: Record<string, string> = {
+                minimal: "Minimal / No Depression",
+                mild: "Mild Depression",
+                moderate: "Moderate Depression",
+                moderately_severe: "Moderately Severe Depression",
+                severe: "Severe Depression",
+              };
+              const gad7SeverityLabel: Record<string, string> = {
+                minimal: "Minimal Anxiety",
+                mild: "Mild Anxiety",
+                moderate: "Moderate Anxiety",
+                severe: "Severe Anxiety",
+              };
+              return (
+                <div className="mb-6">
+                  <CollapsibleSection
+                    id="phq-gad-results"
+                    title="PHQ-9 / GAD-7 Screening Results"
+                    description="Patient-completed depression and anxiety screening questionnaires."
+                    defaultOpen={true}
+                    headerRight={
+                      <button
+                        onClick={(e) => { e.stopPropagation(); void handleDownloadPhqGadPdf(); }}
+                        className="px-3 py-1.5 text-sm font-medium text-white bg-slate-700 border border-slate-700 rounded-lg hover:bg-slate-800"
+                      >
+                        Download PDF
+                      </button>
+                    }
+                  >
+                    {/* PHQ-9 */}
+                    <div className="mb-5">
+                      <p className="text-sm font-semibold text-slate-900 mb-2">
+                        PHQ-9 — {r.phq9.total}/27 &mdash; {phq9SeverityLabel[r.phq9.severity] ?? r.phq9.severity}
+                      </p>
+                      <div className="space-y-2">
+                        {r.phq9.items.map((item, i) => {
+                          const isQ9Alert = i === 8 && item.score > 0;
+                          return (
+                            <div
+                              key={i}
+                              className={`rounded-lg border px-4 py-2 ${
+                                isQ9Alert
+                                  ? "border-red-300 bg-red-50"
+                                  : "border-slate-100 bg-slate-50/60"
+                              }`}
+                            >
+                              <p className={`text-xs font-medium ${isQ9Alert ? "text-red-700" : "text-slate-600"}`}>
+                                {i + 1}. {item.question}
+                                {isQ9Alert && (
+                                  <span className="ml-2 font-semibold">⚠ Requires clinical attention</span>
+                                )}
+                              </p>
+                              <p className={`text-sm font-semibold mt-0.5 ${isQ9Alert ? "text-red-800" : "text-slate-900"}`}>
+                                {scoreToLabel(item.score)} ({item.score})
+                              </p>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                    {/* GAD-7 */}
+                    <div>
+                      <p className="text-sm font-semibold text-slate-900 mb-2">
+                        GAD-7 — {r.gad7.total}/21 &mdash; {gad7SeverityLabel[r.gad7.severity] ?? r.gad7.severity}
+                      </p>
+                      <div className="space-y-2">
+                        {r.gad7.items.map((item, i) => (
+                          <div
+                            key={i}
+                            className="rounded-lg border border-slate-100 bg-slate-50/60 px-4 py-2"
+                          >
+                            <p className="text-xs font-medium text-slate-600">
+                              {i + 1}. {item.question}
+                            </p>
+                            <p className="text-sm font-semibold text-slate-900 mt-0.5">
+                              {scoreToLabel(item.score)} ({item.score})
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </CollapsibleSection>
+                </div>
+              );
+            })()}
 
             {/* Form Responses — shown when a form was uploaded with the invitation */}
             {(session.history as any)?.formSummary && (

@@ -30,6 +30,7 @@ type InvitationRow = {
   summary_deleted_at: Date | null;
   patient_background: string | null;
   interview_guidance: string | null;
+  request_phq_gad: boolean;
   organization_website_url: string | null;
   first_name: string;
   last_name: string;
@@ -57,6 +58,7 @@ export type InvitationContext = {
   summaryDeletedAt: string | null;
   patientBackground: string | null;
   interviewGuidance: string | null;
+  requestPhqGad: boolean;
 };
 
 async function hasOrganizationWebsiteColumn(): Promise<boolean> {
@@ -161,6 +163,7 @@ function toInvitationContext(row: InvitationRow): InvitationContext {
     summaryDeletedAt: row.summary_deleted_at ? new Date(row.summary_deleted_at).toISOString() : null,
     patientBackground: row.patient_background,
     interviewGuidance: row.interview_guidance,
+    requestPhqGad: Boolean(row.request_phq_gad),
   };
 }
 
@@ -243,7 +246,7 @@ export async function getInvitationByRawToken(rawToken: string): Promise<Invitat
   const result = await query<InvitationRow>(
     `SELECT pi.id, pi.physician_id, pi.patient_email, pi.patient_name, pi.patient_dob, pi.oscar_demographic_no, pi.token_expires_at, pi.used_at, pi.revoked_at,
             pi.expires_at, pi.lab_report_summary, pi.previous_lab_report_summary, pi.form_summary, pi.summary_expires_at, pi.summary_deleted_at, pi.patient_background,
-            pi.interview_guidance, ${websiteSelect}, p.first_name, p.last_name, p.clinic_name
+            pi.interview_guidance, pi.request_phq_gad, ${websiteSelect}, p.first_name, p.last_name, p.clinic_name
      FROM patient_invitations pi
      JOIN physicians p ON p.id = pi.physician_id
      LEFT JOIN organizations o ON o.id = p.organization_id
@@ -368,7 +371,7 @@ export async function resolveInvitationFromCookie(): Promise<InvitationContext |
     const result = await query<InvitationRow>(
       `SELECT pi.id, pi.physician_id, pi.patient_email, pi.patient_name, pi.patient_dob, pi.oscar_demographic_no, pi.token_expires_at, pi.used_at, pi.revoked_at,
               pi.expires_at, pi.lab_report_summary, pi.previous_lab_report_summary, pi.form_summary, pi.summary_expires_at, pi.summary_deleted_at, pi.patient_background,
-              pi.interview_guidance, ${websiteSelect}, p.first_name, p.last_name, p.clinic_name
+              pi.interview_guidance, pi.request_phq_gad, ${websiteSelect}, p.first_name, p.last_name, p.clinic_name
        FROM invitation_sessions isess
        JOIN patient_invitations pi ON pi.id = isess.invitation_id
        JOIN physicians p ON p.id = pi.physician_id

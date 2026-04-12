@@ -30,6 +30,7 @@ export async function GET(request: Request) {
       formSummary: invitation.formSummary || null,
       patientBackground: invitation.patientBackground || null,
       interviewGuidance: invitation.interviewGuidance || null,
+      requestPhqGad: invitation.requestPhqGad ?? false,
       usedAt: invitation.usedAt || null,
     });
     logRequestMeta("/api/invitations/context", requestId, status, Date.now() - started);

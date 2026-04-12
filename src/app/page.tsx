@@ -1,6 +1,7 @@
 "use client";
 
-import type { HistoryResponse, PatientUploads } from "@/lib/history-schema";
+import type { HistoryResponse, PatientUploads, PhqGadResults } from "@/lib/history-schema";
+import PhqGadForm from "@/components/PhqGadForm";
 import type {
   InterviewMessage,
   InterviewProgress,
@@ -537,6 +538,9 @@ export default function Home() {
   const [pendingHistoryResult, setPendingHistoryResult] = useState<HistoryResponse | null>(null);
   const [awaitingFinalComments, setAwaitingFinalComments] = useState(false);
   const [finalCommentsChoice, setFinalCommentsChoice] = useState<"yes" | "no" | null>(null);
+  const [requestPhqGad, setRequestPhqGad] = useState(false);
+  const [awaitingPhqGad, setAwaitingPhqGad] = useState(false);
+  const [phqGadPendingHistory, setPhqGadPendingHistory] = useState<HistoryResponse | null>(null);
   const [hasConsented, setHasConsented] = useState(false);
   const [isInvitedFlow, setIsInvitedFlow] = useState(false);
   const [clinicName, setClinicName] = useState<string>("");
@@ -1266,6 +1270,9 @@ export default function Home() {
             if (data.patientBackground) {
               setInvitePatientBackground(data.patientBackground);
               console.log("[page.tsx] Loaded patient background");
+            }
+            if (data.requestPhqGad) {
+              setRequestPhqGad(true);
             }
           })
           .catch((err) => {
@@ -2702,6 +2709,18 @@ export default function Home() {
       setAwaitingFinalComments(false);
       setFinalCommentsChoice(null);
 
+      // If PHQ/GAD screening was requested, park the history and show the form instead of saving.
+      if (requestPhqGad) {
+        setPhqGadPendingHistory(historyWithFinal);
+        setAwaitingPhqGad(true);
+        setSavingSession(false);
+        setIsSubmittingResponse(false);
+        setShowSubmitToast(false);
+        setStatus("awaitingPatient");
+        statusRef.current = "awaitingPatient";
+        return;
+      }
+
       setSessionSavePendingHistory(historyWithFinal);
       setSessionSaveError(null);
       setSavingSession(true);
@@ -3061,6 +3080,30 @@ export default function Home() {
     }
   }
 
+  async function handlePhqGadSubmit(results: PhqGadResults) {
+    if (!phqGadPendingHistory) return;
+    const historyWithPhqGad: HistoryResponse = { ...phqGadPendingHistory, phqGadResults: results };
+    setAwaitingPhqGad(false);
+    setPhqGadPendingHistory(null);
+    setSessionSavePendingHistory(historyWithPhqGad);
+    setSessionSaveError(null);
+    setSavingSession(true);
+    setStatus("saving");
+    statusRef.current = "saving";
+    try {
+      await saveSession(historyWithPhqGad);
+      setSessionSavePendingHistory(null);
+      await finalizePrivacyAndExit();
+    } catch (err) {
+      console.error("Failed to save session after PHQ/GAD:", err);
+      setSessionSaveError(
+        err instanceof Error ? err.message : "Failed to save your interview. Please retry.",
+      );
+    } finally {
+      setSavingSession(false);
+    }
+  }
+
   async function finalizePrivacyAndExit() {
     const configuredRedirect =
       typeof window !== "undefined"
@@ -3095,6 +3138,9 @@ export default function Home() {
     pendingHistoryResultRef.current = null;
     setAwaitingFinalComments(false);
     setFinalCommentsChoice(null);
+    setAwaitingPhqGad(false);
+    setPhqGadPendingHistory(null);
+    setRequestPhqGad(false);
     setPatientResponse("");
     patientResponseRef.current = "";
     setDetectedComplaints([]);
@@ -4648,6 +4694,7 @@ export default function Home() {
                         </button>
                         {(status === "awaitingPatient" || status === "awaitingAi" || status === "paused") &&
                           !awaitingFinalComments &&
+                          !awaitingPhqGad &&
                           !isEndingInterview && (
                           <button
                             type="button"
@@ -5037,6 +5084,9 @@ export default function Home() {
               >
                 {interviewMode === "conversation" ? (
                   <>
+                    {awaitingPhqGad && (
+                      <PhqGadForm language={language} onSubmit={(results) => void handlePhqGadSubmit(results)} />
+                    )}
                     {awaitingFinalComments && (
                       <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-3">
                         <p className="text-sm font-medium text-slate-800">
@@ -5123,7 +5173,7 @@ export default function Home() {
                         </div>
                       )}
                     </div>
-                    {showResponseBox && (
+                    {showResponseBox && !awaitingPhqGad && (
                       <div className="group flex flex-col items-center">
                         <div className="relative w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 transition">
                         <textarea
@@ -5316,6 +5366,7 @@ export default function Home() {
                         {/* End button — desktop only (mobile uses hamburger menu) */}
                         {(status === "awaitingPatient" || status === "awaitingAi" || status === "paused") &&
                           !awaitingFinalComments &&
+                          !awaitingPhqGad &&
                           !isEndingInterview && (
                           <button
                             type="button"

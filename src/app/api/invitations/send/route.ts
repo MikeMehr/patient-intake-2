@@ -103,6 +103,7 @@ export async function POST(request: NextRequest) {
       patientEmail,
       patientDob,
       patientBackground,
+      requestPhqGad,
       oscarDemographicNo,
       labReportFile,
       previousLabReportFile,
@@ -232,9 +233,10 @@ export async function POST(request: NextRequest) {
              summary_expires_at,
              summary_deleted_at,
              form_pdf_data,
-             form_pdf_filename
+             form_pdf_filename,
+             request_phq_gad
            )
-          VALUES ($1, $2, $3, $4::date, $5, $6, $7, $7, NOW(), $8, $9, $10, $11, $12, $13, NULL, $14, $15)
+          VALUES ($1, $2, $3, $4::date, $5, $6, $7, $7, NOW(), $8, $9, $10, $11, $12, $13, NULL, $14, $15, $16)
            RETURNING id`,
           [
             physicianId,
@@ -252,6 +254,7 @@ export async function POST(request: NextRequest) {
             summaryExpiresAt,
             formPdfBytes,
             formPdfFilename,
+            requestPhqGad,
           ],
         );
         const invitationId = invitationResult.rows[0]?.id || null;
@@ -400,6 +403,7 @@ async function parseRequestBody(request: NextRequest): Promise<{
   patientEmail: string;
   patientDob: string | null;
   patientBackground: string | null;
+  requestPhqGad: boolean;
   oscarDemographicNo: string | null;
   labReportFile: File | null;
   previousLabReportFile: File | null;
@@ -429,6 +433,7 @@ async function parseRequestBody(request: NextRequest): Promise<{
       patientEmail: (formData.get("patientEmail") as string | null) || "",
       patientDob: ((formData.get("patientDob") as string | null) || "").trim() || null,
       patientBackground: ((formData.get("patientBackground") as string | null) || "").trim() || null,
+      requestPhqGad: formData.get("requestPhqGad") === "true",
       oscarDemographicNo: ((formData.get("oscarDemographicNo") as string | null) || "").trim() || null,
       labReportFile: formData.get("labReport") instanceof File ? (formData.get("labReport") as File) : null,
       previousLabReportFile:
@@ -448,6 +453,7 @@ async function parseRequestBody(request: NextRequest): Promise<{
       patientEmail: (body?.patientEmail as string) || "",
       patientDob: (body?.patientDob as string)?.trim() || null,
       patientBackground: (body?.patientBackground as string)?.trim() || null,
+      requestPhqGad: Boolean(body?.requestPhqGad),
       oscarDemographicNo: (body?.oscarDemographicNo as string)?.trim() || null,
       labReportFile: null,
       previousLabReportFile: null,
@@ -464,6 +470,7 @@ async function parseRequestBody(request: NextRequest): Promise<{
       patientEmail: "",
       patientDob: null,
       patientBackground: null,
+      requestPhqGad: false,
       oscarDemographicNo: null,
       labReportFile: null,
       previousLabReportFile: null,

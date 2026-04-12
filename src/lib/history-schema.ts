@@ -56,6 +56,28 @@ export const historyRequestSchema = z.object({
 
 export type HistoryRequest = z.infer<typeof historyRequestSchema>;
 
+// PHQ-9 / GAD-7 screening result schemas
+export const phqGadItemSchema = z.object({
+  question: z.string().min(1).max(500),
+  score: z.number().int().min(0).max(3),
+});
+
+export const phqGadResultsSchema = z.object({
+  phq9: z.object({
+    items: z.array(phqGadItemSchema).length(9),
+    total: z.number().int().min(0).max(27),
+    severity: z.enum(["minimal", "mild", "moderate", "moderately_severe", "severe"]),
+  }),
+  gad7: z.object({
+    items: z.array(phqGadItemSchema).length(7),
+    total: z.number().int().min(0).max(21),
+    severity: z.enum(["minimal", "mild", "moderate", "severe"]),
+  }),
+  completedAt: z.string().datetime().optional(),
+});
+
+export type PhqGadResults = z.infer<typeof phqGadResultsSchema>;
+
 export const historyResponseSchema = z.object({
   positives: z.array(z.string()).min(1).max(6),
   negatives: z.array(z.string()).min(1).max(6),
@@ -75,6 +97,8 @@ export const historyResponseSchema = z.object({
   interviewEndedEarly: z.boolean().optional(),
   // Optional patient-uploaded clinical context persisted with history.
   patientUploads: patientUploadsSchema.optional(),
+  // PHQ-9 and GAD-7 screening results (present when physician requested screening).
+  phqGadResults: phqGadResultsSchema.optional(),
 });
 
 export type HistoryResponse = z.infer<typeof historyResponseSchema>;

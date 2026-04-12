@@ -153,6 +153,7 @@ export default function PhysicianDashboard() {
   const [invitePatientDob, setInvitePatientDob] = useState("");
   const [invitePatientEmail, setInvitePatientEmail] = useState("");
   const [invitePatientBackground, setInvitePatientBackground] = useState("");
+  const [inviteRequestPhqGad, setInviteRequestPhqGad] = useState(false);
   const [invitePrimaryPhone, setInvitePrimaryPhone] = useState("");
   const [inviteSecondaryPhone, setInviteSecondaryPhone] = useState("");
   const [inviteInsuranceNumber, setInviteInsuranceNumber] = useState("");
@@ -483,6 +484,7 @@ export default function PhysicianDashboard() {
       if (invitePatientBackground.trim()) {
         formData.append("patientBackground", invitePatientBackground.trim());
       }
+      formData.append("requestPhqGad", inviteRequestPhqGad ? "true" : "false");
       if (invitePatientDob.trim()) {
         formData.append("patientDob", invitePatientDob.trim());
       }
@@ -537,6 +539,7 @@ export default function PhysicianDashboard() {
       setInvitePatientDob("");
       setInvitePatientEmail("");
       setInvitePatientBackground("");
+      setInviteRequestPhqGad(false);
       setInvitePrimaryPhone("");
       setInviteSecondaryPhone("");
       setInviteInsuranceNumber("");
@@ -1211,10 +1214,27 @@ export default function PhysicianDashboard() {
                     disabled={inviteLoading}
                     rows={3}
                     className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200 disabled:cursor-not-allowed disabled:opacity-70"
-                    placeholder="E.g., follow-up for hypertension; last visit 3 months ago; discuss med adherence and side effects."
+                    placeholder="E.g., ask PHQ-9/GAD-7, follow-up for hypertension; last visit 3 months ago; discuss med adherence and side effects."
                   />
                   <p className="text-xs text-slate-500 mt-1">
                     Optional context to help the AI focus (e.g., prior visit summary, pertinent history).
+                  </p>
+                </div>
+                <div>
+                  <label className="flex items-center gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={inviteRequestPhqGad}
+                      onChange={(e) => setInviteRequestPhqGad(e.target.checked)}
+                      disabled={inviteLoading}
+                      className="accent-blue-600 w-4 h-4"
+                    />
+                    <span className="text-sm font-medium text-slate-700">
+                      Request PHQ-9 / GAD-7 Screening
+                    </span>
+                  </label>
+                  <p className="text-xs text-slate-500 mt-1 ml-7">
+                    Patient will complete depression and anxiety screening questionnaires at the end of the interview.
                   </p>
                 </div>
                 <div>
