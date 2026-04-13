@@ -125,6 +125,7 @@ function mapInvitationFromApi(inv: any): Invitation {
 export default function PhysicianDashboard() {
   const router = useRouter();
   const patientLookupSectionRef = useRef<HTMLDivElement | null>(null);
+  const inviteSectionRef = useRef<HTMLDivElement | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [sessions, setSessions] = useState<PatientSessionWithChartLink[]>([]);
   const [invitations, setInvitations] = useState<Invitation[]>([]);
@@ -407,6 +408,34 @@ export default function PhysicianDashboard() {
       return;
     }
     router.push(`/physician/patients/${encodeURIComponent(normalized)}`);
+  };
+
+  const handleInviteFromLookup = (p: PatientSearchResult) => {
+    setInvitePatientName("");
+    setInvitePatientDob("");
+    setInvitePatientEmail("");
+    setInvitePatientBackground("");
+    setInviteRequestPhqGad(false);
+    setInvitePrimaryPhone("");
+    setInviteSecondaryPhone("");
+    setInviteInsuranceNumber("");
+    setInvitePatientAddress("");
+    setInviteOscarDemographicNo("");
+    setEmrMatches([]);
+    setLabReportFile(null);
+    setPreviousLabReportFile(null);
+    setFormFile(null);
+    setFormQuestions([]);
+    setFormQuestionsError(null);
+
+    setInvitePatientName(p.fullName);
+    if (p.email) setInvitePatientEmail(p.email);
+    if (p.dateOfBirth) setInvitePatientDob(p.dateOfBirth.split("T")[0]);
+    if (p.primaryPhone) setInvitePrimaryPhone(p.primaryPhone);
+    if (p.secondaryPhone) setInviteSecondaryPhone(p.secondaryPhone);
+    if (p.oscarDemographicNo) setInviteOscarDemographicNo(p.oscarDemographicNo);
+
+    inviteSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
   const handleOpenTranscription = () => {
@@ -1004,7 +1033,7 @@ export default function PhysicianDashboard() {
         )}
 
         {/* Invite Patient Form */}
-        <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6 mb-6">
+        <div ref={inviteSectionRef} className="bg-white rounded-lg shadow-sm border border-slate-200 p-6 mb-6">
           <h2 className="text-[0.9rem] sm:text-lg font-semibold text-slate-900 mb-4">
             Invite Patient for AI guided interview
           </h2>
@@ -1765,6 +1794,14 @@ export default function PhysicianDashboard() {
                               className="text-blue-600 hover:text-blue-900 font-medium"
                             >
                               Open chart
+                            </button>
+                            <span className="mx-1 text-slate-400">/</span>
+                            <button
+                              type="button"
+                              onClick={() => handleInviteFromLookup(p)}
+                              className="text-blue-600 hover:text-blue-900 font-medium"
+                            >
+                              Invite
                             </button>
                           </td>
                         </tr>
