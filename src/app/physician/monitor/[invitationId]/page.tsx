@@ -54,11 +54,9 @@ export default function MonitorPage() {
   const lastTurnIndexRef = useRef(-1);
   const transcriptEndRef = useRef<HTMLDivElement>(null);
 
-  // Latest assistant turn snapshot for the status panel
   const latestSnapshot: StateSnapshot | null =
     [...turns].reverse().find((t) => t.role === "assistant" && t.state_snapshot)?.state_snapshot ?? null;
 
-  // Patient header info from first snapshot
   const firstSnapshot: StateSnapshot | null =
     turns.find((t) => t.role === "assistant" && t.state_snapshot)?.state_snapshot ?? null;
 
@@ -94,7 +92,6 @@ export default function MonitorPage() {
     return () => clearInterval(id);
   }, [doFetch]);
 
-  // Auto-scroll transcript to bottom when new turns arrive
   useEffect(() => {
     transcriptEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [turns]);
@@ -141,7 +138,7 @@ export default function MonitorPage() {
   if (error) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50">
-        <p className="text-red-600 text-sm">{error}</p>
+        <p className="text-red-600 text-base">{error}</p>
       </div>
     );
   }
@@ -155,33 +152,33 @@ export default function MonitorPage() {
       {/* Header */}
       <header className="bg-white border-b border-slate-200 px-6 py-3 flex items-center gap-6 flex-shrink-0">
         <div className="flex items-center gap-2">
-          <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">Live Monitor</span>
+          <span className="text-sm font-semibold uppercase tracking-wide text-slate-400">Live Monitor</span>
           <span className="text-slate-300">|</span>
-          <span className="font-semibold text-slate-800">{patientName || "Loading…"}</span>
+          <span className="text-base font-semibold text-slate-800">{patientName || "Loading…"}</span>
         </div>
         {chiefComplaint && (
-          <span className="text-sm text-slate-600">
+          <span className="text-base text-slate-600">
             <span className="font-medium text-slate-500">CC:</span> {chiefComplaint}
           </span>
         )}
         {(patientSex || patientAge) && (
-          <span className="text-sm text-slate-500">
+          <span className="text-base text-slate-500">
             {[patientAge ? `${patientAge} y/o` : null, patientSex].filter(Boolean).join(" · ")}
           </span>
         )}
         <div className="ml-auto flex items-center gap-2">
           {isCompleted ? (
-            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700">
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-700">
               <span className="w-2 h-2 rounded-full bg-green-500 inline-block" />
               Interview Complete
             </span>
           ) : turns.length === 0 ? (
-            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-700">
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-medium bg-amber-100 text-amber-700">
               <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse inline-block" />
               Waiting for patient…
             </span>
           ) : (
-            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-700">
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-700">
               <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse inline-block" />
               Live
             </span>
@@ -191,10 +188,10 @@ export default function MonitorPage() {
 
       {/* Body */}
       <div className="flex flex-1 overflow-hidden">
-        {/* Left: Transcript */}
-        <div className="flex-1 overflow-y-auto px-6 py-4 space-y-3">
+        {/* Left: Transcript — bubbles grow with window width */}
+        <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
           {turns.length === 0 && (
-            <p className="text-slate-400 text-sm text-center mt-16">
+            <p className="text-slate-400 text-base text-center mt-16">
               No interview activity yet. The transcript will appear here in real time.
             </p>
           )}
@@ -202,9 +199,9 @@ export default function MonitorPage() {
             if (turn.role === "patient") {
               return (
                 <div key={turn.id} className="flex justify-end">
-                  <div className="max-w-xl bg-white border border-slate-200 rounded-xl px-4 py-3 shadow-sm">
-                    <p className="text-xs font-semibold text-slate-400 mb-1">Patient</p>
-                    <p className="text-sm text-slate-700">{turn.content}</p>
+                  <div className="w-[85%] bg-white border border-slate-200 rounded-xl px-5 py-4 shadow-sm">
+                    <p className="text-sm font-semibold text-slate-400 mb-1">Patient</p>
+                    <p className="text-base text-slate-700">{turn.content}</p>
                   </div>
                 </div>
               );
@@ -213,8 +210,8 @@ export default function MonitorPage() {
             if (turn.is_summary) {
               return (
                 <div key={turn.id} className="flex justify-center">
-                  <div className="max-w-xl w-full bg-green-50 border border-green-200 rounded-xl px-4 py-3 text-center">
-                    <span className="text-sm font-semibold text-green-700">Interview concluded — summary generated</span>
+                  <div className="w-[85%] bg-green-50 border border-green-200 rounded-xl px-5 py-4 text-center">
+                    <span className="text-base font-semibold text-green-700">Interview concluded — summary generated</span>
                   </div>
                 </div>
               );
@@ -224,27 +221,27 @@ export default function MonitorPage() {
             const urgency = snap?.urgency ?? "routine";
             return (
               <div key={turn.id} className="flex justify-start">
-                <div className="max-w-xl w-full bg-indigo-50 border border-indigo-200 rounded-xl px-4 py-3 shadow-sm">
+                <div className="w-[85%] bg-indigo-50 border border-indigo-200 rounded-xl px-5 py-4 shadow-sm">
                   <div className="flex items-center gap-2 mb-1">
-                    <p className="text-xs font-semibold text-indigo-500">AI</p>
+                    <p className="text-sm font-semibold text-indigo-500">AI</p>
                     {urgency === "elevated" && (
-                      <span className="px-1.5 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-700">
+                      <span className="px-2 py-0.5 rounded text-sm font-medium bg-amber-100 text-amber-700">
                         Elevated urgency
                       </span>
                     )}
                   </div>
-                  <p className="text-sm text-slate-800">{turn.content}</p>
+                  <p className="text-base text-slate-800">{turn.content}</p>
                   {turn.rationale && (
                     <div className="mt-2">
                       <button
                         onClick={() => toggleRationale(turn.id)}
-                        className="text-xs text-indigo-400 hover:text-indigo-600 flex items-center gap-1"
+                        className="text-sm text-indigo-400 hover:text-indigo-600 flex items-center gap-1"
                       >
                         <span>{expandedRationales.has(turn.id) ? "▲" : "▼"}</span>
                         Rationale
                       </button>
                       {expandedRationales.has(turn.id) && (
-                        <p className="mt-1 text-xs text-slate-500 italic border-l-2 border-indigo-200 pl-2">
+                        <p className="mt-1 text-sm text-slate-500 italic border-l-2 border-indigo-200 pl-3">
                           {turn.rationale}
                         </p>
                       )}
@@ -258,52 +255,52 @@ export default function MonitorPage() {
         </div>
 
         {/* Right: Controls */}
-        <aside className="w-80 flex-shrink-0 border-l border-slate-200 bg-white overflow-y-auto flex flex-col">
+        <aside className="w-88 flex-shrink-0 border-l border-slate-200 bg-white overflow-y-auto flex flex-col" style={{ width: "22rem" }}>
           {/* LLM Decision-Making Panel */}
-          <div className="px-4 py-4 border-b border-slate-100">
-            <h2 className="text-xs font-bold uppercase tracking-wide text-slate-500 mb-3">AI Status</h2>
+          <div className="px-5 py-4 border-b border-slate-100">
+            <h2 className="text-sm font-bold uppercase tracking-wide text-slate-500 mb-3">AI Status</h2>
 
             {!latestSnapshot ? (
-              <p className="text-xs text-slate-400">Awaiting first interview turn…</p>
+              <p className="text-sm text-slate-400">Awaiting first interview turn…</p>
             ) : (
               <div className="space-y-3">
                 {/* Last rationale */}
                 {(() => {
                   const lastRationale = [...turns].reverse().find((t) => t.role === "assistant" && t.rationale)?.rationale;
                   return lastRationale ? (
-                    <div className="bg-slate-50 border border-slate-200 rounded-lg p-2">
-                      <p className="text-xs font-semibold text-slate-400 mb-1">Last Reasoning</p>
-                      <p className="text-xs text-slate-600 italic">{lastRationale}</p>
+                    <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">
+                      <p className="text-sm font-semibold text-slate-400 mb-1">Last Reasoning</p>
+                      <p className="text-sm text-slate-600 italic">{lastRationale}</p>
                     </div>
                   ) : null;
                 })()}
 
                 {/* Currently investigating */}
                 <div>
-                  <p className="text-xs font-semibold text-slate-400 mb-1">Currently Investigating</p>
-                  <p className="text-sm font-medium text-slate-700">{latestSnapshot.activeComplaint || "—"}</p>
+                  <p className="text-sm font-semibold text-slate-400 mb-1">Currently Investigating</p>
+                  <p className="text-base font-medium text-slate-700">{latestSnapshot.activeComplaint || "—"}</p>
                   {latestSnapshot.complaintClass && (
-                    <p className="text-xs text-slate-400">{latestSnapshot.complaintClass}{latestSnapshot.protocolId ? ` · ${latestSnapshot.protocolId}` : ""}</p>
+                    <p className="text-sm text-slate-400">{latestSnapshot.complaintClass}{latestSnapshot.protocolId ? ` · ${latestSnapshot.protocolId}` : ""}</p>
                   )}
                 </div>
 
                 {/* Complaint roadmap */}
                 {(latestSnapshot.completedComplaints?.length > 0 || latestSnapshot.pendingComplaints?.length > 0) && (
                   <div>
-                    <p className="text-xs font-semibold text-slate-400 mb-1">Complaint Roadmap</p>
+                    <p className="text-sm font-semibold text-slate-400 mb-1">Complaint Roadmap</p>
                     <ul className="space-y-0.5">
                       {latestSnapshot.completedComplaints?.map((c) => (
-                        <li key={c} className="text-xs text-slate-400 flex gap-1">
+                        <li key={c} className="text-sm text-slate-400 flex gap-1">
                           <span className="text-green-500">✓</span> {c}
                         </li>
                       ))}
                       {latestSnapshot.activeComplaint && (
-                        <li className="text-xs text-indigo-600 font-medium flex gap-1">
+                        <li className="text-sm text-indigo-600 font-medium flex gap-1">
                           <span>→</span> {latestSnapshot.activeComplaint}
                         </li>
                       )}
                       {latestSnapshot.pendingComplaints?.map((c) => (
-                        <li key={c} className="text-xs text-slate-400 flex gap-1">
+                        <li key={c} className="text-sm text-slate-400 flex gap-1">
                           <span className="text-slate-300">○</span> {c}
                         </li>
                       ))}
@@ -314,10 +311,10 @@ export default function MonitorPage() {
                 {/* Clinical checklist */}
                 {latestSnapshot.missingRequiredFields?.length > 0 && (
                   <div>
-                    <p className="text-xs font-semibold text-slate-400 mb-1">Still Needs</p>
+                    <p className="text-sm font-semibold text-slate-400 mb-1">Still Needs</p>
                     <ul className="space-y-0.5">
                       {latestSnapshot.missingRequiredFields.map((f) => (
-                        <li key={f} className="text-xs text-slate-500 flex gap-1">
+                        <li key={f} className="text-sm text-slate-500 flex gap-1">
                           <span className="text-amber-400">·</span> {f}
                         </li>
                       ))}
@@ -328,10 +325,10 @@ export default function MonitorPage() {
                 {/* Red flag monitoring */}
                 {latestSnapshot.missingRedFlags?.length > 0 && (
                   <div>
-                    <p className="text-xs font-semibold text-slate-400 mb-1">Monitoring Red Flags</p>
+                    <p className="text-sm font-semibold text-slate-400 mb-1">Monitoring Red Flags</p>
                     <ul className="space-y-0.5">
                       {latestSnapshot.missingRedFlags.map((f) => (
-                        <li key={f} className="text-xs text-red-500 flex gap-1">
+                        <li key={f} className="text-sm text-red-500 flex gap-1">
                           <span>⚑</span> {f}
                         </li>
                       ))}
@@ -341,9 +338,9 @@ export default function MonitorPage() {
 
                 {/* Urgency */}
                 <div className="flex items-center gap-2">
-                  <p className="text-xs font-semibold text-slate-400">Urgency:</p>
+                  <p className="text-sm font-semibold text-slate-400">Urgency:</p>
                   <span
-                    className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                    className={`px-2 py-0.5 rounded-full text-sm font-medium ${
                       latestSnapshot.urgency === "elevated"
                         ? "bg-amber-100 text-amber-700"
                         : "bg-slate-100 text-slate-500"
@@ -355,7 +352,7 @@ export default function MonitorPage() {
                 {latestSnapshot.escalationReasons?.length > 0 && (
                   <ul className="space-y-0.5">
                     {latestSnapshot.escalationReasons.map((r) => (
-                      <li key={r} className="text-xs text-amber-600 flex gap-1">
+                      <li key={r} className="text-sm text-amber-600 flex gap-1">
                         <span>↑</span> {r}
                       </li>
                     ))}
@@ -365,9 +362,9 @@ export default function MonitorPage() {
                 {/* History confidence */}
                 {latestSnapshot.historyConfidence !== "clear" && (
                   <div className="flex items-center gap-2">
-                    <p className="text-xs font-semibold text-slate-400">History:</p>
+                    <p className="text-sm font-semibold text-slate-400">History:</p>
                     <span
-                      className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                      className={`px-2 py-0.5 rounded-full text-sm font-medium ${
                         latestSnapshot.historyConfidence === "unsafe_to_continue"
                           ? "bg-red-100 text-red-700"
                           : "bg-yellow-100 text-yellow-700"
@@ -383,16 +380,16 @@ export default function MonitorPage() {
                 {/* Progress */}
                 <div>
                   <div className="flex items-center justify-between mb-1">
-                    <p className="text-xs font-semibold text-slate-400">Progress</p>
-                    <p className="text-xs text-slate-500">
+                    <p className="text-sm font-semibold text-slate-400">Progress</p>
+                    <p className="text-sm text-slate-500">
                       {latestSnapshot.questionsAsked}
                       {latestSnapshot.totalQuestionCount ? ` / ~${latestSnapshot.totalQuestionCount}` : ""} questions
                     </p>
                   </div>
                   {latestSnapshot.totalQuestionCount ? (
-                    <div className="w-full bg-slate-100 rounded-full h-1.5">
+                    <div className="w-full bg-slate-100 rounded-full h-2">
                       <div
-                        className="bg-indigo-400 h-1.5 rounded-full transition-all"
+                        className="bg-indigo-400 h-2 rounded-full transition-all"
                         style={{
                           width: `${Math.min(100, (latestSnapshot.questionsAsked / latestSnapshot.totalQuestionCount) * 100)}%`,
                         }}
@@ -404,23 +401,23 @@ export default function MonitorPage() {
                 {/* Summary ready */}
                 <div className="flex items-center gap-2">
                   <span
-                    className={`w-2 h-2 rounded-full flex-shrink-0 ${latestSnapshot.summaryReady ? "bg-green-500" : "bg-slate-300"}`}
+                    className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${latestSnapshot.summaryReady ? "bg-green-500" : "bg-slate-300"}`}
                   />
-                  <p className="text-xs text-slate-500">
+                  <p className="text-sm text-slate-500">
                     {latestSnapshot.summaryReady ? "Ready to summarize" : "Still gathering history"}
                   </p>
                 </div>
 
                 {/* Deferred hint */}
                 {latestSnapshot.deferredIntentHint && (
-                  <div className="text-xs text-slate-400">
+                  <div className="text-sm text-slate-400">
                     <span className="font-semibold">Deferred: </span>{latestSnapshot.deferredIntentHint}
                   </div>
                 )}
 
                 {/* Early stop */}
                 {latestSnapshot.earlyStopReason && (
-                  <div className="text-xs text-amber-600">
+                  <div className="text-sm text-amber-600">
                     <span className="font-semibold">Early stop: </span>{latestSnapshot.earlyStopReason}
                   </div>
                 )}
@@ -429,14 +426,14 @@ export default function MonitorPage() {
           </div>
 
           {/* Physician Guidance */}
-          <div className="px-4 py-4 border-b border-slate-100">
-            <h2 className="text-xs font-bold uppercase tracking-wide text-slate-500 mb-2">Guide the AI</h2>
-            <p className="text-xs text-slate-400 mb-2">
+          <div className="px-5 py-4 border-b border-slate-100">
+            <h2 className="text-sm font-bold uppercase tracking-wide text-slate-500 mb-2">Guide the AI</h2>
+            <p className="text-sm text-slate-400 mb-2">
               Type a note for the AI — it will be included on the patient&apos;s next interview turn.
             </p>
             {guidancePending && (
-              <div className="mb-2 flex items-center gap-1.5 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse flex-shrink-0" />
+              <div className="mb-2 flex items-center gap-1.5 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-1.5">
+                <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse flex-shrink-0" />
                 Queued — awaiting patient&apos;s next turn
               </div>
             )}
@@ -446,21 +443,21 @@ export default function MonitorPage() {
               disabled={isCompleted}
               placeholder='e.g. "Ask about family history of diabetes"'
               rows={3}
-              className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 resize-none focus:outline-none focus:ring-2 focus:ring-indigo-300 disabled:bg-slate-50 disabled:text-slate-400"
+              className="w-full text-base border border-slate-200 rounded-lg px-3 py-2 resize-none focus:outline-none focus:ring-2 focus:ring-indigo-300 disabled:bg-slate-50 disabled:text-slate-400"
             />
             <button
               onClick={handleGuidanceSubmit}
               disabled={submittingGuidance || !guidanceText.trim() || isCompleted}
-              className="mt-2 w-full py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="mt-2 w-full py-2 rounded-lg bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               {submittingGuidance ? "Sending…" : "Send to AI"}
             </button>
           </div>
 
           {/* Screening Forms */}
-          <div className="px-4 py-4">
-            <h2 className="text-xs font-bold uppercase tracking-wide text-slate-500 mb-2">Screening Forms</h2>
-            <p className="text-xs text-slate-400 mb-3">
+          <div className="px-5 py-4">
+            <h2 className="text-sm font-bold uppercase tracking-wide text-slate-500 mb-2">Screening Forms</h2>
+            <p className="text-sm text-slate-400 mb-3">
               Enable mid-interview if not requested at invite time.
             </p>
             <label className="flex items-center gap-3 cursor-pointer">
@@ -471,15 +468,15 @@ export default function MonitorPage() {
                 onChange={(e) => handleScreeningToggle(e.target.checked)}
                 className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer disabled:cursor-not-allowed"
               />
-              <span className="text-sm text-slate-700">PHQ-9 / GAD-7 Screening</span>
+              <span className="text-base text-slate-700">PHQ-9 / GAD-7 Screening</span>
               {requestPhqGad && (
-                <span className="ml-auto px-1.5 py-0.5 rounded text-xs bg-green-100 text-green-700 font-medium">
+                <span className="ml-auto px-2 py-0.5 rounded text-sm bg-green-100 text-green-700 font-medium">
                   Enabled
                 </span>
               )}
             </label>
             {requestPhqGad && (
-              <p className="mt-1 text-xs text-slate-400 pl-7">
+              <p className="mt-1 text-sm text-slate-400 pl-7">
                 Will appear for the patient on their next interview turn.
               </p>
             )}

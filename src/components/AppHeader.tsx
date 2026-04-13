@@ -25,6 +25,7 @@ export function AppHeader() {
     pathname === "/physician/transcription" ||
     pathname === "/physician/view" ||
     pathname.startsWith("/physician/patients/") ||
+    pathname.startsWith("/physician/monitor/") ||
     pathname.startsWith("/intake/invite/") ||
     pathname === "/intake/completed" ||
     pathname.startsWith("/booking");
