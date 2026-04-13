@@ -409,6 +409,9 @@ These fields are never shown to the patient.`;
     const textPayload = completion.choices?.[0]?.message?.content?.trim() || "";
 
     const parsedTurn = enforceAssistiveLanguageOnInterviewTurn(parseInterviewTurn(textPayload)) as InterviewResponse;
+    // Capture English translations before validateInterviewTurnFormat strips extra fields
+    const parsedQuestionEn = (parsedTurn as { question_en?: string }).question_en ?? null;
+    const parsedPatientMsgEn = (parsedTurn as { patient_message_en?: string }).patient_message_en ?? null;
     const validatedTurn = validateInterviewTurnFormat(parsedTurn);
     const finalTurn = applySensitivePhotoSuppressionToTurn(validatedTurn, sensitivePhotoContext);
     const turnWithProgress = attachProgressToTurn(finalTurn, interviewState.progress);
@@ -474,8 +477,9 @@ These fields are never shown to the patient.`;
           // Build state snapshot from interviewState (zero extra LLM cost)
           const isSum = turnWithProgress.type === "summary";
           const questionText = !isSum ? (turnWithProgress as { question?: string }).question ?? null : null;
-          const questionTextEn = !isSum ? (turnWithProgress as { question_en?: string }).question_en ?? null : null;
-          const patientMsgEn = !isSum ? ((turnWithProgress as { patient_message_en?: string }).patient_message_en ?? null) : null;
+          // Use pre-captured values since validateInterviewTurnFormat strips question_en/patient_message_en
+          const questionTextEn = !isSum ? parsedQuestionEn : null;
+          const patientMsgEn = !isSum ? parsedPatientMsgEn : null;
           const rationaleText = !isSum ? (turnWithProgress as { rationale?: string }).rationale ?? null : null;
 
           // Insert patient's last message if present
@@ -490,16 +494,37 @@ These fields are never shown to the patient.`;
             );
             idx += 1;
           }
+          // For non-English interviews, state-builder topic matching is English-only so
+          // activeComplaintIndex may not advance even when the AI has moved on. Use the
+          // English translation of the current question to detect complaint transitions.
+          const snapshotActiveComplaint = (() => {
+            const baseComplaint = interviewState.activeComplaint ?? null;
+            if (!questionTextEn) return baseComplaint;
+            const pending = interviewState.pendingComplaints ?? [];
+            const lowerQ = questionTextEn.toLowerCase();
+            const match = pending.find((c) => lowerQ.includes(c.toLowerCase()));
+            return match ?? baseComplaint;
+          })();
+
+          // When activeComplaint is overridden to a pending complaint, update roadmap lists
+          const overrodeComplaint = snapshotActiveComplaint !== (interviewState.activeComplaint ?? null);
+          const snapshotPendingComplaints = overrodeComplaint
+            ? (interviewState.pendingComplaints ?? []).filter((c) => c !== snapshotActiveComplaint)
+            : (interviewState.pendingComplaints ?? []);
+          const snapshotCompletedComplaints = overrodeComplaint
+            ? [...(interviewState.completedComplaints ?? []), interviewState.activeComplaint].filter(Boolean) as string[]
+            : (interviewState.completedComplaints ?? []);
+
           const stateSnap = {
             patientSex: patientProfile.sex ?? null,
             patientAge: patientProfile.age ?? null,
             chiefComplaint: interviewState.chiefComplaint ?? chiefComplaint ?? null,
-            activeComplaint: interviewState.activeComplaint ?? null,
+            activeComplaint: snapshotActiveComplaint,
             complaintClass: interviewState.complaintClass ?? null,
             protocolId: (interviewState.protocol as { id?: string })?.id ?? null,
             complaints: interviewState.complaints ?? [],
-            pendingComplaints: interviewState.pendingComplaints ?? [],
-            completedComplaints: interviewState.completedComplaints ?? [],
+            pendingComplaints: snapshotPendingComplaints,
+            completedComplaints: snapshotCompletedComplaints,
             missingRequiredFields: (interviewState.missingRequiredFields ?? []).map((f: { label?: string }) => f.label ?? String(f)),
             missingRedFlags: (interviewState.missingRedFlags ?? []).map((f: { label?: string }) => f.label ?? String(f)),
             activeCoveredTopics: interviewState.activeCoveredTopics ?? [],
