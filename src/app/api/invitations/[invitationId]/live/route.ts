@@ -22,7 +22,8 @@ async function translateToEnglish(text: string): Promise<string | null> {
       max_completion_tokens: 400,
     });
     return completion.choices?.[0]?.message?.content?.trim() || null;
-  } catch {
+  } catch (err) {
+    console.error("[live-monitor] translateToEnglish failed:", err instanceof Error ? err.message : String(err));
     return null;
   }
 }
