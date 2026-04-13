@@ -53,17 +53,21 @@ function getGad7Severity(total: number): PhqGadResults["gad7"]["severity"] {
   return "severe";
 }
 
-async function translateText(text: string, language: string): Promise<string> {
+async function translateBatch(texts: string[], language: string): Promise<string[]> {
   try {
-    const res = await fetch("/api/translate", {
+    const res = await fetch("/api/translate-batch", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text, language }),
+      body: JSON.stringify({ texts, language }),
     });
     const data = await res.json();
-    return (data as { translation?: string }).translation || text;
+    const translations = (data as { translations?: string[] }).translations;
+    if (Array.isArray(translations) && translations.length === texts.length) {
+      return translations;
+    }
+    return texts;
   } catch {
-    return text;
+    return texts;
   }
 }
 
@@ -97,7 +101,10 @@ export default function PhqGadForm({ language, onSubmit, highlightQ9Alert = fals
       VALIDATION_EN,
     ];
 
-    Promise.all(allStrings.map((s) => translateText(s, language)))
+    // Use a single batch call so all questions are translated together with
+    // full PHQ-9/GAD-7 clinical context, preventing content filters from
+    // blocking individual questions (e.g. PHQ-9 Q9) when seen in isolation.
+    translateBatch(allStrings, language)
       .then((results) => {
         let i = 0;
         setPreamble(results[i++]);
