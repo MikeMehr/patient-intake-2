@@ -367,7 +367,15 @@ export async function POST(request: Request) {
       invitationContext.labReportSummary,
       invitationContext.previousLabReportSummary,
       invitationContext.formSummary,
-      invitationContext.interviewGuidance,
+      (() => {
+        const parts = [
+          invitationContext.interviewGuidance,
+          invitationContext.monitorGuidance
+            ? `[PHYSICIAN MONITOR NOTE]: ${invitationContext.monitorGuidance}`
+            : null,
+        ].filter(Boolean);
+        return parts.length > 0 ? parts.join("\n") : null;
+      })(),
       typeof medPmhSummary === "string" && medPmhSummary.trim().length > 0
         ? medPmhSummary.trim()
         : null,
@@ -446,7 +454,82 @@ export async function POST(request: Request) {
       })();
     }
 
-    const res = NextResponse.json(turnWithProgress);
+    // Fire-and-forget: persist live turn data for physician monitor window (no extra LLM call)
+    if (invitationContext.invitationId) {
+      (async () => {
+        try {
+          const idxResult = await query<{ next_idx: number }>(
+            `SELECT COALESCE(MAX(turn_index), -1) + 1 AS next_idx
+             FROM interview_live_turns WHERE invitation_id = $1`,
+            [invitationContext.invitationId],
+          );
+          let idx = Number(idxResult.rows[0]?.next_idx ?? 0);
+
+          // Insert patient's last message if present
+          const lastMsg = transcript[transcript.length - 1];
+          if (lastMsg?.role === "patient") {
+            await query(
+              `INSERT INTO interview_live_turns (invitation_id, turn_index, role, content)
+               VALUES ($1, $2, 'patient', $3) ON CONFLICT DO NOTHING`,
+              [invitationContext.invitationId, idx, lastMsg.content],
+            );
+            idx += 1;
+          }
+
+          // Build state snapshot from interviewState (zero extra LLM cost)
+          const isSum = turnWithProgress.type === "summary";
+          const questionText = !isSum ? (turnWithProgress as { question?: string }).question ?? null : null;
+          const rationaleText = !isSum ? (turnWithProgress as { rationale?: string }).rationale ?? null : null;
+          const stateSnap = {
+            patientSex: patientProfile.sex ?? null,
+            patientAge: patientProfile.age ?? null,
+            chiefComplaint: interviewState.chiefComplaint ?? chiefComplaint ?? null,
+            activeComplaint: interviewState.activeComplaint ?? null,
+            complaintClass: interviewState.complaintClass ?? null,
+            protocolId: (interviewState.protocol as { id?: string })?.id ?? null,
+            complaints: interviewState.complaints ?? [],
+            pendingComplaints: interviewState.pendingComplaints ?? [],
+            completedComplaints: interviewState.completedComplaints ?? [],
+            missingRequiredFields: (interviewState.missingRequiredFields ?? []).map((f: { label?: string }) => f.label ?? String(f)),
+            missingRedFlags: (interviewState.missingRedFlags ?? []).map((f: { label?: string }) => f.label ?? String(f)),
+            activeCoveredTopics: interviewState.activeCoveredTopics ?? [],
+            urgency: interviewState.urgency ?? "routine",
+            escalationReasons: interviewState.escalationReasons ?? [],
+            historyConfidence: interviewState.historyConfidence ?? "clear",
+            summaryReady: interviewState.summaryReady ?? false,
+            earlyStopReason: interviewState.earlyStopReason ?? null,
+            deferredIntentHint: interviewState.deferredIntentHint ?? null,
+            questionsAsked: interviewState.questionCountSoFar ?? 0,
+            totalQuestionCount: interviewState.totalQuestionCount ?? null,
+          };
+
+          await query(
+            `INSERT INTO interview_live_turns
+               (invitation_id, turn_index, role, content, rationale, state_snapshot, is_summary)
+             VALUES ($1, $2, 'assistant', $3, $4, $5, $6) ON CONFLICT DO NOTHING`,
+            [invitationContext.invitationId, idx, questionText ?? "[summary]", rationaleText, JSON.stringify(stateSnap), isSum],
+          );
+        } catch {
+          // Silent — monitor data is best-effort, must not affect patient interview
+        }
+      })();
+    }
+
+    // Fire-and-forget: clear one-shot monitor guidance after it has been used
+    if (invitationContext.monitorGuidance && invitationContext.invitationId) {
+      (async () => {
+        try {
+          await query(
+            `UPDATE patient_invitations SET monitor_guidance = NULL WHERE id = $1`,
+            [invitationContext.invitationId],
+          );
+        } catch {
+          // Silent
+        }
+      })();
+    }
+
+    const res = NextResponse.json({ ...turnWithProgress, requestPhqGad: invitationContext.requestPhqGad ?? false });
     logRequestMeta("/api/interview", requestId, status, Date.now() - started);
     return res;
   } catch (error: unknown) {

@@ -1628,13 +1628,26 @@ export default function PhysicianDashboard() {
                             })()}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm">
-                            <button
-                              onClick={() => handleDeleteInvitation(invitation.id)}
-                              disabled={deletingInvitationId === invitation.id}
-                              className="text-red-600 hover:text-red-800 font-medium disabled:opacity-60 disabled:cursor-not-allowed"
-                            >
-                              {deletingInvitationId === invitation.id ? "Deleting..." : "Delete"}
-                            </button>
+                            <div className="flex items-center gap-3">
+                              {(invitation.activityStatus === "in_progress" ||
+                                invitation.activityStatus === "active_recently") && (
+                                <a
+                                  href={`/physician/monitor/${invitation.id}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-indigo-600 hover:text-indigo-800 font-medium"
+                                >
+                                  Watch Live
+                                </a>
+                              )}
+                              <button
+                                onClick={() => handleDeleteInvitation(invitation.id)}
+                                disabled={deletingInvitationId === invitation.id}
+                                className="text-red-600 hover:text-red-800 font-medium disabled:opacity-60 disabled:cursor-not-allowed"
+                              >
+                                {deletingInvitationId === invitation.id ? "Deleting..." : "Delete"}
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       ))}

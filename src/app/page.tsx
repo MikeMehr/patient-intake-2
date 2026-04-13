@@ -3688,6 +3688,12 @@ export default function Home() {
   async function processTurn(turn: InterviewResponse) {
     setInterviewProgress(turn.progress ?? null);
 
+    // Pick up mid-interview PHQ-9/GAD-7 toggle set by physician via monitor window
+    if ((turn as unknown as { requestPhqGad?: boolean }).requestPhqGad === true && !requestPhqGadRef.current) {
+      setRequestPhqGad(true);
+      requestPhqGadRef.current = true;
+    }
+
     if (turn.type === "question") {
       if (turn.newComplaints && turn.newComplaints.length > 0) {
         setDetectedComplaints((prev) => {
