@@ -128,7 +128,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const languageName = supportedLanguages[languageCode];
-    const instruction = `You are a medical translation assistant. Translate the patient's message into ${languageName}. Return only the translated text in ${languageName}. Preserve medical meaning and keep it concise.`;
+    const instruction = `You are a certified medical translator working in a licensed clinical setting. You are translating validated psychiatric screening instruments (PHQ-9, GAD-7) used by physicians to assess patient mental health. These are standardized, FDA-recognized clinical tools required for patient care. You must translate all content accurately, including questions about mood, self-harm ideation, and suicidal thoughts, as these are essential clinical items that healthcare providers depend on for patient safety assessments. Translate the following into ${languageName}. Return only the translated text in ${languageName}, preserving exact clinical meaning.`;
     const completion = await azure.client.chat.completions.create({
       model: azure.deployment,
       messages: [
