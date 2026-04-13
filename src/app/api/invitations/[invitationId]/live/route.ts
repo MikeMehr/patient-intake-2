@@ -30,12 +30,15 @@ export async function GET(req: NextRequest, context: { params: Promise<Params> }
       patient_name: string;
       request_phq_gad: boolean;
       monitor_guidance: string | null;
-      completed_at: string | null;
+      session_saved: boolean;
       revoked_at: string | null;
     }>(
       `SELECT pi.patient_name, pi.request_phq_gad, pi.monitor_guidance,
-              (SELECT completed_at FROM patient_sessions ps WHERE ps.physician_id = pi.physician_id AND ps.patient_email = pi.patient_email ORDER BY ps.completed_at DESC LIMIT 1) AS completed_at,
-              pi.revoked_at
+              pi.revoked_at,
+              EXISTS(
+                SELECT 1 FROM invitation_audit_log ial
+                WHERE ial.invitation_id = pi.id AND ial.event_type = 'session_saved'
+              ) AS session_saved
        FROM patient_invitations pi
        WHERE pi.id = $1 AND pi.physician_id = $2
        LIMIT 1`,
@@ -71,7 +74,7 @@ export async function GET(req: NextRequest, context: { params: Promise<Params> }
       patientName: inv.patient_name,
       requestPhqGad: Boolean(inv.request_phq_gad),
       guidancePending: Boolean(inv.monitor_guidance),
-      isCompleted: Boolean(inv.completed_at || inv.revoked_at),
+      isCompleted: Boolean(inv.session_saved || inv.revoked_at),
     });
   } catch (error) {
     console.error("[invitations/live] GET error", error);
