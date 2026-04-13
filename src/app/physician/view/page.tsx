@@ -2945,7 +2945,7 @@ function PhysicianViewContent() {
                           {message.role === "assistant" ? "Assistant" : "Patient"}
                         </p>
                         <p className="text-base text-slate-900 whitespace-pre-wrap">
-                          {message.content}
+                          {(message as { content: string; content_en?: string }).content_en ?? message.content}
                         </p>
                       </div>
                     ))}

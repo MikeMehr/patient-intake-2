@@ -31,6 +31,7 @@ type LiveTurn = {
   turn_index: number;
   role: "assistant" | "patient";
   content: string;
+  content_en: string | null;
   rationale: string | null;
   state_snapshot: StateSnapshot | null;
   is_summary: boolean;
@@ -197,11 +198,15 @@ export default function MonitorPage() {
           )}
           {turns.map((turn) => {
             if (turn.role === "patient") {
+              const displayContent = turn.content_en ?? turn.content;
+              const isTranslated = turn.content_en && turn.content_en !== turn.content;
               return (
                 <div key={turn.id} className="flex justify-end">
                   <div className="w-[85%] bg-white border border-slate-200 rounded-xl px-5 py-4 shadow-sm">
-                    <p className="text-sm font-semibold text-slate-400 mb-1">Patient</p>
-                    <p className="text-base text-slate-700">{turn.content}</p>
+                    <p className="text-sm font-semibold text-slate-400 mb-1">
+                      Patient{isTranslated && <span className="ml-1 font-normal text-slate-300">(translated)</span>}
+                    </p>
+                    <p className="text-base text-slate-700">{displayContent}</p>
                   </div>
                 </div>
               );
@@ -230,7 +235,7 @@ export default function MonitorPage() {
                       </span>
                     )}
                   </div>
-                  <p className="text-base text-slate-800">{turn.content}</p>
+                  <p className="text-base text-slate-800">{turn.content_en ?? turn.content}</p>
                   {turn.rationale && (
                     <div className="mt-2">
                       <button

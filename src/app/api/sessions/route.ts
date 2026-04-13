@@ -32,6 +32,7 @@ import {
   loadSessionPatientId,
 } from "@/lib/session-access";
 import { startSessionRetentionCleanup } from "@/lib/session-retention-cleanup";
+import { query } from "@/lib/db";
 
 async function translatePatientTextToEnglish(text: string): Promise<string> {
   const trimmed = text.trim();
@@ -311,7 +312,7 @@ export async function POST(request: Request) {
     // Ensure transcript is an array if provided
     // Validate transcript structure if it exists
     let transcriptToStore: import("@/lib/interview-schema").InterviewMessage[] | undefined = undefined;
-    
+
     if (transcript) {
       if (Array.isArray(transcript) && transcript.length > 0) {
         // Validate each message has required fields
@@ -321,6 +322,49 @@ export async function POST(request: Request) {
         if (invalidMessages.length === 0) {
           transcriptToStore = transcript;
         }
+      }
+    }
+
+    // Enrich transcript with English translations already stored in interview_live_turns.
+    // This reuses translations generated at interview time — no extra LLM calls needed.
+    if (transcriptToStore && transcriptToStore.length > 0 && invitation.invitationId) {
+      try {
+        const turnsResult = await query<{
+          role: string;
+          content: string;
+          rationale: string | null;
+          state_snapshot: Record<string, unknown> | null;
+        }>(
+          `SELECT role, content, rationale, state_snapshot
+           FROM interview_live_turns
+           WHERE invitation_id = $1
+           ORDER BY turn_index ASC`,
+          [invitation.invitationId],
+        );
+
+        // Build ordered lists of English translations per role
+        const assistantEnMap: Map<string, string> = new Map();
+        const patientEnMap: Map<string, string> = new Map();
+        for (const row of turnsResult.rows) {
+          if (row.role === "assistant" && row.state_snapshot) {
+            const snap = row.state_snapshot as Record<string, unknown>;
+            const contentEn = typeof snap.contentEn === "string" ? snap.contentEn : null;
+            if (contentEn) assistantEnMap.set(row.content, contentEn);
+          } else if (row.role === "patient" && row.rationale) {
+            patientEnMap.set(row.content, row.rationale);
+          }
+        }
+
+        transcriptToStore = transcriptToStore.map((msg) => {
+          const contentEn =
+            msg.role === "assistant"
+              ? (assistantEnMap.get(msg.content) ?? null)
+              : (patientEnMap.get(msg.content) ?? null);
+          if (contentEn) return { ...msg, content_en: contentEn };
+          return msg;
+        }) as import("@/lib/interview-schema").InterviewMessage[];
+      } catch {
+        // Best-effort: don't block session saving if enrichment fails
       }
     }
     

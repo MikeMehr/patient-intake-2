@@ -389,7 +389,13 @@ export async function POST(request: Request) {
       interviewState,
     );
 
-    const languageInstruction = `LANGUAGE: For all patient-facing questions and messages (the conversation), respond ONLY in ${languageName}. Do NOT include English translations or mixed language unless ${languageName} is English. If you cannot reliably produce ${languageName}, fall back to English. Keep summaries/assessment/plan in English for the clinician. Preserve medical accuracy.`;
+    const languageInstruction = languageName === "English"
+      ? `LANGUAGE: Respond in English.`
+      : `LANGUAGE: For all patient-facing questions and messages (the conversation), respond ONLY in ${languageName}. Do NOT include English translations or mixed language unless ${languageName} is English. If you cannot reliably produce ${languageName}, fall back to English. Keep summaries/assessment/plan in English for the clinician. Preserve medical accuracy.
+PHYSICIAN MONITOR (hidden from patient): When type is "question", also include:
+- "question_en": the English translation of the question field (for the physician's live monitor).
+- "patient_message_en": the English translation of the patient's most recent message in the transcript (for the physician's live monitor). Omit if there is no patient message yet.
+These fields are never shown to the patient.`;
 
     const completion = await azure.client.chat.completions.create({
       model: azure.deployment,
@@ -465,21 +471,25 @@ export async function POST(request: Request) {
           );
           let idx = Number(idxResult.rows[0]?.next_idx ?? 0);
 
-          // Insert patient's last message if present
-          const lastMsg = transcript[transcript.length - 1];
-          if (lastMsg?.role === "patient") {
-            await query(
-              `INSERT INTO interview_live_turns (invitation_id, turn_index, role, content)
-               VALUES ($1, $2, 'patient', $3) ON CONFLICT DO NOTHING`,
-              [invitationContext.invitationId, idx, lastMsg.content],
-            );
-            idx += 1;
-          }
-
           // Build state snapshot from interviewState (zero extra LLM cost)
           const isSum = turnWithProgress.type === "summary";
           const questionText = !isSum ? (turnWithProgress as { question?: string }).question ?? null : null;
+          const questionTextEn = !isSum ? (turnWithProgress as { question_en?: string }).question_en ?? null : null;
+          const patientMsgEn = !isSum ? ((turnWithProgress as { patient_message_en?: string }).patient_message_en ?? null) : null;
           const rationaleText = !isSum ? (turnWithProgress as { rationale?: string }).rationale ?? null : null;
+
+          // Insert patient's last message if present
+          // patientMsgEn (English translation) is stored in the rationale column for patient turns
+          // since rationale is unused for patient rows.
+          const lastMsg = transcript[transcript.length - 1];
+          if (lastMsg?.role === "patient") {
+            await query(
+              `INSERT INTO interview_live_turns (invitation_id, turn_index, role, content, rationale)
+               VALUES ($1, $2, 'patient', $3, $4) ON CONFLICT DO NOTHING`,
+              [invitationContext.invitationId, idx, lastMsg.content, patientMsgEn],
+            );
+            idx += 1;
+          }
           const stateSnap = {
             patientSex: patientProfile.sex ?? null,
             patientAge: patientProfile.age ?? null,
@@ -501,6 +511,8 @@ export async function POST(request: Request) {
             deferredIntentHint: interviewState.deferredIntentHint ?? null,
             questionsAsked: interviewState.questionCountSoFar ?? 0,
             totalQuestionCount: interviewState.totalQuestionCount ?? null,
+            // Store English translation of question for physician monitor (no schema migration needed)
+            contentEn: questionTextEn ?? undefined,
           };
 
           await query(

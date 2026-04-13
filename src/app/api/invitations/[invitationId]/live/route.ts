@@ -69,8 +69,22 @@ export async function GET(req: NextRequest, context: { params: Promise<Params> }
       [invitationId, since],
     );
 
+    // Derive content_en for each turn from existing columns (no schema migration needed):
+    // - assistant turns: stored in state_snapshot.contentEn
+    // - patient turns: stored in rationale column (repurposed; patient rows never have a real rationale)
+    const turns = turnsResult.rows.map((row) => {
+      let content_en: string | null = null;
+      if (row.role === "assistant" && row.state_snapshot) {
+        const snap = row.state_snapshot as Record<string, unknown>;
+        content_en = typeof snap.contentEn === "string" ? snap.contentEn : null;
+      } else if (row.role === "patient") {
+        content_en = row.rationale ?? null;
+      }
+      return { ...row, content_en, rationale: row.role === "patient" ? null : row.rationale };
+    });
+
     return NextResponse.json({
-      turns: turnsResult.rows,
+      turns,
       patientName: inv.patient_name,
       requestPhqGad: Boolean(inv.request_phq_gad),
       guidancePending: Boolean(inv.monitor_guidance),
