@@ -932,7 +932,15 @@ export default function Home() {
       })
     )
       .then((entries) => {
-        setUiT(Object.fromEntries(entries));
+        const translated = Object.fromEntries(entries);
+        // Manual overrides for languages where the translation API produces unnatural results
+        if (language.trim().toLowerCase().startsWith("fa")) {
+          translated.mute = "قطع صدا";
+          translated.muted = "قطع صدا";
+          translated.muteTitle = "قطع صدای هوش مصنوعی";
+          translated.unmuteTitle = "وصل صدای هوش مصنوعی";
+        }
+        setUiT(translated);
         lastUiTranslatedLangRef.current = language;
       })
       .catch(() => {
