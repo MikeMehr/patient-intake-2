@@ -2,6 +2,30 @@ import { NextRequest, NextResponse } from "next/server";
 import { getCurrentSession } from "@/lib/auth";
 import { getEffectivePhysicianId } from "@/lib/auth-helpers";
 import { query } from "@/lib/db";
+import { getAzureOpenAIClient } from "@/lib/azure-openai";
+
+async function translateToEnglish(text: string): Promise<string | null> {
+  if (!text.trim()) return null;
+  try {
+    const azure = getAzureOpenAIClient();
+    const completion = await azure.client.chat.completions.create({
+      model: azure.deployment,
+      messages: [
+        {
+          role: "system",
+          content:
+            "You are a medical translator. Translate the following text to English. " +
+            "Return ONLY the English translation, nothing else. Preserve medical meaning exactly.",
+        },
+        { role: "user", content: text.trim() },
+      ],
+      max_completion_tokens: 400,
+    });
+    return completion.choices?.[0]?.message?.content?.trim() || null;
+  } catch {
+    return null;
+  }
+}
 
 export const runtime = "nodejs";
 
@@ -72,16 +96,41 @@ export async function GET(req: NextRequest, context: { params: Promise<Params> }
     // Derive content_en for each turn from existing columns (no schema migration needed):
     // - assistant turns: stored in state_snapshot.contentEn
     // - patient turns: stored in rationale column (repurposed; patient rows never have a real rationale)
-    const turns = turnsResult.rows.map((row) => {
+    // For turns that have no stored English (pre-existing turns), translate on-demand and persist.
+    const turnsWithEnPromises = turnsResult.rows.map(async (row) => {
       let content_en: string | null = null;
+
       if (row.role === "assistant" && row.state_snapshot) {
         const snap = row.state_snapshot as Record<string, unknown>;
         content_en = typeof snap.contentEn === "string" ? snap.contentEn : null;
       } else if (row.role === "patient") {
         content_en = row.rationale ?? null;
       }
+
+      // If no stored English, translate now and persist so we don't repeat it
+      if (!content_en && row.content && row.content !== "[summary]") {
+        content_en = await translateToEnglish(row.content);
+        if (content_en) {
+          // Persist to avoid re-translating on next poll (fire-and-forget)
+          if (row.role === "assistant" && row.state_snapshot) {
+            const updatedSnap = { ...(row.state_snapshot as Record<string, unknown>), contentEn: content_en };
+            query(
+              `UPDATE interview_live_turns SET state_snapshot = $1 WHERE id = $2`,
+              [JSON.stringify(updatedSnap), row.id],
+            ).catch(() => {});
+          } else if (row.role === "patient") {
+            query(
+              `UPDATE interview_live_turns SET rationale = $1 WHERE id = $2`,
+              [content_en, row.id],
+            ).catch(() => {});
+          }
+        }
+      }
+
       return { ...row, content_en, rationale: row.role === "patient" ? null : row.rationale };
     });
+
+    const turns = await Promise.all(turnsWithEnPromises);
 
     return NextResponse.json({
       turns,
