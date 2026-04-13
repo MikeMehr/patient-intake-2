@@ -389,7 +389,13 @@ export async function POST(request: Request) {
       interviewState,
     );
 
-    const languageInstruction = `LANGUAGE: For all patient-facing questions and messages (the conversation), respond ONLY in ${languageName}. Do NOT include English translations or mixed language unless ${languageName} is English. If you cannot reliably produce ${languageName}, fall back to English. Keep summaries/assessment/plan in English for the clinician. Preserve medical accuracy.`;
+    const languageInstruction = languageName === "English"
+      ? `LANGUAGE: Respond in English.`
+      : `LANGUAGE: For all patient-facing questions and messages (the conversation), respond ONLY in ${languageName}. Do NOT include English translations or mixed language unless ${languageName} is English. If you cannot reliably produce ${languageName}, fall back to English. Keep summaries/assessment/plan in English for the clinician. Preserve medical accuracy.
+PHYSICIAN MONITOR (hidden from patient): When type is "question", also include:
+- "question_en": the English translation of the question field (for the physician's live monitor).
+- "patient_message_en": the English translation of the patient's most recent message in the transcript (for the physician's live monitor). Omit if there is no patient message yet.
+These fields are never shown to the patient.`;
 
     const completion = await azure.client.chat.completions.create({
       model: azure.deployment,
@@ -403,6 +409,9 @@ export async function POST(request: Request) {
     const textPayload = completion.choices?.[0]?.message?.content?.trim() || "";
 
     const parsedTurn = enforceAssistiveLanguageOnInterviewTurn(parseInterviewTurn(textPayload)) as InterviewResponse;
+    // Capture English translations before validateInterviewTurnFormat strips extra fields
+    const parsedQuestionEn = (parsedTurn as { question_en?: string }).question_en ?? null;
+    const parsedPatientMsgEn = (parsedTurn as { patient_message_en?: string }).patient_message_en ?? null;
     const validatedTurn = validateInterviewTurnFormat(parsedTurn);
     const finalTurn = applySensitivePhotoSuppressionToTurn(validatedTurn, sensitivePhotoContext);
     const turnWithProgress = attachProgressToTurn(finalTurn, interviewState.progress);
@@ -458,38 +467,72 @@ export async function POST(request: Request) {
     if (invitationContext.invitationId) {
       (async () => {
         try {
-          const idxResult = await query<{ next_idx: number }>(
-            `SELECT COALESCE(MAX(turn_index), -1) + 1 AS next_idx
-             FROM interview_live_turns WHERE invitation_id = $1`,
-            [invitationContext.invitationId],
-          );
-          let idx = Number(idxResult.rows[0]?.next_idx ?? 0);
-
-          // Insert patient's last message if present
-          const lastMsg = transcript[transcript.length - 1];
-          if (lastMsg?.role === "patient") {
+          // If this is a fresh interview start (transcript is empty before the AI's first response),
+          // delete all previous live turns so the monitor shows only the new session.
+          if (transcript.length === 0) {
             await query(
-              `INSERT INTO interview_live_turns (invitation_id, turn_index, role, content)
-               VALUES ($1, $2, 'patient', $3) ON CONFLICT DO NOTHING`,
-              [invitationContext.invitationId, idx, lastMsg.content],
+              `DELETE FROM interview_live_turns WHERE invitation_id = $1`,
+              [invitationContext.invitationId],
             );
-            idx += 1;
           }
+
+          // Derive turn indices deterministically from transcript position (prevents race-condition
+          // duplicates that occurred when two concurrent calls both read the same MAX(turn_index)).
+          // transcript already includes the patient's latest message as its last entry.
+          // Patient turn = its 0-based position in the transcript; assistant turn = immediately after.
+          const lastMsg = transcript[transcript.length - 1];
+          const patientTurnIdx = transcript.length - 1; // -1 when transcript is empty (no patient msg)
+          const assistantTurnIdx = transcript.length;   // 0 when transcript is empty (first AI turn)
 
           // Build state snapshot from interviewState (zero extra LLM cost)
           const isSum = turnWithProgress.type === "summary";
           const questionText = !isSum ? (turnWithProgress as { question?: string }).question ?? null : null;
+          // Use pre-captured values since validateInterviewTurnFormat strips question_en/patient_message_en
+          const questionTextEn = !isSum ? parsedQuestionEn : null;
+          const patientMsgEn = !isSum ? parsedPatientMsgEn : null;
           const rationaleText = !isSum ? (turnWithProgress as { rationale?: string }).rationale ?? null : null;
+
+          // Insert patient's last message if present
+          // patientMsgEn (English translation) is stored in the rationale column for patient turns
+          // since rationale is unused for patient rows.
+          if (lastMsg?.role === "patient") {
+            await query(
+              `INSERT INTO interview_live_turns (invitation_id, turn_index, role, content, rationale)
+               VALUES ($1, $2, 'patient', $3, $4) ON CONFLICT DO NOTHING`,
+              [invitationContext.invitationId, patientTurnIdx, lastMsg.content, patientMsgEn],
+            );
+          }
+          // For non-English interviews, state-builder topic matching is English-only so
+          // activeComplaintIndex may not advance even when the AI has moved on. Use the
+          // English translation of the current question to detect complaint transitions.
+          const snapshotActiveComplaint = (() => {
+            const baseComplaint = interviewState.activeComplaint ?? null;
+            if (!questionTextEn) return baseComplaint;
+            const pending = interviewState.pendingComplaints ?? [];
+            const lowerQ = questionTextEn.toLowerCase();
+            const match = pending.find((c) => lowerQ.includes(c.toLowerCase()));
+            return match ?? baseComplaint;
+          })();
+
+          // When activeComplaint is overridden to a pending complaint, update roadmap lists
+          const overrodeComplaint = snapshotActiveComplaint !== (interviewState.activeComplaint ?? null);
+          const snapshotPendingComplaints = overrodeComplaint
+            ? (interviewState.pendingComplaints ?? []).filter((c) => c !== snapshotActiveComplaint)
+            : (interviewState.pendingComplaints ?? []);
+          const snapshotCompletedComplaints = overrodeComplaint
+            ? [...(interviewState.completedComplaints ?? []), interviewState.activeComplaint].filter(Boolean) as string[]
+            : (interviewState.completedComplaints ?? []);
+
           const stateSnap = {
             patientSex: patientProfile.sex ?? null,
             patientAge: patientProfile.age ?? null,
             chiefComplaint: interviewState.chiefComplaint ?? chiefComplaint ?? null,
-            activeComplaint: interviewState.activeComplaint ?? null,
+            activeComplaint: snapshotActiveComplaint,
             complaintClass: interviewState.complaintClass ?? null,
             protocolId: (interviewState.protocol as { id?: string })?.id ?? null,
             complaints: interviewState.complaints ?? [],
-            pendingComplaints: interviewState.pendingComplaints ?? [],
-            completedComplaints: interviewState.completedComplaints ?? [],
+            pendingComplaints: snapshotPendingComplaints,
+            completedComplaints: snapshotCompletedComplaints,
             missingRequiredFields: (interviewState.missingRequiredFields ?? []).map((f: { label?: string }) => f.label ?? String(f)),
             missingRedFlags: (interviewState.missingRedFlags ?? []).map((f: { label?: string }) => f.label ?? String(f)),
             activeCoveredTopics: interviewState.activeCoveredTopics ?? [],
@@ -501,13 +544,15 @@ export async function POST(request: Request) {
             deferredIntentHint: interviewState.deferredIntentHint ?? null,
             questionsAsked: interviewState.questionCountSoFar ?? 0,
             totalQuestionCount: interviewState.totalQuestionCount ?? null,
+            // Store English translation of question for physician monitor (no schema migration needed)
+            contentEn: questionTextEn ?? undefined,
           };
 
           await query(
             `INSERT INTO interview_live_turns
                (invitation_id, turn_index, role, content, rationale, state_snapshot, is_summary)
              VALUES ($1, $2, 'assistant', $3, $4, $5, $6) ON CONFLICT DO NOTHING`,
-            [invitationContext.invitationId, idx, questionText ?? "[summary]", rationaleText, JSON.stringify(stateSnap), isSum],
+            [invitationContext.invitationId, assistantTurnIdx, questionText ?? "[summary]", rationaleText, JSON.stringify(stateSnap), isSum],
           );
         } catch {
           // Silent — monitor data is best-effort, must not affect patient interview

@@ -35,6 +35,7 @@ const VALIDATION_EN = "Please answer all questions before submitting.";
 interface PhqGadFormProps {
   language: string;
   onSubmit: (results: PhqGadResults) => void;
+  highlightQ9Alert?: boolean;
 }
 
 function getPhq9Severity(total: number): PhqGadResults["phq9"]["severity"] {
@@ -66,7 +67,7 @@ async function translateText(text: string, language: string): Promise<string> {
   }
 }
 
-export default function PhqGadForm({ language, onSubmit }: PhqGadFormProps) {
+export default function PhqGadForm({ language, onSubmit, highlightQ9Alert = false }: PhqGadFormProps) {
   const [phq9Answers, setPhq9Answers] = useState<(number | null)[]>(Array(9).fill(null));
   const [gad7Answers, setGad7Answers] = useState<(number | null)[]>(Array(7).fill(null));
   const [showValidation, setShowValidation] = useState(false);
@@ -176,7 +177,7 @@ export default function PhqGadForm({ language, onSubmit }: PhqGadFormProps) {
           {phq9Questions.map((question, i) => {
             const isQ9 = i === 8;
             const answered = phq9Answers[i] !== null;
-            const isQ9Alert = isQ9 && answered && phq9Answers[i]! > 0;
+            const isQ9Alert = highlightQ9Alert && isQ9 && answered && phq9Answers[i]! > 0;
             return (
               <div
                 key={i}
