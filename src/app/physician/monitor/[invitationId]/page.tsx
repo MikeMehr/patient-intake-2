@@ -78,7 +78,16 @@ export default function MonitorPage() {
       if (data.isCompleted) setIsCompleted(true);
 
       if (Array.isArray(data.turns) && data.turns.length > 0) {
-        setTurns((prev) => [...prev, ...data.turns]);
+        const firstNewIndex = data.turns[0].turn_index;
+        setTurns((prev) => {
+          // If new turns start at index 0 the patient started a fresh session —
+          // replace the entire transcript so the monitor shows only the new interview.
+          if (firstNewIndex === 0) return data.turns;
+          // Otherwise append, deduplicating by id to prevent double-renders on rapid polls.
+          const existingIds = new Set(prev.map((t) => t.id));
+          const fresh = data.turns.filter((t: LiveTurn) => !existingIds.has(t.id));
+          return fresh.length > 0 ? [...prev, ...fresh] : prev;
+        });
         const last = data.turns[data.turns.length - 1];
         lastTurnIndexRef.current = last.turn_index;
       }

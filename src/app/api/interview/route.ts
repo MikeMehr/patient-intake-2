@@ -467,12 +467,22 @@ These fields are never shown to the patient.`;
     if (invitationContext.invitationId) {
       (async () => {
         try {
-          const idxResult = await query<{ next_idx: number }>(
-            `SELECT COALESCE(MAX(turn_index), -1) + 1 AS next_idx
-             FROM interview_live_turns WHERE invitation_id = $1`,
-            [invitationContext.invitationId],
-          );
-          let idx = Number(idxResult.rows[0]?.next_idx ?? 0);
+          // If this is a fresh interview start (transcript is empty before the AI's first response),
+          // delete all previous live turns so the monitor shows only the new session.
+          if (transcript.length === 0) {
+            await query(
+              `DELETE FROM interview_live_turns WHERE invitation_id = $1`,
+              [invitationContext.invitationId],
+            );
+          }
+
+          // Derive turn indices deterministically from transcript position (prevents race-condition
+          // duplicates that occurred when two concurrent calls both read the same MAX(turn_index)).
+          // transcript already includes the patient's latest message as its last entry.
+          // Patient turn = its 0-based position in the transcript; assistant turn = immediately after.
+          const lastMsg = transcript[transcript.length - 1];
+          const patientTurnIdx = transcript.length - 1; // -1 when transcript is empty (no patient msg)
+          const assistantTurnIdx = transcript.length;   // 0 when transcript is empty (first AI turn)
 
           // Build state snapshot from interviewState (zero extra LLM cost)
           const isSum = turnWithProgress.type === "summary";
@@ -485,14 +495,12 @@ These fields are never shown to the patient.`;
           // Insert patient's last message if present
           // patientMsgEn (English translation) is stored in the rationale column for patient turns
           // since rationale is unused for patient rows.
-          const lastMsg = transcript[transcript.length - 1];
           if (lastMsg?.role === "patient") {
             await query(
               `INSERT INTO interview_live_turns (invitation_id, turn_index, role, content, rationale)
                VALUES ($1, $2, 'patient', $3, $4) ON CONFLICT DO NOTHING`,
-              [invitationContext.invitationId, idx, lastMsg.content, patientMsgEn],
+              [invitationContext.invitationId, patientTurnIdx, lastMsg.content, patientMsgEn],
             );
-            idx += 1;
           }
           // For non-English interviews, state-builder topic matching is English-only so
           // activeComplaintIndex may not advance even when the AI has moved on. Use the
@@ -544,7 +552,7 @@ These fields are never shown to the patient.`;
             `INSERT INTO interview_live_turns
                (invitation_id, turn_index, role, content, rationale, state_snapshot, is_summary)
              VALUES ($1, $2, 'assistant', $3, $4, $5, $6) ON CONFLICT DO NOTHING`,
-            [invitationContext.invitationId, idx, questionText ?? "[summary]", rationaleText, JSON.stringify(stateSnap), isSum],
+            [invitationContext.invitationId, assistantTurnIdx, questionText ?? "[summary]", rationaleText, JSON.stringify(stateSnap), isSum],
           );
         } catch {
           // Silent — monitor data is best-effort, must not affect patient interview
