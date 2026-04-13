@@ -1630,7 +1630,8 @@ export default function PhysicianDashboard() {
                           <td className="px-6 py-4 whitespace-nowrap text-sm">
                             <div className="flex items-center gap-3">
                               {(invitation.activityStatus === "in_progress" ||
-                                invitation.activityStatus === "active_recently") && (
+                                invitation.activityStatus === "active_recently" ||
+                                invitation.activityStatus === "started") && (
                                 <a
                                   href={`/physician/monitor/${invitation.id}`}
                                   target="_blank"
