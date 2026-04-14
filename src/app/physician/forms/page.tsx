@@ -3,7 +3,6 @@
 import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import Image from "next/image";
 import SessionKeepAlive from "@/components/auth/SessionKeepAlive";
 
 interface PhysicianFormItem {
@@ -250,15 +249,7 @@ export default function PhysicianFormsPage() {
 
       {/* Header — matches physician dashboard style */}
       <div className="relative bg-white rounded-b-none shadow-sm border-b border-slate-200 p-4 sm:p-6 mb-0">
-        <Image
-          src="/LogoFinal.png"
-          alt="Health Assist AI logo"
-          width={112}
-          height={26}
-          className="mx-auto mb-2 h-[38px] w-[114px] object-contain sm:h-[50px] sm:w-[150px]"
-          priority
-        />
-        <div className="flex justify-between items-center">
+          <div className="flex justify-between items-center">
           <div className="flex items-center gap-3">
             <Link
               href="/physician/dashboard"
