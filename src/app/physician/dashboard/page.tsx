@@ -1398,10 +1398,10 @@ export default function PhysicianDashboard() {
                         <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
                           Patient Name
                         </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
+                        <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider w-36">
                           Email
                         </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
+                        <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider w-40">
                           Chief Complaint
                         </th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
@@ -1419,6 +1419,9 @@ export default function PhysicianDashboard() {
                             </span>
                           </span>
                         </th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider w-28">
+                          Rating
+                        </th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
                           Actions
                         </th>
@@ -1430,11 +1433,11 @@ export default function PhysicianDashboard() {
                           <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-slate-900">
                             {session.patientName}
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600">
-                            {session.patientEmail}
+                          <td className="px-4 py-4 text-sm text-slate-600 max-w-[9rem]">
+                            <div className="truncate" title={session.patientEmail}>{session.patientEmail}</div>
                           </td>
-                          <td className="px-6 py-4 text-sm text-slate-600">
-                            <div className="max-w-xs truncate">
+                          <td className="px-4 py-4 text-sm text-slate-600 max-w-[10rem]">
+                            <div className="truncate" title={session.chiefComplaint ?? undefined}>
                               {session.chiefComplaint}
                             </div>
                           </td>
@@ -1450,6 +1453,27 @@ export default function PhysicianDashboard() {
                               <span className="px-2 py-1 text-xs font-medium text-blue-800 bg-blue-100 rounded-full">
                                 New
                               </span>
+                            )}
+                          </td>
+                          {/* Patient experience rating */}
+                          <td className="px-4 py-4 whitespace-nowrap text-sm">
+                            {session.feedbackRating ? (
+                              <span
+                                title={session.feedbackComments || undefined}
+                                className="cursor-default"
+                                aria-label={`${session.feedbackRating} out of 5 stars`}
+                              >
+                                {Array.from({ length: 5 }, (_, i) => (
+                                  <span
+                                    key={i}
+                                    className={i < session.feedbackRating! ? "text-amber-400" : "text-slate-300"}
+                                  >
+                                    ★
+                                  </span>
+                                ))}
+                              </span>
+                            ) : (
+                              <span className="text-slate-400">—</span>
                             )}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm">
