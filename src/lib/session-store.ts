@@ -41,6 +41,10 @@ export interface PatientSession {
   imageName?: string;
   duration?: number; // Interview duration in seconds
   transcript?: InterviewMessage[]; // Complete interview transcript (questions and answers)
+  // Patient experience feedback
+  feedbackRating?: number;       // 1–5 stars
+  feedbackComments?: string;
+  feedbackSubmittedAt?: Date;
 }
 
 /**
@@ -143,12 +147,16 @@ export async function getSession(sessionCode: string): Promise<PatientSession | 
       completed_at: Date;
       viewed_by_physician: boolean;
       viewed_at: Date | null;
+      feedback_rating: number | null;
+      feedback_comments: string | null;
+      feedback_submitted_at: Date | null;
     }>(
-      `SELECT 
+      `SELECT
         physician_id, session_code, patient_name, patient_email,
         chief_complaint, patient_profile, history,
         image_summary, image_url, image_name,
-        completed_at, viewed_by_physician, viewed_at
+        completed_at, viewed_by_physician, viewed_at,
+        feedback_rating, feedback_comments, feedback_submitted_at
        FROM patient_sessions
        WHERE session_code = $1`,
       [sessionCode]
@@ -206,6 +214,9 @@ export async function getSession(sessionCode: string): Promise<PatientSession | 
       imageName: row.image_name || undefined,
       duration: interviewDuration,
       transcript: extractedTranscript,
+      feedbackRating: row.feedback_rating ?? undefined,
+      feedbackComments: row.feedback_comments ?? undefined,
+      feedbackSubmittedAt: row.feedback_submitted_at ?? undefined,
     };
   } catch (error) {
     console.error("[session-store] Error getting session:", error);
@@ -515,12 +526,16 @@ export async function getSessionsByPhysician(physicianId: string): Promise<Patie
       completed_at: Date;
       viewed_by_physician: boolean;
       viewed_at: Date | null;
+      feedback_rating: number | null;
+      feedback_comments: string | null;
+      feedback_submitted_at: Date | null;
     }>(
-      `SELECT 
+      `SELECT
         physician_id, session_code, patient_name, patient_email,
         chief_complaint, patient_profile, history,
         image_summary, image_url, image_name,
-        completed_at, viewed_by_physician, viewed_at
+        completed_at, viewed_by_physician, viewed_at,
+        feedback_rating, feedback_comments, feedback_submitted_at
        FROM patient_sessions
        WHERE physician_id = $1
          AND (history->>'physicianReviewedAt') IS NULL
@@ -531,13 +546,13 @@ export async function getSessionsByPhysician(physicianId: string): Promise<Patie
     return result.rows.map((row) => {
       const historyData = row.history as SessionHistory;
       const { interviewDuration, transcript, ...history } = historyData;
-      
+
       // Ensure transcript is always an array if it exists
       let extractedTranscript: InterviewMessage[] | undefined = undefined;
       if (transcript && Array.isArray(transcript)) {
         extractedTranscript = transcript;
       }
-      
+
       return {
         sessionCode: row.session_code,
         patientEmail: row.patient_email,
@@ -554,6 +569,9 @@ export async function getSessionsByPhysician(physicianId: string): Promise<Patie
         imageName: row.image_name || undefined,
         duration: interviewDuration,
         transcript: extractedTranscript,
+        feedbackRating: row.feedback_rating ?? undefined,
+        feedbackComments: row.feedback_comments ?? undefined,
+        feedbackSubmittedAt: row.feedback_submitted_at ?? undefined,
       };
     });
   } catch (error) {
@@ -582,12 +600,16 @@ export async function getSessionsByScope(params: {
       completed_at: Date;
       viewed_by_physician: boolean;
       viewed_at: Date | null;
+      feedback_rating: number | null;
+      feedback_comments: string | null;
+      feedback_submitted_at: Date | null;
     }>(
       `SELECT
         ps.physician_id, ps.session_code, ps.patient_name, ps.patient_email,
         ps.chief_complaint, ps.patient_profile, ps.history,
         ps.image_summary, ps.image_url, ps.image_name,
-        ps.completed_at, ps.viewed_by_physician, ps.viewed_at
+        ps.completed_at, ps.viewed_by_physician, ps.viewed_at,
+        ps.feedback_rating, ps.feedback_comments, ps.feedback_submitted_at
        FROM patient_sessions ps
        JOIN physicians ph ON ph.id = ps.physician_id
        WHERE (ps.history->>'physicianReviewedAt') IS NULL
@@ -632,6 +654,9 @@ export async function getSessionsByScope(params: {
         imageName: row.image_name || undefined,
         duration: interviewDuration,
         transcript: extractedTranscript,
+        feedbackRating: row.feedback_rating ?? undefined,
+        feedbackComments: row.feedback_comments ?? undefined,
+        feedbackSubmittedAt: row.feedback_submitted_at ?? undefined,
       };
     });
   } catch (error) {
@@ -659,12 +684,16 @@ export async function getAllSessions(): Promise<PatientSession[]> {
       completed_at: Date;
       viewed_by_physician: boolean;
       viewed_at: Date | null;
+      feedback_rating: number | null;
+      feedback_comments: string | null;
+      feedback_submitted_at: Date | null;
     }>(
-      `SELECT 
+      `SELECT
         physician_id, session_code, patient_name, patient_email,
         chief_complaint, patient_profile, history,
         image_summary, image_url, image_name,
-        completed_at, viewed_by_physician, viewed_at
+        completed_at, viewed_by_physician, viewed_at,
+        feedback_rating, feedback_comments, feedback_submitted_at
        FROM patient_sessions
        ORDER BY completed_at DESC`
     );
@@ -672,13 +701,13 @@ export async function getAllSessions(): Promise<PatientSession[]> {
     return result.rows.map((row) => {
       const historyData = row.history as SessionHistory;
       const { interviewDuration, transcript, ...history } = historyData;
-      
+
       // Ensure transcript is always an array if it exists
       let extractedTranscript: InterviewMessage[] | undefined = undefined;
       if (transcript && Array.isArray(transcript)) {
         extractedTranscript = transcript;
       }
-      
+
       return {
         sessionCode: row.session_code,
         patientEmail: row.patient_email,
@@ -695,10 +724,39 @@ export async function getAllSessions(): Promise<PatientSession[]> {
         imageName: row.image_name || undefined,
         duration: interviewDuration,
         transcript: extractedTranscript,
+        feedbackRating: row.feedback_rating ?? undefined,
+        feedbackComments: row.feedback_comments ?? undefined,
+        feedbackSubmittedAt: row.feedback_submitted_at ?? undefined,
       };
     });
   } catch (error) {
     console.error("[session-store] Error getting all sessions:", error);
     return [];
+  }
+}
+
+/**
+ * Store patient experience feedback (star rating + optional comments) for a session.
+ * Only stores feedback once — returns false if feedback was already submitted.
+ */
+export async function storeFeedback(
+  sessionCode: string,
+  rating: number,
+  comments: string,
+): Promise<boolean> {
+  try {
+    const result = await query(
+      `UPDATE patient_sessions
+       SET feedback_rating        = $2,
+           feedback_comments      = $3,
+           feedback_submitted_at  = NOW()
+       WHERE session_code = $1
+         AND feedback_submitted_at IS NULL`,
+      [sessionCode, rating, comments.trim() || null],
+    );
+    return (result.rowCount ?? 0) > 0;
+  } catch (error) {
+    console.error("[session-store] Error storing feedback:", error);
+    throw error;
   }
 }
