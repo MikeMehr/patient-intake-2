@@ -1229,11 +1229,18 @@ function detectEscalationState(params: {
   const profileText = `${params.patientProfile.pmh} ${params.patientProfile.currentMedications}`.toLowerCase();
   const formText = (params.formSummary || "").toLowerCase();
 
-  const hasRedFlagSignal = Boolean(
-    `${text} ${answersText}`.match(
-      /\b(loss of consciousness|faint|syncope|hemoptysis|gi bleed|melena|hematemesis|vision loss|focal weakness|severe pain|thunderclap|stridor|drooling|unable to swallow|can't swallow|persistent vomiting|jaundice|confusion|foot ulcer|foot infection|chest pain|heart attack|cardiac arrest|radiating to (my )?(arm|jaw|neck|shoulder|back)|crushing chest|pressure in (my )?chest|tightness in (my )?chest|can't breathe|cannot breathe|difficulty breathing|shortness of breath|sob|stroke|facial droop|arm weakness|slurred speech|sudden numbness|anaphylaxis|severe allergic|can't stop bleeding|uncontrolled bleeding|overdose|suicidal|suicide|seizure|convuls)\b/,
-    ),
+  const RED_FLAG_PATTERN =
+    /\b(loss of consciousness|faint|syncope|hemoptysis|gi bleed|melena|hematemesis|vision loss|focal weakness|severe pain|thunderclap|stridor|drooling|unable to swallow|can't swallow|persistent vomiting|jaundice|confusion|foot ulcer|foot infection|chest pain|heart attack|cardiac arrest|radiating to (my )?(arm|jaw|neck|shoulder|back)|crushing chest|pressure in (my )?chest|tightness in (my )?chest|can't breathe|cannot breathe|difficulty breathing|shortness of breath|sob|stroke|facial droop|arm weakness|slurred speech|sudden numbness|anaphylaxis|severe allergic|can't stop bleeding|uncontrolled bleeding|overdose|suicidal|suicide|seizure|convuls)\b/;
+  const RED_FLAG_NEGATION_PATTERN =
+    /\b(no|not|none|never|without|haven'?t|hasn'?t|didn'?t|don'?t|doesn'?t|denies|denied|deny|negative for|such as|like|including|example)\b/;
+  // Check chief complaint and active complaint text first (no negation needed — these are facts)
+  const hasRedFlagInComplaintText = RED_FLAG_PATTERN.test(text);
+  // Check patient answers sentence-by-sentence to avoid false positives from negated reports
+  // (e.g. "No, I haven't noticed drooling" must NOT fire as a red flag)
+  const hasRedFlagInAnswers = `${answersText}`.split(/[.!?;\n]/).some(
+    (chunk) => RED_FLAG_PATTERN.test(chunk) && !RED_FLAG_NEGATION_PATTERN.test(chunk),
   );
+  const hasRedFlagSignal = hasRedFlagInComplaintText || hasRedFlagInAnswers;
   const hasMultiSystemSymptoms =
     params.newComplaintCount > 0 ||
     Boolean(

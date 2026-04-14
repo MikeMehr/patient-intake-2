@@ -303,7 +303,7 @@ export default function MonitorPage() {
                   <div>
                     <p className="text-sm font-semibold text-slate-400 mb-1">Complaint Roadmap</p>
                     <ul className="space-y-0.5">
-                      {latestSnapshot.completedComplaints?.map((c) => (
+                      {latestSnapshot.completedComplaints?.filter((c) => c !== latestSnapshot.activeComplaint).map((c) => (
                         <li key={c} className="text-sm text-slate-400 flex gap-1">
                           <span className="text-green-500">✓</span> {c}
                         </li>
