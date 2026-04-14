@@ -213,29 +213,31 @@ export default function PhysicianDashboard() {
 
   useEffect(() => {
     // Fetch sessions
-    fetch("/api/sessions/list")
-      .then((res) => {
-        if (res.status === 401) {
-          router.push("/auth/login");
-          return null;
-        }
-        return res.json();
-      })
-      .then((data) => {
-        if (data) {
-          if (data.error) {
-            setError(data.error);
-          } else {
-            setSessions(data.sessions || []);
+    const fetchSessions = () => {
+      fetch("/api/sessions/list")
+        .then((res) => {
+          if (res.status === 401) {
+            router.push("/auth/login");
+            return null;
           }
-        }
-        setLoading(false);
-      })
-      .catch((err) => {
-        console.error("Error fetching sessions:", err);
-        setError("Failed to load sessions");
-        setLoading(false);
-      });
+          return res.json();
+        })
+        .then((data) => {
+          if (data) {
+            if (data.error) {
+              setError(data.error);
+            } else {
+              setSessions(data.sessions || []);
+            }
+          }
+          setLoading(false);
+        })
+        .catch((err) => {
+          console.error("Error fetching sessions:", err);
+          setError("Failed to load sessions");
+          setLoading(false);
+        });
+    };
 
     // Fetch physician info (from session cookie)
     fetch("/api/auth/me")
@@ -285,7 +287,17 @@ export default function PhysicianDashboard() {
       }
     };
 
+    // Initial load
+    fetchSessions();
     fetchInvitations();
+
+    // Poll every 30 seconds
+    const pollInterval = setInterval(() => {
+      fetchSessions();
+      fetchInvitations();
+    }, 30000);
+
+    return () => clearInterval(pollInterval);
   }, [router]);
 
   useEffect(() => {
