@@ -99,7 +99,7 @@ export default function MonitorPage() {
             return data.turns;
           }
           // Build a lookup map for incoming turns by id.
-          const incomingById = new Map(data.turns.map((t: LiveTurn) => [t.id, t]));
+          const incomingById = new Map<string, LiveTurn>(data.turns.map((t: LiveTurn) => [t.id, t]));
           // Update existing turns in-place when a previously-null content_en has been resolved.
           const updated = prev.map((t) => {
             const refreshed = incomingById.get(t.id);
