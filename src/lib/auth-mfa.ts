@@ -120,7 +120,7 @@ async function sendOtpEmail(params: {
     from: process.env.RESEND_FROM_EMAIL || "onboarding@resend.dev",
     to: params.to,
     subject,
-    html: `<p>Your verification code is:</p><div style="margin:24px 0;text-align:center"><span style="display:inline-block;font-size:32px;font-weight:700;letter-spacing:8px;font-family:monospace;background:#f3f4f6;border:1px solid #d1d5db;border-radius:8px;padding:16px 32px;user-select:all;cursor:text">${params.otpCode}</span></div><p style="color:#6b7280;font-size:13px">Click the code above to select it, then copy. This code expires in ${OTP_TTL_MINUTES} minutes.</p>`,
+    html: `<p>Your verification code is <strong>${params.otpCode}</strong>.</p><p>This code expires in ${OTP_TTL_MINUTES} minutes.</p>`,
     text: `Your verification code is ${params.otpCode}. It expires in ${OTP_TTL_MINUTES} minutes.`,
   });
   return true;

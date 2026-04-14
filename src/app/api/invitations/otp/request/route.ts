@@ -59,7 +59,7 @@ export async function POST(request: NextRequest) {
         from: process.env.RESEND_FROM_EMAIL || "onboarding@resend.dev",
         to: invitation.patientEmail,
         subject,
-        html: `<p>Your intake verification code is:</p><div style="margin:24px 0;text-align:center"><span style="display:inline-block;font-size:32px;font-weight:700;letter-spacing:8px;font-family:monospace;background:#f3f4f6;border:1px solid #d1d5db;border-radius:8px;padding:16px 32px;user-select:all;cursor:text">${otp}</span></div><p style="color:#6b7280;font-size:13px">Click the code above to select it, then copy. This code expires in 10 minutes.</p>`,
+        html: `<p>Your intake verification code is <strong>${otp}</strong>.</p><p>This code expires in 10 minutes.</p>`,
         text,
       });
     }

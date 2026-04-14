@@ -218,12 +218,20 @@ export default function SuperAdminDashboard() {
                 Manage organizations and providers
               </p>
             </div>
-            <button
-              onClick={handleLogout}
-              className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition"
-            >
-              Sign Out
-            </button>
+            <div className="flex items-center gap-3">
+              <Link
+                href="/admin/forms"
+                className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition"
+              >
+                Forms
+              </Link>
+              <button
+                onClick={handleLogout}
+                className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition"
+              >
+                Sign Out
+              </button>
+            </div>
           </div>
         </div>
       </div>

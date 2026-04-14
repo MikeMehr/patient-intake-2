@@ -542,8 +542,8 @@ These fields are never shown to the patient.`;
             summaryReady: interviewState.summaryReady ?? false,
             earlyStopReason: interviewState.earlyStopReason ?? null,
             deferredIntentHint: interviewState.deferredIntentHint ?? null,
-            questionsAsked: interviewState.progress?.questionsAsked ?? interviewState.totalQuestionCount ?? 0,
-            totalQuestionCount: interviewState.progress?.approxTotalQuestions ?? interviewState.totalQuestionCount ?? null,
+            questionsAsked: interviewState.questionCountSoFar ?? 0,
+            totalQuestionCount: interviewState.totalQuestionCount ?? null,
             // Store English translation of question for physician monitor (no schema migration needed)
             contentEn: questionTextEn ?? undefined,
           };

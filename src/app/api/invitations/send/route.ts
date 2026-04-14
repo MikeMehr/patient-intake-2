@@ -109,6 +109,7 @@ export async function POST(request: NextRequest) {
       previousLabReportFile,
       formFile,
       formQuestionsFilter,
+      existingFormsQuestions,
     } =
       await parseRequestBody(request);
 
@@ -208,6 +209,17 @@ export async function POST(request: NextRequest) {
         const res = NextResponse.json({ error: message }, { status });
         logRequestMeta("/api/invitations/send", requestId, status, Date.now() - started);
         return res;
+      }
+    }
+
+    // Merge PDF-extracted form questions with any questions from the existing forms library
+    if (existingFormsQuestions) {
+      uploadSummaries.formSummary = [uploadSummaries.formSummary, existingFormsQuestions]
+        .filter(Boolean)
+        .join("\n\n---\n\n") || null;
+      // Ensure summary expiry is set if we have any form summary
+      if (uploadSummaries.formSummary && !summaryExpiresAt) {
+        summaryExpiresAt = new Date(Date.now() + 60 * 60 * 1000);
       }
     }
 
@@ -409,6 +421,7 @@ async function parseRequestBody(request: NextRequest): Promise<{
   previousLabReportFile: File | null;
   formFile: File | null;
   formQuestionsFilter: string[] | null;
+  existingFormsQuestions: string | null;
 }> {
   const contentType = request.headers.get("content-type") || "";
 
@@ -442,6 +455,11 @@ async function parseRequestBody(request: NextRequest): Promise<{
           : null,
       formFile: formData.get("form") instanceof File ? (formData.get("form") as File) : null,
       formQuestionsFilter,
+      existingFormsQuestions: (() => {
+        const raw = formData.get("existingFormsQuestions");
+        if (typeof raw === "string" && raw.trim()) return raw.trim();
+        return null;
+      })(),
     };
   }
 
@@ -459,6 +477,7 @@ async function parseRequestBody(request: NextRequest): Promise<{
       previousLabReportFile: null,
       formFile: null,
       formQuestionsFilter: null,
+      existingFormsQuestions: null,
     };
   } catch (err) {
     console.error("[invitations/send] Failed to parse JSON body");
@@ -476,8 +495,10 @@ async function parseRequestBody(request: NextRequest): Promise<{
       previousLabReportFile: null,
       formFile: null,
       formQuestionsFilter: null,
+      existingFormsQuestions: null,
     };
   }
 }
+
 
 

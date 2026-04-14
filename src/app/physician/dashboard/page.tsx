@@ -177,6 +177,24 @@ export default function PhysicianDashboard() {
   const [extractingFormQuestions, setExtractingFormQuestions] = useState(false);
   const [formQuestionsError, setFormQuestionsError] = useState<string | null>(null);
 
+  // Existing Forms library state
+  type PhysicianFormItem = {
+    id: string;
+    name: string;
+    questions: string;
+    category: string | null;
+    isInherited: boolean;
+    isEdited: boolean;
+    isFavourite: boolean;
+    sourceTemplateId: string | null;
+  };
+  const [existingFormsModalOpen, setExistingFormsModalOpen] = useState(false);
+  const [physicianForms, setPhysicianForms] = useState<PhysicianFormItem[]>([]);
+  const [selectedExistingForms, setSelectedExistingForms] = useState<PhysicianFormItem[]>([]);
+  const [loadingPhysicianForms, setLoadingPhysicianForms] = useState(false);
+  // Tracks checked state in the modal before confirming
+  const [modalCheckedIds, setModalCheckedIds] = useState<Set<string>>(new Set());
+
   type PatientSearchResult = {
     id: string;
     fullName: string;
@@ -570,6 +588,14 @@ export default function PhysicianDashboard() {
         formData.append("formQuestionsFilter", JSON.stringify(selectedFormQuestions));
       }
 
+      // Include existing forms questions from the library
+      if (selectedExistingForms.length > 0) {
+        const existingFormsText = selectedExistingForms
+          .map((f) => `[${f.name}]\n${f.questions}`)
+          .join("\n\n");
+        formData.append("existingFormsQuestions", existingFormsText);
+      }
+
       const response = await fetch("/api/invitations/send", {
         method: "POST",
         body: formData,
@@ -603,6 +629,8 @@ export default function PhysicianDashboard() {
       setFormFile(null);
       setFormQuestions([]);
       setFormQuestionsError(null);
+      setSelectedExistingForms([]);
+      setModalCheckedIds(new Set());
       // Refresh invitations list after sending
       try {
         const res = await fetch("/api/invitations/list");
@@ -905,6 +933,12 @@ export default function PhysicianDashboard() {
                     >
                       Patient Lookup
                     </button>
+                    <a
+                      href="/physician/forms"
+                      className="flex w-full items-center rounded-md px-2 py-2 text-sm text-slate-700 hover:bg-slate-50"
+                    >
+                      Forms
+                    </a>
                     {!isAssistantSession && (
                       <button
                         type="button"
@@ -1392,6 +1426,64 @@ export default function PhysicianDashboard() {
                     </button>
                   )}
                 </div>
+
+                {/* Existing Forms from library */}
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                    Existing Forms (Optional)
+                  </label>
+                  <button
+                    type="button"
+                    disabled={inviteLoading}
+                    onClick={async () => {
+                      setExistingFormsModalOpen(true);
+                      if (physicianForms.length === 0 && !loadingPhysicianForms) {
+                        setLoadingPhysicianForms(true);
+                        try {
+                          const res = await fetch("/api/physician/forms");
+                          if (res.ok) {
+                            const data = await res.json();
+                            setPhysicianForms(data.forms || []);
+                          }
+                        } finally {
+                          setLoadingPhysicianForms(false);
+                        }
+                      }
+                      // Pre-populate checked state from currently selected forms
+                      setModalCheckedIds(new Set(selectedExistingForms.map((f) => f.id)));
+                    }}
+                    className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm text-slate-700 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200 disabled:cursor-not-allowed disabled:opacity-70 text-left hover:bg-slate-50"
+                  >
+                    📋 Select from Forms Library
+                  </button>
+                  <p className="text-xs text-slate-500 mt-1">
+                    Choose saved forms to have the AI ask their questions during the interview.
+                  </p>
+                  {selectedExistingForms.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        setExistingFormsModalOpen(true);
+                        if (physicianForms.length === 0 && !loadingPhysicianForms) {
+                          setLoadingPhysicianForms(true);
+                          try {
+                            const res = await fetch("/api/physician/forms");
+                            if (res.ok) {
+                              const data = await res.json();
+                              setPhysicianForms(data.forms || []);
+                            }
+                          } finally {
+                            setLoadingPhysicianForms(false);
+                          }
+                        }
+                        setModalCheckedIds(new Set(selectedExistingForms.map((f) => f.id)));
+                      }}
+                      className="text-xs text-blue-700 underline mt-1 text-left"
+                    >
+                      {selectedExistingForms.length} form{selectedExistingForms.length !== 1 ? "s" : ""} selected — click to change
+                    </button>
+                  )}
+                </div>
               </div>
             </details>
             {inviteError && (
@@ -1876,6 +1968,159 @@ export default function PhysicianDashboard() {
         </div>
         </div>
       </div>
+
+      {/* Existing Forms Library Modal */}
+      {existingFormsModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[85vh] flex flex-col">
+            {/* Header */}
+            <div className="px-6 pt-6 pb-4 border-b border-slate-200">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h2 className="text-lg font-semibold text-slate-900">Select Forms</h2>
+                  <p className="text-sm text-slate-600 mt-1">
+                    Choose one or more forms. The AI will ask their questions during the interview.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  aria-label="Close"
+                  onClick={() => setExistingFormsModalOpen(false)}
+                  className="flex-shrink-0 text-slate-400 hover:text-slate-600 text-xl leading-none"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+
+            {/* Body */}
+            <div className="flex-1 overflow-y-auto px-6 py-4">
+              {loadingPhysicianForms ? (
+                <p className="text-sm text-slate-500 text-center py-8">Loading forms…</p>
+              ) : physicianForms.length === 0 ? (
+                <div className="text-center py-8">
+                  <p className="text-sm text-slate-500">No forms in your library yet.</p>
+                  <a
+                    href="/physician/forms"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs text-blue-600 underline mt-1 block"
+                  >
+                    Go to Forms Library to add forms →
+                  </a>
+                </div>
+              ) : (() => {
+                // Favourites section
+                const favourites = physicianForms.filter((f) => f.isFavourite);
+                const others = physicianForms.filter((f) => !f.isFavourite);
+
+                // Group others by category
+                const othersByCategory: Record<string, PhysicianFormItem[]> = {};
+                for (const f of others) {
+                  const key = f.category || "Uncategorized";
+                  if (!othersByCategory[key]) othersByCategory[key] = [];
+                  othersByCategory[key].push(f);
+                }
+                const otherCats = Object.keys(othersByCategory).sort((a, b) =>
+                  a === "Uncategorized" ? 1 : b === "Uncategorized" ? -1 : a.localeCompare(b)
+                );
+
+                const renderFormRow = (form: PhysicianFormItem) => (
+                  <label
+                    key={form.id}
+                    className="flex items-start gap-3 cursor-pointer group py-1.5"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={modalCheckedIds.has(form.id)}
+                      onChange={() => {
+                        setModalCheckedIds((prev) => {
+                          const next = new Set(prev);
+                          if (next.has(form.id)) next.delete(form.id);
+                          else next.add(form.id);
+                          return next;
+                        });
+                      }}
+                      className="mt-0.5 h-4 w-4 rounded border-slate-300 text-slate-900 accent-slate-900 flex-shrink-0"
+                    />
+                    <div className="min-w-0">
+                      <span className="text-sm text-slate-700 group-hover:text-slate-900 font-medium">
+                        {form.name}
+                      </span>
+                      <p className="text-xs text-slate-400 truncate">
+                        {form.questions.split("\n")[0]}
+                      </p>
+                    </div>
+                  </label>
+                );
+
+                return (
+                  <div className="space-y-4">
+                    {favourites.length > 0 && (
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-wide text-yellow-600 mb-2">
+                          ★ Favourites
+                        </p>
+                        <div className="space-y-0.5">
+                          {favourites.map(renderFormRow)}
+                        </div>
+                      </div>
+                    )}
+                    {otherCats.length > 0 && (
+                      <div>
+                        {favourites.length > 0 && (
+                          <p className="text-xs font-semibold uppercase tracking-wide text-slate-400 mb-2">
+                            All Forms
+                          </p>
+                        )}
+                        {otherCats.map((cat) => (
+                          <div key={cat} className="mb-3">
+                            <p className="text-xs font-semibold text-slate-500 mb-1">{cat}</p>
+                            <div className="space-y-0.5 pl-1">
+                              {othersByCategory[cat].map(renderFormRow)}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+            </div>
+
+            {/* Footer */}
+            <div className="px-6 py-4 border-t border-slate-200 flex items-center justify-between gap-3">
+              <p className="text-xs text-slate-500">
+                {modalCheckedIds.size} form{modalCheckedIds.size !== 1 ? "s" : ""} selected
+              </p>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    // Restore previous selection on cancel
+                    setModalCheckedIds(new Set(selectedExistingForms.map((f) => f.id)));
+                    setExistingFormsModalOpen(false);
+                  }}
+                  className="px-4 py-2 text-sm rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const chosen = physicianForms.filter((f) => modalCheckedIds.has(f.id));
+                    setSelectedExistingForms(chosen);
+                    setExistingFormsModalOpen(false);
+                  }}
+                  className="px-4 py-2 text-sm rounded-lg bg-slate-900 text-white hover:bg-slate-800"
+                >
+                  Confirm Selection
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Form Questions Selection Modal */}
       {formQuestionsModalOpen && (
