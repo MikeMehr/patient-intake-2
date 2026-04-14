@@ -31,28 +31,6 @@ interface WorkforceUser {
   organizationName?: string;
 }
 
-interface FeedbackByOrg {
-  organizationId: string;
-  organizationName: string;
-  count: number;
-  average: number;
-}
-
-interface RecentFeedbackItem {
-  organizationName: string;
-  physicianName: string;
-  rating: number;
-  comments: string | null;
-  submittedAt: string;
-}
-
-interface FeedbackData {
-  summary: { totalRatings: number; averageRating: number | null };
-  byOrganization: FeedbackByOrg[];
-  recentFeedback: RecentFeedbackItem[];
-  pagination: { page: number; pageSize: number; totalComments: number };
-}
-
 export default function SuperAdminDashboard() {
   const router = useRouter();
   const [organizations, setOrganizations] = useState<Organization[]>([]);
@@ -63,22 +41,11 @@ export default function SuperAdminDashboard() {
   const [searchQuery, setSearchQuery] = useState("");
   const [superAdmins, setSuperAdmins] = useState<WorkforceUser[]>([]);
   const [orgAdmins, setOrgAdmins] = useState<WorkforceUser[]>([]);
-  const [feedbackData, setFeedbackData] = useState<FeedbackData | null>(null);
-  const [feedbackLoading, setFeedbackLoading] = useState(true);
-  const [feedbackError, setFeedbackError] = useState<string | null>(null);
-  const [feedbackExpanded, setFeedbackExpanded] = useState(false);
-  const [feedbackPage, setFeedbackPage] = useState(1);
 
   useEffect(() => {
     fetchOrganizations();
     fetchWorkforce();
-    fetchFeedback(1);
   }, []);
-
-  useEffect(() => {
-    fetchFeedback(feedbackPage);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [feedbackPage]);
 
   const fetchOrganizations = async () => {
     try {
@@ -120,29 +87,6 @@ export default function SuperAdminDashboard() {
       setWorkforceError("Failed to load workforce MFA controls");
     } finally {
       setWorkforceLoading(false);
-    }
-  };
-
-  const fetchFeedback = async (page: number) => {
-    setFeedbackLoading(true);
-    setFeedbackError(null);
-    try {
-      const response = await fetch(`/api/admin/feedback?page=${page}`);
-      if (response.status === 401) {
-        router.push("/admin/login");
-        return;
-      }
-      const data = await response.json();
-      if (data.error) {
-        setFeedbackError(data.error);
-      } else {
-        setFeedbackData(data as FeedbackData);
-      }
-    } catch (err) {
-      console.error("Error fetching feedback:", err);
-      setFeedbackError("Failed to load patient feedback");
-    } finally {
-      setFeedbackLoading(false);
     }
   };
 
@@ -326,167 +270,6 @@ export default function SuperAdminDashboard() {
               )}
             </tbody>
           </table>
-        </div>
-
-        {/* ---------------------------------------------------------------- */}
-        {/* Patient Feedback Section                                        */}
-        {/* ---------------------------------------------------------------- */}
-        <div className="mt-8 bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
-          <button
-            type="button"
-            className="w-full px-6 py-4 border-b border-slate-200 flex items-center justify-between text-left hover:bg-slate-50 transition-colors"
-            onClick={() => setFeedbackExpanded((v) => !v)}
-            aria-expanded={feedbackExpanded}
-          >
-            <div>
-              <h2 className="text-lg font-semibold text-slate-900">Patient Feedback</h2>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Star ratings and comments submitted by patients after guided interviews.
-              </p>
-            </div>
-            <span className="ml-4 text-slate-400 text-xl leading-none select-none">
-              {feedbackExpanded ? "▲" : "▼"}
-            </span>
-          </button>
-
-          {feedbackExpanded && (
-            <div className="p-6">
-              {feedbackLoading ? (
-                <p className="text-sm text-slate-500">Loading feedback…</p>
-              ) : feedbackError ? (
-                <p className="text-sm text-red-600">{feedbackError}</p>
-              ) : !feedbackData || feedbackData.summary.totalRatings === 0 ? (
-                <p className="text-sm text-slate-500">No patient feedback submitted yet.</p>
-              ) : (
-                <>
-                  {/* Summary bar */}
-                  <div className="mb-6 flex flex-wrap gap-6">
-                    <div className="rounded-lg border border-slate-200 bg-slate-50 px-5 py-3 text-center min-w-[120px]">
-                      <p className="text-2xl font-bold text-slate-900">{feedbackData.summary.totalRatings}</p>
-                      <p className="text-xs text-slate-500 mt-0.5">Total Ratings</p>
-                    </div>
-                    <div className="rounded-lg border border-amber-200 bg-amber-50 px-5 py-3 text-center min-w-[120px]">
-                      <p className="text-2xl font-bold text-amber-600">
-                        {feedbackData.summary.averageRating !== null
-                          ? feedbackData.summary.averageRating.toFixed(1)
-                          : "—"}
-                        <span className="text-base ml-1">/ 5</span>
-                      </p>
-                      <p className="text-xs text-slate-500 mt-0.5">Global Average</p>
-                    </div>
-                  </div>
-
-                  {/* Per-org table */}
-                  {feedbackData.byOrganization.length > 0 && (
-                    <div className="mb-6">
-                      <h3 className="text-sm font-semibold text-slate-700 mb-2">By Organization</h3>
-                      <div className="overflow-x-auto rounded-lg border border-slate-200">
-                        <table className="min-w-full divide-y divide-slate-200 text-sm">
-                          <thead className="bg-slate-50">
-                            <tr>
-                              <th className="px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Organization</th>
-                              <th className="px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase tracking-wider"># Ratings</th>
-                              <th className="px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Avg Rating</th>
-                            </tr>
-                          </thead>
-                          <tbody className="bg-white divide-y divide-slate-100">
-                            {feedbackData.byOrganization.map((org) => (
-                              <tr key={org.organizationId} className="hover:bg-slate-50">
-                                <td className="px-4 py-2 font-medium text-slate-800">{org.organizationName}</td>
-                                <td className="px-4 py-2 text-slate-600">{org.count}</td>
-                                <td className="px-4 py-2">
-                                  <span className="text-amber-500 mr-1">
-                                    {Array.from({ length: 5 }, (_, i) => (
-                                      <span key={i} className={i < Math.round(org.average) ? "text-amber-400" : "text-slate-300"}>★</span>
-                                    ))}
-                                  </span>
-                                  <span className="text-slate-500 text-xs">{org.average.toFixed(1)}</span>
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Recent feedback feed */}
-                  {feedbackData.recentFeedback.length > 0 && (
-                    <div>
-                      {(() => {
-                        const { page, pageSize, totalComments } = feedbackData.pagination;
-                        const totalPages = Math.ceil(totalComments / pageSize);
-                        const from = (page - 1) * pageSize + 1;
-                        const to = Math.min(page * pageSize, totalComments);
-                        return (
-                          <>
-                            <div className="flex items-center justify-between mb-2">
-                              <h3 className="text-sm font-semibold text-slate-700">
-                                Recent Comments
-                                <span className="ml-2 text-xs font-normal text-slate-400">
-                                  {from}–{to} of {totalComments}
-                                </span>
-                              </h3>
-                              <div className="flex items-center gap-2">
-                                <button
-                                  type="button"
-                                  disabled={page <= 1 || feedbackLoading}
-                                  onClick={() => setFeedbackPage((p) => p - 1)}
-                                  className="inline-flex items-center gap-1 rounded-md border border-slate-300 bg-white px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
-                                >
-                                  ← Previous
-                                </button>
-                                <span className="text-xs text-slate-500">
-                                  Page {page} of {totalPages}
-                                </span>
-                                <button
-                                  type="button"
-                                  disabled={page >= totalPages || feedbackLoading}
-                                  onClick={() => setFeedbackPage((p) => p + 1)}
-                                  className="inline-flex items-center gap-1 rounded-md border border-slate-300 bg-white px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
-                                >
-                                  Next →
-                                </button>
-                              </div>
-                            </div>
-
-                            <div className="space-y-3">
-                              {feedbackLoading ? (
-                                <p className="text-sm text-slate-400 py-4 text-center">Loading…</p>
-                              ) : (
-                                feedbackData.recentFeedback.map((item, idx) => (
-                                  <div key={idx} className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
-                                    <div className="flex items-center justify-between mb-1">
-                                      <div className="flex items-center gap-2">
-                                        <span>
-                                          {Array.from({ length: 5 }, (_, i) => (
-                                            <span key={i} className={i < item.rating ? "text-amber-400" : "text-slate-300"}>★</span>
-                                          ))}
-                                        </span>
-                                        <span className="text-xs text-slate-500">{item.organizationName}</span>
-                                      </div>
-                                      <span className="text-xs text-slate-400">
-                                        {new Date(item.submittedAt).toLocaleDateString()}
-                                      </span>
-                                    </div>
-                                    {item.comments ? (
-                                      <p className="text-sm text-slate-700 mt-1">{item.comments}</p>
-                                    ) : (
-                                      <p className="text-xs text-slate-400 italic mt-1">No comment left.</p>
-                                    )}
-                                  </div>
-                                ))
-                              )}
-                            </div>
-                          </>
-                        );
-                      })()}
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
-          )}
         </div>
 
         <div className="mt-8 bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">

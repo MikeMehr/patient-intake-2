@@ -195,6 +195,7 @@ export default function PhysicianDashboard() {
 
   const LS_SESSIONS = "physicianDashboard.sessionsDefaultOpen";
   const LS_INVITATIONS = "physicianDashboard.invitationsDefaultOpen";
+  const LS_PATIENT_LOOKUP = "physicianDashboard.patientLookupDefaultOpen";
   const [settingsMenuOpen, setSettingsMenuOpen] = useState(false);
   const settingsMenuRef = useRef<HTMLDivElement>(null);
   const [sessionsDefaultOpen, setSessionsDefaultOpen] = useState<boolean>(() => {
@@ -204,6 +205,10 @@ export default function PhysicianDashboard() {
   const [invitationsDefaultOpen, setInvitationsDefaultOpen] = useState<boolean>(() => {
     if (typeof window === "undefined") return false;
     return localStorage.getItem("physicianDashboard.invitationsDefaultOpen") === "true";
+  });
+  const [patientLookupDefaultOpen, setPatientLookupDefaultOpen] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    return localStorage.getItem("physicianDashboard.patientLookupDefaultOpen") === "true";
   });
 
   useEffect(() => {
@@ -303,6 +308,12 @@ export default function PhysicianDashboard() {
     const next = !invitationsDefaultOpen;
     setInvitationsDefaultOpen(next);
     localStorage.setItem(LS_INVITATIONS, String(next));
+  }
+
+  function togglePatientLookupDefault() {
+    const next = !patientLookupDefaultOpen;
+    setPatientLookupDefaultOpen(next);
+    localStorage.setItem(LS_PATIENT_LOOKUP, String(next));
   }
 
   const handleLogout = async () => {
@@ -934,6 +945,20 @@ export default function PhysicianDashboard() {
                       >
                         <span
                           className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow transition-transform ${invitationsDefaultOpen ? "translate-x-4" : "translate-x-0"}`}
+                        />
+                      </button>
+                    </label>
+                    <label className="flex items-center justify-between gap-3 rounded-md px-2 py-2 hover:bg-slate-50 cursor-pointer">
+                      <span className="text-sm text-slate-700">Patient Lookup</span>
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={patientLookupDefaultOpen}
+                        onClick={togglePatientLookupDefault}
+                        className={`relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors focus:outline-none ${patientLookupDefaultOpen ? "bg-slate-800" : "bg-slate-200"}`}
+                      >
+                        <span
+                          className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow transition-transform ${patientLookupDefaultOpen ? "translate-x-4" : "translate-x-0"}`}
                         />
                       </button>
                     </label>
@@ -1715,7 +1740,7 @@ export default function PhysicianDashboard() {
 
         {/* Patient Lookup (Chart) */}
         <div ref={patientLookupSectionRef} className="mt-6">
-          <CollapsibleSection id="patient-lookup" title="Patient Lookup" defaultOpen={false}>
+          <CollapsibleSection id="patient-lookup" title="Patient Lookup" defaultOpen={patientLookupDefaultOpen}>
             <p className="text-sm text-slate-600 mb-4">
               Search for a patient by Name (recommended: Name + DOB) or by Healthcare Number (HIN).
             </p>
