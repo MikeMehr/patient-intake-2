@@ -50,6 +50,7 @@ interface FeedbackData {
   summary: { totalRatings: number; averageRating: number | null };
   byOrganization: FeedbackByOrg[];
   recentFeedback: RecentFeedbackItem[];
+  pagination: { page: number; pageSize: number; totalComments: number };
 }
 
 export default function SuperAdminDashboard() {
@@ -66,12 +67,18 @@ export default function SuperAdminDashboard() {
   const [feedbackLoading, setFeedbackLoading] = useState(true);
   const [feedbackError, setFeedbackError] = useState<string | null>(null);
   const [feedbackExpanded, setFeedbackExpanded] = useState(false);
+  const [feedbackPage, setFeedbackPage] = useState(1);
 
   useEffect(() => {
     fetchOrganizations();
     fetchWorkforce();
-    fetchFeedback();
+    fetchFeedback(1);
   }, []);
+
+  useEffect(() => {
+    fetchFeedback(feedbackPage);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [feedbackPage]);
 
   const fetchOrganizations = async () => {
     try {
@@ -116,9 +123,11 @@ export default function SuperAdminDashboard() {
     }
   };
 
-  const fetchFeedback = async () => {
+  const fetchFeedback = async (page: number) => {
+    setFeedbackLoading(true);
+    setFeedbackError(null);
     try {
-      const response = await fetch("/api/admin/feedback");
+      const response = await fetch(`/api/admin/feedback?page=${page}`);
       if (response.status === 401) {
         router.push("/admin/login");
         return;
@@ -404,31 +413,74 @@ export default function SuperAdminDashboard() {
                   {/* Recent feedback feed */}
                   {feedbackData.recentFeedback.length > 0 && (
                     <div>
-                      <h3 className="text-sm font-semibold text-slate-700 mb-2">Recent Comments</h3>
-                      <div className="space-y-3">
-                        {feedbackData.recentFeedback.map((item, idx) => (
-                          <div key={idx} className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
-                            <div className="flex items-center justify-between mb-1">
-                              <div className="flex items-center gap-2">
-                                <span className="text-amber-400">
-                                  {Array.from({ length: 5 }, (_, i) => (
-                                    <span key={i} className={i < item.rating ? "text-amber-400" : "text-slate-300"}>★</span>
-                                  ))}
+                      {(() => {
+                        const { page, pageSize, totalComments } = feedbackData.pagination;
+                        const totalPages = Math.ceil(totalComments / pageSize);
+                        const from = (page - 1) * pageSize + 1;
+                        const to = Math.min(page * pageSize, totalComments);
+                        return (
+                          <>
+                            <div className="flex items-center justify-between mb-2">
+                              <h3 className="text-sm font-semibold text-slate-700">
+                                Recent Comments
+                                <span className="ml-2 text-xs font-normal text-slate-400">
+                                  {from}–{to} of {totalComments}
                                 </span>
-                                <span className="text-xs text-slate-500">{item.organizationName}</span>
+                              </h3>
+                              <div className="flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  disabled={page <= 1 || feedbackLoading}
+                                  onClick={() => setFeedbackPage((p) => p - 1)}
+                                  className="inline-flex items-center gap-1 rounded-md border border-slate-300 bg-white px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                                >
+                                  ← Previous
+                                </button>
+                                <span className="text-xs text-slate-500">
+                                  Page {page} of {totalPages}
+                                </span>
+                                <button
+                                  type="button"
+                                  disabled={page >= totalPages || feedbackLoading}
+                                  onClick={() => setFeedbackPage((p) => p + 1)}
+                                  className="inline-flex items-center gap-1 rounded-md border border-slate-300 bg-white px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                                >
+                                  Next →
+                                </button>
                               </div>
-                              <span className="text-xs text-slate-400">
-                                {new Date(item.submittedAt).toLocaleDateString()}
-                              </span>
                             </div>
-                            {item.comments ? (
-                              <p className="text-sm text-slate-700 mt-1">{item.comments}</p>
-                            ) : (
-                              <p className="text-xs text-slate-400 italic mt-1">No comment left.</p>
-                            )}
-                          </div>
-                        ))}
-                      </div>
+
+                            <div className="space-y-3">
+                              {feedbackLoading ? (
+                                <p className="text-sm text-slate-400 py-4 text-center">Loading…</p>
+                              ) : (
+                                feedbackData.recentFeedback.map((item, idx) => (
+                                  <div key={idx} className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+                                    <div className="flex items-center justify-between mb-1">
+                                      <div className="flex items-center gap-2">
+                                        <span>
+                                          {Array.from({ length: 5 }, (_, i) => (
+                                            <span key={i} className={i < item.rating ? "text-amber-400" : "text-slate-300"}>★</span>
+                                          ))}
+                                        </span>
+                                        <span className="text-xs text-slate-500">{item.organizationName}</span>
+                                      </div>
+                                      <span className="text-xs text-slate-400">
+                                        {new Date(item.submittedAt).toLocaleDateString()}
+                                      </span>
+                                    </div>
+                                    {item.comments ? (
+                                      <p className="text-sm text-slate-700 mt-1">{item.comments}</p>
+                                    ) : (
+                                      <p className="text-xs text-slate-400 italic mt-1">No comment left.</p>
+                                    )}
+                                  </div>
+                                ))
+                              )}
+                            </div>
+                          </>
+                        );
+                      })()}
                     </div>
                   )}
                 </>

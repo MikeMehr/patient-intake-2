@@ -70,7 +70,19 @@ export async function GET(request: NextRequest) {
       average: parseFloat(row.average),
     }));
 
-    // Recent individual feedback (last 20), most recent first
+    // Paginated individual feedback, most recent first
+    const PAGE_SIZE = 20;
+    const rawPage = parseInt(request.nextUrl.searchParams.get("page") ?? "1", 10);
+    const page = Number.isFinite(rawPage) && rawPage > 0 ? rawPage : 1;
+    const offset = (page - 1) * PAGE_SIZE;
+
+    const totalCommentsResult = await query<{ total: string }>(
+      `SELECT COUNT(*) AS total
+       FROM patient_sessions
+       WHERE feedback_submitted_at IS NOT NULL`,
+    );
+    const totalComments = parseInt(totalCommentsResult.rows[0]?.total ?? "0", 10);
+
     const recentResult = await query<{
       organization_name: string;
       physician_name: string;
@@ -89,7 +101,8 @@ export async function GET(request: NextRequest) {
        LEFT JOIN organizations o ON o.id = ph.organization_id
        WHERE ps.feedback_submitted_at IS NOT NULL
        ORDER BY ps.feedback_submitted_at DESC
-       LIMIT 20`,
+       LIMIT $1 OFFSET $2`,
+      [PAGE_SIZE, offset],
     );
 
     const recentFeedback = recentResult.rows.map((row) => ({
@@ -105,6 +118,7 @@ export async function GET(request: NextRequest) {
       summary: { totalRatings, averageRating },
       byOrganization,
       recentFeedback,
+      pagination: { page, pageSize: PAGE_SIZE, totalComments },
     });
   } catch (error) {
     console.error("[api/admin/feedback] Unexpected error:", error);
