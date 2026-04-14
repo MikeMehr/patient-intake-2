@@ -1456,22 +1456,28 @@ export default function PhysicianDashboard() {
                             )}
                           </td>
                           {/* Patient experience rating */}
-                          <td className="px-4 py-4 whitespace-nowrap text-sm">
+                          <td className="px-4 py-4 text-sm max-w-[11rem]">
                             {session.feedbackRating ? (
-                              <span
-                                title={session.feedbackComments || undefined}
-                                className="cursor-default"
-                                aria-label={`${session.feedbackRating} out of 5 stars`}
-                              >
-                                {Array.from({ length: 5 }, (_, i) => (
-                                  <span
-                                    key={i}
-                                    className={i < session.feedbackRating! ? "text-amber-400" : "text-slate-300"}
-                                  >
-                                    ★
-                                  </span>
-                                ))}
-                              </span>
+                              <div>
+                                <span
+                                  className="cursor-default"
+                                  aria-label={`${session.feedbackRating} out of 5 stars`}
+                                >
+                                  {Array.from({ length: 5 }, (_, i) => (
+                                    <span
+                                      key={i}
+                                      className={i < session.feedbackRating! ? "text-amber-400" : "text-slate-300"}
+                                    >
+                                      ★
+                                    </span>
+                                  ))}
+                                </span>
+                                {session.feedbackComments && (
+                                  <p className="mt-1 text-xs text-slate-500 whitespace-normal leading-snug">
+                                    {session.feedbackComments}
+                                  </p>
+                                )}
+                              </div>
                             ) : (
                               <span className="text-slate-400">—</span>
                             )}
