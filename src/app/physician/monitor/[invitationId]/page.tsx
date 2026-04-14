@@ -53,10 +53,7 @@ export default function MonitorPage() {
   const [error, setError] = useState<string | null>(null);
   const [expandedRationales, setExpandedRationales] = useState<Set<string>>(new Set());
   const lastTurnIndexRef = useRef(-1);
-  const unresolvedPatientIndicesRef = useRef<Set<number>>(new Set());
-  const translationAttemptsRef = useRef<Map<number, number>>(new Map());
   const transcriptEndRef = useRef<HTMLDivElement>(null);
-  const MAX_TRANSLATION_RETRIES = 6;
 
   const latestSnapshot: StateSnapshot | null =
     [...turns].reverse().find((t) => t.role === "assistant" && t.state_snapshot)?.state_snapshot ?? null;
@@ -66,16 +63,8 @@ export default function MonitorPage() {
 
   const doFetch = useCallback(async () => {
     try {
-      // If there are unresolved (untranslated) patient turns, go back before the earliest one
-      // so the live route retries their on-demand translation.
-      let since = lastTurnIndexRef.current;
-      if (unresolvedPatientIndicesRef.current.size > 0) {
-        const earliest = Math.min(...unresolvedPatientIndicesRef.current);
-        since = Math.min(since, earliest - 1);
-      }
-
       const res = await fetch(
-        `/api/invitations/${invitationId}/live?since=${since}`,
+        `/api/invitations/${invitationId}/live?since=${lastTurnIndexRef.current}`,
       );
       if (res.status === 401) {
         setError("Session expired. Please log in again.");
@@ -93,46 +82,14 @@ export default function MonitorPage() {
         setTurns((prev) => {
           // If new turns start at index 0 the patient started a fresh session —
           // replace the entire transcript so the monitor shows only the new interview.
-          if (firstNewIndex === 0) {
-            unresolvedPatientIndicesRef.current.clear();
-            translationAttemptsRef.current.clear();
-            return data.turns;
-          }
-          // Build a lookup map for incoming turns by id.
-          const incomingById = new Map(data.turns.map((t: LiveTurn) => [t.id, t]));
-          // Update existing turns in-place when a previously-null content_en has been resolved.
-          const updated = prev.map((t) => {
-            const refreshed = incomingById.get(t.id);
-            return refreshed && !t.content_en && refreshed.content_en ? refreshed : t;
-          });
-          // Append truly new turns, deduplicating by id.
+          if (firstNewIndex === 0) return data.turns;
+          // Otherwise append, deduplicating by id to prevent double-renders on rapid polls.
           const existingIds = new Set(prev.map((t) => t.id));
           const fresh = data.turns.filter((t: LiveTurn) => !existingIds.has(t.id));
-          return fresh.length > 0 ? [...updated, ...fresh] : updated;
+          return fresh.length > 0 ? [...prev, ...fresh] : prev;
         });
-
-        // Advance lastTurnIndex to the furthest turn seen.
         const last = data.turns[data.turns.length - 1];
-        if (last.turn_index > lastTurnIndexRef.current) {
-          lastTurnIndexRef.current = last.turn_index;
-        }
-
-        // Track patient turns that still have no translation; give up after MAX_TRANSLATION_RETRIES.
-        data.turns.forEach((t: LiveTurn) => {
-          if (t.role !== "patient") return;
-          if (t.content_en) {
-            unresolvedPatientIndicesRef.current.delete(t.turn_index);
-            translationAttemptsRef.current.delete(t.turn_index);
-          } else {
-            const attempts = (translationAttemptsRef.current.get(t.turn_index) ?? 0) + 1;
-            translationAttemptsRef.current.set(t.turn_index, attempts);
-            if (attempts < MAX_TRANSLATION_RETRIES) {
-              unresolvedPatientIndicesRef.current.add(t.turn_index);
-            } else {
-              unresolvedPatientIndicesRef.current.delete(t.turn_index);
-            }
-          }
-        });
+        lastTurnIndexRef.current = last.turn_index;
       }
     } catch {
       // Silent — network hiccups should not disrupt the monitor
@@ -346,7 +303,7 @@ export default function MonitorPage() {
                   <div>
                     <p className="text-sm font-semibold text-slate-400 mb-1">Complaint Roadmap</p>
                     <ul className="space-y-0.5">
-                      {latestSnapshot.completedComplaints?.map((c) => (
+                      {latestSnapshot.completedComplaints?.filter((c) => c !== latestSnapshot.activeComplaint).map((c) => (
                         <li key={c} className="text-sm text-slate-400 flex gap-1">
                           <span className="text-green-500">✓</span> {c}
                         </li>

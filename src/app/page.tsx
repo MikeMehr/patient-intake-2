@@ -2738,9 +2738,9 @@ export default function Home() {
       statusRef.current = "saving";
 
       try {
-        await saveSession(historyWithFinal);
+        const savedCode = await saveSession(historyWithFinal);
         setSessionSavePendingHistory(null);
-        await finalizePrivacyAndExit();
+        await finalizePrivacyAndExit(savedCode);
       } catch (err) {
         console.error("Failed to save session with final comment:", err);
         setSessionSaveError(
@@ -3101,9 +3101,9 @@ export default function Home() {
     setStatus("saving");
     statusRef.current = "saving";
     try {
-      await saveSession(historyWithPhqGad);
+      const savedCode = await saveSession(historyWithPhqGad);
       setSessionSavePendingHistory(null);
-      await finalizePrivacyAndExit();
+      await finalizePrivacyAndExit(savedCode);
     } catch (err) {
       console.error("Failed to save session after PHQ/GAD:", err);
       setSessionSaveError(
@@ -3114,7 +3114,7 @@ export default function Home() {
     }
   }
 
-  async function finalizePrivacyAndExit() {
+  async function finalizePrivacyAndExit(sessionCode?: string) {
     const configuredRedirect =
       typeof window !== "undefined"
         ? (sessionStorage.getItem("organizationWebsiteUrl") || "").trim()
@@ -3218,8 +3218,9 @@ export default function Home() {
     } catch {
       // Best effort: continue to redirect even if cookie clear fails.
     }
+    const codeParam = sessionCode ? `&code=${encodeURIComponent(sessionCode)}` : "";
     router.replace(
-      `${PRIVACY_COMPLETION_ROUTE}?redirect=${encodeURIComponent(completionRedirectUrl)}`,
+      `${PRIVACY_COMPLETION_ROUTE}?redirect=${encodeURIComponent(completionRedirectUrl)}${codeParam}`,
     );
   }
 
@@ -3344,9 +3345,9 @@ export default function Home() {
     setStatus("saving");
     statusRef.current = "saving";
     try {
-      await saveSession(sessionSavePendingHistory);
+      const savedCode = await saveSession(sessionSavePendingHistory);
       setSessionSavePendingHistory(null);
-      await finalizePrivacyAndExit();
+      await finalizePrivacyAndExit(savedCode);
     } catch (err) {
       console.error("Retry session save failed:", err);
       setSessionSaveError(
