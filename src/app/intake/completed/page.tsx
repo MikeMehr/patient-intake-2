@@ -62,7 +62,18 @@ function StarRating({
             onClick={() => onRate(star)}
             onMouseEnter={() => onHover(star)}
             onMouseLeave={onLeave}
-            className={`text-3xl leading-none transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 rounded ${
+            // Touch support for iPad/iOS Safari — touchstart gives hover preview,
+            // touchend commits the rating and suppresses the subsequent click.
+            onTouchStart={(e) => {
+              e.preventDefault();
+              onHover(star);
+            }}
+            onTouchEnd={(e) => {
+              e.preventDefault();
+              onRate(star);
+              onLeave();
+            }}
+            className={`text-3xl leading-none transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 rounded select-none ${
               active ? "text-amber-400" : "text-slate-300 hover:text-amber-300"
             }`}
           >
@@ -169,7 +180,7 @@ function IntakeCompletedContent() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-slate-100 flex items-center justify-center px-4 pb-[40vh]">
+    <div className="min-h-screen bg-slate-100 flex items-center justify-center px-4 py-8 sm:py-12">
       <main className="w-[80%] max-w-[calc(100vw-2rem)] sm:w-full sm:max-w-xl rounded-2xl border border-slate-200 bg-white p-6 sm:p-8 shadow-sm">
         {/* Logo */}
         <div className="flex justify-center mb-6">
@@ -279,7 +290,7 @@ export default function IntakeCompletedPage() {
   return (
     <Suspense
       fallback={
-        <div className="min-h-screen bg-slate-100 flex items-center justify-center px-4 pb-[40vh]">
+        <div className="min-h-screen bg-slate-100 flex items-center justify-center px-4 py-8 sm:py-12">
           <main className="w-[80%] max-w-[calc(100vw-2rem)] sm:w-full sm:max-w-xl rounded-2xl border border-slate-200 bg-white p-6 sm:p-8 shadow-sm">
             <div className="flex justify-center mb-6">
               <Image
