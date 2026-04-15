@@ -101,20 +101,11 @@ export default function BodyPartDiagram({
 
     const rect = event.currentTarget.getBoundingClientRect();
 
-    // On iOS Safari, pinch-zoom causes event.clientX/Y to be in visual-viewport
-    // space while getBoundingClientRect() is in layout-viewport space.
-    // window.visualViewport bridges the two frames; when not zoomed (scale=1)
-    // this is a mathematical no-op.
-    const vv = window.visualViewport;
-    const scale = vv?.scale ?? 1;
-    const vvOffsetLeft = vv?.offsetLeft ?? 0;
-    const vvOffsetTop = vv?.offsetTop ?? 0;
-    const layoutX = vvOffsetLeft + event.clientX / scale;
-    const layoutY = vvOffsetTop + event.clientY / scale;
-
     // Translate click into image-content space (strips letterbox/pillarbox offset).
-    const relX = layoutX - rect.left - imgBounds.offsetX;
-    const relY = layoutY - rect.top - imgBounds.offsetY;
+    // clientX/Y and getBoundingClientRect() are both in layout-viewport CSS pixels
+    // on all major browsers including iOS Safari, so no zoom correction is needed.
+    const relX = event.clientX - rect.left - imgBounds.offsetX;
+    const relY = event.clientY - rect.top - imgBounds.offsetY;
 
     const xPct = Math.max(0, Math.min(100, Number(((relX / imgBounds.renderedW) * 100).toFixed(1))));
     const yPct = Math.max(0, Math.min(100, Number(((relY / imgBounds.renderedH) * 100).toFixed(1))));
