@@ -4,6 +4,7 @@ import Image from "next/image";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { mergeDiagramSelectionsForDisplay, type DiagramSelectionInput } from "@/lib/body-diagram-display";
+import DiagramViewer from "./DiagramViewer";
 
 // ── HPI helpers (mirrors physician/view) ────────────────────────────────────
 function stripOptionalNone(value: string): string {
@@ -651,26 +652,11 @@ export default function PatientChartPage() {
                                     <p className="text-sm text-slate-700">
                                       {partLabel.replace(/\b\w/g, (c) => c.toUpperCase())} pain mapping:
                                     </p>
-                                    <div className="relative mt-2 h-72 w-72 overflow-hidden rounded-lg border border-slate-200 bg-white">
-                                      <img
-                                        src={image.src}
-                                        alt={`${image.alt} with selected markers`}
-                                        className="absolute inset-0 h-full w-full object-contain"
-                                      />
-                                      {selection.markers.map((marker, markerIndex) => (
-                                        <div
-                                          key={`${marker.xPct}-${marker.yPct}-${markerIndex}`}
-                                          className="pointer-events-none absolute text-base font-bold text-red-600 drop-shadow-sm"
-                                          style={{
-                                            left: `${marker.xPct}%`,
-                                            top: `${marker.yPct}%`,
-                                            transform: "translate(-50%, -50%)",
-                                          }}
-                                        >
-                                          X
-                                        </div>
-                                      ))}
-                                    </div>
+                                    <DiagramViewer
+                                      imageSrc={image.src}
+                                      imageAlt={`${image.alt} with selected markers`}
+                                      markers={selection.markers}
+                                    />
                                     <p className="mt-2 text-xs text-slate-500">
                                       {selection.markers.length > 0
                                         ? `Coordinates: ${selection.markers
