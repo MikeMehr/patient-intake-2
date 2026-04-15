@@ -7,6 +7,7 @@ import type { PatientSession } from "@/lib/session-store";
 import SessionKeepAlive from "@/components/auth/SessionKeepAlive";
 import CollapsibleSection from "@/components/CollapsibleSection";
 import { mergeDiagramSelectionsForDisplay, type DiagramSelectionInput } from "@/lib/body-diagram-display";
+import DiagramViewer from "@/components/DiagramViewer";
 
 type RxMedicationRow = {
   id: string;
@@ -969,15 +970,16 @@ function PhysicianViewContent() {
           const offsetY = (SIZE - drawH) / 2;
           ctx.drawImage(img, offsetX, offsetY, drawW, drawH);
 
-          // Draw markers — coordinates are stored relative to the full container
-          // (same as how the web view renders them), so apply to full canvas SIZE.
+          // Draw markers — coordinates are stored relative to the image content
+          // area (after object-contain letterbox/pillarbox), so apply offsetX/Y
+          // and scale to the drawn image dimensions, not the full canvas SIZE.
           ctx.fillStyle = "#dc2626";
           ctx.font = `bold ${Math.round(SIZE * 0.07)}px sans-serif`;
           ctx.textAlign = "center";
           ctx.textBaseline = "middle";
           for (const marker of selection.markers) {
-            const mx = (marker.xPct / 100) * SIZE;
-            const my = (marker.yPct / 100) * SIZE;
+            const mx = offsetX + (marker.xPct / 100) * drawW;
+            const my = offsetY + (marker.yPct / 100) * drawH;
             ctx.fillText("X", mx, my);
           }
 
@@ -2640,26 +2642,11 @@ function PhysicianViewContent() {
                                 <p className="text-sm text-slate-700">
                                   {partLabel.replace(/\b\w/g, (c) => c.toUpperCase())} pain mapping:
                                 </p>
-                                <div className="relative mt-2 h-72 w-72 overflow-hidden rounded-lg border border-slate-200 bg-white">
-                                  <img
-                                    src={image.src}
-                                    alt={`${image.alt} with selected markers`}
-                                    className="absolute inset-0 h-full w-full object-contain"
-                                  />
-                                  {selection.markers.map((marker, markerIndex) => (
-                                    <div
-                                      key={`${marker.xPct}-${marker.yPct}-${markerIndex}`}
-                                      className="pointer-events-none absolute text-base font-bold text-red-600 drop-shadow-sm"
-                                      style={{
-                                        left: `${marker.xPct}%`,
-                                        top: `${marker.yPct}%`,
-                                        transform: "translate(-50%, -50%)",
-                                      }}
-                                    >
-                                      X
-                                    </div>
-                                  ))}
-                                </div>
+                                <DiagramViewer
+                                  imageSrc={image.src}
+                                  imageAlt={`${image.alt} with selected markers`}
+                                  markers={selection.markers}
+                                />
                                 <p className="mt-2 text-xs text-slate-500">
                                   {selection.markers.length > 0
                                     ? `Coordinates: ${selection.markers

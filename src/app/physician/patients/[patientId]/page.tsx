@@ -4,7 +4,7 @@ import Image from "next/image";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { mergeDiagramSelectionsForDisplay, type DiagramSelectionInput } from "@/lib/body-diagram-display";
-import DiagramViewer from "./DiagramViewer";
+import DiagramViewer from "@/components/DiagramViewer";
 
 // ── HPI helpers (mirrors physician/view) ────────────────────────────────────
 function stripOptionalNone(value: string): string {
