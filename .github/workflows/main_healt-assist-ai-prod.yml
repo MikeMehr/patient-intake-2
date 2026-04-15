@@ -52,6 +52,25 @@ jobs:
           echo "Runtime dependency security audit failed after ${attempts} attempts."
           exit 1
 
+      - name: Guard critical API routes
+        run: |
+          # These routes have been accidentally deleted three times by large
+          # unrelated commits. Fail fast here so a broken build never deploys.
+          missing=0
+          for f in \
+            src/app/api/sessions/feedback/route.ts \
+            src/app/api/admin/feedback/route.ts; do
+            if [ ! -f "$f" ]; then
+              echo "ERROR: critical route missing: $f"
+              missing=1
+            fi
+          done
+          if [ "$missing" -eq 1 ]; then
+            echo "One or more critical API routes are missing. Restore them before deploying."
+            exit 1
+          fi
+          echo "All critical routes present."
+
       - name: Build
         run: npx next build --webpack
 
