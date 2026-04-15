@@ -14,6 +14,9 @@ const nextConfig: NextConfig = {
   // container/App Service deployments (smaller than shipping the whole repo).
   output: "standalone",
   outputFileTracingIncludes: {
+    // Include migration SQL files in the standalone build so the startup
+    // migration runner can read them at runtime on Azure.
+    "**": ["./src/lib/migrations/**/*.sql"],
     "/api/lab-requisitions/generate/route": [
       "./node_modules/@sparticuz/chromium/bin/**",
     ],
