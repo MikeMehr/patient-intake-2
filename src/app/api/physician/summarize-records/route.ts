@@ -1,8 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentSession } from "@/lib/auth";
+import { getEffectivePhysicianId } from "@/lib/auth-helpers";
 import { getAzureOpenAIClient } from "@/lib/azure-openai";
 import { extractPdfTextWithAzureDocumentIntelligence } from "@/lib/invitation-pdf-summary";
+import { logPhysicianPhiAudit } from "@/lib/phi-audit";
+import { resolveWorkforceScope } from "@/lib/transcription-store";
+import { getRequestIp } from "@/lib/invitation-security";
 import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
+import { logDebug } from "@/lib/secure-logger";
 
 const FORMAT_PROMPTS: Record<string, string> = {
   "medical-legal": `You are a medical-legal report writer assisting a physician. Using the extracted medical records, write a comprehensive Medical-Legal Report.
@@ -55,6 +60,19 @@ export async function POST(request: NextRequest) {
       return res;
     }
     if (auth.userType !== "provider") {
+      status = 403;
+      const res = NextResponse.json({ error: "Provider access required." }, { status });
+      logRequestMeta("/api/physician/summarize-records", requestId, status, Date.now() - started);
+      return res;
+    }
+
+    const physicianId = getEffectivePhysicianId(auth);
+    const scope = resolveWorkforceScope({
+      userType: auth.userType,
+      userId: physicianId,
+      organizationId: auth.organizationId || null,
+    });
+    if (!scope) {
       status = 403;
       const res = NextResponse.json({ error: "Provider access required." }, { status });
       logRequestMeta("/api/physician/summarize-records", requestId, status, Date.now() - started);
@@ -136,12 +154,29 @@ export async function POST(request: NextRequest) {
       throw new Error("Azure OpenAI did not return any content.");
     }
 
+    // PHI audit log — records that this physician accessed and summarized a medical record PDF
+    await logPhysicianPhiAudit({
+      physicianId,
+      eventType: "record_summary_generated",
+      ipAddress: getRequestIp(request.headers),
+      userAgent: request.headers.get("user-agent"),
+      metadata: {
+        requestId,
+        format: format || "custom",
+        hasInstructions: !!instructions.trim(),
+        fileSizeBytes: file.size,
+        extractedTextLength: extractedText.length,
+        reportLength: report.length,
+      },
+    });
+
     const res = NextResponse.json({ report });
     logRequestMeta("/api/physician/summarize-records", requestId, status, Date.now() - started);
     return res;
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);
-    console.error("[physician/summarize-records] failed:", msg);
+    console.error("[physician/summarize-records] Report generation failed.");
+    logDebug("[physician/summarize-records] Error details", { errorMessage: msg });
     status = 500;
     const res = NextResponse.json(
       {
