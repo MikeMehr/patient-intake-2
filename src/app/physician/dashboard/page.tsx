@@ -939,6 +939,12 @@ export default function PhysicianDashboard() {
                     >
                       Forms
                     </a>
+                    <a
+                      href="/physician/summarizing"
+                      className="flex w-full items-center rounded-md px-2 py-2 text-sm text-slate-700 hover:bg-slate-50"
+                    >
+                      Summarizing
+                    </a>
                     {!isAssistantSession && (
                       <button
                         type="button"
