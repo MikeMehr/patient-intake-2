@@ -100,7 +100,7 @@ export function buildPrompt(
     : "none yet";
   const imageSection = imageSummary
     ? `PHOTO CONTEXT:\n${imageSummary}\n- A photo has already been reviewed. Acknowledge it only if helpful. Do not ask for another photo unless you truly need one.`
-    : "PHOTO CONTEXT:\nNo photo summary provided.";
+    : `PHOTO CONTEXT:\nNo photo has been provided yet. Use your clinical judgment — if seeing the affected area would meaningfully help the physician assess this complaint, you may ask the patient to upload a photo. Set "requiresPhotoUpload": true when doing so. Never ask for a photo if the affected area involves genitals, the anal region, or breasts — describe those in words only.`;
   const labSection =
     labReportSummary || previousLabReportSummary
       ? `LAB CONTEXT:
