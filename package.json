@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev --webpack",
+    "prebuild": "node scripts/check-critical-routes.js",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
