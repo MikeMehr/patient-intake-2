@@ -919,6 +919,7 @@ export default function Home() {
       finalCommentsQuestion: "Do you have any last comments or questions for your provider?",
       finalCommentsYes: "Yes",
       finalCommentsNo: "No",
+      openingQuestion: "Hello, I'm your doctor's AI assistant. I'll ask a few questions to help your doctor understand your concerns. What is bothering you today?",
     };
     Promise.all(
       Object.entries(strings).map(async ([key, text]) => {
@@ -2571,7 +2572,7 @@ export default function Home() {
 
       // Show the opening question immediately without an API call.
       // The patient's answer becomes the chief complaint for all subsequent turns.
-      const openingQuestion = "Hello, I'm your doctor's AI assistant. I'll ask a few questions to help your doctor understand your concerns. What is bothering you today?";
+      const openingQuestion = uiT.openingQuestion || "Hello, I'm your doctor's AI assistant. I'll ask a few questions to help your doctor understand your concerns. What is bothering you today?";
       const firstMessage: ChatMessage = { role: "assistant", content: openingQuestion };
       setMessages([firstMessage]);
       messagesRef.current = [firstMessage];
