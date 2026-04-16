@@ -56,7 +56,7 @@ type Status = "idle" | "awaitingAi" | "awaitingPatient" | "saving" | "complete" 
 type MicUiState = "idle" | "starting" | "listening";
 
 const statusCopy: Record<Status, string> = {
-  idle: "Enter your main concern to begin the interview.",
+  idle: "Click 'Start interview' when you're ready.",
   awaitingAi: "Aurora is composing the next question...",
   awaitingPatient: "Answer the assistant's latest question below.",
   saving: "Finalizing and saving your interview...",
@@ -4623,7 +4623,7 @@ export default function Home() {
                 <button
                   type="submit"
                   className="inline-flex flex-1 items-center justify-center rounded-2xl bg-[#52A882] px-5 py-2.5 text-base font-semibold text-white transition hover:bg-[#459970] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#52A882] disabled:cursor-not-allowed disabled:bg-[#F2FCF8] disabled:text-[#3a7a5e]"
-                  disabled={status !== "idle" || chiefComplaint.length < 3 || !language}
+                  disabled={status !== "idle" || !language}
                 >
                   {uiT.startInterview || "Start interview"}
                 </button>
