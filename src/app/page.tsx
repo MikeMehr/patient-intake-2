@@ -2486,7 +2486,7 @@ export default function Home() {
     setAgeInput(String(ageValue));
     setLockedProfile(profile);
 
-    setChiefComplaint(trimmed);
+    setChiefComplaint("");
     setDeferredIntentHint(null);
     setInterviewProgress(null);
     setMessages([]);
