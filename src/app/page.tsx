@@ -2409,12 +2409,6 @@ export default function Home() {
       return;
     }
 
-    const trimmed = chiefComplaint.trim();
-    if (trimmed.length < 3) {
-      setError("Please describe the complaint in a few words.");
-      return;
-    }
-
     if (!patientName.trim()) {
       setError("Please enter your name.");
       return;
@@ -2575,58 +2569,19 @@ export default function Home() {
         return;
       }
 
-      const turn = await requestTurn(
-        trimmed,
-        profile,
-        [],
-        null,
-        finalLabReportSummary,
-        finalPreviousLabReportSummary,
-        finalFormSummary,
-        interviewGuidance,
-        getMedPmhSummary(),
-        invitePatientBackground || null,
-        patientEmail.trim(),
-        physicianIdToUse,
-        language,
-        deferredIntentHint,
-      );
-      processTurn(turn);
-      const complaintLower = trimmed.toLowerCase();
-      const skinKeywords = [
-        "rash",
-        "lesion",
-        "skin",
-        "mole",
-        "spot",
-        "bump",
-        "hives",
-        "blister",
-        "ulcer",
-      ];
-      const shouldOfferImage = skinKeywords.some((keyword) =>
-        complaintLower.includes(keyword),
-      );
-      const sensitiveComplaintContext = getSensitivePhotoContext({
-        sex: profile.sex,
-        textBlocks: [trimmed],
-      });
-      // Preserve any explicit photo prompt set by processTurn(turn).
-      // Only auto-enable for skin complaints; do not force-hide otherwise.
-      if (
-        shouldOfferImage &&
-        !sensitiveComplaintContext.suppressPhotoRequest &&
-        !selectedImage &&
-        !selectedImagePreview
-      ) {
-        setShowImagePrompt(true);
-        setWantsToUploadImage(null);
-      }
+      // Show the opening question immediately without an API call.
+      // The patient's answer becomes the chief complaint for all subsequent turns.
+      const openingQuestion = "How may I help you today?";
+      const firstMessage: ChatMessage = { role: "assistant", content: openingQuestion };
+      setMessages([firstMessage]);
+      messagesRef.current = [firstMessage];
       if (selectedImagePreview) {
         URL.revokeObjectURL(selectedImagePreview);
       }
       setSelectedImage(null);
       setSelectedImagePreview(null);
+      setStatus("awaitingPatient");
+      statusRef.current = "awaitingPatient";
     } catch (err) {
       console.error(err);
       setStatus("idle");
@@ -2856,8 +2811,29 @@ export default function Home() {
         return;
       }
 
+      // First turn: the patient's answer to "How may I help you today?" IS the chief complaint.
+      const isFirstTurn = chiefComplaint === "";
+      let effectiveChiefComplaint = chiefComplaint;
+      if (isFirstTurn) {
+        setChiefComplaint(trimmed);
+        effectiveChiefComplaint = trimmed;
+
+        // Skin-keyword detection (previously ran after the first requestTurn in handleStart)
+        const complaintLower = trimmed.toLowerCase();
+        const skinKeywords = ["rash", "lesion", "skin", "mole", "spot", "bump", "hives", "blister", "ulcer"];
+        const shouldOfferImage = skinKeywords.some((kw) => complaintLower.includes(kw));
+        const sensitiveComplaintContext = getSensitivePhotoContext({
+          sex: lockedProfile?.sex || sex,
+          textBlocks: [trimmed],
+        });
+        if (shouldOfferImage && !sensitiveComplaintContext.suppressPhotoRequest && !selectedImage && !selectedImagePreview) {
+          setShowImagePrompt(true);
+          setWantsToUploadImage(null);
+        }
+      }
+
       const turn = await requestTurn(
-        chiefComplaint,
+        effectiveChiefComplaint,
         profile,
         optimisticTranscript,
         imageSummary,
@@ -4138,28 +4114,7 @@ export default function Home() {
                 </p>
               )}
 
-              <div className="space-y-1">
-                <label
-                  htmlFor="chief-complaint"
-                  className="text-sm font-medium text-slate-800"
-                >
-                  {uiT.chiefComplaintLabel || 'Chief complaint (Required)'}
-                </label>
-                <textarea
-                  id="chief-complaint"
-                  name="chiefComplaint"
-                  rows={2}
-                  placeholder={uiT.chiefComplaintPlaceholder || 'Describe your main concern (e.g., “3 days of sore throat with fever”)'}
-
-                  value={chiefComplaint}
-                  disabled={status !== "idle"}
-                  onChange={(event) => setChiefComplaint(event.target.value)}
-                  className="w-full rounded-2xl border border-slate-200 bg-[#F2FCF8] px-4 py-3 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white disabled:cursor-not-allowed disabled:opacity-70"
-                  required
-                />
-              </div>
-
-              <div className="grid gap-4 md:grid-cols-2">
+              <div className=”grid gap-4 md:grid-cols-2”>
                 <div className="space-y-2">
                 <label
                   htmlFor="sex"
