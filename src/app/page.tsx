@@ -4624,7 +4624,7 @@ export default function Home() {
                 <button
                   type="submit"
                   className="inline-flex flex-1 items-center justify-center rounded-2xl bg-[#52A882] px-5 py-2.5 text-base font-semibold text-white transition hover:bg-[#459970] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#52A882] disabled:cursor-not-allowed disabled:bg-[#F2FCF8] disabled:text-[#3a7a5e]"
-                  disabled={status !== "idle" || !language}
+                  disabled={status !== "idle" || !language || isUiTranslating}
                 >
                   {uiT.startInterview || "Start interview"}
                 </button>
