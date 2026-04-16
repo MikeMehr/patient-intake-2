@@ -136,9 +136,12 @@ ${previousLabReportSummary ? `Previous summary: ${previousLabReportSummary}` : "
 
   const mvaAdminSection = getMvaAdminPromptSection(chiefComplaint);
 
+  const isOpeningTurn = !chiefComplaint && transcript.length === 0;
   const taskInstruction = forceSummary
     ? "Provide a physician-handoff summary based on the established history. Do not ask another question."
-    : "Either (a) ask the next most appropriate question to continue gathering history, or (b) provide a physician-handoff summary if the history is sufficient for handoff.";
+    : isOpeningTurn
+      ? "Greet the patient warmly and ask what brings them in today. Keep it brief and friendly."
+      : "Either (a) ask the next most appropriate question to continue gathering history, or (b) provide a physician-handoff summary if the history is sufficient for handoff.";
 
   const fullPrompt = `
 You are a Physician Assistant conducting a medical history. You decide what to ask next and when the history is sufficient to summarize. Do not provide treatment recommendations, medication instructions, dosing advice, or diagnosis to the patient.

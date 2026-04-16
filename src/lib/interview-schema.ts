@@ -123,7 +123,9 @@ export const patientProfileSchema = z.object({
 export type PatientProfile = z.infer<typeof patientProfileSchema>;
 
 export const interviewRequestSchema = z.object({
-  chiefComplaint: chiefComplaintField,
+  // Allow empty string on the first turn (before the patient has stated a complaint).
+  // The history schema enforces min(3) at session-save time.
+  chiefComplaint: z.string().transform((v) => v.trim()),
   patientProfile: patientProfileSchema,
   patientEmail: z
     .string()

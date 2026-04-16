@@ -919,7 +919,6 @@ export default function Home() {
       finalCommentsQuestion: "Do you have any last comments or questions for your provider?",
       finalCommentsYes: "Yes",
       finalCommentsNo: "No",
-      openingQuestion: "Hello, I'm your doctor's AI assistant. I'll ask a few questions to help your doctor understand your concerns. What is bothering you today?",
     };
     Promise.all(
       Object.entries(strings).map(async ([key, text]) => {
@@ -2570,19 +2569,30 @@ export default function Home() {
         return;
       }
 
-      // Show the opening question immediately without an API call.
-      // The patient's answer becomes the chief complaint for all subsequent turns.
-      const openingQuestion = uiT.openingQuestion || "Hello, I'm your doctor's AI assistant. I'll ask a few questions to help your doctor understand your concerns. What is bothering you today?";
-      const firstMessage: ChatMessage = { role: "assistant", content: openingQuestion };
-      setMessages([firstMessage]);
-      messagesRef.current = [firstMessage];
+      // Call the AI with an empty complaint to generate the opening greeting in the
+      // patient's selected language. The patient's reply becomes the chief complaint.
+      const turn = await requestTurn(
+        "",
+        profile,
+        [],
+        null,
+        finalLabReportSummary,
+        finalPreviousLabReportSummary,
+        finalFormSummary,
+        interviewGuidance,
+        getMedPmhSummary(),
+        invitePatientBackground || null,
+        patientEmail.trim(),
+        physicianIdToUse,
+        language,
+        deferredIntentHint,
+      );
+      processTurn(turn);
       if (selectedImagePreview) {
         URL.revokeObjectURL(selectedImagePreview);
       }
       setSelectedImage(null);
       setSelectedImagePreview(null);
-      setStatus("awaitingPatient");
-      statusRef.current = "awaitingPatient";
     } catch (err) {
       console.error(err);
       setStatus("idle");
