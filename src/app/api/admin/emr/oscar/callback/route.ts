@@ -104,7 +104,20 @@ export async function GET(request: NextRequest) {
       [oauthToken],
     );
 
-    const redirectUrl = new URL(`/admin/organizations/${orgId}`, request.url);
+    // Build the redirect using the public-facing origin.
+    // Behind Azure's reverse proxy, request.url contains the internal container
+    // hostname (e.g. 39b33aff8d5b:8080) rather than the public domain.
+    // Prefer x-forwarded-host / x-forwarded-proto headers set by the proxy,
+    // then fall back to NEXT_PUBLIC_SITE_URL env var, then request.url.
+    const forwardedProto = request.headers.get("x-forwarded-proto") || "https";
+    const forwardedHost = request.headers.get("x-forwarded-host") || request.headers.get("host");
+    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL;
+    const baseOrigin = siteUrl
+      ? siteUrl.replace(/\/$/, "")
+      : forwardedHost
+        ? `${forwardedProto}://${forwardedHost}`
+        : new URL(request.url).origin;
+    const redirectUrl = new URL(`/admin/organizations/${orgId}`, baseOrigin);
     redirectUrl.searchParams.set("oscar", "connected");
     const res = NextResponse.redirect(redirectUrl.toString(), { status: 302 });
     logRequestMeta("/api/admin/emr/oscar/callback", requestId, status, Date.now() - started);
