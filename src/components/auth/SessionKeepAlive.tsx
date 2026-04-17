@@ -10,9 +10,19 @@ type Props = {
    * Keep this reasonably high to avoid excess DB writes.
    */
   throttleMs?: number;
+  /**
+   * Interval between periodic background pings, in milliseconds.
+   * Keeps the session alive even when there is no user activity.
+   * Defaults to 10 minutes — well within the 30-minute idle timeout.
+   */
+  intervalMs?: number;
 };
 
-export default function SessionKeepAlive({ redirectTo, throttleMs = 60_000 }: Props) {
+export default function SessionKeepAlive({
+  redirectTo,
+  throttleMs = 60_000,
+  intervalMs = 10 * 60 * 1000,
+}: Props) {
   const router = useRouter();
   const lastPingAtRef = useRef<number>(0);
   const inFlightRef = useRef<boolean>(false);
@@ -49,7 +59,7 @@ export default function SessionKeepAlive({ redirectTo, throttleMs = 60_000 }: Pr
       void ping();
     };
 
-    // If the tab becomes visible again, refresh on the next interaction.
+    // If the tab becomes visible again, ping immediately to catch expiry while hidden.
     const onVisibilityChange = () => {
       if (document.visibilityState === "visible") {
         void ping();
@@ -61,19 +71,26 @@ export default function SessionKeepAlive({ redirectTo, throttleMs = 60_000 }: Pr
     }
     document.addEventListener("visibilitychange", onVisibilityChange);
 
+    // Periodic background ping so the session stays alive even with no mouse/keyboard
+    // activity (e.g. physician reading notes, tab in background).
+    // The throttleMs check inside ping() prevents double-firing with activity pings.
+    const intervalId = setInterval(() => {
+      void ping();
+    }, intervalMs);
+
     // Do not ping immediately on mount.
     // With token rotation enabled, initial parallel dashboard requests can race and
     // momentarily use the pre-rotation cookie, causing false 401/logouts.
-    // We refresh on real user activity and when tab visibility changes.
 
     return () => {
       disposed = true;
+      clearInterval(intervalId);
       for (const evt of events) {
         window.removeEventListener(evt, onActivity);
       }
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };
-  }, [events, redirectTo, router, throttleMs]);
+  }, [events, intervalMs, redirectTo, router, throttleMs]);
 
   return null;
 }
