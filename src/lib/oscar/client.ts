@@ -106,16 +106,16 @@ export function getOscarOAuthEndpoints(oscarBaseUrl: string): OscarOAuthEndpoint
 }
 
 export function getOscarRestBase(oscarBaseUrl: string): string {
-  // OSCAR's original /ws/rs endpoint is registered with the public URL in CXF's endpoint
-  // registry (e.g. https://oscar.example.com/oscar/ws/rs).  OAuth 1.0a signature
-  // verification uses this URL, so Health Assist must sign requests with the same base.
+  // The OAuth-protected REST endpoint is /ws/services (defined in spring_ws.xml with
+  // OAuthInterceptor + OAuthRequestFilter).  The /ws/rs endpoint uses OSCAR's internal
+  // session-based AuthenticationInInterceptor and does not support OAuth clients.
   //
-  // The /ws/services endpoint we added in spring_ws.xml is registered with Tomcat's
-  // internal address (http://localhost:8080), causing an HMAC-SHA1 signature mismatch
-  // and an "Access Denied" 500 error from OSCAR's OAuthRequestFilter.  Using /ws/rs
-  // avoids this mismatch because its base URL in CXF matches what we sign against.
+  // Tomcat's server.xml HTTPS connector must have proxyName="oscar.mymdonline.ca" and
+  // proxyPort="443" so that HttpServletRequest.getRequestURL() returns the public URL.
+  // Without this, Tomcat reports port 8443 and CXF verifies the OAuth signature against
+  // https://oscar.mymdonline.ca:8443/... while we sign against https://oscar.mymdonline.ca/...
   const base = assertSafeOutboundUrl(oscarBaseUrl, { label: "OSCAR base URL" }).toString().replace(/\/+$/, "");
-  return `${base}/ws/rs`;
+  return `${base}/ws/services`;
 }
 
 export async function oscarInitiate(args: {
