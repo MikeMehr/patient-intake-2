@@ -1,5 +1,6 @@
 "use client";
 
+import uiTranslationsJson from "@/lib/ui-translations.json";
 import type { HistoryResponse, PatientUploads, PhqGadResults } from "@/lib/history-schema";
 import PhqGadForm from "@/components/PhqGadForm";
 import type {
@@ -68,6 +69,46 @@ const LESION_UPLOAD_MAX_BYTES = 6 * 1024 * 1024;
 const LESION_UPLOAD_COMPRESSION_THRESHOLD_BYTES = 1500 * 1024;
 const PRIVACY_COMPLETION_ROUTE = "/intake/completed";
 const COMPLETION_REDIRECT_FALLBACK = "https://www.health-assist.org/";
+
+const UI_JSON_KEY_MAP: Record<string, string> = {
+  startInterview: "buttons.start_interview",
+  nameLabel: "form.name_label",
+  emailLabel: "form.email_label",
+  sexLabel: "form.sex_label",
+  ageLabel: "form.age_label",
+  languageLabel: "form.language_label",
+  addMedHistory: "form.add_history",
+  addMedHistorySubtitle: "form.history_help",
+  hearAgain: "buttons.hear_again",
+  mute: "buttons.mute",
+  stopTalking: "buttons.stop_talking",
+  sttReviewTitle: "stt.review_title",
+  sttReviewBody: "stt.review_body",
+  sttReviewEdit: "stt.review_edit",
+  sttReviewSubmit: "stt.review_submit",
+  finalCommentsQuestion: "chat.final_comments_question",
+  finalCommentsYes: "options.yes",
+  finalCommentsNo: "options.no",
+};
+
+function getJsonUiTranslation(langCode: string, jsonKey: string): string | null {
+  const strings = (uiTranslationsJson as { strings: Record<string, Record<string, string>> }).strings;
+  const entry = strings[jsonKey];
+  if (!entry) return null;
+  // 1. Exact match
+  if (entry[langCode]) return entry[langCode];
+  // 2. Strip region (e.g. "zh-Hans-SG" → "zh-Hans", then "zh")
+  const parts = langCode.split("-");
+  for (let i = parts.length - 1; i >= 1; i--) {
+    const partial = parts.slice(0, i).join("-");
+    if (entry[partial]) return entry[partial];
+  }
+  // 3. Find JSON key that starts with langCode as a prefix (e.g. "zh" → "zh-Hans")
+  const prefix = langCode + "-";
+  const match = Object.keys(entry).find((k) => k.startsWith(prefix));
+  if (match) return entry[match];
+  return null;
+}
 
 const closingMessageEnglish =
   "We have reached the end of this interview. Thank you for taking the time to answer my questions. You will soon be contacted by your physician to discuss the diagnosis and management.";
@@ -711,11 +752,15 @@ export default function Home() {
   const isEnglishLanguage = (code: string) =>
     code.trim().toLowerCase().startsWith("en");
   const getClosingMessageForLanguage = (code: string) =>
-    closingMessageTranslations[code.trim().toLowerCase()] ?? closingMessageEnglish;
+    getJsonUiTranslation(code.trim(), "chat.closing_message") ??
+    closingMessageTranslations[code.trim().toLowerCase()] ??
+    closingMessageEnglish;
   const isClosingMessage = (content: string) =>
     content.trim() === closingMessageEnglish;
   const getFinalCommentsPromptForLanguage = (code: string) =>
-    finalCommentsPromptTranslations[code.trim().toLowerCase()] ?? finalCommentsPromptEnglish;
+    getJsonUiTranslation(code.trim(), "chat.closing_question") ??
+    finalCommentsPromptTranslations[code.trim().toLowerCase()] ??
+    finalCommentsPromptEnglish;
   const isFinalCommentsPrompt = (content: string) =>
     content.trim() === finalCommentsPromptEnglish;
   const isSummaryMessage = (message: ChatMessage) =>
@@ -916,12 +961,30 @@ export default function Home() {
       muted: "Muted",
       muteTitle: "Mute AI voice",
       unmuteTitle: "Unmute AI voice",
+      stopTalking: "Stop talking",
       finalCommentsQuestion: "Do you have any last comments or questions for your provider?",
       finalCommentsYes: "Yes",
       finalCommentsNo: "No",
     };
+
+    // Stage 1: Resolve from JSON synchronously (no API call)
+    const jsonTranslated: Record<string, string> = {};
+    const llmStrings: Record<string, string> = {};
+    for (const [key, text] of Object.entries(strings)) {
+      const jsonKey = UI_JSON_KEY_MAP[key];
+      if (jsonKey) {
+        const val = getJsonUiTranslation(language, jsonKey);
+        if (val) {
+          jsonTranslated[key] = val;
+          continue;
+        }
+      }
+      llmStrings[key] = text;
+    }
+
+    // Stage 2: LLM for remaining keys
     Promise.all(
-      Object.entries(strings).map(async ([key, text]) => {
+      Object.entries(llmStrings).map(async ([key, text]) => {
         const res = await fetch("/api/translate", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -932,7 +995,7 @@ export default function Home() {
       })
     )
       .then((entries) => {
-        const translated = Object.fromEntries(entries);
+        const translated = { ...jsonTranslated, ...Object.fromEntries(entries) };
         // Manual overrides for languages where the translation API produces unnatural results
         if (language.trim().toLowerCase().startsWith("fa")) {
           translated.mute = "قطع صدا";
@@ -3914,7 +3977,7 @@ export default function Home() {
       : "text-slate-500";
   const micButtonLabel =
     micUiState === "listening"
-      ? "Stop talking"
+      ? uiT.stopTalking || "Stop talking"
       : micUiState === "starting"
         ? "Starting..."
         : isTranscribing
