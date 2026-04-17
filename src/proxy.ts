@@ -61,6 +61,17 @@ function hasValidSessionCookie(request: NextRequest): boolean {
 }
 
 /**
+ * Routes that are whitelisted as public even though they fall under a
+ * normally-protected prefix.  The OSCAR OAuth callback must be public
+ * because the browser arrives here via a cross-site redirect from OSCAR
+ * and cannot carry the physician_session cookie at that point.
+ * The oauth_token / oauth_verifier values provide sufficient security.
+ */
+const PUBLIC_EXCEPTIONS = new Set<string>([
+  "/api/admin/emr/oscar/callback",
+]);
+
+/**
  * API prefixes where every sub-route requires a physician session.
  * New routes added under these prefixes are automatically protected.
  *
@@ -94,6 +105,9 @@ const PHYSICIAN_API_ROUTES = new Set<string>([
 ]);
 
 function requiresPhysicianSession(pathname: string): boolean {
+  // Public exceptions take priority — never block these even if they match a
+  // protected prefix (e.g. the OSCAR OAuth callback lives under /api/admin/).
+  if (PUBLIC_EXCEPTIONS.has(pathname)) return false;
   if (PHYSICIAN_API_ROUTES.has(pathname)) return true;
   // Match both the exact root (e.g. "/api/patients") and any sub-path ("/api/patients/123").
   return PHYSICIAN_API_PREFIXES.some(

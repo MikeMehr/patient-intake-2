@@ -110,6 +110,8 @@ describe("middleware", () => {
     "/api/runtime-config",
     "/intake/invite/sometoken",
     "/auth/login",
+    // OSCAR OAuth callback — must be public (browser arrives via cross-site redirect)
+    "/api/admin/emr/oscar/callback",
   ])("does not block public route %s", (path) => {
     const res = proxy(makeRequest(path)); // no cookie
     expect(res.status).toBe(200);
