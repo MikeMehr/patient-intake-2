@@ -106,10 +106,16 @@ export function getOscarOAuthEndpoints(oscarBaseUrl: string): OscarOAuthEndpoint
 }
 
 export function getOscarRestBase(oscarBaseUrl: string): string {
-  // OSCAR documentation/examples typically use /ws/services for REST resources.
-  // Some deployments expose WADL under /ws/rs, but require OAuth on /ws/services.
+  // OSCAR's original /ws/rs endpoint is registered with the public URL in CXF's endpoint
+  // registry (e.g. https://oscar.example.com/oscar/ws/rs).  OAuth 1.0a signature
+  // verification uses this URL, so Health Assist must sign requests with the same base.
+  //
+  // The /ws/services endpoint we added in spring_ws.xml is registered with Tomcat's
+  // internal address (http://localhost:8080), causing an HMAC-SHA1 signature mismatch
+  // and an "Access Denied" 500 error from OSCAR's OAuthRequestFilter.  Using /ws/rs
+  // avoids this mismatch because its base URL in CXF matches what we sign against.
   const base = assertSafeOutboundUrl(oscarBaseUrl, { label: "OSCAR base URL" }).toString().replace(/\/+$/, "");
-  return `${base}/ws/services`;
+  return `${base}/ws/rs`;
 }
 
 export async function oscarInitiate(args: {
