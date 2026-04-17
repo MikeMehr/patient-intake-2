@@ -2,6 +2,23 @@
 
 import { useState, useEffect } from "react";
 import type { PhqGadResults } from "@/lib/history-schema";
+import phqGadJson from "@/lib/phq-gad-translations.json";
+
+function getPhqJson(langCode: string, key: string): string | null {
+  const strings = (phqGadJson as { strings: Record<string, Record<string, string>> }).strings;
+  const entry = strings[key];
+  if (!entry) return null;
+  if (entry[langCode]) return entry[langCode];
+  const parts = langCode.split("-");
+  for (let i = parts.length - 1; i >= 1; i--) {
+    const partial = parts.slice(0, i).join("-");
+    if (entry[partial]) return entry[partial];
+  }
+  const prefix = langCode + "-";
+  const match = Object.keys(entry).find((k) => k.startsWith(prefix));
+  if (match) return entry[match];
+  return null;
+}
 
 const PHQ9_QUESTIONS_EN = [
   "Little interest or pleasure in doing things",
@@ -89,6 +106,40 @@ export default function PhqGadForm({ language, onSubmit, highlightQ9Alert = fals
   useEffect(() => {
     if (!language || language === "en") return;
 
+    // Stage 1: resolve from JSON (synchronous, no API call)
+    const lang = language.trim();
+    const jsonPreamble       = getPhqJson(lang, "phq.preamble");
+    const jsonPhq9Header     = getPhqJson(lang, "phq.phq9_header");
+    const jsonGad7Header     = getPhqJson(lang, "phq.gad7_header");
+    const jsonPhq9Questions  = [1,2,3,4,5,6,7,8,9].map((n) => getPhqJson(lang, `phq.q${n}`));
+    const jsonGad7Questions  = [1,2,3,4,5,6,7].map((n) => getPhqJson(lang, `gad.q${n}`));
+    const jsonAnswerOptions  = [
+      getPhqJson(lang, "phq.answer_not_at_all"),
+      getPhqJson(lang, "phq.answer_several_days"),
+      getPhqJson(lang, "phq.answer_more_than_half"),
+      getPhqJson(lang, "phq.answer_nearly_every_day"),
+    ];
+    const jsonSubmit         = getPhqJson(lang, "phq.submit");
+    const jsonValidation     = getPhqJson(lang, "phq.validation");
+
+    const allFromJson =
+      jsonPreamble && jsonPhq9Header && jsonGad7Header &&
+      jsonPhq9Questions.every(Boolean) && jsonGad7Questions.every(Boolean) &&
+      jsonAnswerOptions.every(Boolean) && jsonSubmit && jsonValidation;
+
+    if (allFromJson) {
+      setPreamble(jsonPreamble!);
+      setPhq9Header(jsonPhq9Header!);
+      setGad7Header(jsonGad7Header!);
+      setPhq9Questions(jsonPhq9Questions as string[]);
+      setGad7Questions(jsonGad7Questions as string[]);
+      setAnswerOptions(jsonAnswerOptions as string[]);
+      setSubmitLabel(jsonSubmit!);
+      setValidationLabel(jsonValidation!);
+      return;
+    }
+
+    // Stage 2: fall back to LLM batch call for unsupported languages
     setTranslating(true);
     const allStrings = [
       PREAMBLE_EN,
