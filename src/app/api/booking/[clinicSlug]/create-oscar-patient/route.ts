@@ -33,7 +33,7 @@ function truncate(val: unknown, max = MAX_FIELD_LEN): string {
 
 async function oscarPost(
   url: string,
-  body: Record<string, string>,
+  body: Record<string, unknown>,
   creds: {
     client_key: string;
     clientSecret: string;
@@ -216,19 +216,26 @@ export async function POST(
   };
   const restBase = getOscarRestBase(conn.base_url);
 
-  // Build the Oscar demographic payload
-  const demographicPayload: Record<string, string> = {
+  // Build the Oscar demographic payload matching DemographicTo1 + AddressTo1 shape
+  // expected by org.oscarehr.ws.rest.DemographicService.createDemographicData
+  // (POST /demographics, @Consumes("application/json")).
+  const [dobYear, dobMonth, dobDay] = dateOfBirth.split("-");
+  const demographicPayload: Record<string, unknown> = {
     firstName,
     lastName,
-    dob: dateOfBirth,
+    dateOfBirth, // OSCAR deserialises YYYY-MM-DD into java.util.Date
+    dobYear,
+    dobMonth,
+    dobDay,
     sex: "U",
     phone,
-    address,
-    city,
-    province,
-    postal,
+    address: {
+      address,
+      city,
+      province,
+      postal,
+    },
     patientStatus: "AC",
-    activeCount: "1",
   };
   if (email) demographicPayload.email = email;
 
