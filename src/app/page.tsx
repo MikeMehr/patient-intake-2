@@ -973,7 +973,22 @@ export default function Home() {
     // Stage 1: Resolve from JSON synchronously (no API call)
     const jsonTranslated: Record<string, string> = {};
     const llmStrings: Record<string, string> = {};
+
+    // Build consentBody by concatenating the 6 consent parts from JSON
+    const consentParts = [
+      "consent.emergency_warning",
+      "consent.optional_notice",
+      "consent.collection_notice",
+      "consent.azure_notice",
+      "consent.no_medical_advice",
+      "consent.agree_notice",
+    ].map((k) => getJsonUiTranslation(language, k));
+    if (consentParts.every(Boolean)) {
+      jsonTranslated.consentBody = consentParts.join(" ");
+    }
+
     for (const [key, text] of Object.entries(strings)) {
+      if (key === "consentBody") continue; // handled above
       const jsonKey = UI_JSON_KEY_MAP[key];
       if (jsonKey) {
         const val = getJsonUiTranslation(language, jsonKey);
