@@ -216,6 +216,30 @@ export function getAzureTtsVoiceName(locale: string): string {
       return "ur-PK-UzmaNeural";
     case "vi-vn":
       return "vi-VN-HoaiMyNeural";
+    case "el-gr":
+      return "el-GR-AthinaNeural";
+    case "my-mm":
+      return "my-MM-NilarNeural";
+    case "gu-in":
+      return "gu-IN-DhwaniNeural";
+    case "he-il":
+      return "he-IL-HilaNeural";
+    case "am-et":
+      return "am-ET-MekdesNeural";
+    case "bn-in":
+      return "bn-IN-TanishaaNeural";
+    case "bs-ba":
+      return "bs-BA-VesnaNeural";
+    case "yue-hk":
+      return "yue-HK-HiuGaaiNeural";
+    case "hr-hr":
+      return "hr-HR-GabrijelaNeural";
+    case "cs-cz":
+      return "cs-CZ-VlastaNeural";
+    case "nl-nl":
+      return "nl-NL-FennaNeural";
+    case "hu-hu":
+      return "hu-HU-NoemiNeural";
     default:
       return "en-US-JennyNeural";
   }

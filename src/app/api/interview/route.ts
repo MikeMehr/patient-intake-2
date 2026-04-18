@@ -3,6 +3,7 @@ import {
   interviewResponseSchema,
   type InterviewResponse,
 } from "@/lib/interview-schema";
+import { supportedLanguageNames } from "@/lib/speech-language";
 import { mockHistory } from "@/lib/mock-history";
 import { NextResponse } from "next/server";
 import { getAzureOpenAIClient } from "@/lib/azure-openai";
@@ -157,39 +158,11 @@ export async function POST(request: Request) {
     detectedComplaints,
   } = parsed.data;
   
-  const supportedLanguages: Record<string, string> = {
-    en: "English",
-    am: "Amharic",
-    ar: "Arabic",
-    bn: "Bengali",
-    bs: "Bosnian",
-    my: "Burmese",
-    yue: "Cantonese",
-    chr: "Cherokee",
-    cr: "Cree",
-    hr: "Croatian",
-    cs: "Czech",
-    nl: "Dutch",
-    es: "Spanish",
-    fa: "Farsi (Persian)",
-    fr: "French",
-    de: "German",
-    el: "Greek",
-    gu: "Gujarati",
-    he: "Hebrew",
-    hi: "Hindi",
-    hu: "Hungarian",
-    it: "Italian",
-    ja: "Japanese",
-    ko: "Korean",
-    pt: "Portuguese",
-    zh: "Chinese (Simplified)",
-  };
   const languageCode =
-    requestedLanguage && supportedLanguages[requestedLanguage]
+    requestedLanguage && supportedLanguageNames[requestedLanguage]
       ? requestedLanguage
       : "en";
-  const languageName = supportedLanguages[languageCode] || "English";
+  const languageName = supportedLanguageNames[languageCode] || "English";
   
   // Do not log PHI-containing summaries in production
   
