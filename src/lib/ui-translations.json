@@ -30,7 +30,13 @@
       "el": "Λήψη ιατρικού ιστορικού με υποστήριξη AI",
       "ro": "Colectare a istoricului medical cu ajutorul IA",
       "nl": "AI-gestuurde medische anamnese",
-      "so": "Ururinta taariikhda caafimaad ee AI-ku caawiyo"
+      "so": "Ururinta taariikhda caafimaad ee AI-ku caawiyo",
+      "sr": "Пријем медицинске историје уз подршку ВИ",
+      "he": "קבלת היסטוריה רפואית מבוססת AI",
+      "yue": "AI 驅動嘅病歷收集",
+      "my": "AI-ဖြင့် ကျန်းမာရေးသမိုင်း မှတ်တမ်းတင်ခြင်း",
+      "oj": "AI-bimaatiziiwin-mazina'igan",
+      "scs": "AI Nǫǫhtǫ Dǫ Zhatié Gots'ǫǫ̀"
     },
     "form.language_label": {
       "en": "Interview language",
@@ -62,7 +68,13 @@
       "el": "Γλώσσα συνέντευξης",
       "ro": "Limba interviului",
       "nl": "Taal van het interview",
-      "so": "Luqadda wareysiga"
+      "so": "Luqadda wareysiga",
+      "sr": "Језик интервјуа",
+      "he": "שפת הראיון",
+      "yue": "訪問語言",
+      "my": "အင်တာဗျူးဘာသာစကား",
+      "oj": "Giigidowin",
+      "scs": "Yatı̨́ Kǫ̀"
     },
     "form.language_default": {
       "en": "English (default)",
@@ -94,7 +106,13 @@
       "el": "Αγγλικά (προεπιλογή)",
       "ro": "Engleză (implicit)",
       "nl": "Engels (standaard)",
-      "so": "Ingiriisi (caadi ahaan)"
+      "so": "Ingiriisi (caadi ahaan)",
+      "sr": "Изаберите језик",
+      "he": "בחר שפה",
+      "yue": "揀語言",
+      "my": "ဘာသာစကားရွေးချယ်ပါ",
+      "oj": "Anokii-ikidowin ikidoon",
+      "scs": "Yatı̨́ Whaèhdǫǫ̀"
     },
     "form.language_help": {
       "en": "Assistant questions and patient-facing text will use this language (fallback to English if translation fails).",
@@ -126,7 +144,13 @@
       "el": "Οι ερωτήσεις του βοηθού και το κείμενο που εμφανίζεται στον ασθενή θα χρησιμοποιούν αυτή τη γλώσσα (αν η μετάφραση αποτύχει, θα χρησιμοποιηθεί αγγλικά).",
       "ro": "Întrebările asistentului și textul afișat pacientului vor folosi această limbă (se va reveni la engleză dacă traducerea eșuează).",
       "nl": "De vragen van de assistent en de patiëntgerichte tekst gebruiken deze taal (valt terug op Engels als de vertaling mislukt).",
-      "so": "Su'aalaha kaaliyaha iyo qoraalka bukaanku arko waxay isticmaali doonaan luqaddan (wuxuu ugu noqdaa Ingiriisi haddii tarjumaadu fashilanto)."
+      "so": "Su'aalaha kaaliyaha iyo qoraalka bukaanku arko waxay isticmaali doonaan luqaddan (wuxuu ugu noqdaa Ingiriisi haddii tarjumaadu fashilanto).",
+      "sr": "Питања асистента и текст за пацијента ће користити овај језик (ако превод не успе, користи се енглески).",
+      "he": "שאלות העוזר והטקסט המיועד למטופל ישתמשו בשפה זו (נפילה לאנגלית אם התרגום נכשל).",
+      "yue": "助手嘅問題同面向病人嘅文字會用呢個語言（如果翻譯失敗，會回退到英文）。",
+      "my": "အကူအညီပေးသူ၏ မေးခွန်းများနှင့် လူနာဆိုင်ရာ စာသားသည် ဤဘာသာစကားကို အသုံးပြုမည် (ဘာသာပြန်မအောင်မြင်ပါက အင်္ဂလိပ်ဘာသာ သို့ပြောင်းမည်)။",
+      "oj": "Anishinaabe-ikidowin gaa-pi-atoojig.",
+      "scs": "Yatı̨́ ası̨ı̨ gots'ǫ̀ nǫǫhtǫ."
     },
     "consent.emergency_warning": {
       "en": "Do not proceed with this interview if this is a medical emergency. Call 911 instead.",
@@ -158,7 +182,13 @@
       "el": "Μην χρησιμοποιήσετε σε αυτή τη συνέντευξη εάν πρόκειται για ιατρικό επείγον. Καλέστε το 911 αντ' αυτού.",
       "ro": "Nu continuați acest interviu dacă este o urgență medicală. Sunați în schimb la 911.",
       "nl": "Ga niet verder met dit interview als er sprake is van een medisch noodgeval. Bel in plaats daarvan 911.",
-      "so": "Ha sii wadin wareysigan haddii tani tahay xaalad caafimaad oo degdeg ah. Beddelkeeda wac 911."
+      "so": "Ha sii wadin wareysigan haddii tani tahay xaalad caafimaad oo degdeg ah. Beddelkeeda wac 911.",
+      "sr": "Не настављајте са овим интервјуом ако је реч о медицинској хитности. Уместо тога позовите 911.",
+      "he": "אל תמשיך בראיון זה אם מדובר במצב חירום רפואי. התקשר ל-911 במקום זאת.",
+      "yue": "如果呢個係緊急醫療情況，唔好繼續呢個訪問。請改為打 911。",
+      "my": "ဆေးဘက်ဆိုင်ရာ အရေးပေါ်ဖြစ်ပါက ဤအင်တာဗျူးကို ဆက်မလုပ်ပါနှင့်။ 911 ကို ဖုန်းဆက်ပါ။",
+      "oj": "Gaawiin wiindamaagozisiin maajii-giigidoyan eshkam giishpin aaniin.",
+      "scs": "911 Gots'ǫ̀ Whìle Edaxǫǫ̀ Dǫ."
     },
     "consent.optional_notice": {
       "en": "This AI-guided interview is optional — you may decline and provide your history directly to your physician.",
@@ -190,7 +220,13 @@
       "el": "Αυτή η συνέντευξη με καθοδήγηση AI είναι προαιρετική — μπορείτε να την αρνηθείτε και να δώσετε το ιστορικό σας απευθείας στον γιατρό σας.",
       "ro": "Acest interviu ghidat de IA este opțional — îl puteți refuza și vă puteți oferi istoricul medical direct medicului dumneavoastră.",
       "nl": "Dit door AI begeleide interview is optioneel — u kunt weigeren en uw medische voorgeschiedenis rechtstreeks aan uw arts geven.",
-      "so": "Wareysigan AI hagayo waa ikhtiyaari — waad diidi kartaa oo taariikhaaada caafimaad si toos ah ayaad dhakhtarkaaga ugu sheegi kartaa."
+      "so": "Wareysigan AI hagayo waa ikhtiyaari — waad diidi kartaa oo taariikhaaada caafimaad si toos ah ayaad dhakhtarkaaga ugu sheegi kartaa.",
+      "sr": "Овај интервју вођен ВИ је необавезан — можете одбити и директно пренети историју свом лекару.",
+      "he": "ראיון זה המונחה על ידי AI הוא אופציונלי — תוכל לסרב ולמסור את הרקע הרפואי שלך ישירות לרופא.",
+      "yue": "呢個由 AI 引導嘅訪問係自願嘅 — 你可以拒絕，直接向你嘅醫生提供你嘅病史。",
+      "my": "ဤ AI-ဦးဆောင်သော အင်တာဗျူးသည် ရွေးချယ်မှုဖြစ်သည် — သင်ငြင်းဆိုနိုင်ပြီး သင်၏ဆရာဝန်ထံ တိုက်ရိုက်ပေးနိုင်သည်။",
+      "oj": "Gaawiin bizaanigozisiin ogii-anishinaabewizi.",
+      "scs": "AI Nǫǫhtǫ Gots'ǫ̀ Ası̨ı̨ Whìle."
     },
     "consent.collection_notice": {
       "en": "I consent to the collection of my health information using Health Assist AI to prepare an AI-assisted intake summary for my physician.",
@@ -222,7 +258,13 @@
       "el": "Συναινώ στη συλλογή των πληροφοριών υγείας μου μέσω του Health Assist AI για την προετοιμασία μιας σύνοψης εισαγωγής με υποστήριξη AI για τον γιατρό μου.",
       "ro": "Sunt de acord cu colectarea informațiilor mele de sănătate prin Health Assist AI pentru a pregăti un rezumat de triaj asistat de IA pentru medicul meu.",
       "nl": "Ik geef toestemming voor het verzamelen van mijn gezondheidsinformatie met behulp van Health Assist AI om een door AI ondersteunde intake-samenvatting voor mijn arts op te stellen.",
-      "so": "Waxaan oggolahay in Health Assist AI ururriyo xogtayda caafimaad si loogu diyaariyo oo AI-ku caawiyo oo loogu talagalay dhakhtarkayga."
+      "so": "Waxaan oggolahay in Health Assist AI ururriyo xogtayda caafimaad si loogu diyaariyo oo AI-ku caawiyo oo loogu talagalay dhakhtarkayga.",
+      "sr": "Пристајем на прикупљање мојих здравствених података помоћу Health Assist AI ради припреме резимеа за мог лекара.",
+      "he": "אני מסכים לאיסוף המידע הרפואי שלי באמצעות Health Assist AI להכנת סיכום קבלה לרופא שלי.",
+      "yue": "我同意 Health Assist AI 收集我嘅健康資料，為我嘅醫生準備 AI 協助嘅接診摘要。",
+      "my": "ကျွန်ုပ်၏ ဆရာဝန်အတွက် AI-ကူညီသော ဝင်ရောက်မှုအကျဉ်းချုပ် ပြင်ဆင်ရန် Health Assist AI မှ ကျွန်ုပ်၏ ကျန်းမာရေးသတင်းအချက်အလက် စုဆောင်းရန် သဘောတူသည်။",
+      "oj": "Nindaa-bizindaanaanig Health Assist AI gaa-pi-atoowad.",
+      "scs": "Health Assist AI Nǫǫhtǫ Gots'ǫ̀ Ası̨ı̨."
     },
     "consent.azure_notice": {
       "en": "My information will be processed on Microsoft Azure, including servers in the United States.",
@@ -254,7 +296,13 @@
       "el": "Οι πληροφορίες μου θα υποβάλλονται σε επεξεργασία στο Microsoft Azure, συμπεριλαμβανομένων διακομιστών στις Ηνωμένες Πολιτείες.",
       "ro": "Informațiile mele vor fi prelucrate pe Microsoft Azure, inclusiv pe servere din Statele Unite.",
       "nl": "Mijn informatie wordt verwerkt op Microsoft Azure, inclusief servers in de Verenigde Staten.",
-      "so": "Macluumaadkayga waxaa lagu farsamayn doonaa Microsoft Azure, oo ay ku jiraan serverro ku yaal Maraykanka."
+      "so": "Macluumaadkayga waxaa lagu farsamayn doonaa Microsoft Azure, oo ay ku jiraan serverro ku yaal Maraykanka.",
+      "sr": "Моји подаци ће бити обрађени на Microsoft Azure, укључујући сервере у Сједињеним Државама.",
+      "he": "המידע שלי יעובד ב-Microsoft Azure, כולל שרתים בארצות הברית.",
+      "yue": "我嘅資料將在 Microsoft Azure 上處理，包括美國境內嘅伺服器。",
+      "my": "ကျွန်ုပ်၏ သတင်းအချက်အလက်ကို Microsoft Azure တွင် ဆောင်ရွက်မည်ဖြစ်ပြီး အမေရိကန်ရှိ ဆာဗာများ ပါဝင်သည်။",
+      "oj": "Microsoft Azure gaa-pi-atoojig gaa-pi-atoowad.",
+      "scs": "Microsoft Azure Gots'ǫ̀ Nǫǫhtǫ."
     },
     "consent.no_medical_advice": {
       "en": "This tool does not provide medical advice and is not a substitute for care from your physician.",
@@ -286,7 +334,13 @@
       "el": "Αυτό το εργαλείο δεν παρέχει ιατρικές συμβουλές και δεν υποκαθιστά τη φροντίδα του γιατρού σας.",
       "ro": "Acest instrument nu oferă sfaturi medicale și nu înlocuiește îngrijirea oferită de medicul dumneavoastră.",
       "nl": "Deze tool geeft geen medisch advies en vervangt de zorg van uw arts niet.",
-      "so": "Qalabkani ma bixiyo talo caafimaad mana aha beddelka daryeelka dhakhtarkaaga."
+      "so": "Qalabkani ma bixiyo talo caafimaad mana aha beddelka daryeelka dhakhtarkaaga.",
+      "sr": "Овај алат не пружа медицинске савете и није замена за бригу вашег лекара.",
+      "he": "כלי זה אינו מספק ייעוץ רפואי ואינו תחליף לטיפול הרופא שלך.",
+      "yue": "呢個工具唔係提供醫療建議，亦唔係代替你醫生嘅護理。",
+      "my": "ဤကိရိယာသည် ဆေးဘက်ဆိုင်ရာ အကြံဉာဏ်မပေးဘဲ သင်၏ ဆရာဝန်ထံမှ ကုသမှုကို အစားထိုးမဟုတ်ပါ။",
+      "oj": "Gaawiin mashkiki-ikidowin.",
+      "scs": "Nǫǫhtǫ Ts'ǫǫ̀ Dǫ Gots'ǫ̀."
     },
     "consent.agree_notice": {
       "en": "I agree to the Terms of Use and Privacy Policy.",
@@ -318,7 +372,13 @@
       "el": "Συμφωνώ με τους Όρους Χρήσης και την Πολιτική Απορρήτου.",
       "ro": "Sunt de acord cu Termenii de utilizare și Politica de confidențialitate.",
       "nl": "Ik ga akkoord met de Gebruiksvoorwaarden en het Privacybeleid.",
-      "so": "Waxaan oggolahay Shuruudaha Isticmaalka iyo Siyaasadda Asturnaanta."
+      "so": "Waxaan oggolahay Shuruudaha Isticmaalka iyo Siyaasadda Asturnaanta.",
+      "sr": "Слажем се са",
+      "he": "אני מסכים ל",
+      "yue": "我同意",
+      "my": "ကျွန်ုပ် သဘောတူသည်",
+      "oj": "Nindaa-bizindaanaa",
+      "scs": "Hǫ"
     },
     "links.terms": {
       "en": "Terms of Use",
@@ -350,7 +410,13 @@
       "el": "Όροι Χρήσης",
       "ro": "Termeni de utilizare",
       "nl": "Gebruiksvoorwaarden",
-      "so": "Shuruudaha Isticmaalka"
+      "so": "Shuruudaha Isticmaalka",
+      "sr": "Условима коришћења",
+      "he": "תנאי השימוש",
+      "yue": "使用條款",
+      "my": "အသုံးပြုမှုစည်းမျဉ်းများ",
+      "oj": "Anokii-wiindamaagewin",
+      "scs": "Nǫǫhtǫ Gots'ǫ̀"
     },
     "links.privacy": {
       "en": "Privacy Policy",
@@ -382,7 +448,13 @@
       "el": "Πολιτική Απορρήτου",
       "ro": "Politica de confidențialitate",
       "nl": "Privacybeleid",
-      "so": "Siyaasadda Asturnaanta"
+      "so": "Siyaasadda Asturnaanta",
+      "sr": "Политиком приватности",
+      "he": "מדיניות הפרטיות",
+      "yue": "私隱政策",
+      "my": "ကိုယ်ရေးကိုယ်တာ မူဝါဒ",
+      "oj": "Bimaatiziiwin-wiindamaagewin",
+      "scs": "Whìle Dǫ Gots'ǫ̀"
     },
     "form.name_label": {
       "en": "Your Name (Required)",
@@ -414,7 +486,13 @@
       "el": "Το όνομά σας (υποχρεωτικό)",
       "ro": "Numele dvs. (obligatoriu)",
       "nl": "Uw naam (verplicht)",
-      "so": "Magacaaga (waajib)"
+      "so": "Magacaaga (waajib)",
+      "sr": "Ваше иmе (Обавезно)",
+      "he": "שמך (חובה)",
+      "yue": "你嘅名字（必填）",
+      "my": "သင်၏ နာမည် (လိုအပ်သည်)",
+      "oj": "Giizhibiigaazowin (naanaagadawendaagwad)",
+      "scs": "Nezı̨ (Wehwhǫǫ̀)"
     },
     "form.email_label": {
       "en": "Your Email (Required)",
@@ -446,7 +524,13 @@
       "el": "Το email σας (υποχρεωτικό)",
       "ro": "E-mailul dvs. (obligatoriu)",
       "nl": "Uw e-mailadres (verplicht)",
-      "so": "Limaylkaaga (waajib)"
+      "so": "Limaylkaaga (waajib)",
+      "sr": "Ваш email (Обавезно)",
+      "he": "כתובת הדוא\"ל שלך (חובה)",
+      "yue": "你嘅電郵（必填）",
+      "my": "သင်၏ အီးမေးလ် (လိုအပ်သည်)",
+      "oj": "Mazina'igan-bimaatiziiwin (naanaagadawendaagwad)",
+      "scs": "Email (Wehwhǫǫ̀)"
     },
     "form.prefill_notice": {
       "en": "Name and email are prefilled from your invitation and cannot be changed.",
@@ -478,7 +562,13 @@
       "el": "Το όνομα και το email είναι προσυμπληρωμένα από την πρόσκλησή σας και δεν μπορούν να αλλάξουν.",
       "ro": "Numele și e-mailul sunt completate automat din invitația dvs. și nu pot fi modificate.",
       "nl": "Naam en e-mailadres zijn vooraf ingevuld vanuit uw uitnodiging en kunnen niet worden gewijzigd.",
-      "so": "Magaca iyo iimaylka waxaa horay looga buuxiyay casuumaaddaada mana la beddeli karo."
+      "so": "Magaca iyo iimaylka waxaa horay looga buuxiyay casuumaaddaada mana la beddeli karo.",
+      "sr": "Иme и email су унапред попуњени из вашег позива и не могу се мењати.",
+      "he": "השם ודוא\"ל ממולאים מראש מהזמנתך ולא ניתן לשנותם.",
+      "yue": "名字同電郵已由你嘅邀請函預先填寫，唔可以更改。",
+      "my": "နာမည်နှင့် အီးမေးလ်ကို သင်၏ဖိတ်စာမှ ကြိုတင်ဖြည့်ထားပြီး ပြောင်းလဲ၍ မရပါ။",
+      "oj": "Giizhibiigaazowin miinawaa mazina'igan-bimaatiziiwin ogii-ozhibii'aanaawaan.",
+      "scs": "Nezı̨ ası̨ı̨ email gots'ǫ̀ nǫǫhtǫ."
     },
     "form.sex_label": {
       "en": "Sex (Required)",
@@ -510,7 +600,13 @@
       "el": "Φύλο (υποχρεωτικό)",
       "ro": "Sex (obligatoriu)",
       "nl": "Geslacht (verplicht)",
-      "so": "Jinsi (waajib)"
+      "so": "Jinsi (waajib)",
+      "sr": "Пол (Обавезно)",
+      "he": "מין (חובה)",
+      "yue": "性別（必填）",
+      "my": "လိင် (လိုအပ်သည်)",
+      "oj": "Ininiw/Ikwe (naanaagadawendaagwad)",
+      "scs": "Godi (Wehwhǫǫ̀)"
     },
     "form.age_label": {
       "en": "Age (years)",
@@ -542,7 +638,13 @@
       "el": "Ηλικία (έτη)",
       "ro": "Vârstă (ani)",
       "nl": "Leeftijd (jaren)",
-      "so": "Da'da (sano)"
+      "so": "Da'da (sano)",
+      "sr": "Узраст (година)",
+      "he": "גיל (שנים)",
+      "yue": "年齡（歲）",
+      "my": "အသက် (နှစ်)",
+      "oj": "Daso-biboon",
+      "scs": "Gonǫde (Dǫǫ̀)"
     },
     "form.add_history": {
       "en": "Add Medical History (Optional)",
@@ -574,7 +676,13 @@
       "el": "Προσθήκη ιατρικού ιστορικού (προαιρετικό)",
       "ro": "Adăugați istoricul medical (opțional)",
       "nl": "Medische voorgeschiedenis toevoegen (optioneel)",
-      "so": "Ku dar taariikh caafimaad (ikhtiyaari)"
+      "so": "Ku dar taariikh caafimaad (ikhtiyaari)",
+      "sr": "Додај медицинску историју (Необавезно)",
+      "he": "הוסף היסטוריה רפואית (אופציונלי)",
+      "yue": "新增病史（選填）",
+      "my": "ဆေးဘက်ဆိုင်ရာ သမိုင်း ထည့်ရန် (ရွေးချယ်မှု)",
+      "oj": "Mashkiki-wiindamaagewin temaa",
+      "scs": "Nǫǫhtǫ Dǫ Gots'ǫ̀ Ts'ǫǫ̀"
     },
     "form.history_help": {
       "en": "Allergies, medications, past history, and pharmacy.",
@@ -606,7 +714,13 @@
       "el": "Αλλεργίες, φάρμακα, προηγούμενο ιστορικό και φαρμακείο.",
       "ro": "Alergii, medicamente, antecedente medicale și farmacie.",
       "nl": "Allergieën, medicatie, voorgeschiedenis en apotheek.",
-      "so": "Xasaasiyado, dawooyin, taariikh hore, iyo farmashiye."
+      "so": "Xasaasiyado, dawooyin, taariikh hore, iyo farmashiye.",
+      "sr": "Алергије, лекови, ранија историја и апотека.",
+      "he": "אלרגיות, תרופות, היסטוריה קודמת ובית מרקחת.",
+      "yue": "過敏、藥物、過往病史同藥房。",
+      "my": "ဓာတ်မတည့်မှုများ၊ ဆေးဝါးများ၊ ယခင်သမိုင်းနှင့် ဆေးဆိုင်။",
+      "oj": "Mashkiki-giizhigad, mashkiki, gaa-ombigiyaan, mashkimod.",
+      "scs": "Nǫǫhtǫ Dǫ Gots'ǫ̀ Ts'ǫǫ̀."
     },
     "buttons.start_interview": {
       "en": "Start interview",
@@ -638,7 +752,13 @@
       "el": "Έναρξη συνέντευξης",
       "ro": "Porniți interviul",
       "nl": "Interview starten",
-      "so": "Bilow wareysiga"
+      "so": "Bilow wareysiga",
+      "sr": "Почни интервју",
+      "he": "התחל ראיון",
+      "yue": "開始訪問",
+      "my": "အင်တာဗျူး စတင်ရန်",
+      "oj": "Maajii-giigidowin",
+      "scs": "Nǫǫhtǫ Maǫ̀"
     },
     "buttons.hear_again": {
       "en": "Hear again",
@@ -670,7 +790,13 @@
       "el": "Ακούστε ξανά",
       "ro": "Ascultați din nou",
       "nl": "Opnieuw beluisteren",
-      "so": "Mar kale dhegeyso"
+      "so": "Mar kale dhegeyso",
+      "sr": "Чуј поново",
+      "he": "שמע שוב",
+      "yue": "再聽一次",
+      "my": "ထပ်မံ နားထောင်ရန်",
+      "oj": "Zhazhiibiidoon",
+      "scs": "Nǫǫhtǫ Gots'ǫ̀ Ts'ǫǫ̀ Whìle"
     },
     "buttons.mute": {
       "en": "Mute",
@@ -702,7 +828,13 @@
       "el": "Σίγαση",
       "ro": "Dezactivează sunetul",
       "nl": "Dempen",
-      "so": "Aamus"
+      "so": "Aamus",
+      "sr": "Искључи звук",
+      "he": "השתק",
+      "yue": "靜音",
+      "my": "အသံပိတ်ရန်",
+      "oj": "Noondaagozisiw",
+      "scs": "Gǫ̀hłı̨"
     },
     "buttons.reset_conversation": {
       "en": "Reset conversation",
@@ -734,7 +866,13 @@
       "el": "Επαναφορά συνομιλίας",
       "ro": "Resetați conversația",
       "nl": "Gesprek resetten",
-      "so": "Dib u deji wada sheekaysiga"
+      "so": "Dib u deji wada sheekaysiga",
+      "sr": "Ресетуј разговор",
+      "he": "אפס שיחה",
+      "yue": "重置對話",
+      "my": "စကားဝိုင်း ပြန်လည်စတင်ရန်",
+      "oj": "Maazhi-giigidowin",
+      "scs": "Nǫǫhtǫ Gots'ǫ̀ Ts'ǫǫ̀"
     },
     "buttons.end_early": {
       "en": "End Early",
@@ -766,7 +904,13 @@
       "el": "Τερματισμός νωρίτερα",
       "ro": "Încheiaţi mai devreme",
       "nl": "Vroegtijdig beëindigen",
-      "so": "Si dhakhso leh u dhammee"
+      "so": "Si dhakhso leh u dhammee",
+      "sr": "Заврши рано",
+      "he": "סיים מוקדם",
+      "yue": "提早結束",
+      "my": "စောစောပြီးဆုံးရန်",
+      "oj": "Giizhaani-giigidowin",
+      "scs": "Ts'ǫǫ̀ Gots'ǫ̀ Ası̨ı̨"
     },
     "options.female": {
       "en": "Female",
@@ -798,7 +942,13 @@
       "el": "Γυναίκα",
       "ro": "Feminin",
       "nl": "Vrouw",
-      "so": "Dheddig"
+      "so": "Dheddig",
+      "sr": "Женски",
+      "he": "נקבה",
+      "yue": "女",
+      "my": "မ",
+      "oj": "Ikwe",
+      "scs": "Kwetı"
     },
     "stt.review_title": {
       "en": "Review your answer",
@@ -830,7 +980,13 @@
       "el": "Ελέγξτε την απάντησή σας",
       "ro": "Examinați răspunsul dvs.",
       "nl": "Controleer uw antwoord",
-      "so": "Dib u eeg jawaabta"
+      "so": "Dib u eeg jawaabta",
+      "sr": "Провера гласовног уноса",
+      "he": "בדיקת קלט קולי",
+      "yue": "語音輸入檢查",
+      "my": "အသံထည့်သွင်းမှု စစ်ဆေးခြင်း",
+      "oj": "Giigido-naanaagadawendan",
+      "scs": "Nǫǫhtǫ Gots'ǫ̀ Ts'ǫǫ̀ Whìle"
     },
     "stt.review_body": {
       "en": "Speech-to-text may occasionally make mistakes. Please make sure your answer is accurate before sending it to your physician.",
@@ -862,7 +1018,13 @@
       "el": "Η αναγνώριση ομιλίας μπορεί περιστασιακά να κάνει λάθη. Βεβαιωθείτε ότι η απάντησή σας είναι ακριβής πριν την στείλετε στον γιατρό σας.",
       "ro": "Recunoașterea vocală poate face uneori greșeli. Asigurați-vă că răspunsul dvs. este corect înainte de a-l trimite medicului.",
       "nl": "Spraak-naar-tekst kan af en toe fouten maken. Zorg ervoor dat uw antwoord nauwkeurig is voordat u het naar uw arts stuurt.",
-      "so": "Hadal-u-qorista ayaa mararka qaarkood khaladaad samayn karta. Fadlan hubi in jawaabta ay sax tahay ka hor inta aadan u dirin dhakhtarkaaga."
+      "so": "Hadal-u-qorista ayaa mararka qaarkood khaladaad samayn karta. Fadlan hubi in jawaabta ay sax tahay ka hor inta aadan u dirin dhakhtarkaaga.",
+      "sr": "Препознавање говора није увек савршено. Горњи текст може садржати грешке — пажљиво га проверите пре слања.",
+      "he": "זיהוי קול אינו תמיד מושלם. הטקסט למעלה עשוי להכיל שגיאות — אנא בדוק אותו בעיון לפני השליחה.",
+      "yue": "語音識別並不係永遠完美嘅。上面嘅文字可能有錯誤 — 喺提交之前請仔細檢查。",
+      "my": "အသံမှတ်မိမှုသည် အမြဲပြည့်စုံသည် မဟုတ်ပါ။ အထက်ပါ စာသားတွင် အမှားများ ပါဝင်နိုင်သည် — တင်သွင်းမတိုင်မှ ဂရုတစိုက် စစ်ဆေးပါ။",
+      "oj": "Giigido-naanaagadawendan mii dash gaa-pi-atoowad.",
+      "scs": "Nǫǫhtǫ Gots'ǫ̀ Ts'ǫǫ̀ Whìle Ası̨ı̨."
     },
     "stt.review_edit": {
       "en": "Edit answer",
@@ -894,7 +1056,13 @@
       "el": "Επεξεργασία απάντησης",
       "ro": "Editează răspunsul",
       "nl": "Antwoord bewerken",
-      "so": "Wax ka beddel jawaabta"
+      "so": "Wax ka beddel jawaabta",
+      "sr": "Уреди одговор",
+      "he": "ערוך תשובה",
+      "yue": "修改答案",
+      "my": "အဖြေ ပြင်ဆင်ရန်",
+      "oj": "Wenizhishing giigidowin",
+      "scs": "Nǫǫhtǫ Ts'ǫǫ̀"
     },
     "stt.review_submit": {
       "en": "Submit",
@@ -926,7 +1094,13 @@
       "el": "Υποβολή",
       "ro": "Trimite",
       "nl": "Versturen",
-      "so": "Dir"
+      "so": "Dir",
+      "sr": "Пошаљи",
+      "he": "שלח",
+      "yue": "提交",
+      "my": "တင်သွင်းရန်",
+      "oj": "Izhina'ibin",
+      "scs": "Dir"
     },
     "buttons.muted": {
       "en": "Muted",
@@ -958,7 +1132,13 @@
       "el": "Σίγαση",
       "ro": "Dezactivat",
       "nl": "Gedempt",
-      "so": "La aamusiyay"
+      "so": "La aamusiyay",
+      "sr": "Звук искључен",
+      "he": "מושתק",
+      "yue": "已靜音",
+      "my": "အသံပိတ်ထားသည်",
+      "oj": "Noondaagozisii",
+      "scs": "Gǫ̀hłı̨ Hǫ"
     },
     "buttons.mute_title": {
       "en": "Mute AI voice",
@@ -990,7 +1170,13 @@
       "el": "Σίγαση φωνής AI",
       "ro": "Dezactivați vocea AI",
       "nl": "AI-stem dempen",
-      "so": "Aamusii codka AI"
+      "so": "Aamusii codka AI",
+      "sr": "Искључи глас ВИ",
+      "he": "השתק קול AI",
+      "yue": "將 AI 語音靜音",
+      "my": "AI အသံ ပိတ်ရန်",
+      "oj": "AI noondaagozisiw",
+      "scs": "AI Gǫ̀hłı̨"
     },
     "buttons.unmute_title": {
       "en": "Unmute AI voice",
@@ -1022,7 +1208,13 @@
       "el": "Ενεργοποίηση φωνής AI",
       "ro": "Reactivați vocea AI",
       "nl": "AI-stem activeren",
-      "so": "Ka saar aamusnanta codka AI"
+      "so": "Ka saar aamusnanta codka AI",
+      "sr": "Укључи глас ВИ",
+      "he": "בטל השתקת קול AI",
+      "yue": "取消 AI 語音靜音",
+      "my": "AI အသံ ဖွင့်ရန်",
+      "oj": "AI noondaagozid",
+      "scs": "AI Gǫ̀hłı̨ Ası̨ı̨"
     },
     "buttons.stop_talking": {
       "en": "Stop talking",
@@ -1054,7 +1246,13 @@
       "el": "Σταματήστε να μιλάτε",
       "ro": "Opriți vorbirea",
       "nl": "Stop met praten",
-      "so": "Jooji hadlida"
+      "so": "Jooji hadlida",
+      "sr": "Престани да говориш",
+      "he": "הפסק לדבר",
+      "yue": "停止講嘢",
+      "my": "ပြောဆိုခြင်း ရပ်ရန်",
+      "oj": "Jiigibiidoon giigidowin",
+      "scs": "Nǫǫhtǫ Ts'ǫǫ̀ Whìle"
     },
     "chat.closing_message": {
       "en": "We have reached the end of this interview. Thank you for taking the time to answer my questions. You will soon be contacted by your physician to discuss the diagnosis and management.",
@@ -1086,7 +1284,13 @@
       "el": "Φτάσαμε στο τέλος αυτής της συνέντευξης. Σας ευχαριστώ που αφιερώσατε χρόνο για να απαντήσετε στις ερωτήσεις μου. Ο γιατρός σας θα επικοινωνήσει σύντομα μαζί σας για να συζητήσετε τη διάγνωση και τη διαχείριση.",
       "ro": "Am ajuns la sfârșitul acestui interviu. Vă mulțumesc că ați luat timp să răspundeți la întrebările mele. Medicul dumneavoastră vă va contacta în curând pentru a discuta diagnosticul și tratamentul.",
       "nl": "We hebben het einde van dit interview bereikt. Bedankt voor de tijd die u heeft genomen om mijn vragen te beantwoorden. Uw arts neemt binnenkort contact met u op om de diagnose en behandeling te bespreken.",
-      "so": "Waxaan gaadhay dhamaadka waraysiigan. Waad ku mahadsan tahay waqtiga aad u qaadatay si aad u jawaabto su'aashaydii. Dhakhtarkaagu wuxuu si dhakhso ah kuula soo xiriiri doonaa si uu kula xooro ogaanshaha iyo maareynta."
+      "so": "Waxaan gaadhay dhamaadka waraysiigan. Waad ku mahadsan tahay waqtiga aad u qaadatay si aad u jawaabto su'aashaydii. Dhakhtarkaagu wuxuu si dhakhso ah kuula soo xiriiri doonaa si uu kula xooro ogaanshaha iyo maareynta.",
+      "sr": "Стигли смо до краја овог интервјуа. Хвала вам што сте одвојили време да одговорите на моја питања. Ваш лекар ће вас ускоро контактирати ради разговора о дијагнози и лечењу.",
+      "he": "הגענו לסוף הראיון הזה. תודה שהקדשת זמן לענות על שאלותיי. הרופא שלך ייצור איתך קשר בקרוב לדיון באבחנה ובטיפול.",
+      "yue": "我哋已經到咗呢次訪問嘅結尾。多謝你抽時間回答我嘅問題。你嘅醫生將會盡快聯絡你，討論診斷同治療方案。",
+      "my": "ဤအင်တာဗျူး၏ အဆုံးသို့ ရောက်ရှိပြီ။ ကျွန်ုပ်၏ မေးခွန်းများကို ဖြေဆိုရန် အချိန်ပေးသောအတွက် ကျေးဇူးတင်ပါသည်။ သင်၏ ဆရာဝန်သည် ရောဂါနှင့် ကုသမှု ဆွေးနွေးရန် မကြာမီ ဆက်သွယ်မည်ဖြစ်သည်။",
+      "oj": "Gii-maajii-giigidooyang. Miigwech gaa-giigidoyeg. Mashkiki-inini giga-giigido.",
+      "scs": "Nǫǫhtǫ Dǫ Gots'ǫ̀ Ts'ǫǫ̀. Mǫǫ̀ Whìle. Nǫǫhtǫ Dǫ Gots'ǫ̀ Ts'ǫǫ̀ Whìle."
     },
     "chat.closing_question": {
       "en": "Before you go, do you have any last questions or comments for your physician?",
@@ -1118,7 +1322,13 @@
       "el": "Πριν φύγετε, έχετε τελευταίες ερωτήσεις ή σχόλια για τον γιατρό σας;",
       "ro": "Înainte de a pleca, aveți ultime întrebări sau comentarii pentru medicul dumneavoastră?",
       "nl": "Voordat u gaat, heeft u nog laatste vragen of opmerkingen voor uw arts?",
-      "so": "Kahor inta aadan tegi, ma haystaa su'aalo ama faallooyinkii ugu dambeeyay ee loogu talagalay dhakhtarkaaga?"
+      "so": "Kahor inta aadan tegi, ma haystaa su'aalo ama faallooyinkii ugu dambeeyay ee loogu talagalay dhakhtarkaaga?",
+      "sr": "Пре него што одете, имате ли последња питања или коментаре за свог лекара?",
+      "he": "לפני שתלך, יש לך שאלות או הערות אחרונות לרופא שלך?",
+      "yue": "走之前，你有冇最後嘅問題或者意見想問你嘅醫生？",
+      "my": "မသွားခင်၊ သင်၏ ဆရာဝန်အတွက် နောက်ဆုံး မေးခွန်းများ သို့မဟုတ် မှတ်ချက်များ ရှိပါသလား？",
+      "oj": "Aaniish gimashkimowinaabanaan?",
+      "scs": "Nǫǫhtǫ Dǫ Gots'ǫ̀ Ts'ǫǫ̀ Whìle?"
     },
     "chat.final_comments_question": {
       "en": "Do you have any last comments or questions for your provider?",
@@ -1150,7 +1360,13 @@
       "el": "Έχετε τελευταία σχόλια ή ερωτήσεις για τον πάροχό σας;",
       "ro": "Aveți comentarii sau întrebări finale pentru furnizorul dumneavoastră?",
       "nl": "Heeft u nog laatste opmerkingen of vragen voor uw zorgverlener?",
-      "so": "Ma haystaa faallooyin ama su'aalo ugu dambeeyay oo loogu talagalay bixiyahaaga?"
+      "so": "Ma haystaa faallooyin ama su'aalo ugu dambeeyay oo loogu talagalay bixiyahaaga?",
+      "sr": "Имате ли последње коментаре или питања за свог провајдера?",
+      "he": "יש לך הערות או שאלות אחרונות לרופא שלך?",
+      "yue": "你有冇最後嘅意見或者問題想問你嘅醫護人員？",
+      "my": "သင်၏ ကျန်းမာရေးဝန်ဆောင်မှုပေးသူအတွက် နောက်ဆုံး မှတ်ချက်များ သို့မဟုတ် မေးခွန်းများ ရှိပါသလား？",
+      "oj": "Gimashkimowinaabanaan wiin?",
+      "scs": "Nǫǫhtǫ Dǫ Gots'ǫ̀ Ts'ǫǫ̀ Whìle?"
     },
     "options.yes": {
       "en": "Yes",
@@ -1182,7 +1398,13 @@
       "el": "Ναι",
       "ro": "Da",
       "nl": "Ja",
-      "so": "Haa"
+      "so": "Haa",
+      "sr": "Да",
+      "he": "כן",
+      "yue": "係",
+      "my": "ဟုတ်ကဲ့",
+      "oj": "Eya'",
+      "scs": "Hǫ"
     },
     "options.no": {
       "en": "No",
@@ -1214,7 +1436,13 @@
       "el": "Όχι",
       "ro": "Nu",
       "nl": "Nee",
-      "so": "Maya"
+      "so": "Maya",
+      "sr": "Не",
+      "he": "לא",
+      "yue": "唔係",
+      "my": "မဟုတ်ပါ",
+      "oj": "Gaawiin",
+      "scs": "Edı"
     }
   }
 }

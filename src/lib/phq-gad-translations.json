@@ -30,7 +30,13 @@
       "el": "Τις τελευταίες 2 εβδομάδες, πόσο συχνά σας ενόχλησαν τα ακόλουθα προβλήματα;",
       "ro": "În ultimele 2 săptămâni, cât de des ați fost deranjat de următoarele probleme?",
       "nl": "In de afgelopen 2 weken, hoe vaak heeft u last gehad van de volgende problemen?",
-      "so": "Laba toddobaadkii la soo dhaafay, intee jeer ayaa xaaladahan kuu xanuuniyey?"
+      "so": "Laba toddobaadkii la soo dhaafay, intee jeer ayaa xaaladahan kuu xanuuniyey?",
+      "sr": "У протекле 2 недеље, колико пута су вас мучили следећи проблеми?",
+      "he": "במהלך 2 השבועות האחרונים, כמה פעמים סבלת מהבעיות הבאות?",
+      "yue": "喺過去嘅 2 個星期入面，你受到以下問題困擾嘅頻率有幾高？",
+      "my": "ကြာပြီးသော ၂ ပတ်အတွင်း၊ အောက်ပါပြဿနာများဖြင့် မည်မျှကြာကြာ ပြဿနာဖြစ်ခဲ့ပါသလဲ？",
+      "oj": "Niizho-anama'e-giizhigad, aaniin daso-giizhigad gaa-manaajitaman?",
+      "scs": "2 Gǫ̀hłı̨ Gots'ǫ̀ Ts'ǫǫ̀ Whìle?"
     },
     "phq.phq9_header": {
       "en": "PHQ-9 — Depression Screening",
@@ -62,7 +68,13 @@
       "el": "PHQ-9 — Διαλογή κατάθλιψης",
       "ro": "PHQ-9 — Screening pentru depresie",
       "nl": "PHQ-9 — Depressiescreening",
-      "so": "PHQ-9 — Baadida Xanuunka Murugada"
+      "so": "PHQ-9 — Baadida Xanuunka Murugada",
+      "sr": "PHQ-9 — Скрининг депресије",
+      "he": "PHQ-9 — סקירת דיכאון",
+      "yue": "PHQ-9 — 抑鬱症篩查",
+      "my": "PHQ-9 — စိတ်ဓာတ်ကျရောဂါ စစ်ဆေးခြင်း",
+      "oj": "PHQ-9 — Manaaji-bimaatiziiwin",
+      "scs": "PHQ-9 — Gǫ̀hłı̨ Dǫ Nǫǫhtǫ"
     },
     "phq.gad7_header": {
       "en": "GAD-7 — Anxiety Screening",
@@ -94,7 +106,13 @@
       "el": "GAD-7 — Διαλογή άγχους",
       "ro": "GAD-7 — Screening pentru anxietate",
       "nl": "GAD-7 — Angstscreening",
-      "so": "GAD-7 — Baadida Welwelka"
+      "so": "GAD-7 — Baadida Welwelka",
+      "sr": "GAD-7 — Скрининг анксиозности",
+      "he": "GAD-7 — סקירת חרדה",
+      "yue": "GAD-7 — 焦慮症篩查",
+      "my": "GAD-7 — စိုးရိမ်ပူပန်မှုရောဂါ စစ်ဆေးခြင်း",
+      "oj": "GAD-7 — Zegizi-bimaatiziiwin",
+      "scs": "GAD-7 — Welwel Nǫǫhtǫ"
     },
     "phq.q1": {
       "en": "Little interest or pleasure in doing things",
@@ -126,7 +144,13 @@
       "el": "Λίγο ενδιαφέρον ή ευχαρίστηση στο να κάνετε πράγματα",
       "ro": "Puțin interes sau plăcere în a face lucruri",
       "nl": "Weinig interesse of plezier in het doen van dingen",
-      "so": "Xiisayn yar ama farxad la'aan markay la xiriirto hawlaha"
+      "so": "Xiisayn yar ama farxad la'aan markay la xiriirto hawlaha",
+      "sr": "Слabo интересовање или задовољство у обављању активности",
+      "he": "מעט עניין או הנאה מעשייה",
+      "yue": "對做嘢冇乜興趣或樂趣",
+      "my": "အလုပ်လုပ်ရာတွင် စိတ်ဝင်စားမှု သို့မဟုတ် ပျော်ရွှင်မှု နည်းပါးသည်",
+      "oj": "Gaawiin wenizhishingwad gaa-tebweyendang",
+      "scs": "Nǫǫhtǫ Dǫ Gots'ǫ̀ Ts'ǫǫ̀ Whìle"
     },
     "phq.q2": {
       "en": "Feeling down, depressed, or hopeless",
@@ -158,7 +182,13 @@
       "el": "Να νιώθετε απογοητευμένος/η, καταθλιπτικός/η ή χωρίς ελπίδα",
       "ro": "Să vă simțiți trist, deprimat sau fără speranță",
       "nl": "U neerslachtig, depressief of hopeloos voelen",
-      "so": "Dareemida murugo, xanuun maskaxeed, ama rajadarrida"
+      "so": "Dareemida murugo, xanuun maskaxeed, ama rajadarrida",
+      "sr": "Осећање туге, депресије или безнађа",
+      "he": "הרגשת עצבות, דיכאון, או חוסר תקווה",
+      "yue": "感到唔開心、抑鬱或冇希望",
+      "my": "ဝမ်းနည်းမှု၊ စိတ်ဓာတ်ကျမှု သို့မဟုတ် မျှော်လင့်ချက်မဲ့မှု ခံစားရသည်",
+      "oj": "Manaajitam, manaaji-bimaatizid",
+      "scs": "Gǫ̀hłı̨ Dǫ Nǫǫhtǫ Ts'ǫǫ̀"
     },
     "phq.q3": {
       "en": "Trouble falling or staying asleep, or sleeping too much",
@@ -190,7 +220,13 @@
       "el": "Δυσκολία στον ύπνο ή στη διατήρηση του ύπνου, ή υπερβολικός ύπνος",
       "ro": "Dificultăți de a adormi sau de a rămâne adormit, sau a dormi prea mult",
       "nl": "Moeite met inslapen of doorslapen, of te veel slapen",
-      "so": "Dhibaato hurdo u helitaan ama hurdada sii wadida, ama hurdo badan"
+      "so": "Dhibaato hurdo u helitaan ama hurdada sii wadida, ama hurdo badan",
+      "sr": "Тешкоће при заспивању, одржавању сна или претерано спавање",
+      "he": "קושי להירדם, להישאר ישן, או שינה יתרה",
+      "yue": "難以入睡、難以維持睡眠或瞓得太多",
+      "my": "အိပ်ပျော်ရာတွင် ခက်ခဲမှု၊ အိပ်ဆက်မအိပ်နိုင်မှု သို့မဟုတ် အလွန်အကျွံ အိပ်မောကျမှု",
+      "oj": "Gaawiin gaa-nibaamagwad, nibaa-giizis",
+      "scs": "Nǫǫhtǫ Dǫ Gots'ǫ̀ Ts'ǫǫ̀ Hurdada"
     },
     "phq.q4": {
       "en": "Feeling tired or having little energy",
@@ -222,7 +258,13 @@
       "el": "Να νιώθετε κουρασμένος/η ή να έχετε λίγη ενέργεια",
       "ro": "Să vă simțiți obosit sau să aveți puțină energie",
       "nl": "Moe voelen of weinig energie hebben",
-      "so": "Dareemida daalnimada ama awood yari"
+      "so": "Dareemida daalnimada ama awood yari",
+      "sr": "Осећање умора или мало енергије",
+      "he": "הרגשת עייפות או חוסר אנרגיה",
+      "yue": "感到攰或者冇精神",
+      "my": "ပင်ပန်းမှု သို့မဟုတ် စွမ်းအင်နည်းမှု ခံစားရသည်",
+      "oj": "Gagwedwetam, manaaji-bimaatizid",
+      "scs": "Gǫ̀hłı̨ Dǫ Nǫǫhtǫ Ts'ǫǫ̀ Daalnimada"
     },
     "phq.q5": {
       "en": "Poor appetite or overeating",
@@ -254,7 +296,13 @@
       "el": "Κακή όρεξη ή υπερφαγία",
       "ro": "Apetit scăzut sau mâncat în exces",
       "nl": "Slechte eetlust of te veel eten",
-      "so": "Haajis la'aan ama cunto badan cunid"
+      "so": "Haajis la'aan ama cunto badan cunid",
+      "sr": "Лош апетит или преједање",
+      "he": "תיאבון ירוד או אכילת יתר",
+      "yue": "食慾差或者食得太多",
+      "my": "ဆာလောင်မှုနည်းမှု သို့မဟုတ် အလွန်အကျွံ စားမှု",
+      "oj": "Gaawiin wiisiniim, manaaji-bimaatizid",
+      "scs": "Nǫǫhtǫ Dǫ Gots'ǫ̀ Ts'ǫǫ̀ Haajis"
     },
     "phq.q6": {
       "en": "Feeling bad about yourself — or that you are a failure or have let yourself or your family down",
@@ -286,7 +334,13 @@
       "el": "Να νιώθετε άσχημα για τον εαυτό σας — ή ότι είστε αποτυχημένος/η ή έχετε απογοητεύσει τον εαυτό σας ή την οικογένειά σας",
       "ro": "Să vă simțiți rău în legătură cu dvs. — sau că sunteți un ratat sau că v-ați dezamăgit pe dvs. sau familia",
       "nl": "U slecht voelen over uzelf — of dat u een mislukking bent of uzelf of uw familie teleurgesteld heeft",
-      "so": "Dareemida xumaan ee nafta — ama in aad guuldareystay ama aad mukhaadaratay nafta ama qoyskaaga"
+      "so": "Dareemida xumaan ee nafta — ama in aad guuldareystay ama aad mukhaadaratay nafta ama qoyskaaga",
+      "sr": "Осећање лоше о себи — или да сте неуспех или разочарали себе или породицу",
+      "he": "הרגשה גרועה לגבי עצמך — או שאתה כישלון, או שאכזבת את עצמך או את משפחתך",
+      "yue": "覺得自己唔好 — 或者係失敗者，或者令自己或家人失望",
+      "my": "မိမိကိုယ်မိမိ ညံ့ဖျင်းသည်ဟု ခံစားရသည် — သို့မဟုတ် မိမိ သို့မဟုတ် မိသားစုကို မျှော်လင့်ချက်ပျက်ကွက်ပြီဟု ခံစားရသည်",
+      "oj": "Gii-manaajitam, manaaji-bimaatizid, gaa-aanitam",
+      "scs": "Gǫ̀hłı̨ Dǫ Nǫǫhtǫ Ts'ǫǫ̀ Nafta"
     },
     "phq.q7": {
       "en": "Trouble concentrating on things, such as reading the newspaper or watching television",
@@ -318,7 +372,13 @@
       "el": "Δυσκολία συγκέντρωσης σε πράγματα, όπως η ανάγνωση εφημερίδας ή η παρακολούθηση τηλεόρασης",
       "ro": "Dificultăți de concentrare asupra lucrurilor, cum ar fi cititul ziarului sau privitul la televizor",
       "nl": "Moeite met u concentreren op dingen, zoals de krant lezen of televisie kijken",
-      "so": "Dhibaato deg-degga ah sida akhrinta wargeyska ama daawashada telefishinka"
+      "so": "Dhibaato deg-degga ah sida akhrinta wargeyska ama daawashada telefishinka",
+      "sr": "Тешкоће у концентрацији, попут читања новина или гледања телевизије",
+      "he": "קושי להתרכז בדברים, כמו קריאת עיתון או צפייה בטלוויזיה",
+      "yue": "難以集中精神做嘢，例如睇報紙或者睇電視",
+      "my": "သတင်းစာဖတ်ခြင်း သို့မဟုတ် တီဗွီကြည့်ခြင်းကဲ့သို့သော အရာများတွင် အာရုံစိုက်ရာ ခက်ခဲမှု",
+      "oj": "Gaawiin gaa-minwaabandang wargeyska",
+      "scs": "Nǫǫhtǫ Dǫ Gots'ǫ̀ Ts'ǫǫ̀ Deg-degga"
     },
     "phq.q8": {
       "en": "Moving or speaking so slowly that other people could have noticed? Or the opposite — being so fidgety or restless that you have been moving around a lot more than usual",
@@ -350,7 +410,13 @@
       "el": "Κινείστε ή μιλάτε τόσο αργά που άλλοι θα μπορούσαν να το παρατηρήσουν; Ή το αντίθετο — να είστε τόσο ανήσυχος/η που κινείστε πολύ περισσότερο από το συνήθως",
       "ro": "A vă mișca sau vorbi atât de încet încât alții ar fi putut observa? Sau opusul — a fi atât de agitat(ă) sau neliniștit(ă) că v-ați mișcat mult mai mult decât de obicei",
       "nl": "Zo langzaam bewegen of praten dat anderen het hadden kunnen opmerken? Of het tegenovergestelde — zo zenuwachtig of rusteloos zijn dat u veel meer dan normaal hebt bewogen",
-      "so": "Si tartiib ah u socodsiinta ama hadlida oo dadka kale laga yaabo inay ogaadeen? Ama lidkiisa — aad u xaasidnaan ama xoogaa xasaasi ah oo aad si badan uga dhaqdhaqaaqday caadiga"
+      "so": "Si tartiib ah u socodsiinta ama hadlida oo dadka kale laga yaabo inay ogaadeen? Ama lidkiisa — aad u xaasidnaan ama xoogaa xasaasi ah oo aad si badan uga dhaqdhaqaaqday caadiga",
+      "sr": "Кретање или говор тако споро да су то други могли приметити, или супротно — толико немирни да сте се кретали много више него обично",
+      "he": "תנועה או דיבור איטיים מאוד עד כדי כך שאחרים יכלו להבחין, או להפך — להיות כל כך חסר מנוחה שזזת הרבה יותר מהרגיל",
+      "yue": "郁動或說話慢到其他人可能會注意到？或者相反 — 非常坐立不安，比平時走動多得多",
+      "my": "အခြားသူများ သတိပြုမိနိုင်သောအောင် နှေးကွေးစွာ ရွှေ့လျားမှု သို့မဟုတ် ပြောဆိုမှု？ သို့မဟုတ် ဆန့်ကျင်ဘက် — ပုံမှန်ထက် အများကြီး ရွှေ့လျားသောအောင် မငြိမ်မသက်ဖြစ်မှု",
+      "oj": "Gii-manaajitam, manaaji-bimaatizid, gaa-aanitam gaa-tebweyendang",
+      "scs": "Nǫǫhtǫ Dǫ Gots'ǫ̀ Ts'ǫǫ̀ Socodsiinta"
     },
     "phq.q9": {
       "en": "Thoughts that you would be better off dead or of hurting yourself in some way",
@@ -382,7 +448,13 @@
       "el": "Σκέψεις ότι θα ήταν καλύτερα να ήσασταν νεκρός/ή ή να βλάψετε τον εαυτό σας με κάποιο τρόπο",
       "ro": "Gânduri că ar fi mai bine să fiți mort sau să vă faceți rău într-un fel",
       "nl": "Gedachten dat u beter dood kon zijn of uzelf op een of andere manier pijn te doen",
-      "so": "Fikirrada in dhimashadu ay ka roon tahay ama in aad nafta u dhaawacdo si kastaba"
+      "so": "Fikirrada in dhimashadu ay ka roon tahay ama in aad nafta u dhaawacdo si kastaba",
+      "sr": "Мисли да бисте боље прошли да сте мртви или да се повредите на неки начин",
+      "he": "מחשבות שהיית טוב יותר אם היית מת, או של פגיעה עצמית בצורה כלשהי",
+      "yue": "諗到死咗會更好，或者以某種方式傷害自己嘅念頭",
+      "my": "သေပါက ပိုကောင်းမည်ဟု သို့မဟုတ် မည်သည့်နည်းဖြင့်မဆို မိမိကိုယ်မိမိ ထိခိုက်အောင် ပြုလုပ်ခြင်းကို ကြံစည်သည်",
+      "oj": "Nibaa-naagaj, naangini-bimaatizid",
+      "scs": "Gǫ̀hłı̨ Dǫ Nǫǫhtǫ Ts'ǫǫ̀ Nafta"
     },
     "gad.q1": {
       "en": "Feeling nervous, anxious, or on edge",
@@ -414,7 +486,13 @@
       "el": "Να νιώθετε νευρικός/ή, αγχωμένος/η ή σε εγρήγορση",
       "ro": "Să vă simțiți nervos, anxios sau tensionat",
       "nl": "Zenuwachtig, angstig of gespannen voelen",
-      "so": "Dareemida xaasidnimada, walbahaarka, ama dareenka aarlaawaha"
+      "so": "Dareemida xaasidnimada, walbahaarka, ama dareenka aarlaawaha",
+      "sr": "Осећање нервозе, анксиозности или напетости",
+      "he": "הרגשת עצבנות, חרדה, או מתח",
+      "yue": "感到緊張、焦慮或者不安",
+      "my": "အာင်ဆာ၊ စိုးရိမ်ပူပန်မှု သို့မဟုတ် တင်းတိမ်မှု ခံစားရသည်",
+      "oj": "Zegizi, zegizi-bimaatizid",
+      "scs": "Welwel Nǫǫhtǫ"
     },
     "gad.q2": {
       "en": "Not being able to stop or control worrying",
@@ -446,7 +524,13 @@
       "el": "Να μην μπορείτε να σταματήσετε ή να ελέγξετε την ανησυχία",
       "ro": "Incapacitatea de a opri sau controla îngrijorarea",
       "nl": "Niet kunnen stoppen met of controleren van piekeren",
-      "so": "Awooddarrada joojinta ama xukumida walaaca"
+      "so": "Awooddarrada joojinta ama xukumida walaaca",
+      "sr": "Немогућност да се зауставите или контролишете бригу",
+      "he": "חוסר יכולת להפסיק או לשלוט בדאגה",
+      "yue": "唔能夠停止或者控制憂慮",
+      "my": "စိုးရိမ်ပူပန်မှုကို ရပ်တန့်ရာ သို့မဟုတ် ထိန်းချုပ်ရာ မဖြစ်နိုင်မှု",
+      "oj": "Gaawiin gaa-gichi-zegizid",
+      "scs": "Welwel Nǫǫhtǫ Ts'ǫǫ̀"
     },
     "gad.q3": {
       "en": "Worrying too much about different things",
@@ -478,7 +562,13 @@
       "el": "Να ανησυχείτε πολύ για διάφορα πράγματα",
       "ro": "Să vă îngrijorați prea mult de lucruri diferite",
       "nl": "Teveel piekeren over verschillende dingen",
-      "so": "Xad-dhaaf u walaacida arrimaha kala duwan"
+      "so": "Xad-dhaaf u walaacida arrimaha kala duwan",
+      "sr": "Превише бригâ о различитим стварима",
+      "he": "דאגה יתרה לגבי דברים שונים",
+      "yue": "對唔同嘅嘢擔心過多",
+      "my": "မတူညီသောအရာများအကြောင်း အလွန်အကျွံ စိုးရိမ်ပူပန်မှု",
+      "oj": "Gichi-zegizi, manaaji-bimaatizid",
+      "scs": "Welwel Nǫǫhtǫ Ts'ǫǫ̀ Arrimaha"
     },
     "gad.q4": {
       "en": "Trouble relaxing",
@@ -510,7 +600,13 @@
       "el": "Δυσκολία στο να χαλαρώνετε",
       "ro": "Dificultăți în a vă relaxa",
       "nl": "Moeite met ontspannen",
-      "so": "Dhibaato nasasho"
+      "so": "Dhibaato nasasho",
+      "sr": "Тешкоће са опуштањем",
+      "he": "קושי להירגע",
+      "yue": "難以放鬆",
+      "my": "ဖြေလျှော့ရာ ခက်ခဲမှု",
+      "oj": "Gaawiin gaa-minawaanigoziid",
+      "scs": "Nǫǫhtǫ Dǫ Gots'ǫ̀ Nasasho"
     },
     "gad.q5": {
       "en": "Being so restless that it is hard to sit still",
@@ -542,7 +638,13 @@
       "el": "Να είστε τόσο ανήσυχος/η που είναι δύσκολο να καθίσετε ακίνητος/η",
       "ro": "Să fiți atât de agitat(ă) că este greu să stați nemișcat(ă)",
       "nl": "Zo rusteloos zijn dat het moeilijk is stil te zitten",
-      "so": "Aad u xaasidnaanta oo ku adkaanaysa fadhiga xasilloon"
+      "so": "Aad u xaasidnaanta oo ku adkaanaysa fadhiga xasilloon",
+      "sr": "Толико немирни да је тешко мирно седети",
+      "he": "כל כך חסר מנוחה שקשה לשבת בשקט",
+      "yue": "坐立不安到難以靜坐",
+      "my": "တည်တည်ငြိမ်ငြိမ် ထိုင်ရာ ခက်ခဲသောအောင် မငြိမ်မသက်ဖြစ်မှု",
+      "oj": "Gaawiin gaa-nibaa-minawaanigozid",
+      "scs": "Welwel Nǫǫhtǫ Ts'ǫǫ̀ Fadhiga"
     },
     "gad.q6": {
       "en": "Becoming easily annoyed or irritable",
@@ -574,7 +676,13 @@
       "el": "Να εκνευρίζεστε ή να γίνεστε εύκολα ευερέθιστος/η",
       "ro": "Să vă enervați sau să deveniți iritabil(ă) cu ușurință",
       "nl": "Gemakkelijk geïrriteerd of prikkelbaar worden",
-      "so": "Si fudud u xanaaqista ama cadhoonaanta"
+      "so": "Si fudud u xanaaqista ama cadhoonaanta",
+      "sr": "Лако се нервирати или раздражљивост",
+      "he": "להתרגז בקלות או להיות עצבני",
+      "yue": "容易惱怒或者煩躁",
+      "my": "လွယ်ကူစွာ ဒေါသဖြစ်မှု သို့မဟုတ် စိတ်တိုဒေါသကြီးမှု",
+      "oj": "Gichi-zegizi-bimaatizid",
+      "scs": "Welwel Nǫǫhtǫ Ts'ǫǫ̀ Xanaaqista"
     },
     "gad.q7": {
       "en": "Feeling afraid, as if something awful might happen",
@@ -606,7 +714,13 @@
       "el": "Να νιώθετε φόβο, σαν να πρόκειται να συμβεί κάτι τρομερό",
       "ro": "Să vă simțiți speriat(ă), ca și cum s-ar putea întâmpla ceva groaznic",
       "nl": "Bang voelen, alsof er iets vreselijks gaat gebeuren",
-      "so": "Dareemida cabsida, sidii wax xun oo dhici doona"
+      "so": "Dareemida cabsida, sidii wax xun oo dhici doona",
+      "sr": "Осећање страха, као да ће се нешто страшно догодити",
+      "he": "הרגשת פחד, כאילו משהו נורא עומד לקרות",
+      "yue": "感到恐懼，好似有嘢恐怖嘅事情將要發生",
+      "my": "ကြောက်ရွံ့မှု ခံစားရသည်၊ တစ်ခုခု ဆိုးဝါးသောအရာ ဖြစ်ပေါ်တော့မည်ဟု ခံစားရသည်",
+      "oj": "Zegizi, zegizi-bimaatizid, gaa-aanitam",
+      "scs": "Welwel Nǫǫhtǫ Ts'ǫǫ̀ Cabsida"
     },
     "phq.answer_not_at_all": {
       "en": "Not at all",
@@ -638,7 +752,13 @@
       "el": "Καθόλου",
       "ro": "Deloc",
       "nl": "Helemaal niet",
-      "so": "Abid"
+      "so": "Abid",
+      "sr": "Нимало",
+      "he": "כלל לא",
+      "yue": "完全冇",
+      "my": "လုံးဝ မဟုတ်ပါ",
+      "oj": "Gaawiin wiikaa",
+      "scs": "Abid"
     },
     "phq.answer_several_days": {
       "en": "Several days",
@@ -670,7 +790,13 @@
       "el": "Μερικές ημέρες",
       "ro": "Câteva zile",
       "nl": "Meerdere dagen",
-      "so": "Dhowr maalmood"
+      "so": "Dhowr maalmood",
+      "sr": "Неколико дана",
+      "he": "מספר ימים",
+      "yue": "幾日",
+      "my": "ရက်အနည်းငယ်",
+      "oj": "Niswi-giizhigad",
+      "scs": "Dhowr Maalmood"
     },
     "phq.answer_more_than_half": {
       "en": "More than half the days",
@@ -702,7 +828,13 @@
       "el": "Περισσότερες από τις μισές μέρες",
       "ro": "Mai mult de jumătate din zile",
       "nl": "Meer dan de helft van de dagen",
-      "so": "In ka badan badh maalmaha"
+      "so": "In ka badan badh maalmaha",
+      "sr": "Više od polovine dana",
+      "he": "יותר ממחצית הימים",
+      "yue": "多過一半嘅日子",
+      "my": "ထက်ဝက်ကျော်သော ရက်များ",
+      "oj": "Ashi-ingodwaaswi-giizhigad",
+      "scs": "In Ka Badan Badh"
     },
     "phq.answer_nearly_every_day": {
       "en": "Nearly every day",
@@ -734,7 +866,13 @@
       "el": "Σχεδόν κάθε μέρα",
       "ro": "Aproape în fiecare zi",
       "nl": "Bijna elke dag",
-      "so": "Ku dhawaad maalin kasta"
+      "so": "Ku dhawaad maalin kasta",
+      "sr": "Скоро сваки дан",
+      "he": "כמעט כל יום",
+      "yue": "幾乎每日",
+      "my": "တော်တော်လေး နေ့တိုင်းနီးပါး",
+      "oj": "Aanawi-giizhigad",
+      "scs": "Ku Dhawaad Maalin Kasta"
     },
     "phq.submit": {
       "en": "Submit",
@@ -766,7 +904,13 @@
       "el": "Υποβολή",
       "ro": "Trimite",
       "nl": "Versturen",
-      "so": "Dir"
+      "so": "Dir",
+      "sr": "Пошаљи",
+      "he": "שלח",
+      "yue": "提交",
+      "my": "တင်သွင်းရန်",
+      "oj": "Izhina'ibin",
+      "scs": "Dir"
     },
     "phq.validation": {
       "en": "Please answer all questions before submitting.",
@@ -798,7 +942,13 @@
       "el": "Παρακαλώ απαντήστε σε όλες τις ερωτήσεις πριν υποβάλετε.",
       "ro": "Vă rugăm să răspundeți la toate întrebările înainte de a trimite.",
       "nl": "Beantwoord alle vragen voordat u verzendt.",
-      "so": "Fadlan ka jawaab su'aalaha oo dhan kahor intaadan dirin."
+      "so": "Fadlan ka jawaab su'aalaha oo dhan kahor intaadan dirin.",
+      "sr": "Молимо вас да одговорите на сва питања пре слања.",
+      "he": "אנא ענה על כל השאלות לפני השליחה.",
+      "yue": "請喺提交之前回答所有問題。",
+      "my": "တင်သွင်းမတိုင်မှ မေးခွန်းအားလုံးကို ဖြေဆိုပါ။",
+      "oj": "Gidaa-giigido minik gaa-kikendaman.",
+      "scs": "Fadlan Ka Jawaab Su'aalaha Oo Dhan."
     }
   }
 }
