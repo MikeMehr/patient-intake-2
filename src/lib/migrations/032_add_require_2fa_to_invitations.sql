@@ -1,0 +1,2 @@
+ALTER TABLE patient_invitations
+  ADD COLUMN IF NOT EXISTS require_2fa BOOLEAN NOT NULL DEFAULT TRUE;

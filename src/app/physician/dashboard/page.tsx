@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Component, useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import type { PatientSession } from "@/lib/session-store";
@@ -8,6 +8,32 @@ import SessionKeepAlive from "@/components/auth/SessionKeepAlive";
 import PasskeyEnrollmentBanner from "@/components/auth/PasskeyEnrollmentBanner";
 import PasskeyManagement from "@/components/auth/PasskeyManagement";
 import CollapsibleSection from "@/components/CollapsibleSection";
+
+class DashboardErrorBoundary extends Component<{children: React.ReactNode}, {error: Error | null}> {
+  constructor(props: {children: React.ReactNode}) {
+    super(props);
+    this.state = { error: null };
+  }
+  static getDerivedStateFromError(error: Error) {
+    return { error };
+  }
+  componentDidCatch(error: Error, info: React.ErrorInfo) {
+    console.error("[DashboardErrorBoundary] Caught error:", error.message, error.stack);
+    console.error("[DashboardErrorBoundary] Component stack:", info.componentStack);
+  }
+  render() {
+    if (this.state.error) {
+      return (
+        <div style={{padding:20,background:'#fee2e2',color:'#991b1b',fontFamily:'monospace',whiteSpace:'pre-wrap'}}>
+          <h2>Dashboard Render Error (debug)</h2>
+          <p><strong>{this.state.error.message}</strong></p>
+          <pre style={{fontSize:12}}>{this.state.error.stack}</pre>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 type PatientSessionWithChartLink = PatientSession & { patientId?: string | null; hasPdfForm?: boolean };
 type InvitationActivityStatus =
@@ -122,7 +148,7 @@ function mapInvitationFromApi(inv: any): Invitation {
   };
 }
 
-export default function PhysicianDashboard() {
+function PhysicianDashboard() {
   const router = useRouter();
   const patientLookupSectionRef = useRef<HTMLDivElement | null>(null);
   const inviteSectionRef = useRef<HTMLDivElement | null>(null);
@@ -155,6 +181,7 @@ export default function PhysicianDashboard() {
   const [invitePatientEmail, setInvitePatientEmail] = useState("");
   const [invitePatientBackground, setInvitePatientBackground] = useState("");
   const [inviteRequestPhqGad, setInviteRequestPhqGad] = useState(false);
+  const [inviteRequire2fa, setInviteRequire2fa] = useState(true);
   const [invitePrimaryPhone, setInvitePrimaryPhone] = useState("");
   const [inviteSecondaryPhone, setInviteSecondaryPhone] = useState("");
   const [inviteInsuranceNumber, setInviteInsuranceNumber] = useState("");
@@ -216,18 +243,16 @@ export default function PhysicianDashboard() {
   const LS_PATIENT_LOOKUP = "physicianDashboard.patientLookupDefaultOpen";
   const [settingsMenuOpen, setSettingsMenuOpen] = useState(false);
   const settingsMenuRef = useRef<HTMLDivElement>(null);
-  const [sessionsDefaultOpen, setSessionsDefaultOpen] = useState<boolean>(() => {
-    if (typeof window === "undefined") return false;
-    return localStorage.getItem("physicianDashboard.sessionsDefaultOpen") === "true";
-  });
-  const [invitationsDefaultOpen, setInvitationsDefaultOpen] = useState<boolean>(() => {
-    if (typeof window === "undefined") return false;
-    return localStorage.getItem("physicianDashboard.invitationsDefaultOpen") === "true";
-  });
-  const [patientLookupDefaultOpen, setPatientLookupDefaultOpen] = useState<boolean>(() => {
-    if (typeof window === "undefined") return false;
-    return localStorage.getItem("physicianDashboard.patientLookupDefaultOpen") === "true";
-  });
+  const [sessionsDefaultOpen, setSessionsDefaultOpen] = useState<boolean>(false);
+  const [invitationsDefaultOpen, setInvitationsDefaultOpen] = useState<boolean>(false);
+  const [patientLookupDefaultOpen, setPatientLookupDefaultOpen] = useState<boolean>(false);
+
+  // Read localStorage after hydration to avoid SSR/client mismatch
+  useEffect(() => {
+    setSessionsDefaultOpen(localStorage.getItem("physicianDashboard.sessionsDefaultOpen") === "true");
+    setInvitationsDefaultOpen(localStorage.getItem("physicianDashboard.invitationsDefaultOpen") === "true");
+    setPatientLookupDefaultOpen(localStorage.getItem("physicianDashboard.patientLookupDefaultOpen") === "true");
+  }, []);
 
   useEffect(() => {
     // Fetch sessions
@@ -457,6 +482,7 @@ export default function PhysicianDashboard() {
     setInvitePatientEmail("");
     setInvitePatientBackground("");
     setInviteRequestPhqGad(false);
+    setInviteRequire2fa(true);
     setInvitePrimaryPhone("");
     setInviteSecondaryPhone("");
     setInviteInsuranceNumber("");
@@ -555,6 +581,7 @@ export default function PhysicianDashboard() {
         formData.append("patientBackground", invitePatientBackground.trim());
       }
       formData.append("requestPhqGad", inviteRequestPhqGad ? "true" : "false");
+      formData.append("require2fa", inviteRequire2fa ? "true" : "false");
       if (invitePatientDob.trim()) {
         formData.append("patientDob", invitePatientDob.trim());
       }
@@ -618,6 +645,7 @@ export default function PhysicianDashboard() {
       setInvitePatientEmail("");
       setInvitePatientBackground("");
       setInviteRequestPhqGad(false);
+      setInviteRequire2fa(true);
       setInvitePrimaryPhone("");
       setInviteSecondaryPhone("");
       setInviteInsuranceNumber("");
@@ -1202,6 +1230,23 @@ export default function PhysicianDashboard() {
                       DOB is required to match returning patients to the same chart. EMR fetch remains optional.
                     </p>
                   </div>
+                  <div className="md:col-span-2">
+                    <label className="flex items-center gap-2 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={inviteRequire2fa}
+                        onChange={(e) => setInviteRequire2fa(e.target.checked)}
+                        disabled={inviteLoading}
+                        className="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-500 disabled:cursor-not-allowed"
+                      />
+                      <span className="text-sm font-medium text-slate-700">
+                        Require patient 2FA (email verification)
+                      </span>
+                    </label>
+                    <p className="text-xs text-slate-500 mt-1 ml-6">
+                      When checked, patients must verify their email with a one-time code before accessing the intake form.
+                    </p>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1577,7 +1622,7 @@ export default function PhysicianDashboard() {
                             </div>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600">
-                            {new Date(session.completedAt).toLocaleString()}
+                            {session.completedAt ? new Date(session.completedAt).toLocaleString() : "—"}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
                             {session.viewedByPhysician ? (
@@ -1774,7 +1819,7 @@ export default function PhysicianDashboard() {
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm">
                             {(() => {
-                              const meta = invitationStatusMeta[invitation.activityStatus];
+                              const meta = invitationStatusMeta[invitation.activityStatus] ?? invitationStatusMeta["sent"];
                               const recentActivity = formatRelativeTime(invitation.lastAccessedAt);
                               const detail =
                                 invitation.activityStatus === "active_recently" && recentActivity
@@ -2231,6 +2276,14 @@ export default function PhysicianDashboard() {
         </div>
       )}
     </>
+  );
+}
+
+export default function PhysicianDashboardWithBoundary() {
+  return (
+    <DashboardErrorBoundary>
+      <PhysicianDashboard />
+    </DashboardErrorBoundary>
   );
 }
 

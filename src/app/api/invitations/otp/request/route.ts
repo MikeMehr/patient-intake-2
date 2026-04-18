@@ -49,6 +49,13 @@ export async function POST(request: NextRequest) {
       return res;
     }
 
+    if (!invitation.require2fa) {
+      status = 400;
+      const res = NextResponse.json({ error: "This invitation does not require email verification" }, { status });
+      logRequestMeta("/api/invitations/otp/request", requestId, status, Date.now() - started);
+      return res;
+    }
+
     const otp = createOtpCode();
     await upsertOtpChallenge(invitation.invitationId, otp);
 

@@ -13,6 +13,7 @@ type OpenInvitationResponse = {
   tokenExpiresAt: string | null;
   openable: boolean;
   invalidReason: "used" | "revoked" | "expired" | null;
+  require2fa: boolean;
 };
 
 type VerifyOtpResponse = {
@@ -211,6 +212,31 @@ export default function InvitationTokenIntakePage() {
                   ? "This invitation link has expired."
                   : "This invitation is no longer valid.";
           setError(reason);
+          return;
+        }
+
+        // When 2FA is not required, claim a session directly without OTP.
+        if (!openData.require2fa) {
+          try {
+            const bypassRes = await fetch(`/api/invitations/open/${encodeURIComponent(token)}`, {
+              method: "POST",
+              cache: "no-store",
+              credentials: "include",
+            });
+            const bypassData = (await bypassRes.json()) as VerifyOtpResponse & { error?: string };
+            if (!bypassRes.ok) {
+              setError(bypassData.error || "Failed to access invitation.");
+              return;
+            }
+            persistInviteSession(bypassData);
+            setHeaderInfo({
+              physicianName: bypassData.physicianName || "Invited intake",
+              clinicName: bypassData.clinicName || "",
+            });
+            setVerified(true);
+          } catch {
+            setError("Failed to access invitation.");
+          }
           return;
         }
 

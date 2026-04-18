@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
+  INVITATION_SESSION_COOKIE,
   consumeRateLimit,
+  createInvitationSession,
   getInvitationByRawToken,
   getRequestIp,
   isInvitationOpenable,
@@ -102,6 +104,7 @@ export async function GET(
       tokenExpiresAt: invitation.tokenExpiresAt || invitation.expiresAt,
       openable,
       invalidReason,
+      require2fa: invitation.require2fa,
     });
     logRequestMeta("/api/invitations/open/[token]", requestId, status, Date.now() - started);
     return res;
@@ -110,6 +113,99 @@ export async function GET(
     status = 500;
     const res = NextResponse.json({ error: "Internal server error" }, { status });
     logRequestMeta("/api/invitations/open/[token]", requestId, status, Date.now() - started);
+    return res;
+  }
+}
+
+/**
+ * POST /api/invitations/open/[token]
+ * Grant a session directly for invitations where require_2fa is false.
+ * Rejects with 403 if the invitation requires 2FA.
+ */
+export async function POST(
+  request: NextRequest,
+  { params }: { params: Promise<{ token: string }> },
+) {
+  const requestId = getRequestId(request.headers);
+  const started = Date.now();
+  let status = 200;
+  const ipAddress = getRequestIp(request.headers);
+  const userAgent = request.headers.get("user-agent");
+
+  try {
+    const { token } = await params;
+    if (!token) {
+      status = 400;
+      const res = NextResponse.json({ error: "Invitation token is required" }, { status });
+      logRequestMeta("/api/invitations/open/[token] POST", requestId, status, Date.now() - started);
+      return res;
+    }
+
+    const limiter = await consumeRateLimit(`invite-open-post:${ipAddress}`, 10, 60);
+    if (!limiter.allowed) {
+      status = 429;
+      const res = NextResponse.json(
+        { error: "Too many attempts", retryAfterSeconds: limiter.retryAfterSeconds },
+        { status },
+      );
+      logRequestMeta("/api/invitations/open/[token] POST", requestId, status, Date.now() - started);
+      return res;
+    }
+
+    const invitation = await getInvitationByRawToken(token);
+    if (!invitation || !(await isInvitationOpenable(invitation))) {
+      status = 404;
+      const res = NextResponse.json({ error: "Invitation is invalid" }, { status });
+      logRequestMeta("/api/invitations/open/[token] POST", requestId, status, Date.now() - started);
+      return res;
+    }
+
+    if (invitation.require2fa) {
+      status = 403;
+      const res = NextResponse.json({ error: "This invitation requires email verification" }, { status });
+      logRequestMeta("/api/invitations/open/[token] POST", requestId, status, Date.now() - started);
+      return res;
+    }
+
+    const session = await createInvitationSession({
+      invitationId: invitation.invitationId,
+      ipAddress,
+      userAgent,
+    });
+
+    await logInvitationAudit({
+      invitationId: invitation.invitationId,
+      eventType: "otp_verified",
+      ipAddress,
+      userAgent,
+      metadata: { bypass2fa: true },
+    });
+
+    const res = NextResponse.json({
+      success: true,
+      patientName: invitation.patientName,
+      patientEmail: invitation.patientEmail,
+      patientDob: invitation.patientDob,
+      physicianId: invitation.physicianId,
+      physicianName: invitation.physicianName,
+      clinicName: invitation.clinicName,
+      organizationWebsiteUrl: invitation.organizationWebsiteUrl || null,
+    });
+    res.cookies.set(INVITATION_SESSION_COOKIE, session.cookieValue, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      domain: process.env.INVITATION_SESSION_COOKIE_DOMAIN || undefined,
+      path: "/",
+      maxAge: Math.max(1, Math.floor((session.expiresAtMs - Date.now()) / 1000)),
+    });
+    logRequestMeta("/api/invitations/open/[token] POST", requestId, status, Date.now() - started);
+    return res;
+  } catch (error) {
+    console.error("[invitations/open POST] Error", error);
+    status = 500;
+    const res = NextResponse.json({ error: "Internal server error" }, { status });
+    logRequestMeta("/api/invitations/open/[token] POST", requestId, status, Date.now() - started);
     return res;
   }
 }
