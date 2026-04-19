@@ -2810,6 +2810,124 @@ function PhysicianViewContent() {
               );
             })()}
 
+            {/* PWD Section E6 & F Results */}
+            {(session.history as any)?.pwdSectionE6FResults && (() => {
+              const r = (session.history as any).pwdSectionE6FResults as import("@/lib/history-schema").PwdSectionE6FResults;
+              const deficitLabels: Record<string, string> = {
+                consciousness: "Consciousness (orientation, confusion)",
+                executive: "Executive (planning, organizing, sequencing, calculations, judgement)",
+                language: "Language (oral, auditory, written comprehension or expression)",
+                memory: "Memory (ability to learn and recall information)",
+                perceptualPsychomotor: "Perceptual psychomotor (visual spatial)",
+                psychoticSymptoms: "Psychotic symptoms (delusions, hallucinations, thought disorders)",
+                emotionalDisturbance: "Emotional disturbance (e.g. depression, anxiety)",
+                motivation: "Motivation (loss of initiative or interest)",
+                impulseControl: "Impulse control",
+                motorActivity: "Motor activity (goal oriented activity, agitation, repetitive behaviour)",
+                attentionConcentration: "Attention or sustained concentration",
+              };
+              const checkedAreas = Object.entries(r.sectionE6.deficitAreas)
+                .filter(([k, v]) => k !== "otherSpecify" && v === true)
+                .map(([k]) => deficitLabels[k] ?? k);
+              if (r.sectionE6.deficitAreas.otherSpecify) {
+                checkedAreas.push(`Other: ${r.sectionE6.deficitAreas.otherSpecify}`);
+              }
+              return (
+                <div className="mb-6">
+                  <CollapsibleSection
+                    id="pwd-e6f-results"
+                    title="PWD Section E6 & F Results"
+                    description="Patient-completed PWD Medical Report sections on cognitive function and daily living activities."
+                    defaultOpen={true}
+                  >
+                    {/* Section E6 */}
+                    <div className="mb-5">
+                      <p className="text-sm font-semibold text-slate-900 mb-2">
+                        Section E6 — Cognitive and Emotional Function
+                      </p>
+                      <p className="text-sm text-slate-700 mb-1">
+                        <span className="font-medium">Significant deficits present:</span>{" "}
+                        <span className="capitalize">{r.sectionE6.hasDeficits}</span>
+                      </p>
+                      {checkedAreas.length > 0 && (
+                        <div className="mt-2">
+                          <p className="text-xs font-medium text-slate-600 mb-1">Areas affected:</p>
+                          <ul className="list-disc list-inside space-y-1">
+                            {checkedAreas.map((area, i) => (
+                              <li key={i} className="text-sm text-slate-700">{area}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      {r.sectionE6.functionalSkillsComments && (
+                        <div className="mt-2 rounded-lg border border-slate-200 bg-slate-50/60 px-3 py-2">
+                          <p className="text-xs font-medium text-slate-600 mb-0.5">Functional Skills Comments:</p>
+                          <p className="text-sm text-slate-700 whitespace-pre-wrap">{r.sectionE6.functionalSkillsComments}</p>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Section F */}
+                    <div>
+                      <p className="text-sm font-semibold text-slate-900 mb-2">
+                        Section F — Daily Living Activities
+                      </p>
+                      <p className="text-sm text-slate-700 mb-2">
+                        <span className="font-medium">Impairment restricts daily living:</span>{" "}
+                        <span className="capitalize">{r.sectionF.isRestricted}</span>
+                      </p>
+                      {r.sectionF.isRestricted === "yes" && r.sectionF.activities.length > 0 && (
+                        <div className="overflow-x-auto mb-3">
+                          <table className="w-full text-xs border-collapse">
+                            <thead>
+                              <tr className="bg-slate-100">
+                                <th className="border border-slate-300 px-2 py-1.5 text-left font-semibold text-slate-700">Activity</th>
+                                <th className="border border-slate-300 px-2 py-1.5 text-center font-semibold text-slate-700">Restricted?</th>
+                                <th className="border border-slate-300 px-2 py-1.5 text-center font-semibold text-slate-700">Type</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {r.sectionF.activities.map((act, i) => (
+                                <tr key={i} className={i % 2 === 0 ? "bg-white" : "bg-slate-50/40"}>
+                                  <td className="border border-slate-300 px-2 py-1.5 text-slate-700">{act.activity}</td>
+                                  <td className="border border-slate-300 px-2 py-1.5 text-center capitalize text-slate-700">{act.restricted}</td>
+                                  <td className="border border-slate-300 px-2 py-1.5 text-center capitalize text-slate-700">{act.restrictionType ?? "—"}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                      {r.sectionF.periodicExplanation && (
+                        <div className="rounded-lg border border-slate-200 bg-slate-50/60 px-3 py-2 mb-2">
+                          <p className="text-xs font-medium text-slate-600 mb-0.5">If Periodic, please explain:</p>
+                          <p className="text-sm text-slate-700 whitespace-pre-wrap">{r.sectionF.periodicExplanation}</p>
+                        </div>
+                      )}
+                      {r.sectionF.socialFunctioningExplanation && (
+                        <div className="rounded-lg border border-slate-200 bg-slate-50/60 px-3 py-2 mb-2">
+                          <p className="text-xs font-medium text-slate-600 mb-0.5">If Social Functioning is impacted:</p>
+                          <p className="text-sm text-slate-700 whitespace-pre-wrap">{r.sectionF.socialFunctioningExplanation}</p>
+                        </div>
+                      )}
+                      {r.sectionF.additionalComments && (
+                        <div className="rounded-lg border border-slate-200 bg-slate-50/60 px-3 py-2 mb-2">
+                          <p className="text-xs font-medium text-slate-600 mb-0.5">Additional comments on degree of restriction:</p>
+                          <p className="text-sm text-slate-700 whitespace-pre-wrap">{r.sectionF.additionalComments}</p>
+                        </div>
+                      )}
+                      {r.sectionF.assistanceNeeded && (
+                        <div className="rounded-lg border border-slate-200 bg-slate-50/60 px-3 py-2">
+                          <p className="text-xs font-medium text-slate-600 mb-0.5">Assistance needed with Daily Living Activities:</p>
+                          <p className="text-sm text-slate-700 whitespace-pre-wrap">{r.sectionF.assistanceNeeded}</p>
+                        </div>
+                      )}
+                    </div>
+                  </CollapsibleSection>
+                </div>
+              );
+            })()}
+
             {/* Form Responses — shown when a form was uploaded with the invitation */}
             {(session.history as any)?.formSummary && (
               <div className="mb-6">

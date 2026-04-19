@@ -45,6 +45,8 @@ export default function MonitorPage() {
   const [turns, setTurns] = useState<LiveTurn[]>([]);
   const [patientName, setPatientName] = useState<string>("");
   const [requestPhqGad, setRequestPhqGad] = useState(false);
+  const [requestPwdE6f, setRequestPwdE6f] = useState(false);
+  const [togglingPwdE6f, setTogglingPwdE6f] = useState(false);
   const [guidancePending, setGuidancePending] = useState(false);
   const [isCompleted, setIsCompleted] = useState(false);
   const [guidanceText, setGuidanceText] = useState("");
@@ -74,6 +76,7 @@ export default function MonitorPage() {
       const data = await res.json();
       if (data.patientName) setPatientName(data.patientName);
       setRequestPhqGad(Boolean(data.requestPhqGad));
+      setRequestPwdE6f(Boolean(data.requestPwdE6f));
       setGuidancePending(Boolean(data.guidancePending));
       if (data.isCompleted) setIsCompleted(true);
 
@@ -133,6 +136,20 @@ export default function MonitorPage() {
       setRequestPhqGad(value);
     } finally {
       setTogglingScreening(false);
+    }
+  }
+
+  async function handlePwdE6fToggle(value: boolean) {
+    setTogglingPwdE6f(true);
+    try {
+      await fetch(`/api/invitations/${invitationId}/screening`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ requestPwdE6f: value }),
+      });
+      setRequestPwdE6f(value);
+    } finally {
+      setTogglingPwdE6f(false);
     }
   }
 
@@ -490,6 +507,26 @@ export default function MonitorPage() {
               )}
             </label>
             {requestPhqGad && (
+              <p className="mt-1 text-sm text-slate-400 pl-7">
+                Will appear for the patient on their next interview turn.
+              </p>
+            )}
+            <label className="flex items-center gap-3 cursor-pointer mt-3">
+              <input
+                type="checkbox"
+                checked={requestPwdE6f}
+                disabled={togglingPwdE6f || isCompleted || requestPwdE6f}
+                onChange={(e) => handlePwdE6fToggle(e.target.checked)}
+                className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer disabled:cursor-not-allowed"
+              />
+              <span className="text-base text-slate-700">PWD Section E6 and F</span>
+              {requestPwdE6f && (
+                <span className="ml-auto px-2 py-0.5 rounded text-sm bg-green-100 text-green-700 font-medium">
+                  Enabled
+                </span>
+              )}
+            </label>
+            {requestPwdE6f && (
               <p className="mt-1 text-sm text-slate-400 pl-7">
                 Will appear for the patient on their next interview turn.
               </p>

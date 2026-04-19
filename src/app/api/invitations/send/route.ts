@@ -104,6 +104,7 @@ export async function POST(request: NextRequest) {
       patientDob,
       patientBackground,
       requestPhqGad,
+      requestPwdE6f,
       require2fa,
       oscarDemographicNo,
       labReportFile,
@@ -248,9 +249,10 @@ export async function POST(request: NextRequest) {
              form_pdf_data,
              form_pdf_filename,
              request_phq_gad,
+             request_pwd_e6f,
              require_2fa
            )
-          VALUES ($1, $2, $3, $4::date, $5, $6, $7, $7, NOW(), $8, $9, $10, $11, $12, $13, NULL, $14, $15, $16, $17)
+          VALUES ($1, $2, $3, $4::date, $5, $6, $7, $7, NOW(), $8, $9, $10, $11, $12, $13, NULL, $14, $15, $16, $17, $18)
            RETURNING id`,
           [
             physicianId,
@@ -269,6 +271,7 @@ export async function POST(request: NextRequest) {
             formPdfBytes,
             formPdfFilename,
             requestPhqGad,
+            requestPwdE6f,
             require2fa,
           ],
         );
@@ -419,6 +422,7 @@ async function parseRequestBody(request: NextRequest): Promise<{
   patientDob: string | null;
   patientBackground: string | null;
   requestPhqGad: boolean;
+  requestPwdE6f: boolean;
   require2fa: boolean;
   oscarDemographicNo: string | null;
   labReportFile: File | null;
@@ -451,6 +455,7 @@ async function parseRequestBody(request: NextRequest): Promise<{
       patientDob: ((formData.get("patientDob") as string | null) || "").trim() || null,
       patientBackground: ((formData.get("patientBackground") as string | null) || "").trim() || null,
       requestPhqGad: formData.get("requestPhqGad") === "true",
+      requestPwdE6f: formData.get("requestPwdE6f") === "true",
       require2fa: formData.get("require2fa") !== "false",
       oscarDemographicNo: ((formData.get("oscarDemographicNo") as string | null) || "").trim() || null,
       labReportFile: formData.get("labReport") instanceof File ? (formData.get("labReport") as File) : null,
@@ -477,6 +482,7 @@ async function parseRequestBody(request: NextRequest): Promise<{
       patientDob: (body?.patientDob as string)?.trim() || null,
       patientBackground: (body?.patientBackground as string)?.trim() || null,
       requestPhqGad: Boolean(body?.requestPhqGad),
+      requestPwdE6f: Boolean(body?.requestPwdE6f),
       require2fa: body?.require2fa !== false,
       oscarDemographicNo: (body?.oscarDemographicNo as string)?.trim() || null,
       labReportFile: null,
@@ -496,6 +502,7 @@ async function parseRequestBody(request: NextRequest): Promise<{
       patientDob: null,
       patientBackground: null,
       requestPhqGad: false,
+      requestPwdE6f: false,
       require2fa: true,
       oscarDemographicNo: null,
       labReportFile: null,

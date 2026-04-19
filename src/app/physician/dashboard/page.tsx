@@ -181,6 +181,7 @@ function PhysicianDashboard() {
   const [invitePatientEmail, setInvitePatientEmail] = useState("");
   const [invitePatientBackground, setInvitePatientBackground] = useState("");
   const [inviteRequestPhqGad, setInviteRequestPhqGad] = useState(false);
+  const [inviteRequestPwdE6f, setInviteRequestPwdE6f] = useState(false);
   const [inviteRequire2fa, setInviteRequire2fa] = useState(true);
   const [invitePrimaryPhone, setInvitePrimaryPhone] = useState("");
   const [inviteSecondaryPhone, setInviteSecondaryPhone] = useState("");
@@ -581,6 +582,7 @@ function PhysicianDashboard() {
         formData.append("patientBackground", invitePatientBackground.trim());
       }
       formData.append("requestPhqGad", inviteRequestPhqGad ? "true" : "false");
+      formData.append("requestPwdE6f", inviteRequestPwdE6f ? "true" : "false");
       formData.append("require2fa", inviteRequire2fa ? "true" : "false");
       if (invitePatientDob.trim()) {
         formData.append("patientDob", invitePatientDob.trim());
@@ -1386,6 +1388,23 @@ function PhysicianDashboard() {
                   </label>
                   <p className="text-xs text-slate-500 mt-1 ml-7">
                     Patient will complete depression and anxiety screening questionnaires at the end of the interview.
+                  </p>
+                </div>
+                <div>
+                  <label className="flex items-center gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={inviteRequestPwdE6f}
+                      onChange={(e) => setInviteRequestPwdE6f(e.target.checked)}
+                      disabled={inviteLoading}
+                      className="accent-blue-600 w-4 h-4"
+                    />
+                    <span className="text-sm font-medium text-slate-700">
+                      PWD Section E6 and F
+                    </span>
+                  </label>
+                  <p className="text-xs text-slate-500 mt-1 ml-7">
+                    Patient will complete the PWD Medical Report Section E6 (Cognitive and Emotional Function) and Section F (Daily Living Activities) at the end of the interview.
                   </p>
                 </div>
                 <div>

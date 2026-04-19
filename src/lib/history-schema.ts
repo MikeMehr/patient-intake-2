@@ -56,6 +56,45 @@ export const historyRequestSchema = z.object({
 
 export type HistoryRequest = z.infer<typeof historyRequestSchema>;
 
+// PWD Medical Report — Section E6 & F results
+export const pwdSectionE6FResultsSchema = z.object({
+  sectionE6: z.object({
+    hasDeficits: z.enum(["yes", "no", "unknown"]),
+    deficitAreas: z.object({
+      consciousness: z.boolean(),
+      executive: z.boolean(),
+      language: z.boolean(),
+      memory: z.boolean(),
+      perceptualPsychomotor: z.boolean(),
+      psychoticSymptoms: z.boolean(),
+      emotionalDisturbance: z.boolean(),
+      motivation: z.boolean(),
+      impulseControl: z.boolean(),
+      motorActivity: z.boolean(),
+      attentionConcentration: z.boolean(),
+      otherSpecify: z.string().max(500),
+    }),
+    functionalSkillsComments: z.string().max(2000),
+  }),
+  sectionF: z.object({
+    isRestricted: z.enum(["yes", "no", "unknown"]),
+    activities: z.array(
+      z.object({
+        activity: z.string().min(1).max(200),
+        restricted: z.enum(["yes", "no", "unknown"]),
+        restrictionType: z.enum(["continuous", "periodic"]).nullable(),
+      })
+    ).max(20),
+    periodicExplanation: z.string().max(2000),
+    socialFunctioningExplanation: z.string().max(2000),
+    additionalComments: z.string().max(2000),
+    assistanceNeeded: z.string().max(2000),
+  }),
+  completedAt: z.string().datetime().optional(),
+});
+
+export type PwdSectionE6FResults = z.infer<typeof pwdSectionE6FResultsSchema>;
+
 // PHQ-9 / GAD-7 screening result schemas
 export const phqGadItemSchema = z.object({
   question: z.string().min(1).max(500),
@@ -99,6 +138,8 @@ export const historyResponseSchema = z.object({
   patientUploads: patientUploadsSchema.optional(),
   // PHQ-9 and GAD-7 screening results (present when physician requested screening).
   phqGadResults: phqGadResultsSchema.optional(),
+  // PWD Medical Report Section E6 & F results (present when physician requested this form).
+  pwdSectionE6FResults: pwdSectionE6FResultsSchema.optional(),
 });
 
 export type HistoryResponse = z.infer<typeof historyResponseSchema>;

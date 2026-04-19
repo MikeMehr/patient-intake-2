@@ -31,6 +31,7 @@ export async function GET(request: Request) {
       patientBackground: invitation.patientBackground || null,
       interviewGuidance: invitation.interviewGuidance || null,
       requestPhqGad: invitation.requestPhqGad ?? false,
+      requestPwdE6f: invitation.requestPwdE6f ?? false,
       usedAt: invitation.usedAt || null,
     });
     logRequestMeta("/api/invitations/context", requestId, status, Date.now() - started);

@@ -547,7 +547,7 @@ These fields are never shown to the patient.`;
       })();
     }
 
-    const res = NextResponse.json({ ...turnWithProgress, requestPhqGad: invitationContext.requestPhqGad ?? false });
+    const res = NextResponse.json({ ...turnWithProgress, requestPhqGad: invitationContext.requestPhqGad ?? false, requestPwdE6f: invitationContext.requestPwdE6f ?? false });
     logRequestMeta("/api/interview", requestId, status, Date.now() - started);
     return res;
   } catch (error: unknown) {

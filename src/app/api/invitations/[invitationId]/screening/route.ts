@@ -29,17 +29,39 @@ export async function PATCH(req: NextRequest, context: { params: Promise<Params>
       return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
     }
 
-    const requestPhqGad = (body as Record<string, unknown>)?.requestPhqGad;
-    if (typeof requestPhqGad !== "boolean") {
+    const b = body as Record<string, unknown>;
+    const requestPhqGad = b?.requestPhqGad;
+    const requestPwdE6f = b?.requestPwdE6f;
+
+    if (requestPhqGad !== undefined && typeof requestPhqGad !== "boolean") {
       return NextResponse.json({ error: "requestPhqGad must be a boolean" }, { status: 400 });
     }
+    if (requestPwdE6f !== undefined && typeof requestPwdE6f !== "boolean") {
+      return NextResponse.json({ error: "requestPwdE6f must be a boolean" }, { status: 400 });
+    }
+    if (requestPhqGad === undefined && requestPwdE6f === undefined) {
+      return NextResponse.json({ error: "requestPhqGad or requestPwdE6f must be provided" }, { status: 400 });
+    }
+
+    const setClauses: string[] = [];
+    const params: unknown[] = [];
+    if (requestPhqGad !== undefined) {
+      params.push(requestPhqGad);
+      setClauses.push(`request_phq_gad = $${params.length}`);
+    }
+    if (requestPwdE6f !== undefined) {
+      params.push(requestPwdE6f);
+      setClauses.push(`request_pwd_e6f = $${params.length}`);
+    }
+    params.push(invitationId);
+    params.push(physicianId);
 
     const result = await query(
       `UPDATE patient_invitations
-       SET request_phq_gad = $1
-       WHERE id = $2 AND physician_id = $3
+       SET ${setClauses.join(", ")}
+       WHERE id = $${params.length - 1} AND physician_id = $${params.length}
        RETURNING id`,
-      [requestPhqGad, invitationId, physicianId],
+      params,
     );
 
     if (result.rowCount === 0) {

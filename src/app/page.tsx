@@ -1,8 +1,9 @@
 "use client";
 
 import uiTranslationsJson from "@/lib/ui-translations.json";
-import type { HistoryResponse, PatientUploads, PhqGadResults } from "@/lib/history-schema";
+import type { HistoryResponse, PatientUploads, PhqGadResults, PwdSectionE6FResults } from "@/lib/history-schema";
 import PhqGadForm from "@/components/PhqGadForm";
+import PwdSectionE6FForm from "@/components/PwdSectionE6FForm";
 import type {
   InterviewMessage,
   InterviewProgress,
@@ -585,6 +586,9 @@ export default function Home() {
   const [requestPhqGad, setRequestPhqGad] = useState(false);
   const [awaitingPhqGad, setAwaitingPhqGad] = useState(false);
   const [phqGadPendingHistory, setPhqGadPendingHistory] = useState<HistoryResponse | null>(null);
+  const [requestPwdE6f, setRequestPwdE6f] = useState(false);
+  const [awaitingPwdE6f, setAwaitingPwdE6f] = useState(false);
+  const [pwdE6fPendingHistory, setPwdE6fPendingHistory] = useState<HistoryResponse | null>(null);
   const [hasConsented, setHasConsented] = useState(false);
   const [isInvitedFlow, setIsInvitedFlow] = useState(false);
   const [clinicName, setClinicName] = useState<string>("");
@@ -682,6 +686,7 @@ export default function Home() {
   const patientResponseRef = useRef<string>("");
   const pendingHistoryResultRef = useRef<HistoryResponse | null>(null);
   const requestPhqGadRef = useRef(false);
+  const requestPwdE6fRef = useRef(false);
   const draftTranscriptRef = useRef<string>("");
   const draftCommitDedupeRef = useRef<{ draft: string; atMs: number } | null>(null);
   const mutedWhileSpeakingRef = useRef(false);
@@ -1364,6 +1369,10 @@ export default function Home() {
             if (data.requestPhqGad) {
               setRequestPhqGad(true);
               requestPhqGadRef.current = true;
+            }
+            if (data.requestPwdE6f) {
+              setRequestPwdE6f(true);
+              requestPwdE6fRef.current = true;
             }
           })
           .catch((err) => {
@@ -2778,6 +2787,18 @@ export default function Home() {
         return;
       }
 
+      // If PWD Section E6/F was requested (and PHQ/GAD not), show it instead of saving.
+      if (requestPwdE6fRef.current) {
+        setPwdE6fPendingHistory(historyWithFinal);
+        setAwaitingPwdE6f(true);
+        setSavingSession(false);
+        setIsSubmittingResponse(false);
+        setShowSubmitToast(false);
+        setStatus("awaitingPatient");
+        statusRef.current = "awaitingPatient";
+        return;
+      }
+
       setSessionSavePendingHistory(historyWithFinal);
       setSessionSaveError(null);
       setSavingSession(true);
@@ -3163,6 +3184,14 @@ export default function Home() {
     const historyWithPhqGad: HistoryResponse = { ...phqGadPendingHistory, phqGadResults: results };
     setAwaitingPhqGad(false);
     setPhqGadPendingHistory(null);
+
+    // If PWD E6/F was also requested, show that form next before saving.
+    if (requestPwdE6fRef.current) {
+      setPwdE6fPendingHistory(historyWithPhqGad);
+      setAwaitingPwdE6f(true);
+      return;
+    }
+
     setSessionSavePendingHistory(historyWithPhqGad);
     setSessionSaveError(null);
     setSavingSession(true);
@@ -3174,6 +3203,30 @@ export default function Home() {
       await finalizePrivacyAndExit(savedCode);
     } catch (err) {
       console.error("Failed to save session after PHQ/GAD:", err);
+      setSessionSaveError(
+        err instanceof Error ? err.message : "Failed to save your interview. Please retry.",
+      );
+    } finally {
+      setSavingSession(false);
+    }
+  }
+
+  async function handlePwdE6fSubmit(results: PwdSectionE6FResults) {
+    if (!pwdE6fPendingHistory) return;
+    const historyWithPwd: HistoryResponse = { ...pwdE6fPendingHistory, pwdSectionE6FResults: results };
+    setAwaitingPwdE6f(false);
+    setPwdE6fPendingHistory(null);
+    setSessionSavePendingHistory(historyWithPwd);
+    setSessionSaveError(null);
+    setSavingSession(true);
+    setStatus("saving");
+    statusRef.current = "saving";
+    try {
+      const savedCode = await saveSession(historyWithPwd);
+      setSessionSavePendingHistory(null);
+      await finalizePrivacyAndExit(savedCode);
+    } catch (err) {
+      console.error("Failed to save session after PWD E6/F:", err);
       setSessionSaveError(
         err instanceof Error ? err.message : "Failed to save your interview. Please retry.",
       );
@@ -3220,6 +3273,10 @@ export default function Home() {
     setPhqGadPendingHistory(null);
     setRequestPhqGad(false);
     requestPhqGadRef.current = false;
+    setAwaitingPwdE6f(false);
+    setPwdE6fPendingHistory(null);
+    setRequestPwdE6f(false);
+    requestPwdE6fRef.current = false;
     setPatientResponse("");
     patientResponseRef.current = "";
     setDetectedComplaints([]);
@@ -3769,6 +3826,11 @@ export default function Home() {
     if ((turn as unknown as { requestPhqGad?: boolean }).requestPhqGad === true && !requestPhqGadRef.current) {
       setRequestPhqGad(true);
       requestPhqGadRef.current = true;
+    }
+    // Pick up mid-interview PWD E6/F toggle set by physician via monitor window
+    if ((turn as unknown as { requestPwdE6f?: boolean }).requestPwdE6f === true && !requestPwdE6fRef.current) {
+      setRequestPwdE6f(true);
+      requestPwdE6fRef.current = true;
     }
 
     if (turn.type === "question") {
@@ -5151,6 +5213,9 @@ export default function Home() {
                   <>
                     {awaitingPhqGad && (
                       <PhqGadForm language={language} onSubmit={(results) => void handlePhqGadSubmit(results)} />
+                    )}
+                    {awaitingPwdE6f && (
+                      <PwdSectionE6FForm onSubmit={(results) => void handlePwdE6fSubmit(results)} />
                     )}
                     {awaitingFinalComments && (
                       <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-3">

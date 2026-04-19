@@ -58,11 +58,12 @@ export async function GET(req: NextRequest, context: { params: Promise<Params> }
     const invResult = await query<{
       patient_name: string;
       request_phq_gad: boolean;
+      request_pwd_e6f: boolean;
       monitor_guidance: string | null;
       session_saved: boolean;
       revoked_at: string | null;
     }>(
-      `SELECT pi.patient_name, pi.request_phq_gad, pi.monitor_guidance,
+      `SELECT pi.patient_name, pi.request_phq_gad, pi.request_pwd_e6f, pi.monitor_guidance,
               pi.revoked_at,
               EXISTS(
                 SELECT 1 FROM invitation_audit_log ial
@@ -141,6 +142,7 @@ export async function GET(req: NextRequest, context: { params: Promise<Params> }
       turns,
       patientName: inv.patient_name,
       requestPhqGad: Boolean(inv.request_phq_gad),
+      requestPwdE6f: Boolean(inv.request_pwd_e6f),
       guidancePending: Boolean(inv.monitor_guidance),
       isCompleted: Boolean(inv.session_saved || inv.revoked_at),
     });
