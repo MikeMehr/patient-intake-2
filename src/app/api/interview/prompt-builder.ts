@@ -14,6 +14,47 @@ function formatTranscript(transcript: InterviewMessage[]) {
     .join("\n");
 }
 
+const STOP_WORDS = new Set([
+  "a","an","the","and","or","but","in","on","at","to","for","of","with","by",
+  "is","are","was","were","be","been","being","have","has","had","do","does",
+  "did","will","would","could","should","may","might","can","your","you","my",
+  "me","i","we","us","it","its","this","that","these","those","how","what",
+  "when","where","why","which","who","if","any","all","no","not","so","as",
+  "from","about","than","then","there","their","they","them","he","she","his",
+  "her","our","also","please","describe","explain",
+]);
+
+function extractKeywords(text: string): string[] {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter((w) => w.length > 2 && !STOP_WORDS.has(w));
+}
+
+function extractUncoveredFormQuestions(
+  formSummary: string,
+  questionsAsked: string[],
+  patientAnswers: string[],
+): string[] {
+  const questionLines = formSummary
+    .split("\n")
+    .map((line) => line.match(/^\s*\d+[\.\)]\s+(.+)/)?.[1]?.trim())
+    .filter((q): q is string => Boolean(q));
+
+  if (questionLines.length === 0) return [];
+
+  const coveredText = [...questionsAsked, ...patientAnswers].join(" ").toLowerCase();
+
+  return questionLines.filter((question) => {
+    const keywords = extractKeywords(question);
+    if (keywords.length === 0) return false;
+    const matchCount = keywords.filter((kw) => coveredText.includes(kw)).length;
+    // Consider covered if at least 2 keywords appear in what's been asked/answered
+    return matchCount < 2;
+  });
+}
+
 function formatRecentQuestions(questions: string[]) {
   if (questions.length === 0) {
     return "No prior assistant questions.";
@@ -109,7 +150,14 @@ ${previousLabReportSummary ? `Previous summary: ${previousLabReportSummary}` : "
 - Use only these provided lab/imaging summaries. Do not invent missing results.`
       : "LAB CONTEXT:\nNo physician-provided lab summary.";
   const formSection = formSummary
-    ? `FORM CONTEXT:\n${formSummary}\n- Gather form details when relevant to the complaint.`
+    ? `FORM CONTEXT:\n${formSummary}\n- REQUIRED: You MUST ask every question listed above before providing a summary. Do not assume any question is already answered by the chief complaint alone — open-ended questions like "describe your disability" or "how does this affect your life" must be asked explicitly during the interview, even if the patient's opening statement seems to address them.`
+    : "";
+
+  const uncoveredFormQuestions = formSummary
+    ? extractUncoveredFormQuestions(formSummary, interviewState.allQuestionsAsked, interviewState.patientAnswers)
+    : [];
+  const formReminderSection = uncoveredFormQuestions.length > 0
+    ? `FORM QUESTIONS NOT YET ASKED (you must ask these before summarizing):\n${uncoveredFormQuestions.map((q, i) => `${i + 1}. ${q}`).join("\n")}`
     : "";
   const guidanceSection = interviewGuidance
     ? `PHYSICIAN GUIDANCE:\n${interviewGuidance}`
@@ -183,6 +231,7 @@ ${medPmhSection}
 ${imageSection}
 ${labSection}
 ${formSection}
+${formReminderSection}
 ${guidanceSection}
 ${sensitivePhotoDirective}
 
