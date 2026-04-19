@@ -11,10 +11,12 @@ const FORMATS = [
   { value: "general", label: "General Clinical Summary" },
 ];
 
+const MAX_FILES = 5;
+
 export default function SummarizingPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const [pdfFile, setPdfFile] = useState<File | null>(null);
+  const [pdfFiles, setPdfFiles] = useState<File[]>([]);
   const [format, setFormat] = useState<string>("");
   const [instructions, setInstructions] = useState<string>("");
   const [report, setReport] = useState<string>("");
@@ -23,14 +25,25 @@ export default function SummarizingPage() {
   const [copied, setCopied] = useState(false);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0] || null;
-    setPdfFile(file);
+    const selected = Array.from(e.target.files || []);
+    if (!selected.length) return;
+    setPdfFiles((prev) => {
+      const combined = [...prev, ...selected];
+      return combined.slice(0, MAX_FILES);
+    });
+    setReport("");
+    setError(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  const removeFile = (index: number) => {
+    setPdfFiles((prev) => prev.filter((_, i) => i !== index));
     setReport("");
     setError(null);
   };
 
   const handleGenerate = async () => {
-    if (!pdfFile) return;
+    if (!pdfFiles.length) return;
     if (!format && !instructions.trim()) {
       setError("Please select a report format or provide instructions (or both).");
       return;
@@ -42,7 +55,8 @@ export default function SummarizingPage() {
 
     try {
       const fd = new FormData();
-      fd.append("record", pdfFile);
+      pdfFiles.forEach((file, i) => fd.append(`record_${i}`, file));
+      fd.append("recordCount", String(pdfFiles.length));
       fd.append("format", format);
       fd.append("instructions", instructions);
 
@@ -77,7 +91,7 @@ export default function SummarizingPage() {
     }
   };
 
-  const canGenerate = !!pdfFile && (!!format || !!instructions.trim()) && !loading;
+  const canGenerate = pdfFiles.length > 0 && (!!format || !!instructions.trim()) && !loading;
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -105,51 +119,80 @@ export default function SummarizingPage() {
 
         {/* Upload */}
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 space-y-3">
-          <label className="block text-sm font-semibold text-slate-700">
-            Medical Record PDF
-            <span className="ml-1 font-normal text-slate-400">(required, max 20 MB)</span>
-          </label>
-          <div
-            className="flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-slate-300 bg-slate-50 p-6 cursor-pointer hover:border-slate-400 transition"
-            onClick={() => fileInputRef.current?.click()}
-          >
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              className="h-8 w-8 text-slate-400"
-              aria-hidden="true"
-            >
-              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-              <polyline points="14 2 14 8 20 8" />
-              <line x1="12" y1="18" x2="12" y2="12" />
-              <line x1="9" y1="15" x2="15" y2="15" />
-            </svg>
-            {pdfFile ? (
-              <p className="text-sm text-slate-700 font-medium">{pdfFile.name}</p>
-            ) : (
-              <p className="text-sm text-slate-500">Click to select a PDF file</p>
+          <div className="flex items-center justify-between">
+            <label className="block text-sm font-semibold text-slate-700">
+              Medical Record PDFs
+              <span className="ml-1 font-normal text-slate-400">(required, up to {MAX_FILES} files, max 20 MB each)</span>
+            </label>
+            {pdfFiles.length > 0 && (
+              <span className="text-xs text-slate-500">{pdfFiles.length} / {MAX_FILES}</span>
             )}
           </div>
+
+          {/* Uploaded file list */}
+          {pdfFiles.length > 0 && (
+            <ul className="space-y-2">
+              {pdfFiles.map((file, i) => (
+                <li key={i} className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 shrink-0 text-slate-400" aria-hidden="true">
+                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                      <polyline points="14 2 14 8 20 8" />
+                    </svg>
+                    <span className="text-sm text-slate-700 truncate">{file.name}</span>
+                    <span className="text-xs text-slate-400 shrink-0">({(file.size / (1024 * 1024)).toFixed(1)} MB)</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => removeFile(i)}
+                    className="ml-3 text-slate-400 hover:text-red-500 transition shrink-0"
+                    aria-label={`Remove ${file.name}`}
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4" aria-hidden="true">
+                      <line x1="18" y1="6" x2="6" y2="18" />
+                      <line x1="6" y1="6" x2="18" y2="18" />
+                    </svg>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {/* Drop zone — hidden when at max */}
+          {pdfFiles.length < MAX_FILES && (
+            <div
+              className="flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-slate-300 bg-slate-50 p-6 cursor-pointer hover:border-slate-400 transition"
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="h-8 w-8 text-slate-400"
+                aria-hidden="true"
+              >
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                <polyline points="14 2 14 8 20 8" />
+                <line x1="12" y1="18" x2="12" y2="12" />
+                <line x1="9" y1="15" x2="15" y2="15" />
+              </svg>
+              <p className="text-sm text-slate-500">
+                {pdfFiles.length === 0 ? "Click to select PDF files" : "Click to add another PDF"}
+              </p>
+            </div>
+          )}
+
           <input
             ref={fileInputRef}
             type="file"
             accept="application/pdf,.pdf"
+            multiple
             className="hidden"
             onChange={handleFileChange}
           />
-          {pdfFile && (
-            <button
-              type="button"
-              onClick={() => { setPdfFile(null); setReport(""); setError(null); if (fileInputRef.current) fileInputRef.current.value = ""; }}
-              className="text-xs text-slate-400 hover:text-slate-600 transition"
-            >
-              Remove file
-            </button>
-          )}
         </div>
 
         {/* Format + Instructions */}
@@ -211,10 +254,10 @@ export default function SummarizingPage() {
             )}
             {loading ? "Generating…" : "Generate Report"}
           </button>
-          {!pdfFile && (
+          {pdfFiles.length === 0 && (
             <p className="text-xs text-slate-400">Upload a PDF to enable generation.</p>
           )}
-          {pdfFile && !format && !instructions.trim() && (
+          {pdfFiles.length > 0 && !format && !instructions.trim() && (
             <p className="text-xs text-slate-400">Select a format or provide instructions to enable generation.</p>
           )}
           {error && (

@@ -80,32 +80,46 @@ export async function POST(request: NextRequest) {
     }
 
     const formData = await request.formData();
-    const maybeFile = formData.get("record");
     const format = (formData.get("format") as string | null) || "";
     const instructions = (formData.get("instructions") as string | null) || "";
-
-    if (!(maybeFile instanceof File)) {
-      status = 400;
-      const res = NextResponse.json({ error: "No PDF file provided. Expected field name 'record'." }, { status });
-      logRequestMeta("/api/physician/summarize-records", requestId, status, Date.now() - started);
-      return res;
-    }
-
-    const file = maybeFile as File;
-
-    if (file.type !== "application/pdf" && !file.name.toLowerCase().endsWith(".pdf")) {
-      status = 400;
-      const res = NextResponse.json({ error: "Invalid file type. Only PDF files are supported." }, { status });
-      logRequestMeta("/api/physician/summarize-records", requestId, status, Date.now() - started);
-      return res;
-    }
+    const recordCount = parseInt((formData.get("recordCount") as string | null) || "1", 10);
 
     const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20MB
-    if (file.size > MAX_FILE_SIZE) {
+    const MAX_FILES = 5;
+
+    // Collect files — support both legacy "record" field and indexed "record_0".."record_4"
+    const files: File[] = [];
+    const legacyFile = formData.get("record");
+    if (legacyFile instanceof File) {
+      files.push(legacyFile);
+    } else {
+      const count = Math.min(recordCount, MAX_FILES);
+      for (let i = 0; i < count; i++) {
+        const f = formData.get(`record_${i}`);
+        if (f instanceof File) files.push(f);
+      }
+    }
+
+    if (files.length === 0) {
       status = 400;
-      const res = NextResponse.json({ error: "File size exceeds 20MB limit." }, { status });
+      const res = NextResponse.json({ error: "No PDF file provided." }, { status });
       logRequestMeta("/api/physician/summarize-records", requestId, status, Date.now() - started);
       return res;
+    }
+
+    for (const file of files) {
+      if (file.type !== "application/pdf" && !file.name.toLowerCase().endsWith(".pdf")) {
+        status = 400;
+        const res = NextResponse.json({ error: `Invalid file type: "${file.name}". Only PDF files are supported.` }, { status });
+        logRequestMeta("/api/physician/summarize-records", requestId, status, Date.now() - started);
+        return res;
+      }
+      if (file.size > MAX_FILE_SIZE) {
+        status = 400;
+        const res = NextResponse.json({ error: `File "${file.name}" exceeds the 20 MB size limit.` }, { status });
+        logRequestMeta("/api/physician/summarize-records", requestId, status, Date.now() - started);
+        return res;
+      }
     }
 
     if (!format && !instructions.trim()) {
@@ -118,11 +132,19 @@ export async function POST(request: NextRequest) {
       return res;
     }
 
-    // Extract PDF text via Azure Document Intelligence
-    const extractedText = await extractPdfTextWithAzureDocumentIntelligence(file);
+    // Extract text from each PDF via Azure Document Intelligence
+    const extractedParts = await Promise.all(
+      files.map((f) => extractPdfTextWithAzureDocumentIntelligence(f)),
+    );
+    const extractedText = files.length === 1
+      ? extractedParts[0]
+      : extractedParts
+          .map((text, i) => `--- Document ${i + 1}: ${files[i].name} ---\n${text}`)
+          .join("\n\n");
+
     if (!extractedText.trim()) {
       status = 422;
-      const res = NextResponse.json({ error: "Could not extract text from the uploaded PDF." }, { status });
+      const res = NextResponse.json({ error: "Could not extract text from the uploaded PDF(s)." }, { status });
       logRequestMeta("/api/physician/summarize-records", requestId, status, Date.now() - started);
       return res;
     }
@@ -164,7 +186,8 @@ export async function POST(request: NextRequest) {
         requestId,
         format: format || "custom",
         hasInstructions: !!instructions.trim(),
-        fileSizeBytes: file.size,
+        fileCount: files.length,
+        totalFileSizeBytes: files.reduce((sum, f) => sum + f.size, 0),
         extractedTextLength: extractedText.length,
         reportLength: report.length,
       },
