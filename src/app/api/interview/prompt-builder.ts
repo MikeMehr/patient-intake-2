@@ -160,13 +160,13 @@ ${previousLabReportSummary ? `Previous summary: ${previousLabReportSummary}` : "
     ? `FORM QUESTIONS NOT YET ASKED (you must ask these before summarizing):\n${uncoveredFormQuestions.map((q, i) => `${i + 1}. ${q}`).join("\n")}`
     : "";
   const guidanceSection = interviewGuidance
-    ? `PHYSICIAN GUIDANCE:\n${interviewGuidance}`
+    ? `PHYSICIAN GUIDANCE:\n${interviewGuidance}\n- This guidance is authoritative. Follow it to direct the focus and scope of the interview.`
     : "";
   const medPmhSection = medPmhSummary
     ? `UPLOADED MEDS/PMH CONTEXT:\n${medPmhSummary}`
     : "";
   const patientBackgroundSection = patientBackground
-    ? `PHYSICIAN-PROVIDED BACKGROUND:\n${patientBackground}`
+    ? `PHYSICIAN-PROVIDED BACKGROUND:\n${patientBackground}\n- This background is authoritative. Use it to focus the interview. Do NOT ask the patient to re-report information already stated here (e.g., known diagnoses, prior lab values, reason for visit, referral context). Build on it rather than re-establishing it.`
     : "";
   const sensitivePhotoDirective = sensitivePhotoContext.suppressPhotoRequest
     ? `SENSITIVE PHOTO OVERRIDE:
@@ -201,7 +201,8 @@ RULES:
 - Listen carefully to patient corrections and redirections.
 - Ask concise, natural follow-up questions based on the patient’s last response.
 - As much as possible, make it feel like a physician-assistant–patient conversation.
-- If the patient mentions a significant secondary concern such as worsening mood, depression, anxiety, chest pain, shortness of breath, weakness, or another potentially important symptom, explore it with focused follow-up questions before returning to the main complaint.  
+- If the patient mentions a significant secondary concern such as worsening mood, depression, anxiety, chest pain, shortness of breath, weakness, or another potentially important symptom, explore it with focused follow-up questions before returning to the main complaint.
+- If the patient states they were called in (by their doctor or doctor's office) to discuss, review, or go over their lab or blood work results, do NOT ask what the results showed — the patient has not been told yet; that is the purpose of the appointment. Instead, ask about any symptoms they are experiencing related to the concern, or whether they have additional questions or issues to discuss at this visit.
 
 TASK: ${taskInstruction}
 
