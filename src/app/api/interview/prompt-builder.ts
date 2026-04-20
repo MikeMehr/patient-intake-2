@@ -8,6 +8,106 @@ import {
 import { buildInterviewState } from "./state-builder";
 import { getBodyDiagramPromptSection } from "@/lib/body-diagram-images";
 
+type LabTopic = { label: string; mustAsk: string[] };
+
+// Checks if a lab test name appears near an "A" (abnormal) flag in raw lab data,
+// or near common abnormal keywords in AI-generated summaries.
+function isAbnormal(labText: string, testPattern: RegExp): boolean {
+  const lines = labText.split(/\n/);
+  for (const line of lines) {
+    if (testPattern.test(line)) {
+      // Raw lab format: value followed by "A" flag (e.g. "7.29	A	0.32-5.04")
+      if (/\t\s*A\s*\t/.test(line) || /\s+A\s+\d/.test(line)) return true;
+      // AI-generated summary keywords
+      if (/\b(abnormal|flagged|elevated|high|above|low|below|deficien|outside)\b/i.test(line)) return true;
+    }
+  }
+  // Also check freeform patterns across the whole text
+  return false;
+}
+
+function detectLabAbnormalities(labText: string): LabTopic[] {
+  const topics: LabTopic[] = [];
+
+  // Iron deficiency / low ferritin
+  const hasLowFerritin =
+    /\b(low ferritin|ferritin.*low|ferritin.*deficien|iron deficien)\b/i.test(labText) ||
+    isAbnormal(labText, /\bferritin\b/i);
+  if (hasLowFerritin) {
+    topics.push({
+      label: "Iron deficiency / low ferritin",
+      mustAsk: [
+        "Iron supplement intake: name, dose, and how consistently taken.",
+        "Dietary iron intake: red meat, poultry, fish, legumes, spinach, fortified cereals — how often.",
+        "Factors that may impair absorption: tea/coffee with meals, GI symptoms, heavy periods.",
+      ],
+    });
+  }
+
+  // Elevated TSH / hypothyroidism
+  const hasHighTSH =
+    /\b(elevated tsh|high tsh|tsh.*elevated|tsh.*high)\b/i.test(labText) ||
+    isAbnormal(labText, /\bTSH\b/i);
+  if (hasHighTSH) {
+    topics.push({
+      label: "Elevated TSH (hypothyroidism not optimally controlled)",
+      mustAsk: [
+        "Thyroid medication adherence: taking levothyroxine (or equivalent) consistently, any missed doses.",
+        "Hypothyroid symptoms: fatigue, weight gain, cold intolerance, constipation, dry skin, hair thinning, cognitive slowness.",
+        "Any recent changes in dose or medication brand.",
+      ],
+    });
+  }
+
+  // Elevated HbA1c / prediabetes / diabetes
+  const hasHighA1c =
+    /\b(elevated a1c|high a1c|a1c.*elevated|hba1c.*elevated|hemoglobin a1c.*abnormal)\b/i.test(labText) ||
+    isAbnormal(labText, /\b(hemoglobin a1c|hba1c|a1c)\b/i);
+  if (hasHighA1c) {
+    topics.push({
+      label: "Elevated HbA1c (prediabetes or diabetes range)",
+      mustAsk: [
+        "Any symptoms of high blood sugar: increased thirst, frequent urination, fatigue, blurred vision.",
+        "Dietary habits and physical activity level.",
+        "Any prior discussion of prediabetes or diabetes management with their doctor.",
+      ],
+    });
+  }
+
+  // Elevated cholesterol / LDL
+  const hasHighLipids =
+    /\b(elevated ldl|high ldl|high cholesterol|elevated cholesterol|ldl.*elevated|cholesterol.*elevated)\b/i.test(labText) ||
+    isAbnormal(labText, /\b(ldl cholesterol|ldl)\b/i) ||
+    isAbnormal(labText, /\bcholesterol\b/i);
+  if (hasHighLipids) {
+    topics.push({
+      label: "Elevated cholesterol / LDL",
+      mustAsk: [
+        "Current statin or lipid-lowering medication: name, dose, adherence.",
+        "Any statin side effects: muscle aches, weakness, or tenderness.",
+        "Diet and lifestyle: saturated fat intake, physical activity.",
+      ],
+    });
+  }
+
+  return topics;
+}
+
+function buildLabMandatoryTopicsSection(labText: string): string {
+  const topics = detectLabAbnormalities(labText);
+  if (topics.length === 0) return "";
+
+  const lines = topics.map((topic, i) => {
+    const asks = topic.mustAsk.map((a) => `   - ${a}`).join("\n");
+    return `${i + 1}. ${topic.label}\n${asks}`;
+  });
+
+  return `\nABNORMAL LAB FINDINGS — MANDATORY INTERVIEW TOPICS:
+You MUST address ALL of the following conditions before providing a summary. Do not skip any:
+${lines.join("\n")}
+Cover each topic through natural conversational questions. You may group related questions, but every item above must be explicitly explored.`;
+}
+
 function formatTranscript(transcript: InterviewMessage[]) {
   return transcript
     .map((message) => `${message.role === "assistant" ? "Assistant" : "Patient"}: ${message.content}`)
@@ -142,21 +242,14 @@ export function buildPrompt(
   const imageSection = imageSummary
     ? `PHOTO CONTEXT:\n${imageSummary}\n- A photo has already been reviewed. Acknowledge it only if helpful. Do not ask for another photo unless you truly need one.`
     : `PHOTO CONTEXT:\nNo photo has been provided yet. Use your clinical judgment — if seeing the affected area would meaningfully help the physician assess this complaint, you may ask the patient to upload a photo. Set "requiresPhotoUpload": true when doing so. Never ask for a photo if the affected area involves genitals, the anal region, or breasts — describe those in words only.`;
-  const combinedLabText = [labReportSummary, previousLabReportSummary].filter(Boolean).join(" ").toLowerCase();
-  const hasLowFerritin = /\b(low ferritin|ferritin.*low|ferritin.*deficien|iron deficien|iron.*low|low.*iron)\b/.test(combinedLabText)
-    || (/ferritin/i.test(combinedLabText) && /\b(low|below|deficien|abnormal|flagged)\b/i.test(combinedLabText));
-  const ironDeficiencyLabInstruction = hasLowFerritin
-    ? `\nIRON DEFICIENCY NOTE: Lab results indicate low ferritin / iron deficiency. You MUST ask the patient about:
-1. Iron supplement intake (name, dose, frequency, consistency).
-2. Dietary iron intake — foods rich in iron such as red meat, poultry, fish, legumes, spinach, and fortified cereals.
-Do not skip these two topics before summarizing.`
-    : "";
+  const combinedLabText = [labReportSummary, previousLabReportSummary].filter(Boolean).join(" ");
+  const labMandatoryTopics = combinedLabText ? buildLabMandatoryTopicsSection(combinedLabText) : "";
   const labSection =
     labReportSummary || previousLabReportSummary
       ? `LAB CONTEXT:
 ${labReportSummary ? `Current summary: ${labReportSummary}` : ""}
 ${previousLabReportSummary ? `Previous summary: ${previousLabReportSummary}` : ""}
-- Use only these provided lab/imaging summaries. Do not invent missing results.${ironDeficiencyLabInstruction}`
+- Use only these provided lab/imaging summaries. Do not invent missing results.${labMandatoryTopics}`
       : "LAB CONTEXT:\nNo physician-provided lab summary.";
   const formSection = formSummary
     ? `FORM CONTEXT:\n${formSummary}\n- REQUIRED: You MUST ask every question listed above before providing a summary. Do not assume any question is already answered by the chief complaint alone — open-ended questions like "describe your disability" or "how does this affect your life" must be asked explicitly during the interview, even if the patient's opening statement seems to address them.`
