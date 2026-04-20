@@ -142,12 +142,21 @@ export function buildPrompt(
   const imageSection = imageSummary
     ? `PHOTO CONTEXT:\n${imageSummary}\n- A photo has already been reviewed. Acknowledge it only if helpful. Do not ask for another photo unless you truly need one.`
     : `PHOTO CONTEXT:\nNo photo has been provided yet. Use your clinical judgment — if seeing the affected area would meaningfully help the physician assess this complaint, you may ask the patient to upload a photo. Set "requiresPhotoUpload": true when doing so. Never ask for a photo if the affected area involves genitals, the anal region, or breasts — describe those in words only.`;
+  const combinedLabText = [labReportSummary, previousLabReportSummary].filter(Boolean).join(" ").toLowerCase();
+  const hasLowFerritin = /\b(low ferritin|ferritin.*low|ferritin.*deficien|iron deficien|iron.*low|low.*iron)\b/.test(combinedLabText)
+    || (/ferritin/i.test(combinedLabText) && /\b(low|below|deficien|abnormal|flagged)\b/i.test(combinedLabText));
+  const ironDeficiencyLabInstruction = hasLowFerritin
+    ? `\nIRON DEFICIENCY NOTE: Lab results indicate low ferritin / iron deficiency. You MUST ask the patient about:
+1. Iron supplement intake (name, dose, frequency, consistency).
+2. Dietary iron intake — foods rich in iron such as red meat, poultry, fish, legumes, spinach, and fortified cereals.
+Do not skip these two topics before summarizing.`
+    : "";
   const labSection =
     labReportSummary || previousLabReportSummary
       ? `LAB CONTEXT:
 ${labReportSummary ? `Current summary: ${labReportSummary}` : ""}
 ${previousLabReportSummary ? `Previous summary: ${previousLabReportSummary}` : ""}
-- Use only these provided lab/imaging summaries. Do not invent missing results.`
+- Use only these provided lab/imaging summaries. Do not invent missing results.${ironDeficiencyLabInstruction}`
       : "LAB CONTEXT:\nNo physician-provided lab summary.";
   const formSection = formSummary
     ? `FORM CONTEXT:\n${formSummary}\n- REQUIRED: You MUST ask every question listed above before providing a summary. Do not assume any question is already answered by the chief complaint alone — open-ended questions like "describe your disability" or "how does this affect your life" must be asked explicitly during the interview, even if the patient's opening statement seems to address them.`

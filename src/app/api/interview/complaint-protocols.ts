@@ -104,6 +104,12 @@ function isDiabetesFollowUpComplaint(complaint: string) {
   );
 }
 
+function isIronDeficiencyComplaint(complaint: string) {
+  return /\b(iron deficiency|low ferritin|ferritin|iron anemia|iron-deficiency anemia|low iron)\b/i.test(
+    complaint,
+  );
+}
+
 function createMinimalHandoffProtocol(complaintClass: ComplaintClass): ComplaintProtocol {
   return {
     id: "minimal-handoff",
@@ -302,6 +308,60 @@ function createDiabetesFollowUpProtocol(): ComplaintProtocol {
   };
 }
 
+function createIronDeficiencyProtocol(): ComplaintProtocol {
+  return {
+    id: "iron-deficiency-follow-up",
+    complaintClass: "General",
+    requiredFields: [
+      field(
+        "open_narrative",
+        "iron deficiency follow-up narrative",
+        [],
+        "Open with how the patient has been feeling and what brought this to their attention.",
+      ),
+      field(
+        "iron_symptoms",
+        "symptoms of iron deficiency",
+        ["iron symptoms"],
+        "Ask about fatigue, weakness, pallor, shortness of breath, palpitations, cold intolerance, hair loss, brittle nails, or difficulty concentrating.",
+      ),
+      field(
+        "iron_supplements",
+        "iron supplement intake",
+        ["iron supplements"],
+        "Ask whether the patient is currently taking any iron supplements — including the name, dose, and how consistently they take them.",
+      ),
+      field(
+        "iron_rich_diet",
+        "dietary iron intake",
+        ["iron-rich diet"],
+        "Ask about foods rich in iron in their diet: red meat, poultry, fish, legumes, spinach, fortified cereals. Ask how often they eat these foods.",
+      ),
+      field(
+        "absorption_factors",
+        "factors affecting iron absorption",
+        ["iron absorption"],
+        "Ask about vitamin C intake with meals (enhances absorption), tea or coffee with meals (inhibits absorption), and any GI symptoms like bleeding, heavy periods, or malabsorption.",
+      ),
+      field(
+        "prior_treatment",
+        "prior iron treatment or investigation",
+        ["iron prior treatment"],
+        "Ask whether they have been treated for low iron or low ferritin before and what the outcome was.",
+      ),
+    ],
+    redFlags: GENERAL_RED_FLAGS,
+    virtualExamFields: [],
+    photoAppropriate: false,
+    stopConditions: {
+      minQuestionCount: 4,
+      requireRedFlags: false,
+      requireRequiredFields: true,
+      requireVirtualExamWhenApplicable: false,
+    },
+  };
+}
+
 function classifyComplaintText(text: string): ComplaintClass {
   if (
     text.match(
@@ -381,6 +441,15 @@ export function resolveComplaintRouting(params: {
 } {
   const normalizedComplaint = normalizeComplaintText(params.complaint);
   const complaintClass = classifyComplaintText(normalizedComplaint);
+
+  if (isIronDeficiencyComplaint(normalizedComplaint)) {
+    return {
+      normalizedComplaint,
+      complaintClass: "General",
+      protocol: createIronDeficiencyProtocol(),
+      clarificationHint: null,
+    };
+  }
 
   if (isDiabetesFollowUpComplaint(normalizedComplaint)) {
     return {

@@ -76,7 +76,12 @@ export type ProtocolTopicKey =
   | "function impact"
   | "work status"
   | "rehab progress"
-  | "current red flags";
+  | "current red flags"
+  | "iron supplements"
+  | "iron-rich diet"
+  | "iron absorption"
+  | "iron symptoms"
+  | "iron prior treatment";
 
 export type ProtocolCheck = {
   key: string;
