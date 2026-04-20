@@ -24,7 +24,18 @@ export interface AuthenticatedRequest extends NextRequest {
 export async function requireAuth(
   request: NextRequest
 ): Promise<{ session: any; response?: NextResponse }> {
-  const session = await getCurrentSession();
+  let session: any;
+  try {
+    session = await getCurrentSession();
+  } catch {
+    return {
+      session: null,
+      response: NextResponse.json(
+        { error: "Internal server error" },
+        { status: 500 }
+      ),
+    };
+  }
 
   if (!session) {
     return {

@@ -44,18 +44,19 @@ function getPool(): Pool {
     connectionString,
     // PHI launch posture: require certificate validation in production.
     ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: true } : false,
-    max: 20, // Maximum number of clients in the pool
+    max: 20,
     idleTimeoutMillis: 30000,
-    connectionTimeoutMillis: 10000, // Increased to 10 seconds
+    connectionTimeoutMillis: 10000,
+    // Keep TCP connections alive so Azure NAT gateway doesn't silently drop them.
+    keepAlive: true,
+    keepAliveInitialDelayMillis: 10000,
   });
 
-  // Handle pool errors
+  // Handle pool errors by resetting the pool so the next request gets a fresh one.
+  // Never call process.exit here — a transient network blip should not crash the app.
   pool.on("error", (err) => {
-    console.error("Unexpected error on idle client", err);
-    // Don't exit process in development
-    if (process.env.NODE_ENV === "production") {
-      process.exit(-1);
-    }
+    console.error("Unexpected error on idle DB client — resetting pool", err);
+    pool = null;
   });
 
   return pool;

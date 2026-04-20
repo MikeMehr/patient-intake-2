@@ -398,8 +398,11 @@ export async function getCurrentSession(options?: { refresh?: boolean }): Promis
     });
     return session;
   } catch (error) {
+    // Re-throw so route handlers return 500 (server error) rather than falling
+    // through to a null → 401 (not authenticated), which would log the physician out
+    // during a transient DB issue.
     console.error("[auth/getCurrentSession] Error:", error);
-    return null;
+    throw error;
   }
 }
 
