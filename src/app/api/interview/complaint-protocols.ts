@@ -349,6 +349,12 @@ function createIronDeficiencyProtocol(): ComplaintProtocol {
         ["iron prior treatment"],
         "Ask whether they have been treated for low iron or low ferritin before and what the outcome was.",
       ),
+      field(
+        "iv_iron_history",
+        "history of IV iron infusion",
+        ["iron supplements"],
+        "If the patient has a recurrent or refractory iron deficiency, or reports poor tolerance or inconsistent use of oral iron, ask whether they have ever received IV iron infusion, when it was given, and how they responded.",
+      ),
     ],
     redFlags: GENERAL_RED_FLAGS,
     virtualExamFields: [],

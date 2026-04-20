@@ -40,6 +40,7 @@ function detectLabAbnormalities(labText: string): LabTopic[] {
         "Iron supplement intake: name, dose, and how consistently taken.",
         "Dietary iron intake: red meat, poultry, fish, legumes, spinach, fortified cereals — how often.",
         "Factors that may impair absorption: tea/coffee with meals, GI symptoms, heavy periods.",
+        "History of IV iron infusion: if the patient has a prior or recurrent iron deficiency, or oral iron has been poorly tolerated or ineffective, ask whether they have ever received IV iron, when, and how they responded.",
       ],
     });
   }
