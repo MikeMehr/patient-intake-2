@@ -80,22 +80,7 @@ async function loadSessionRow(token: string): Promise<PhysicianSessionRow | null
      LIMIT 1`,
     [tokenHash],
   );
-  if (result.rows[0]) {
-    return result.rows[0];
-  }
-
-  // Rotation grace lookup: accept the previous token briefly so in-flight
-  // requests don't fail while the browser applies a freshly rotated cookie.
-  // previousToken in session_data is also stored as a hash.
-  const graceLookup = await query<PhysicianSessionRow>(
-    `SELECT user_id, user_type, organization_id, physician_id, expires_at, created_at, session_data
-     FROM physician_sessions
-     WHERE session_data->>'previousToken' = $1
-       AND COALESCE((session_data->>'previousTokenGraceUntil')::bigint, 0) > $2
-     LIMIT 1`,
-    [tokenHash, Date.now()],
-  );
-  return graceLookup.rows[0] || null;
+  return result.rows[0] || null;
 }
 
 function parseSessionFromRow(row: PhysicianSessionRow): UserSession {
@@ -341,54 +326,27 @@ export async function getCurrentSession(options?: { refresh?: boolean }): Promis
     }
 
     // Only extend idle expiry when explicitly requested (e.g. /api/auth/ping from UI activity).
-    // V10.1.2 policy: rotate the session token whenever refresh is successful.
+    // Token is intentionally NOT rotated on refresh: rotating generates a new token and relies
+    // on Set-Cookie propagating back to the browser before the next request, which can race with
+    // concurrent 30-second dashboard polls and cause false 401 logouts when the old token's
+    // 15-second grace window expires before the browser applies the new cookie.
     if (options?.refresh === true) {
-      const rotatedToken = generateSessionToken();
       const newExpiresAtMs = Math.min(nowMs + IDLE_TIMEOUT_MS, absoluteExpiresAtMs);
-      const previousTokenGraceUntilMs = nowMs + 15_000;
       const { query } = await import("./db");
-      const rotationResult = await query(
+      await query(
         `UPDATE physician_sessions
-         SET token = $1,
-             expires_at = $2,
-             session_data = jsonb_set(
-               jsonb_set(
-                 jsonb_set(COALESCE(session_data, '{}'::jsonb), '{expiresAt}', to_jsonb($3::bigint), true),
-                 '{previousToken}',
-                 to_jsonb($4::text),
-                 true
-               ),
-               '{previousTokenGraceUntil}',
-               to_jsonb($5::bigint),
-               true
-             )
-         WHERE token = $6`,
-        [
-          hashSessionToken(rotatedToken),   // $1: new token — store hash only
-          new Date(newExpiresAtMs),
-          newExpiresAtMs,
-          hashSessionToken(token),          // $4: old token hash stored in previousToken for grace lookup
-          previousTokenGraceUntilMs,
-          hashSessionToken(token),          // $6: WHERE — current row has old token hash
-        ],
+         SET expires_at = $1,
+             session_data = jsonb_set(COALESCE(session_data, '{}'::jsonb), '{expiresAt}', to_jsonb($2::bigint), true)
+         WHERE token = $3`,
+        [new Date(newExpiresAtMs), newExpiresAtMs, hashSessionToken(token)],
       );
-      const updatedRows =
-        typeof (rotationResult as { rowCount?: unknown })?.rowCount === "number"
-          ? ((rotationResult as { rowCount: number }).rowCount ?? 0)
-          : 0;
-      if (updatedRows > 0) {
-        cookieStore.set(SESSION_COOKIE_NAME, rotatedToken, {
-          ...getSessionCookieBaseOptions(),
-          maxAge: Math.max(1, Math.floor((newExpiresAtMs - nowMs) / 1000)),
-        });
-
-        // Keep the in-memory row expiry consistent for parsing below.
-        row.expires_at = new Date(newExpiresAtMs);
-      } else {
-        // Another concurrent refresh may have already rotated this token.
-        // Do not overwrite the browser cookie with a token that doesn't exist in DB.
-        logDebug("[auth/getCurrentSession] Session rotation skipped; token no longer current");
-      }
+      // Re-set the same token with a refreshed maxAge so the browser cookie doesn't
+      // expire before the DB session does.
+      cookieStore.set(SESSION_COOKIE_NAME, token, {
+        ...getSessionCookieBaseOptions(),
+        maxAge: Math.max(1, Math.floor((newExpiresAtMs - nowMs) / 1000)),
+      });
+      row.expires_at = new Date(newExpiresAtMs);
     }
 
     const session = parseSessionFromRow(row);
