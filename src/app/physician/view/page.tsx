@@ -410,6 +410,7 @@ function PhysicianViewContent() {
   const encounterTimerIntervalRef = useRef<number | null>(null);
   const encounterFlushIntervalRef = useRef<number | null>(null);
   const encounterTranscriptRef = useRef("");
+  const encounterSegmentTextsRef = useRef<string[]>([]);
 
   const parsedRxFromHistory = useMemo(() => {
     if (!session?.history) return { medications: [] as Omit<RxMedicationRow, "id">[], notes: "" };
@@ -2376,14 +2377,13 @@ function PhysicianViewContent() {
       try {
         const text = await encounterTranscribeAudio(blob);
         if (text) {
-          setEncounterTranscript((prev) => {
-            const parts = prev ? prev.split("\n") : [];
-            while (parts.length <= idx) parts.push("");
-            parts[idx] = text;
-            const next = parts.filter(Boolean).join(" ").trim();
-            encounterTranscriptRef.current = next;
-            return next;
-          });
+          // Update ref directly so stopEncounterRecording can read the final value
+          const parts = encounterSegmentTextsRef.current;
+          while (parts.length <= idx) parts.push("");
+          parts[idx] = text;
+          const full = parts.filter(Boolean).join(" ").trim();
+          encounterTranscriptRef.current = full;
+          setEncounterTranscript(full);
         }
       } catch (err) {
         setEncounterRecordingError(err instanceof Error ? err.message : "Transcription failed for a segment.");
@@ -2397,6 +2397,8 @@ function PhysicianViewContent() {
     setEncounterMergeError(null);
     encounterSegmentIndexRef.current = 0;
     encounterPendingTranscriptionsRef.current = [];
+    encounterSegmentTextsRef.current = [];
+    encounterTranscriptRef.current = "";
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: { noiseSuppression: true, echoCancellation: true, autoGainControl: true },
