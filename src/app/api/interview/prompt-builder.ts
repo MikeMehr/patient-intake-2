@@ -102,16 +102,11 @@ function buildLabMandatoryTopicsSection(labText: string): string {
     return `${i + 1}. ${topic.label}\n${asks}`;
   });
 
-  const minQuestions = Math.max(8, topics.length * 3);
-
   return `\nABNORMAL LAB FINDINGS — MANDATORY INTERVIEW TOPICS (${topics.length} conditions):
 You MUST address ALL of the following conditions before providing a summary. Do not skip any:
 ${lines.join("\n")}
 
-DEPTH REQUIREMENTS:
-- This visit has ${topics.length} abnormal findings. Expect to use at least ${minQuestions} question turns to cover them adequately — do not summarize before then.
-- For each finding where the patient reports an active symptom, sub-optimal adherence, or poor control, ask at least one focused follow-up before moving to the next condition.
-- You may group closely related questions (max 2 per turn), but do not compress multiple distinct conditions into a single turn.`;
+Use your clinical judgment to determine how many questions each finding warrants — a finding with active symptoms or poor control deserves more follow-up than one that is well-managed. Do not compress multiple distinct conditions into a single turn.`;
 }
 
 function formatTranscript(transcript: InterviewMessage[]) {
@@ -356,7 +351,7 @@ ${formatRecentQuestions(recentQuestions)}
 PROGRESS (you control the patient-facing progress bar; use these values exactly):
 - Assistant question prompts asked so far: ${interviewState.allQuestionsAsked.length}. Each assistant message = 1 question (do NOT count bullet points or sub-questions within a message).
 - progress.questionsAsked = ${interviewState.allQuestionsAsked.length} (the count above; do NOT include the current question if type is "question").
-- progress.approxTotalQuestions = when type is "summary", set equal to questionsAsked (interview complete). When type is "question", your estimate of total question prompts this interview will need. Typical range: 5–10 for a single complaint; 10–18 for a lab follow-up visit with multiple abnormal findings (see ABNORMAL LAB FINDINGS section if present for the minimum). Consider how much history is gathered, complaint complexity, and pending topics. Count in question prompts (assistant turns), not bullet points.
+- progress.approxTotalQuestions = when type is "summary", set equal to questionsAsked (interview complete). When type is "question", your estimate of total question prompts this interview will need (typically 5-15; consider how much history is gathered, complaint complexity, and pending topics). Count in question prompts (assistant turns), not bullet points.
 
 OUTPUT CONTRACT:
 - Return valid JSON only. Include "progress" in every response to drive the patient-facing progress bar.
