@@ -106,7 +106,7 @@ function buildLabMandatoryTopicsSection(labText: string): string {
 You MUST address ALL of the following conditions before providing a summary. Do not skip any:
 ${lines.join("\n")}
 
-Use your clinical judgment to determine how many questions each finding warrants — a finding with active symptoms or poor control deserves more follow-up than one that is well-managed. Do not compress multiple distinct conditions into a single turn.`;
+Use your clinical judgment to determine how many questions each finding warrants. When the patient's answer contains a clinically relevant detail — a stopped medication, a reported symptom, a lifestyle factor affecting the condition — follow up on that detail before moving to the next condition. Do not compress multiple distinct conditions into a single turn.`;
 }
 
 function formatTranscript(transcript: InterviewMessage[]) {
