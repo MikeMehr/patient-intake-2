@@ -6,7 +6,7 @@ import { getAzureOpenAIClient } from "@/lib/azure-openai";
 import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
 import { logDebug } from "@/lib/secure-logger";
 
-const allowedActions = ["referral_letter", "labs", "custom"] as const;
+const allowedActions = ["referral_letter", "labs", "custom", "merge_transcript"] as const;
 type HpiAction = (typeof allowedActions)[number];
 
 const systemPrompt = `You are a clinical assistant helping physicians act on a History of Present Illness (HPI).
@@ -62,10 +62,11 @@ export async function POST(request: NextRequest) {
     return res;
   }
 
-  const { sessionCode, action, prompt } = (body || {}) as {
+  const { sessionCode, action, prompt, transcript } = (body || {}) as {
     sessionCode?: string;
     action?: HpiAction;
     prompt?: string;
+    transcript?: string;
   };
 
   if (!sessionCode || typeof sessionCode !== "string") {
@@ -128,6 +129,94 @@ export async function POST(request: NextRequest) {
     );
     logRequestMeta("/api/physician/hpi-actions", requestId, status, Date.now() - started);
     return res;
+  }
+
+  if (action === "merge_transcript") {
+    const trimmedTranscript = typeof transcript === "string" ? transcript.trim() : "";
+    if (!trimmedTranscript) {
+      status = 400;
+      const res = NextResponse.json({ error: "transcript is required for merge_transcript action." }, { status });
+      logRequestMeta("/api/physician/hpi-actions", requestId, status, Date.now() - started);
+      return res;
+    }
+    if (trimmedTranscript.length > 20000) {
+      status = 400;
+      const res = NextResponse.json({ error: "transcript is too long (max 20000 characters)." }, { status });
+      logRequestMeta("/api/physician/hpi-actions", requestId, status, Date.now() - started);
+      return res;
+    }
+
+    const hpi = patientSession.history;
+    const existingHpiParts = [
+      `Subjective:\n${hpi?.summary || "None"}`,
+      `Physical Findings:\n${Array.isArray((hpi as any)?.physicalFindings) && (hpi as any).physicalFindings.length > 0 ? (hpi as any).physicalFindings.join("\n") : "None"}`,
+      `Assessment:\n${hpi?.assessment || "None"}`,
+      `Investigations:\n${Array.isArray(hpi?.investigations) && hpi.investigations.length > 0 ? hpi.investigations.join("\n") : "None"}`,
+      `Plan:\n${Array.isArray((hpi as any)?.plan) && (hpi as any).plan.length > 0 ? (hpi as any).plan.join("\n") : "None"}`,
+      `Patient Final Comments:\n${(hpi as any)?.patientFinalQuestionsCommentsEnglish || (hpi as any)?.patientFinalQuestionsComments || "None"}`,
+    ].join("\n\n");
+
+    const mergeSystemPrompt = `You are a clinical documentation assistant. You will be given an existing History of Present Illness (HPI) generated from a patient intake interview, and a transcript of the physician's subsequent encounter with the patient (which may include additional history questions, physical exam findings, assessment, and plan discussion).
+
+Your task: produce an updated, combined HPI that integrates both sources into a single coherent clinical note. Preserve all relevant information from both sources, resolve conflicts by deferring to the physician's findings, and do not invent information.
+
+IMPORTANT: Your response must follow EXACTLY this format with these exact section headers. Do not add, rename, or reorder sections:
+
+Subjective:
+<paragraph summarizing history of present illness>
+
+Physical Findings:
+<bullet list, one per line, prefixed with "- "; or "None" if not applicable>
+
+Assessment:
+<paragraph with clinical assessment and differential>
+
+Investigations:
+<bullet list, one per line, prefixed with "- "; or "None" if none ordered>
+
+Plan:
+<bullet list, one per line, prefixed with "- ">
+
+Patient Final Comments:
+<preserve original patient final comments unchanged; or "None">`;
+
+    const mergeUserPrompt = `Existing HPI (from patient intake):\n${existingHpiParts}\n\nPhysician encounter transcript:\n${trimmedTranscript}\n\nProduce the updated combined HPI now.`;
+
+    let azure;
+    try {
+      azure = getAzureOpenAIClient();
+    } catch (err) {
+      return NextResponse.json({ error: (err as Error).message || "Azure OpenAI is not configured." }, { status: 500 });
+    }
+
+    try {
+      const completion = await azure.client.chat.completions.create({
+        model: azure.deployment,
+        messages: [
+          { role: "system", content: mergeSystemPrompt },
+          { role: "user", content: mergeUserPrompt },
+        ],
+        temperature: 1,
+        max_completion_tokens: 1200,
+      });
+
+      const result = completion.choices?.[0]?.message?.content?.trim() || "";
+      if (!result) throw new Error("No content returned from Azure OpenAI.");
+
+      const res = NextResponse.json({ result });
+      logRequestMeta("/api/physician/hpi-actions", requestId, status, Date.now() - started);
+      return res;
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.error("[physician/hpi-actions] merge_transcript failed:", errorMessage);
+      status = 502;
+      const res = NextResponse.json(
+        { error: "Unable to merge transcript right now.", details: process.env.NODE_ENV === "development" ? errorMessage : undefined },
+        { status }
+      );
+      logRequestMeta("/api/physician/hpi-actions", requestId, status, Date.now() - started);
+      return res;
+    }
   }
 
   const hpi = patientSession.history;

@@ -395,6 +395,22 @@ function PhysicianViewContent() {
   const rxSignatureCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const rxSignatureDrawingRef = useRef(false);
 
+  // Physician Encounter Notes — recording state
+  const [encounterRecording, setEncounterRecording] = useState(false);
+  const [encounterTranscript, setEncounterTranscript] = useState("");
+  const [encounterTranscriptLoading, setEncounterTranscriptLoading] = useState(false);
+  const [encounterMerging, setEncounterMerging] = useState(false);
+  const [encounterMergeError, setEncounterMergeError] = useState<string | null>(null);
+  const [encounterRecordingError, setEncounterRecordingError] = useState<string | null>(null);
+  const encounterMediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const encounterMediaStreamRef = useRef<MediaStream | null>(null);
+  const encounterMediaChunksRef = useRef<Blob[]>([]);
+  const encounterSegmentIndexRef = useRef(0);
+  const encounterPendingTranscriptionsRef = useRef<Promise<void>[]>([]);
+  const encounterTimerIntervalRef = useRef<number | null>(null);
+  const encounterFlushIntervalRef = useRef<number | null>(null);
+  const encounterTranscriptRef = useRef("");
+
   const parsedRxFromHistory = useMemo(() => {
     if (!session?.history) return { medications: [] as Omit<RxMedicationRow, "id">[], notes: "" };
     const history: any = session.history;
@@ -2269,6 +2285,202 @@ function PhysicianViewContent() {
   const patientInsuranceNumber = session.patientProfile?.insuranceNumber?.trim() || "";
   const patientAddress = session.patientProfile?.address?.trim() || "";
 
+  // Encounter recording helpers — same pattern as /physician/transcription/page.tsx
+  async function encounterConvertToWav(blob: Blob): Promise<Blob> {
+    const audioCtx = new AudioContext({ sampleRate: 16000 });
+    try {
+      const arrayBuf = await blob.arrayBuffer();
+      const decoded = await audioCtx.decodeAudioData(arrayBuf);
+      const mono =
+        decoded.numberOfChannels === 1
+          ? decoded.getChannelData(0)
+          : (() => {
+              const ch0 = decoded.getChannelData(0);
+              const ch1 = decoded.getChannelData(1);
+              const mixed = new Float32Array(ch0.length);
+              for (let i = 0; i < ch0.length; i += 1) mixed[i] = (ch0[i] + ch1[i]) / 2;
+              return mixed;
+            })();
+      let samples = mono;
+      if (decoded.sampleRate !== 16000) {
+        const ratio = 16000 / decoded.sampleRate;
+        const newLen = Math.round(mono.length * ratio);
+        const resampled = new Float32Array(newLen);
+        for (let i = 0; i < newLen; i += 1) resampled[i] = mono[Math.round(i / ratio)] ?? 0;
+        samples = resampled;
+      }
+      const numSamples = samples.length;
+      const buffer = new ArrayBuffer(44 + numSamples * 2);
+      const view = new DataView(buffer);
+      const writeStr = (off: number, s: string) => {
+        for (let i = 0; i < s.length; i += 1) view.setUint8(off + i, s.charCodeAt(i));
+      };
+      writeStr(0, "RIFF");
+      view.setUint32(4, 36 + numSamples * 2, true);
+      writeStr(8, "WAVE");
+      writeStr(12, "fmt ");
+      view.setUint32(16, 16, true);
+      view.setUint16(20, 1, true);
+      view.setUint16(22, 1, true);
+      view.setUint32(24, 16000, true);
+      view.setUint32(28, 16000 * 2, true);
+      view.setUint16(32, 2, true);
+      view.setUint16(34, 16, true);
+      writeStr(36, "data");
+      view.setUint32(40, numSamples * 2, true);
+      for (let i = 0; i < numSamples; i += 1) {
+        const s = Math.max(-1, Math.min(1, samples[i]));
+        view.setInt16(44 + i * 2, s < 0 ? s * 0x8000 : s * 0x7fff, true);
+      }
+      return new Blob([buffer], { type: "audio/wav" });
+    } finally {
+      await audioCtx.close();
+    }
+  }
+
+  async function encounterTranscribeAudio(audioBlob: Blob): Promise<string> {
+    const wavBlob = await encounterConvertToWav(audioBlob);
+    const formData = new FormData();
+    formData.append("audio", new File([wavBlob], "encounter.wav", { type: "audio/wav" }));
+    formData.append("language", "en-US");
+    const res = await fetch("/api/speech/stt", { method: "POST", body: formData });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data?.error || "Transcription failed");
+    const text = typeof data?.text === "string" ? data.text.trim() : "";
+    if (!text) throw new Error("No speech detected.");
+    return text;
+  }
+
+  async function encounterFlushSegment(recorder: MediaRecorder, stream: MediaStream, isFinal: boolean) {
+    const mimeType = recorder.mimeType || "audio/webm";
+    await new Promise<void>((resolve) => {
+      recorder.onstop = () => resolve();
+      recorder.stop();
+    });
+    const blob = new Blob(encounterMediaChunksRef.current, { type: mimeType });
+    encounterMediaChunksRef.current = [];
+
+    if (!isFinal && stream.active) {
+      const newRecorder = new MediaRecorder(stream);
+      encounterMediaRecorderRef.current = newRecorder;
+      newRecorder.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) encounterMediaChunksRef.current.push(e.data);
+      };
+      newRecorder.start(250);
+    }
+
+    if (!blob.size) return;
+    const idx = encounterSegmentIndexRef.current++;
+
+    const task = (async () => {
+      try {
+        const text = await encounterTranscribeAudio(blob);
+        if (text) {
+          setEncounterTranscript((prev) => {
+            const parts = prev ? prev.split("\n") : [];
+            while (parts.length <= idx) parts.push("");
+            parts[idx] = text;
+            const next = parts.filter(Boolean).join(" ").trim();
+            encounterTranscriptRef.current = next;
+            return next;
+          });
+        }
+      } catch (err) {
+        setEncounterRecordingError(err instanceof Error ? err.message : "Transcription failed for a segment.");
+      }
+    })();
+    encounterPendingTranscriptionsRef.current.push(task);
+  }
+
+  async function startEncounterRecording() {
+    setEncounterRecordingError(null);
+    setEncounterMergeError(null);
+    encounterSegmentIndexRef.current = 0;
+    encounterPendingTranscriptionsRef.current = [];
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: { noiseSuppression: true, echoCancellation: true, autoGainControl: true },
+      });
+      const recorder = new MediaRecorder(stream);
+      encounterMediaChunksRef.current = [];
+      encounterMediaStreamRef.current = stream;
+      encounterMediaRecorderRef.current = recorder;
+      recorder.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) encounterMediaChunksRef.current.push(e.data);
+      };
+      recorder.start(250);
+      setEncounterRecording(true);
+      encounterFlushIntervalRef.current = window.setInterval(() => {
+        const rec = encounterMediaRecorderRef.current;
+        const strm = encounterMediaStreamRef.current;
+        if (rec && rec.state === "recording" && strm) {
+          encounterFlushSegment(rec, strm, false);
+        }
+      }, 120_000);
+    } catch (err) {
+      setEncounterRecordingError(err instanceof Error ? err.message : "Unable to access microphone.");
+    }
+  }
+
+  async function stopEncounterRecording() {
+    const recorder = encounterMediaRecorderRef.current;
+    const stream = encounterMediaStreamRef.current;
+    if (!recorder) return;
+
+    if (encounterFlushIntervalRef.current) {
+      window.clearInterval(encounterFlushIntervalRef.current);
+      encounterFlushIntervalRef.current = null;
+    }
+    if (encounterTimerIntervalRef.current) {
+      window.clearInterval(encounterTimerIntervalRef.current);
+      encounterTimerIntervalRef.current = null;
+    }
+
+    setEncounterRecording(false);
+    setEncounterTranscriptLoading(true);
+    setEncounterRecordingError(null);
+
+    if (recorder.state === "recording" && stream) {
+      await encounterFlushSegment(recorder, stream, true);
+    }
+    if (encounterMediaStreamRef.current) {
+      encounterMediaStreamRef.current.getTracks().forEach((t) => t.stop());
+      encounterMediaStreamRef.current = null;
+    }
+    await Promise.allSettled(encounterPendingTranscriptionsRef.current);
+    encounterPendingTranscriptionsRef.current = [];
+    setEncounterTranscriptLoading(false);
+
+    // Auto-merge with HPI (use ref to get latest value after async state updates)
+    const finalTranscript = encounterTranscriptRef.current;
+    if (!finalTranscript.trim() || !sessionCode) return;
+
+    setEncounterMerging(true);
+    setEncounterMergeError(null);
+    try {
+      const res = await fetch("/api/physician/hpi-actions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionCode, action: "merge_transcript", transcript: finalTranscript }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || "Failed to merge transcript with HPI.");
+      const merged = typeof data?.result === "string" ? data.result.trim() : "";
+      if (!merged) throw new Error("AI returned empty result.");
+      setHpiCombinedDraft(merged);
+      setHpiSaveError(null);
+      setHpiSaveSuccess(null);
+      setHpiCopyStatus(null);
+      setIsEditingHpi(true);
+      // Scroll to HPI section
+      document.getElementById("hpi-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    } catch (err) {
+      setEncounterMergeError(err instanceof Error ? err.message : "Failed to merge transcript with HPI.");
+    } finally {
+      setEncounterMerging(false);
+    }
+  }
+
   return (
     <div className="min-h-screen bg-slate-100">
       <div className="max-w-5xl mx-auto px-4 py-8">
@@ -2451,7 +2663,7 @@ function PhysicianViewContent() {
         {/* History Summary */}
         {session.history && (
           <>
-            <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6 mb-6">
+            <div id="hpi-section" className="bg-white rounded-lg shadow-sm border border-slate-200 p-6 mb-6">
               <div className="mb-4 flex items-start justify-between gap-3">
                 <h2 className="text-lg font-semibold text-slate-900">
                   History of Present Illness
@@ -2724,6 +2936,105 @@ function PhysicianViewContent() {
                   </p>
                 )}
               </div>
+            </div>
+
+            {/* Physician Encounter Notes */}
+            <div className="mb-6">
+              <CollapsibleSection
+                id="physician-encounter-notes"
+                title="Physician Encounter Notes"
+                description="Record your encounter with the patient. When you stop, the transcript is merged with the HPI."
+                defaultOpen={false}
+              >
+                <div className="space-y-4">
+                  <p className="text-sm text-slate-500">
+                    Record your conversation with the patient — additional history, examination, assessment, and plan. When you stop recording, the transcript will be merged with the existing HPI and open in edit mode for review.
+                  </p>
+
+                  {/* Record / Stop button */}
+                  <div className="flex items-center gap-3">
+                    {!encounterRecording ? (
+                      <button
+                        onClick={startEncounterRecording}
+                        disabled={encounterMerging || encounterTranscriptLoading}
+                        className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-60"
+                      >
+                        <span className="inline-block w-2.5 h-2.5 rounded-full bg-white" />
+                        Record
+                      </button>
+                    ) : (
+                      <button
+                        onClick={stopEncounterRecording}
+                        className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-slate-700 rounded-lg hover:bg-slate-800"
+                      >
+                        <span className="inline-block w-2.5 h-2.5 rounded-sm bg-white" />
+                        Stop Recording
+                      </button>
+                    )}
+                    {encounterRecording && (
+                      <span className="flex items-center gap-1.5 text-sm text-red-600 font-medium">
+                        <span className="inline-block w-2 h-2 rounded-full bg-red-600 animate-pulse" />
+                        Recording...
+                      </span>
+                    )}
+                    {encounterTranscriptLoading && !encounterRecording && (
+                      <span className="text-sm text-slate-500">Transcribing final segment...</span>
+                    )}
+                    {encounterMerging && (
+                      <span className="text-sm text-slate-500">Merging with HPI...</span>
+                    )}
+                  </div>
+
+                  {/* Recording transcript */}
+                  {encounterTranscript && (
+                    <div>
+                      <p className="text-xs font-medium text-slate-600 mb-1 uppercase tracking-wide">Recording Transcript</p>
+                      <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-800 whitespace-pre-wrap max-h-48 overflow-y-auto">
+                        {encounterTranscript}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Error messages */}
+                  {encounterRecordingError && (
+                    <p className="text-sm text-red-600">{encounterRecordingError}</p>
+                  )}
+                  {encounterMergeError && (
+                    <div className="rounded-lg border border-red-200 bg-red-50 p-3">
+                      <p className="text-sm text-red-700">{encounterMergeError}</p>
+                      {encounterTranscript && sessionCode && (
+                        <button
+                          onClick={() => {
+                            setEncounterMergeError(null);
+                            setEncounterMerging(true);
+                            fetch("/api/physician/hpi-actions", {
+                              method: "POST",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({ sessionCode, action: "merge_transcript", transcript: encounterTranscriptRef.current }),
+                            })
+                              .then((r) => r.json().catch(() => ({})))
+                              .then((data) => {
+                                if (!data?.result) throw new Error(data?.error || "Empty result.");
+                                setHpiCombinedDraft(data.result.trim());
+                                setHpiSaveError(null);
+                                setHpiSaveSuccess(null);
+                                setHpiCopyStatus(null);
+                                setIsEditingHpi(true);
+                                document.getElementById("hpi-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
+                              })
+                              .catch((err) => setEncounterMergeError(err instanceof Error ? err.message : "Failed to merge."))
+                              .finally(() => setEncounterMerging(false));
+                          }}
+                          disabled={encounterMerging}
+                          className="mt-2 text-sm text-red-700 underline hover:no-underline disabled:opacity-60"
+                        >
+                          Retry merge
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </CollapsibleSection>
             </div>
 
             {/* PHQ-9 / GAD-7 Screening Results */}
