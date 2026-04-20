@@ -662,7 +662,12 @@ function PhysicianViewContent() {
 
     const original = session.history?.patientFinalQuestionsComments?.trim() || "";
     const english = session.history?.patientFinalQuestionsCommentsEnglish?.trim() || "";
-    if (!original || english) return;
+    const interviewLanguage = (session.history?.interviewLanguage || "").trim().toLowerCase();
+    const isEnglishInterview = !interviewLanguage || interviewLanguage.startsWith("en");
+    // Retry translation if english is missing OR if it matches the original non-English text
+    // (the latter happens when a prior save stored the untranslated text due to an Azure fallback bug).
+    const needsTranslation = original && (!english || (!isEnglishInterview && english === original));
+    if (!needsTranslation) return;
 
     const key = `${sessionCode}::${original}`;
     if (lastFinalCommentsTranslateKeyRef.current === key) return;

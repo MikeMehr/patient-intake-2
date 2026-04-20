@@ -24,7 +24,7 @@ async function translatePatientTextToEnglish(text: string): Promise<string> {
     max_completion_tokens: 600,
   });
 
-  return completion.choices?.[0]?.message?.content?.trim() || trimmed;
+  return completion.choices?.[0]?.message?.content?.trim() || "";
 }
 
 export async function POST(request: NextRequest) {
@@ -100,7 +100,9 @@ export async function POST(request: NextRequest) {
   }
 
   const existing = history?.patientFinalQuestionsCommentsEnglish?.trim() || "";
-  if (existing) {
+  // Return cached translation unless it equals the original (which means a prior save incorrectly
+  // stored the untranslated text as the English value — in that case, re-translate).
+  if (existing && existing !== original) {
     const res = NextResponse.json({ translation: existing });
     logRequestMeta("/api/physician/translate-final-comments", requestId, status, Date.now() - started);
     return res;

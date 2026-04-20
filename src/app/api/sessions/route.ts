@@ -52,7 +52,7 @@ async function translatePatientTextToEnglish(text: string): Promise<string> {
     max_completion_tokens: 600,
   });
 
-  return completion.choices?.[0]?.message?.content?.trim() || trimmed;
+  return completion.choices?.[0]?.message?.content?.trim() || "";
 }
 
 /**
