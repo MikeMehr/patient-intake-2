@@ -62,11 +62,12 @@ export async function POST(request: NextRequest) {
     return res;
   }
 
-  const { sessionCode, action, prompt, transcript } = (body || {}) as {
+  const { sessionCode, action, prompt, transcript, language } = (body || {}) as {
     sessionCode?: string;
     action?: HpiAction;
     prompt?: string;
     transcript?: string;
+    language?: string;
   };
 
   if (!sessionCode || typeof sessionCode !== "string") {
@@ -156,9 +157,12 @@ export async function POST(request: NextRequest) {
       `Patient Final Comments:\n${(hpi as any)?.patientFinalQuestionsCommentsEnglish || (hpi as any)?.patientFinalQuestionsComments || "None"}`,
     ].join("\n\n");
 
+    const langName = typeof language === "string" && language.trim() ? language.trim() : "English";
+    const isNonEnglish = langName.toLowerCase() !== "english";
+
     const mergeSystemPrompt = `You are a clinical documentation assistant. You will be given an existing History of Present Illness (HPI) generated from a patient intake interview, and a transcript of the physician's subsequent encounter with the patient (which may include additional history questions, physical exam findings, assessment, and plan discussion).
 
-Your task: produce an updated, combined HPI that integrates both sources into a single coherent clinical note. Preserve all relevant information from both sources, resolve conflicts by deferring to the physician's findings, and do not invent information.
+Your task: produce an updated, combined HPI that integrates both sources into a single coherent clinical note. Preserve all relevant information from both sources, resolve conflicts by deferring to the physician's findings, and do not invent information.${isNonEnglish ? `\n\nNOTE: The physician encounter transcript is in ${langName}. Translate its content into English when incorporating it into the HPI. The final output must be entirely in English.` : ""}
 
 IMPORTANT: Your response must follow EXACTLY this format with these exact section headers. Do not add, rename, or reorder sections:
 

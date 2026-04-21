@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import type { PatientSession } from "@/lib/session-store";
 import SessionKeepAlive from "@/components/auth/SessionKeepAlive";
 import CollapsibleSection from "@/components/CollapsibleSection";
+import { languageOptions } from "@/lib/speech-language";
 import { mergeDiagramSelectionsForDisplay, type DiagramSelectionInput } from "@/lib/body-diagram-display";
 import DiagramViewer from "@/components/DiagramViewer";
 
@@ -400,6 +401,7 @@ function PhysicianViewContent() {
   const [encounterTranscript, setEncounterTranscript] = useState("");
   const [encounterTranscriptLoading, setEncounterTranscriptLoading] = useState(false);
   const [encounterMerging, setEncounterMerging] = useState(false);
+  const [encounterLanguage, setEncounterLanguage] = useState("en");
   const [encounterMergeError, setEncounterMergeError] = useState<string | null>(null);
   const [encounterRecordingError, setEncounterRecordingError] = useState<string | null>(null);
   const encounterMediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -2339,11 +2341,11 @@ function PhysicianViewContent() {
     }
   }
 
-  async function encounterTranscribeAudio(audioBlob: Blob): Promise<string> {
+  async function encounterTranscribeAudio(audioBlob: Blob, lang: string): Promise<string> {
     const wavBlob = await encounterConvertToWav(audioBlob);
     const formData = new FormData();
     formData.append("audio", new File([wavBlob], "encounter.wav", { type: "audio/wav" }));
-    formData.append("language", "en-US");
+    formData.append("language", lang);
     const res = await fetch("/api/speech/stt", { method: "POST", body: formData });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data?.error || "Transcription failed");
@@ -2375,7 +2377,7 @@ function PhysicianViewContent() {
 
     const task = (async () => {
       try {
-        const text = await encounterTranscribeAudio(blob);
+        const text = await encounterTranscribeAudio(blob, encounterLanguage);
         if (text) {
           // Update ref directly so stopEncounterRecording can read the final value
           const parts = encounterSegmentTextsRef.current;
@@ -2463,7 +2465,12 @@ function PhysicianViewContent() {
       const res = await fetch("/api/physician/hpi-actions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionCode, action: "merge_transcript", transcript: finalTranscript }),
+        body: JSON.stringify({
+          sessionCode,
+          action: "merge_transcript",
+          transcript: finalTranscript,
+          language: languageOptions.find((o) => o.value === encounterLanguage)?.label.replace(" (default)", "") ?? "English",
+        }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || "Failed to merge transcript with HPI.");
@@ -2953,6 +2960,25 @@ function PhysicianViewContent() {
                     Record your conversation with the patient — additional history, examination, assessment, and plan. When you stop recording, the transcript will be merged with the existing HPI and open in edit mode for review.
                   </p>
 
+                  {/* Language selector */}
+                  {!encounterRecording && (
+                    <div className="flex items-center gap-3">
+                      <label htmlFor="encounter-language" className="text-sm font-medium text-slate-700 whitespace-nowrap">
+                        Recording language
+                      </label>
+                      <select
+                        id="encounter-language"
+                        value={encounterLanguage}
+                        onChange={(e) => setEncounterLanguage(e.target.value)}
+                        className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
+                      >
+                        {languageOptions.map((opt) => (
+                          <option key={opt.value} value={opt.value}>{opt.label}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
                   {/* Record / Stop button */}
                   <div className="flex items-center gap-3">
                     {!encounterRecording ? (
@@ -3012,7 +3038,12 @@ function PhysicianViewContent() {
                             fetch("/api/physician/hpi-actions", {
                               method: "POST",
                               headers: { "Content-Type": "application/json" },
-                              body: JSON.stringify({ sessionCode, action: "merge_transcript", transcript: encounterTranscriptRef.current }),
+                              body: JSON.stringify({
+                                sessionCode,
+                                action: "merge_transcript",
+                                transcript: encounterTranscriptRef.current,
+                                language: languageOptions.find((o) => o.value === encounterLanguage)?.label.replace(" (default)", "") ?? "English",
+                              }),
                             })
                               .then((r) => r.json().catch(() => ({})))
                               .then((data) => {
