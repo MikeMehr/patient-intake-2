@@ -121,7 +121,7 @@ export const historyResponseSchema = z.object({
   positives: z.array(z.string()).min(1).max(6),
   negatives: z.array(z.string()).min(1).max(6),
   physicalFindings: z.array(z.string()).min(0).max(6).optional(),
-  summary: z.string().min(10).max(1500),
+  summary: z.string().min(10).max(2500),
   investigations: z.array(z.string()).min(0).max(6),
   assessment: z.string().min(10).max(1500),
   plan: z.array(z.string()).min(1).max(6),
