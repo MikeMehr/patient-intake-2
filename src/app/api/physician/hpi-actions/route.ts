@@ -5,11 +5,14 @@ import { getSession } from "@/lib/session-store";
 import { getAzureOpenAIClient } from "@/lib/azure-openai";
 import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
 import { logDebug } from "@/lib/secure-logger";
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const pdfParse: (buf: Buffer) => Promise<{ text: string }> = require("pdf-parse");
 
-const ALLOWED_IMAGE_MIME_TYPES = new Set([
+const ALLOWED_FILE_MIME_TYPES = new Set([
   "image/png", "image/jpeg", "image/webp", "image/heic", "image/heif",
+  "application/pdf",
 ]);
-const MAX_IMAGE_BASE64_LENGTH = 7_000_000; // ~5 MB raw
+const MAX_FILE_BASE64_LENGTH = 7_000_000; // ~5 MB raw
 
 const allowedActions = ["referral_letter", "labs", "custom", "merge_transcript"] as const;
 type HpiAction = (typeof allowedActions)[number];
@@ -75,23 +78,23 @@ export async function POST(request: NextRequest) {
     return res;
   }
 
-  const { sessionCode, action, prompt, transcript, language, imageBase64, imageMimeType } = (body || {}) as {
+  const { sessionCode, action, prompt, transcript, language, fileBase64, fileMimeType } = (body || {}) as {
     sessionCode?: string;
     action?: HpiAction;
     prompt?: string;
     transcript?: string;
     language?: string;
-    imageBase64?: string;
-    imageMimeType?: string;
+    fileBase64?: string;
+    fileMimeType?: string;
   };
 
-  // Validate optional image fields
-  if (imageBase64 !== undefined) {
-    if (typeof imageBase64 !== "string" || imageBase64.length > MAX_IMAGE_BASE64_LENGTH) {
-      return NextResponse.json({ error: "Image is too large (max 5 MB)." }, { status: 400 });
+  // Validate optional file attachment
+  if (fileBase64 !== undefined) {
+    if (typeof fileBase64 !== "string" || fileBase64.length > MAX_FILE_BASE64_LENGTH) {
+      return NextResponse.json({ error: "File is too large (max 5 MB)." }, { status: 400 });
     }
-    if (!imageMimeType || !ALLOWED_IMAGE_MIME_TYPES.has(imageMimeType)) {
-      return NextResponse.json({ error: "Invalid image type. Only PNG, JPEG, WEBP, HEIC, or HEIF are supported." }, { status: 400 });
+    if (!fileMimeType || !ALLOWED_FILE_MIME_TYPES.has(fileMimeType)) {
+      return NextResponse.json({ error: "Invalid file type. Supported: PNG, JPEG, WEBP, HEIC, HEIF, PDF." }, { status: 400 });
     }
   }
 
@@ -298,7 +301,9 @@ Patient Final Comments:
 
   const context = contextParts.join("\n");
 
-  const hasImage = typeof imageBase64 === "string" && imageBase64.length > 0;
+  const hasFile = typeof fileBase64 === "string" && fileBase64.length > 0;
+  const isPdf = hasFile && fileMimeType === "application/pdf";
+  const isImage = hasFile && !isPdf;
 
   let azure;
   try {
@@ -310,13 +315,35 @@ Patient Final Comments:
     );
   }
 
-  const activeSystemPrompt = hasImage ? visionSystemPrompt : systemPrompt;
-  const userMessageContent = hasImage
+  // For PDFs: extract text and append to context
+  let pdfText: string | null = null;
+  if (isPdf) {
+    try {
+      const buffer = Buffer.from(fileBase64!, "base64");
+      const parsed = await pdfParse(buffer);
+      pdfText = parsed.text?.trim() || null;
+    } catch {
+      return NextResponse.json({ error: "Could not read the PDF. Make sure it is a valid, text-based PDF." }, { status: 400 });
+    }
+    if (!pdfText) {
+      return NextResponse.json({ error: "No text could be extracted from the PDF." }, { status: 400 });
+    }
+  }
+
+  const activeSystemPrompt = isImage ? visionSystemPrompt : systemPrompt;
+
+  function buildPromptWithFile(): string {
+    const base = buildUserPrompt({ action: action!, prompt, context });
+    if (!pdfText) return base;
+    return `${base}\n\nAttached document (extracted text):\n${pdfText.slice(0, 8000)}`;
+  }
+
+  const userMessageContent = isImage
     ? [
-        { type: "text" as const, text: buildUserPrompt({ action, prompt, context }) },
-        { type: "image_url" as const, image_url: { url: `data:${imageMimeType};base64,${imageBase64}` } },
+        { type: "text" as const, text: buildUserPrompt({ action: action!, prompt, context }) },
+        { type: "image_url" as const, image_url: { url: `data:${fileMimeType};base64,${fileBase64}` } },
       ]
-    : buildUserPrompt({ action, prompt, context });
+    : buildPromptWithFile();
 
   try {
     const completion = await azure.client.chat.completions.create({

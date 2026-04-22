@@ -138,9 +138,10 @@ export default function PhysicianTranscriptionPage() {
   const [aiResponse, setAiResponse] = useState("");
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
-  const [aiImage, setAiImage] = useState<string | null>(null);
-  const [aiImageMime, setAiImageMime] = useState<string>("image/jpeg");
-  const [aiImageName, setAiImageName] = useState<string>("");
+  const [aiFile, setAiFile] = useState<string | null>(null);
+  const [aiFileMime, setAiFileMime] = useState<string>("image/jpeg");
+  const [aiFileName, setAiFileName] = useState<string>("");
+  const [aiFileIsImage, setAiFileIsImage] = useState<boolean>(true);
   const [aiCopyFeedback, setAiCopyFeedback] = useState(false);
 
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -895,20 +896,22 @@ export default function PhysicianTranscriptionPage() {
     }
   }
 
-  function handleAiImageChange(e: React.ChangeEvent<HTMLInputElement>) {
+  function handleAiFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
     if (file.size > 5 * 1024 * 1024) {
-      setAiError("Image must be 5 MB or smaller.");
+      setAiError("File must be 5 MB or smaller.");
       e.target.value = "";
       return;
     }
+    const isImage = file.type.startsWith("image/") || /\.(heic|heif)$/i.test(file.name);
     const reader = new FileReader();
     reader.onload = () => {
       const dataUrl = reader.result as string;
-      setAiImage(dataUrl);
-      setAiImageMime(file.type || "image/jpeg");
-      setAiImageName(file.name);
+      setAiFile(dataUrl);
+      setAiFileMime(file.type || (isImage ? "image/jpeg" : "application/pdf"));
+      setAiFileName(file.name);
+      setAiFileIsImage(isImage);
     };
     reader.readAsDataURL(file);
   }
@@ -920,9 +923,9 @@ export default function PhysicianTranscriptionPage() {
     setAiResponse("");
     try {
       const body: Record<string, unknown> = { soapText: reviewText, prompt: aiPrompt.trim() };
-      if (aiImage) {
-        body.imageBase64 = aiImage.split(",")[1];
-        body.imageMimeType = aiImageMime;
+      if (aiFile) {
+        body.fileBase64 = aiFile.split(",")[1];
+        body.fileMimeType = aiFileMime;
       }
       const res = await fetch("/api/physician/transcription/ask-ai", {
         method: "POST",
@@ -1238,19 +1241,27 @@ export default function PhysicianTranscriptionPage() {
                         </button>
                       </div>
 
-                      {/* Photo attachment */}
+                      {/* Photo or PDF attachment */}
                       <div>
-                        {aiImage ? (
+                        {aiFile ? (
                           <div className="flex items-center gap-3">
-                            <img
-                              src={aiImage}
-                              alt="Attached"
-                              className="h-14 w-14 rounded-md border border-slate-300 object-cover"
-                            />
-                            <span className="text-sm text-slate-600 truncate max-w-[200px]">{aiImageName}</span>
+                            {aiFileIsImage ? (
+                              <img
+                                src={aiFile}
+                                alt="Attached"
+                                className="h-14 w-14 rounded-md border border-slate-300 object-cover flex-shrink-0"
+                              />
+                            ) : (
+                              <div className="h-14 w-14 rounded-md border border-slate-300 bg-slate-50 flex items-center justify-center flex-shrink-0">
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-7 w-7 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                                </svg>
+                              </div>
+                            )}
+                            <span className="text-sm text-slate-600 truncate max-w-[200px]">{aiFileName}</span>
                             <button
                               type="button"
-                              onClick={() => { setAiImage(null); setAiImageName(""); }}
+                              onClick={() => { setAiFile(null); setAiFileName(""); }}
                               className="text-sm text-red-600 hover:text-red-800"
                             >
                               Remove
@@ -1261,13 +1272,13 @@ export default function PhysicianTranscriptionPage() {
                             <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                             </svg>
-                            Attach photo (optional)
+                            Attach photo or PDF
                             <input
                               type="file"
-                              accept="image/png,image/jpeg,image/webp,image/heic,image/heif"
+                              accept="image/png,image/jpeg,image/webp,image/heic,image/heif,application/pdf"
                               capture="environment"
                               className="sr-only"
-                              onChange={handleAiImageChange}
+                              onChange={handleAiFileChange}
                               disabled={aiLoading}
                             />
                           </label>
