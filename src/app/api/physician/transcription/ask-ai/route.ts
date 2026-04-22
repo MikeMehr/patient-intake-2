@@ -1,17 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentSession } from "@/lib/auth";
-import { getAzureOpenAIClient } from "@/lib/azure-openai";
+import { getAzureOpenAIClient, getAzureVisionClient } from "@/lib/azure-openai";
 import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
 import { logDebug } from "@/lib/secure-logger";
 
 const MAX_SOAP_TEXT_LENGTH = 15000;
 const MAX_PROMPT_LENGTH = 2000;
 
+const ALLOWED_IMAGE_MIME_TYPES = new Set([
+  "image/png", "image/jpeg", "image/webp", "image/heic", "image/heif",
+]);
+const MAX_IMAGE_BASE64_LENGTH = 7_000_000; // ~5 MB raw
+
 const systemPrompt = `You are a clinical assistant helping physicians with tasks related to a SOAP note.
 - Use only the provided SOAP note as clinical context.
 - Be concise, actionable, and avoid boilerplate.
 - Do not invent data; if a detail is missing, omit it.
 - Refer to the patient generically ("the patient"), avoid names and identifiers.
+- When an image is provided, incorporate the visible clinical findings into your response.
 - No disclaimers.`;
 
 function buildUserPrompt(soapText: string, prompt: string): string {
@@ -46,10 +52,22 @@ export async function POST(request: NextRequest) {
     return res;
   }
 
-  const { soapText, prompt } = (body || {}) as {
+  const { soapText, prompt, imageBase64, imageMimeType } = (body || {}) as {
     soapText?: string;
     prompt?: string;
+    imageBase64?: string;
+    imageMimeType?: string;
   };
+
+  // Validate optional image fields
+  if (imageBase64 !== undefined) {
+    if (typeof imageBase64 !== "string" || imageBase64.length > MAX_IMAGE_BASE64_LENGTH) {
+      return NextResponse.json({ error: "Image is too large (max 5 MB)." }, { status: 400 });
+    }
+    if (!imageMimeType || !ALLOWED_IMAGE_MIME_TYPES.has(imageMimeType)) {
+      return NextResponse.json({ error: "Invalid image type. Only PNG, JPEG, WEBP, HEIC, or HEIF are supported." }, { status: 400 });
+    }
+  }
 
   if (!soapText || typeof soapText !== "string") {
     status = 400;
@@ -112,9 +130,11 @@ export async function POST(request: NextRequest) {
     return res;
   }
 
+  const hasImage = typeof imageBase64 === "string" && imageBase64.length > 0;
+
   let azure;
   try {
-    azure = getAzureOpenAIClient();
+    azure = hasImage ? getAzureVisionClient() : getAzureOpenAIClient();
   } catch (err) {
     return NextResponse.json(
       { error: (err as Error).message || "Azure OpenAI is not configured." },
@@ -122,12 +142,19 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  const userMessageContent = hasImage
+    ? [
+        { type: "text" as const, text: buildUserPrompt(soapText, prompt) },
+        { type: "image_url" as const, image_url: { url: `data:${imageMimeType};base64,${imageBase64}` } },
+      ]
+    : buildUserPrompt(soapText, prompt);
+
   try {
     const completion = await azure.client.chat.completions.create({
       model: azure.deployment,
       messages: [
         { role: "system", content: systemPrompt },
-        { role: "user", content: buildUserPrompt(soapText, prompt) },
+        { role: "user", content: userMessageContent as any },
       ],
       temperature: 1,
       max_completion_tokens: 800,

@@ -2,9 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { getCurrentSession } from "@/lib/auth";
 import { getEffectivePhysicianId } from "@/lib/auth-helpers";
 import { getSession } from "@/lib/session-store";
-import { getAzureOpenAIClient } from "@/lib/azure-openai";
+import { getAzureOpenAIClient, getAzureVisionClient } from "@/lib/azure-openai";
 import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
 import { logDebug } from "@/lib/secure-logger";
+
+const ALLOWED_IMAGE_MIME_TYPES = new Set([
+  "image/png", "image/jpeg", "image/webp", "image/heic", "image/heif",
+]);
+const MAX_IMAGE_BASE64_LENGTH = 7_000_000; // ~5 MB raw
 
 const allowedActions = ["referral_letter", "labs", "custom", "merge_transcript"] as const;
 type HpiAction = (typeof allowedActions)[number];
@@ -13,7 +18,8 @@ const systemPrompt = `You are a clinical assistant helping physicians act on a H
 - Use only the provided clinical context.
 - Be concise, actionable, and avoid boilerplate.
 - Do not invent data; if a detail is missing, omit it.
-- Refer to the patient generically (\"the patient\"), avoid names and identifiers.
+- Refer to the patient generically ("the patient"), avoid names and identifiers.
+- When an image is provided, incorporate the visible clinical findings into your response.
 - No disclaimers.`;
 
 function buildUserPrompt(params: {
@@ -62,13 +68,25 @@ export async function POST(request: NextRequest) {
     return res;
   }
 
-  const { sessionCode, action, prompt, transcript, language } = (body || {}) as {
+  const { sessionCode, action, prompt, transcript, language, imageBase64, imageMimeType } = (body || {}) as {
     sessionCode?: string;
     action?: HpiAction;
     prompt?: string;
     transcript?: string;
     language?: string;
+    imageBase64?: string;
+    imageMimeType?: string;
   };
+
+  // Validate optional image fields
+  if (imageBase64 !== undefined) {
+    if (typeof imageBase64 !== "string" || imageBase64.length > MAX_IMAGE_BASE64_LENGTH) {
+      return NextResponse.json({ error: "Image is too large (max 5 MB)." }, { status: 400 });
+    }
+    if (!imageMimeType || !ALLOWED_IMAGE_MIME_TYPES.has(imageMimeType)) {
+      return NextResponse.json({ error: "Invalid image type. Only PNG, JPEG, WEBP, HEIC, or HEIF are supported." }, { status: 400 });
+    }
+  }
 
   if (!sessionCode || typeof sessionCode !== "string") {
     status = 400;
@@ -273,9 +291,11 @@ Patient Final Comments:
 
   const context = contextParts.join("\n");
 
+  const hasImage = typeof imageBase64 === "string" && imageBase64.length > 0;
+
   let azure;
   try {
-    azure = getAzureOpenAIClient();
+    azure = hasImage ? getAzureVisionClient() : getAzureOpenAIClient();
   } catch (err) {
     return NextResponse.json(
       { error: (err as Error).message || "Azure OpenAI is not configured." },
@@ -283,12 +303,19 @@ Patient Final Comments:
     );
   }
 
+  const userMessageContent = hasImage
+    ? [
+        { type: "text" as const, text: buildUserPrompt({ action, prompt, context }) },
+        { type: "image_url" as const, image_url: { url: `data:${imageMimeType};base64,${imageBase64}` } },
+      ]
+    : buildUserPrompt({ action, prompt, context });
+
   try {
     const completion = await azure.client.chat.completions.create({
       model: azure.deployment,
       messages: [
         { role: "system", content: systemPrompt },
-        { role: "user", content: buildUserPrompt({ action, prompt, context }) },
+        { role: "user", content: userMessageContent as any },
       ],
       // Some Azure models only allow the default temperature; use 1 to satisfy that constraint.
       temperature: 1,
