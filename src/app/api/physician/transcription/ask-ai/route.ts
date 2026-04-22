@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentSession } from "@/lib/auth";
-import { getAzureOpenAIClient, getAzureVisionClient } from "@/lib/azure-openai";
+import { getAzureOpenAIClient } from "@/lib/azure-openai";
 import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
 import { logDebug } from "@/lib/secure-logger";
 
@@ -17,7 +17,14 @@ const systemPrompt = `You are a clinical assistant helping physicians with tasks
 - Be concise, actionable, and avoid boilerplate.
 - Do not invent data; if a detail is missing, omit it.
 - Refer to the patient generically ("the patient"), avoid names and identifiers.
-- When an image is provided, incorporate the visible clinical findings into your response.
+- No disclaimers.`;
+
+const visionSystemPrompt = `You are a clinical assistant helping physicians. You will receive a SOAP note and a clinical image.
+- Analyze the attached image carefully and describe the visible clinical findings (morphology, distribution, color, size, any notable features).
+- Incorporate both the image findings and the SOAP note context into your response.
+- Be concise, actionable, and clinically precise.
+- Do not invent data; describe only what is visible.
+- Refer to the patient generically ("the patient"), avoid names and identifiers.
 - No disclaimers.`;
 
 function buildUserPrompt(soapText: string, prompt: string): string {
@@ -134,7 +141,7 @@ export async function POST(request: NextRequest) {
 
   let azure;
   try {
-    azure = hasImage ? getAzureVisionClient() : getAzureOpenAIClient();
+    azure = getAzureOpenAIClient();
   } catch (err) {
     return NextResponse.json(
       { error: (err as Error).message || "Azure OpenAI is not configured." },
@@ -142,6 +149,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  const activeSystemPrompt = hasImage ? visionSystemPrompt : systemPrompt;
   const userMessageContent = hasImage
     ? [
         { type: "text" as const, text: buildUserPrompt(soapText, prompt) },
@@ -153,7 +161,7 @@ export async function POST(request: NextRequest) {
     const completion = await azure.client.chat.completions.create({
       model: azure.deployment,
       messages: [
-        { role: "system", content: systemPrompt },
+        { role: "system", content: activeSystemPrompt },
         { role: "user", content: userMessageContent as any },
       ],
       temperature: 1,

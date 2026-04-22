@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getCurrentSession } from "@/lib/auth";
 import { getEffectivePhysicianId } from "@/lib/auth-helpers";
 import { getSession } from "@/lib/session-store";
-import { getAzureOpenAIClient, getAzureVisionClient } from "@/lib/azure-openai";
+import { getAzureOpenAIClient } from "@/lib/azure-openai";
 import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
 import { logDebug } from "@/lib/secure-logger";
 
@@ -19,7 +19,14 @@ const systemPrompt = `You are a clinical assistant helping physicians act on a H
 - Be concise, actionable, and avoid boilerplate.
 - Do not invent data; if a detail is missing, omit it.
 - Refer to the patient generically ("the patient"), avoid names and identifiers.
-- When an image is provided, incorporate the visible clinical findings into your response.
+- No disclaimers.`;
+
+const visionSystemPrompt = `You are a clinical assistant helping physicians. You will receive an HPI and a clinical image.
+- Analyze the attached image carefully and describe the visible clinical findings (morphology, distribution, color, size, any notable features).
+- Incorporate both the image findings and the HPI context into your response.
+- Be concise, actionable, and clinically precise.
+- Do not invent data; describe only what is visible.
+- Refer to the patient generically ("the patient"), avoid names and identifiers.
 - No disclaimers.`;
 
 function buildUserPrompt(params: {
@@ -295,7 +302,7 @@ Patient Final Comments:
 
   let azure;
   try {
-    azure = hasImage ? getAzureVisionClient() : getAzureOpenAIClient();
+    azure = getAzureOpenAIClient();
   } catch (err) {
     return NextResponse.json(
       { error: (err as Error).message || "Azure OpenAI is not configured." },
@@ -303,6 +310,7 @@ Patient Final Comments:
     );
   }
 
+  const activeSystemPrompt = hasImage ? visionSystemPrompt : systemPrompt;
   const userMessageContent = hasImage
     ? [
         { type: "text" as const, text: buildUserPrompt({ action, prompt, context }) },
@@ -314,7 +322,7 @@ Patient Final Comments:
     const completion = await azure.client.chat.completions.create({
       model: azure.deployment,
       messages: [
-        { role: "system", content: systemPrompt },
+        { role: "system", content: activeSystemPrompt },
         { role: "user", content: userMessageContent as any },
       ],
       // Some Azure models only allow the default temperature; use 1 to satisfy that constraint.
