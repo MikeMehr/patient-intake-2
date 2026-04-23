@@ -13,6 +13,7 @@
   - registration
   - reset password request
   - reset password consume
+  - record summarization (10 requests/hour per physician)
 
 ## Authorization and Access Control
 
@@ -29,6 +30,7 @@
 - PHI access events are logged for successful reads/writes/deletes/exports.
 - Logs include actor, target, action, time, and request metadata.
 - Logging avoids PHI payload leakage in debug or error paths.
+- Audit log IP addresses are extracted from the outermost trusted proxy entry in `X-Forwarded-For` (rightmost value) to prevent client-side IP spoofing.
 
 ## Token and Secret Handling
 
@@ -42,6 +44,11 @@
 - Session retention cleanup is implemented in `session-store`.
 - Cleanup is started on runtime path and runs on a configured interval.
 - Retention windows are configurable via environment settings.
+
+## AI Input and File Upload Hardening
+
+- User-supplied LLM instructions are sandboxed in delimited `<formatting_preferences>` blocks and explicitly scoped as subordinate formatting hints, preventing prompt injection from overriding system-level rules.
+- Uploaded files are validated against the PDF magic byte signature (`%PDF`) in addition to MIME type and filename extension checks, preventing renamed non-PDF files from reaching Azure Document Intelligence.
 
 ## Transport and Header Hardening
 

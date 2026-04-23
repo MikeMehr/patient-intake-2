@@ -140,7 +140,8 @@ function fromBase64Url(input: string): string {
 export function getRequestIp(headers: Headers): string {
   const fwd = headers.get("x-forwarded-for");
   if (fwd) {
-    return fwd.split(",")[0].trim();
+    const ips = fwd.split(",").map((s) => s.trim()).filter(Boolean);
+    return ips[ips.length - 1] ?? "unknown";
   }
   return headers.get("x-real-ip") || "unknown";
 }
