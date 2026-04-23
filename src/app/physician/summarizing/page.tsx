@@ -3,6 +3,21 @@
 import { useRef, useState } from "react";
 import Link from "next/link";
 import SessionKeepAlive from "@/components/auth/SessionKeepAlive";
+import * as XLSX from "xlsx";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
+
+function parseMdTable(md: string): { headers: string[]; rows: string[][] } {
+  const lines = md.split("\n").map((l) => l.trim()).filter((l) => l.startsWith("|"));
+  const dataLines = lines.filter((l) => !l.replace(/\|/g, "").trim().match(/^[-\s]+$/));
+  const parse = (line: string) =>
+    line.split("|").map((c) => c.trim()).filter((_, i, a) => i > 0 && i < a.length - 1);
+  const [headerLine, ...rowLines] = dataLines;
+  return {
+    headers: parse(headerLine ?? ""),
+    rows: rowLines.map(parse),
+  };
+}
 
 const FORMATS = [
   { value: "", label: "Select a format…" },
@@ -76,6 +91,29 @@ export default function SummarizingPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleExportExcel = () => {
+    const { headers, rows } = parseMdTable(report);
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Dynacare");
+    XLSX.writeFile(wb, "dynacare-insurance-table.xlsx");
+  };
+
+  const handleExportPdf = () => {
+    const { headers, rows } = parseMdTable(report);
+    const doc = new jsPDF({ orientation: "landscape" });
+    doc.setFontSize(12);
+    doc.text("Dynacare Insurance Table", 14, 14);
+    autoTable(doc, {
+      head: [headers],
+      body: rows,
+      startY: 22,
+      styles: { fontSize: 8, cellPadding: 3 },
+      headStyles: { fillColor: [30, 41, 59] },
+    });
+    doc.save("dynacare-insurance-table.pdf");
   };
 
   const handleCopy = async () => {
@@ -270,6 +308,37 @@ export default function SummarizingPage() {
           <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 space-y-3">
             <div className="flex items-center justify-between">
               <h2 className="text-sm font-semibold text-slate-700">Generated Report</h2>
+              <div className="flex items-center gap-2">
+                {format === "dynacare-insurance" && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={handleExportExcel}
+                      className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 transition"
+                    >
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5" aria-hidden="true">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                        <polyline points="14 2 14 8 20 8" />
+                        <line x1="8" y1="13" x2="16" y2="13" />
+                        <line x1="8" y1="17" x2="16" y2="17" />
+                      </svg>
+                      Export Excel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleExportPdf}
+                      className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 transition"
+                    >
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5" aria-hidden="true">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                        <polyline points="14 2 14 8 20 8" />
+                        <line x1="12" y1="18" x2="12" y2="12" />
+                        <line x1="9" y1="15" x2="15" y2="15" />
+                      </svg>
+                      Export PDF
+                    </button>
+                  </>
+                )}
               <button
                 type="button"
                 onClick={handleCopy}
@@ -292,6 +361,7 @@ export default function SummarizingPage() {
                   </>
                 )}
               </button>
+              </div>
             </div>
             <textarea
               id="report-output"
