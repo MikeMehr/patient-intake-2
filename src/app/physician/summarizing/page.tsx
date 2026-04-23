@@ -3,7 +3,7 @@
 import { useRef, useState } from "react";
 import Link from "next/link";
 import SessionKeepAlive from "@/components/auth/SessionKeepAlive";
-import * as XLSX from "xlsx";
+import writeXlsxFile from "write-excel-file/browser";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 
@@ -93,12 +93,14 @@ export default function SummarizingPage() {
     }
   };
 
-  const handleExportExcel = () => {
+  const handleExportExcel = async () => {
     const { headers, rows } = parseMdTable(report);
-    const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Dynacare");
-    XLSX.writeFile(wb, "dynacare-insurance-table.xlsx");
+    const data = [
+      headers.map((h) => ({ value: h, fontWeight: "bold" as const })),
+      ...rows.map((row) => row.map((cell) => ({ value: cell }))),
+    ];
+    const result = await writeXlsxFile(data, { sheet: "Dynacare" });
+    await result.toFile("dynacare-insurance-table.xlsx");
   };
 
   const handleExportPdf = () => {

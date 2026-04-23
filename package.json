@@ -37,7 +37,7 @@
     "react-dom": "19.2.0",
     "resend": "^6.5.2",
     "twilio": "^4.23.0",
-    "xlsx": "^0.18.5",
+    "write-excel-file": "^4.0.2",
     "zod": "^4.1.13"
   },
   "overrides": {
