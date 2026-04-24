@@ -30,6 +30,8 @@ export async function GET(request: NextRequest) {
       patientBackground: invitation.patientBackground || null,
       interviewGuidance: invitation.interviewGuidance || null,
       requestPhqGad: invitation.requestPhqGad ?? false,
+      requestPwdE6f: invitation.requestPwdE6f ?? false,
+      formsOnly: invitation.formsOnly ?? false,
     });
     logRequestMeta("/api/invitations/lab-report", requestId, status, Date.now() - started);
     return res;
