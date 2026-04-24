@@ -1,0 +1,2 @@
+ALTER TABLE patient_invitations
+  ADD COLUMN IF NOT EXISTS forms_only BOOLEAN NOT NULL DEFAULT FALSE;

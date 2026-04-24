@@ -33,6 +33,7 @@ type InvitationRow = {
   monitor_guidance: string | null;
   request_phq_gad: boolean;
   request_pwd_e6f: boolean;
+  forms_only: boolean;
   require_2fa: boolean;
   organization_website_url: string | null;
   first_name: string;
@@ -64,6 +65,7 @@ export type InvitationContext = {
   monitorGuidance: string | null;
   requestPhqGad: boolean;
   requestPwdE6f: boolean;
+  formsOnly: boolean;
   require2fa: boolean;
 };
 
@@ -88,6 +90,19 @@ async function hasPwdE6fColumn(): Promise<boolean> {
        WHERE table_schema = 'public'
          AND table_name = 'patient_invitations'
          AND column_name = 'request_pwd_e6f'
+     ) AS exists`,
+  );
+  return Boolean(result.rows[0]?.exists);
+}
+
+async function hasFormsOnlyColumn(): Promise<boolean> {
+  const result = await query<{ exists: boolean }>(
+    `SELECT EXISTS (
+       SELECT 1
+       FROM information_schema.columns
+       WHERE table_schema = 'public'
+         AND table_name = 'patient_invitations'
+         AND column_name = 'forms_only'
      ) AS exists`,
   );
   return Boolean(result.rows[0]?.exists);
@@ -199,6 +214,7 @@ function toInvitationContext(row: InvitationRow): InvitationContext {
     monitorGuidance: row.monitor_guidance ?? null,
     requestPhqGad: Boolean(row.request_phq_gad),
     requestPwdE6f: Boolean(row.request_pwd_e6f),
+    formsOnly: Boolean(row.forms_only),
     require2fa: row.require_2fa !== false,
   };
 }
@@ -275,10 +291,11 @@ export async function logInvitationAudit(params: {
 
 export async function getInvitationByRawToken(rawToken: string): Promise<InvitationContext | null> {
   const tokenHash = hashValue(rawToken);
-  const [supportsWebsiteUrl, supportsRequire2fa, supportsPwdE6f] = await Promise.all([
+  const [supportsWebsiteUrl, supportsRequire2fa, supportsPwdE6f, supportsFormsOnly] = await Promise.all([
     hasOrganizationWebsiteColumn(),
     hasRequire2faColumn(),
     hasPwdE6fColumn(),
+    hasFormsOnlyColumn(),
   ]);
   const websiteSelect = supportsWebsiteUrl
     ? "o.website_url AS organization_website_url"
@@ -289,10 +306,13 @@ export async function getInvitationByRawToken(rawToken: string): Promise<Invitat
   const pwdE6fSelect = supportsPwdE6f
     ? "pi.request_pwd_e6f"
     : "FALSE::boolean AS request_pwd_e6f";
+  const formsOnlySelect = supportsFormsOnly
+    ? "pi.forms_only"
+    : "FALSE::boolean AS forms_only";
   const result = await query<InvitationRow>(
     `SELECT pi.id, pi.physician_id, pi.patient_email, pi.patient_name, pi.patient_dob, pi.oscar_demographic_no, pi.token_expires_at, pi.used_at, pi.revoked_at,
             pi.expires_at, pi.lab_report_summary, pi.previous_lab_report_summary, pi.form_summary, pi.summary_expires_at, pi.summary_deleted_at, pi.patient_background,
-            pi.interview_guidance, pi.monitor_guidance, pi.request_phq_gad, ${pwdE6fSelect}, ${require2faSelect}, ${websiteSelect}, p.first_name, p.last_name, p.clinic_name
+            pi.interview_guidance, pi.monitor_guidance, pi.request_phq_gad, ${pwdE6fSelect}, ${formsOnlySelect}, ${require2faSelect}, ${websiteSelect}, p.first_name, p.last_name, p.clinic_name
      FROM patient_invitations pi
      JOIN physicians p ON p.id = pi.physician_id
      LEFT JOIN organizations o ON o.id = p.organization_id
@@ -405,10 +425,11 @@ export async function resolveInvitationFromCookie(): Promise<InvitationContext |
   );
 
   // Prefer the last cookie in the header (most recently set).
-  const [supportsWebsiteUrl, supportsRequire2fa, supportsPwdE6f] = await Promise.all([
+  const [supportsWebsiteUrl, supportsRequire2fa, supportsPwdE6f, supportsFormsOnly] = await Promise.all([
     hasOrganizationWebsiteColumn(),
     hasRequire2faColumn(),
     hasPwdE6fColumn(),
+    hasFormsOnlyColumn(),
   ]);
   const websiteSelect = supportsWebsiteUrl
     ? "o.website_url AS organization_website_url"
@@ -419,6 +440,9 @@ export async function resolveInvitationFromCookie(): Promise<InvitationContext |
   const pwdE6fSelect = supportsPwdE6f
     ? "pi.request_pwd_e6f"
     : "FALSE::boolean AS request_pwd_e6f";
+  const formsOnlySelect = supportsFormsOnly
+    ? "pi.forms_only"
+    : "FALSE::boolean AS forms_only";
   for (let idx = candidates.length - 1; idx >= 0; idx -= 1) {
     const parsed = parseInvitationSessionCookie(candidates[idx]);
     if (!parsed) continue;
@@ -427,7 +451,7 @@ export async function resolveInvitationFromCookie(): Promise<InvitationContext |
     const result = await query<InvitationRow>(
       `SELECT pi.id, pi.physician_id, pi.patient_email, pi.patient_name, pi.patient_dob, pi.oscar_demographic_no, pi.token_expires_at, pi.used_at, pi.revoked_at,
               pi.expires_at, pi.lab_report_summary, pi.previous_lab_report_summary, pi.form_summary, pi.summary_expires_at, pi.summary_deleted_at, pi.patient_background,
-              pi.interview_guidance, pi.monitor_guidance, pi.request_phq_gad, ${pwdE6fSelect}, ${require2faSelect}, ${websiteSelect}, p.first_name, p.last_name, p.clinic_name
+              pi.interview_guidance, pi.monitor_guidance, pi.request_phq_gad, ${pwdE6fSelect}, ${formsOnlySelect}, ${require2faSelect}, ${websiteSelect}, p.first_name, p.last_name, p.clinic_name
        FROM invitation_sessions isess
        JOIN patient_invitations pi ON pi.id = isess.invitation_id
        JOIN physicians p ON p.id = pi.physician_id

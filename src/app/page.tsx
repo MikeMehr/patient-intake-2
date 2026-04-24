@@ -589,6 +589,7 @@ export default function Home() {
   const [requestPwdE6f, setRequestPwdE6f] = useState(false);
   const [awaitingPwdE6f, setAwaitingPwdE6f] = useState(false);
   const [pwdE6fPendingHistory, setPwdE6fPendingHistory] = useState<HistoryResponse | null>(null);
+  const [formsOnly, setFormsOnly] = useState(false);
   const [hasConsented, setHasConsented] = useState(false);
   const [isInvitedFlow, setIsInvitedFlow] = useState(false);
   const [clinicName, setClinicName] = useState<string>("");
@@ -687,6 +688,7 @@ export default function Home() {
   const pendingHistoryResultRef = useRef<HistoryResponse | null>(null);
   const requestPhqGadRef = useRef(false);
   const requestPwdE6fRef = useRef(false);
+  const formsOnlyRef = useRef(false);
   const draftTranscriptRef = useRef<string>("");
   const draftCommitDedupeRef = useRef<{ draft: string; atMs: number } | null>(null);
   const mutedWhileSpeakingRef = useRef(false);
@@ -1373,6 +1375,10 @@ export default function Home() {
             if (data.requestPwdE6f) {
               setRequestPwdE6f(true);
               requestPwdE6fRef.current = true;
+            }
+            if (data.formsOnly) {
+              setFormsOnly(true);
+              formsOnlyRef.current = true;
             }
           })
           .catch((err) => {
@@ -2640,6 +2646,34 @@ export default function Home() {
       }
     }
     
+    // Forms-only mode: skip the AI interview entirely, go straight to forms (or save immediately)
+    if (formsOnlyRef.current) {
+      if (requestPhqGadRef.current) {
+        setAwaitingPhqGad(true);
+      } else if (requestPwdE6fRef.current) {
+        setAwaitingPwdE6f(true);
+      } else {
+        const emptyHistory: HistoryResponse = {
+          positives: [],
+          negatives: [],
+          summary: "",
+          investigations: [],
+          assessment: "",
+          plan: [],
+        };
+        setSavingSession(true);
+        setStatus("saving");
+        statusRef.current = "saving";
+        try {
+          const savedCode = await saveSession(emptyHistory);
+          await finalizePrivacyAndExit(savedCode);
+        } finally {
+          setSavingSession(false);
+        }
+      }
+      return;
+    }
+
     // Start timer when interview begins
     const startTime = Date.now();
     setInterviewStartTime(startTime);
@@ -3180,8 +3214,15 @@ export default function Home() {
   }
 
   async function handlePhqGadSubmit(results: PhqGadResults) {
-    if (!phqGadPendingHistory) return;
-    const historyWithPhqGad: HistoryResponse = { ...phqGadPendingHistory, phqGadResults: results };
+    const baseHistory: HistoryResponse = phqGadPendingHistory ?? {
+      positives: [],
+      negatives: [],
+      summary: "",
+      investigations: [],
+      assessment: "",
+      plan: [],
+    };
+    const historyWithPhqGad: HistoryResponse = { ...baseHistory, phqGadResults: results };
     setAwaitingPhqGad(false);
     setPhqGadPendingHistory(null);
 
@@ -3212,8 +3253,15 @@ export default function Home() {
   }
 
   async function handlePwdE6fSubmit(results: PwdSectionE6FResults) {
-    if (!pwdE6fPendingHistory) return;
-    const historyWithPwd: HistoryResponse = { ...pwdE6fPendingHistory, pwdSectionE6FResults: results };
+    const baseHistory: HistoryResponse = pwdE6fPendingHistory ?? {
+      positives: [],
+      negatives: [],
+      summary: "",
+      investigations: [],
+      assessment: "",
+      plan: [],
+    };
+    const historyWithPwd: HistoryResponse = { ...baseHistory, pwdSectionE6FResults: results };
     setAwaitingPwdE6f(false);
     setPwdE6fPendingHistory(null);
     setSessionSavePendingHistory(historyWithPwd);
@@ -3277,6 +3325,8 @@ export default function Home() {
     setPwdE6fPendingHistory(null);
     setRequestPwdE6f(false);
     requestPwdE6fRef.current = false;
+    setFormsOnly(false);
+    formsOnlyRef.current = false;
     setPatientResponse("");
     patientResponseRef.current = "";
     setDetectedComplaints([]);

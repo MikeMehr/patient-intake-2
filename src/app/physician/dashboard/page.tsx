@@ -180,6 +180,7 @@ function PhysicianDashboard() {
   const [invitePatientDob, setInvitePatientDob] = useState("");
   const [invitePatientEmail, setInvitePatientEmail] = useState("");
   const [invitePatientBackground, setInvitePatientBackground] = useState("");
+  const [inviteFormsOnly, setInviteFormsOnly] = useState(false);
   const [inviteRequestPhqGad, setInviteRequestPhqGad] = useState(false);
   const [inviteRequestPwdE6f, setInviteRequestPwdE6f] = useState(false);
   const [inviteRequire2fa, setInviteRequire2fa] = useState(true);
@@ -482,7 +483,9 @@ function PhysicianDashboard() {
     setInvitePatientDob("");
     setInvitePatientEmail("");
     setInvitePatientBackground("");
+    setInviteFormsOnly(false);
     setInviteRequestPhqGad(false);
+    setInviteRequestPwdE6f(false);
     setInviteRequire2fa(true);
     setInvitePrimaryPhone("");
     setInviteSecondaryPhone("");
@@ -581,6 +584,7 @@ function PhysicianDashboard() {
       if (invitePatientBackground.trim()) {
         formData.append("patientBackground", invitePatientBackground.trim());
       }
+      formData.append("formsOnly", inviteFormsOnly ? "true" : "false");
       formData.append("requestPhqGad", inviteRequestPhqGad ? "true" : "false");
       formData.append("requestPwdE6f", inviteRequestPwdE6f ? "true" : "false");
       formData.append("require2fa", inviteRequire2fa ? "true" : "false");
@@ -646,7 +650,9 @@ function PhysicianDashboard() {
       setInvitePatientDob("");
       setInvitePatientEmail("");
       setInvitePatientBackground("");
+      setInviteFormsOnly(false);
       setInviteRequestPhqGad(false);
+      setInviteRequestPwdE6f(false);
       setInviteRequire2fa(true);
       setInvitePrimaryPhone("");
       setInviteSecondaryPhone("");
@@ -1371,6 +1377,23 @@ function PhysicianDashboard() {
                   />
                   <p className="text-xs text-slate-500 mt-1">
                     Optional context to help the AI focus (e.g., prior visit summary, pertinent history).
+                  </p>
+                </div>
+                <div>
+                  <label className="flex items-center gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={inviteFormsOnly}
+                      onChange={(e) => setInviteFormsOnly(e.target.checked)}
+                      disabled={inviteLoading}
+                      className="accent-blue-600 w-4 h-4"
+                    />
+                    <span className="text-sm font-medium text-slate-700">
+                      Forms Only (no guided interview)
+                    </span>
+                  </label>
+                  <p className="text-xs text-slate-500 mt-1 ml-7">
+                    Patient will complete only the selected screening forms without a guided AI interview.
                   </p>
                 </div>
                 <div>
