@@ -222,12 +222,14 @@ export async function POST(request: Request) {
       return res;
     }
 
-    if (!chiefComplaint || !patientProfile || !history) {
+    // In forms-only mode the patient skips the interview so chiefComplaint is empty.
+    const effectiveChiefComplaint = chiefComplaint || (history ? "Forms only" : "");
+    if (!effectiveChiefComplaint || !patientProfile || !history) {
       status = 400;
       const res = NextResponse.json(
         {
           error: "Missing required fields",
-          details: { chiefComplaint: !!chiefComplaint, patientProfile: !!patientProfile, history: !!history },
+          details: { chiefComplaint: !!effectiveChiefComplaint, patientProfile: !!patientProfile, history: !!history },
         },
         { status }
       );
@@ -372,7 +374,7 @@ export async function POST(request: Request) {
       sessionCode,
       patientEmail,
       patientName,
-      chiefComplaint,
+      chiefComplaint: effectiveChiefComplaint,
       patientProfile,
       history: historyToStore,
       completedAt: new Date(),
@@ -415,7 +417,7 @@ export async function POST(request: Request) {
         scope: upserted.scope,
         occurredAt: session.completedAt,
         sessionCode,
-        chiefComplaint,
+        chiefComplaint: effectiveChiefComplaint,
         history: historyToStore,
       });
     } catch (err) {
