@@ -997,6 +997,12 @@ function PhysicianDashboard() {
                     >
                       Manage Passkeys
                     </button>
+                    <a
+                      href="/physician/email"
+                      className="flex w-full items-center rounded-md px-2 py-2 text-sm text-slate-700 hover:bg-slate-50"
+                    >
+                      Email
+                    </a>
                     <button
                       type="button"
                       onClick={handleLogout}
@@ -1709,6 +1715,15 @@ function PhysicianDashboard() {
                                   >
                                     View
                                   </button>
+                                  {session.patientEmail && (
+                                    <button
+                                      type="button"
+                                      onClick={() => router.push(`/physician/email?to=${encodeURIComponent(session.patientEmail)}&name=${encodeURIComponent(session.patientName)}`)}
+                                      className="text-slate-600 hover:text-slate-900 font-medium"
+                                    >
+                                      Email
+                                    </button>
+                                  )}
                                   {session.hasPdfForm && Array.isArray((session.history as any)?.formAnswers) && (session.history as any).formAnswers.length > 0 && (
                                     <button
                                       type="button"
@@ -1916,6 +1931,15 @@ function PhysicianDashboard() {
                                   Watch Live
                                 </a>
                               )}
+                              {invitation.patientEmail && (
+                                <button
+                                  type="button"
+                                  onClick={() => router.push(`/physician/email?to=${encodeURIComponent(invitation.patientEmail)}&name=${encodeURIComponent(invitation.patientName)}`)}
+                                  className="text-slate-600 hover:text-slate-900 font-medium"
+                                >
+                                  Email
+                                </button>
+                              )}
                               <button
                                 onClick={() => handleDeleteInvitation(invitation.id)}
                                 disabled={deletingInvitationId === invitation.id}
@@ -2049,6 +2073,18 @@ function PhysicianDashboard() {
                             >
                               Invite
                             </button>
+                            {p.email && (
+                              <>
+                                <span className="mx-1 text-slate-400">/</span>
+                                <button
+                                  type="button"
+                                  onClick={() => router.push(`/physician/email?to=${encodeURIComponent(p.email!)}&name=${encodeURIComponent(p.fullName)}`)}
+                                  className="text-slate-600 hover:text-slate-900 font-medium"
+                                >
+                                  Email
+                                </button>
+                              </>
+                            )}
                           </td>
                         </tr>
                       ))}

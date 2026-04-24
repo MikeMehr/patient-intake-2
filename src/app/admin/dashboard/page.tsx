@@ -225,6 +225,12 @@ export default function SuperAdminDashboard() {
               >
                 Forms
               </Link>
+              <Link
+                href="/admin/email-templates"
+                className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition"
+              >
+                Email Templates
+              </Link>
               <button
                 onClick={handleLogout}
                 className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition"
