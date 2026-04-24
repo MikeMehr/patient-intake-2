@@ -507,7 +507,7 @@ function PhysicianDashboard() {
   };
 
   const handleOpenTranscription = () => {
-    router.push("/physician/transcription");
+    window.open("/physician/transcription", "_blank");
   };
 
   const handleScrollToPatientLookup = () => {
