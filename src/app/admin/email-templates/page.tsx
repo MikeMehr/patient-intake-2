@@ -56,7 +56,24 @@ export default function AdminEmailTemplatesPage() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
+  // Edit modal state
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editSubject, setEditSubject] = useState("");
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+
   const bodyEditor = useEditor({
+    extensions: [StarterKit, Underline, TiptapLink.configure({ openOnClick: false })],
+    content: "",
+    editorProps: {
+      attributes: {
+        class: "prose prose-sm max-w-none min-h-[180px] px-4 py-3 focus:outline-none text-slate-800",
+      },
+    },
+  });
+
+  const editBodyEditor = useEditor({
     extensions: [StarterKit, Underline, TiptapLink.configure({ openOnClick: false })],
     content: "",
     editorProps: {
@@ -120,6 +137,47 @@ export default function AdminEmailTemplatesPage() {
       setSaveError("An unexpected error occurred.");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleEdit = (tpl: EmailTemplate) => {
+    setEditingId(tpl.id);
+    setEditName(tpl.name);
+    setEditSubject(tpl.subject);
+    editBodyEditor?.commands.setContent(tpl.body || "");
+    setEditError(null);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingId || !editName.trim() || !editBodyEditor) return;
+    setEditSaving(true);
+    setEditError(null);
+    try {
+      const res = await fetch(`/api/admin/email-templates/${editingId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: editName.trim(),
+          subject: editSubject.trim(),
+          body: editBodyEditor.getHTML(),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setEditError(data.error || "Failed to update template.");
+        return;
+      }
+      setTemplates((prev) =>
+        prev.map((t) => (t.id === editingId ? { ...t, ...data.template } : t))
+      );
+      setEditingId(null);
+      setEditName("");
+      setEditSubject("");
+      editBodyEditor.commands.setContent("");
+    } catch {
+      setEditError("An unexpected error occurred.");
+    } finally {
+      setEditSaving(false);
     }
   };
 
@@ -195,9 +253,16 @@ export default function AdminEmailTemplatesPage() {
               </button>
               <button
                 type="button"
+                onClick={() => handleEdit(tpl)}
+                className="ml-4 text-xs text-blue-500 hover:text-blue-700 transition"
+              >
+                Edit
+              </button>
+              <button
+                type="button"
                 onClick={() => handleDelete(tpl.id)}
                 disabled={deletingId === tpl.id}
-                className="ml-4 text-xs text-red-400 hover:text-red-600 disabled:opacity-40 transition"
+                className="ml-3 text-xs text-red-400 hover:text-red-600 disabled:opacity-40 transition"
               >
                 {deletingId === tpl.id ? "Deleting…" : "Delete"}
               </button>
@@ -276,6 +341,72 @@ export default function AdminEmailTemplatesPage() {
                 className="px-4 py-2 text-sm font-semibold text-white bg-slate-800 rounded-lg hover:bg-slate-700 disabled:opacity-40"
               >
                 {saving ? "Saving…" : "Save Template"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Modal */}
+      {editingId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl p-6 space-y-4">
+            <h2 className="text-base font-semibold text-slate-800">Edit Email Template</h2>
+
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">
+                Template name <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-400"
+                autoFocus
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Default subject</label>
+              <input
+                type="text"
+                value={editSubject}
+                onChange={(e) => setEditSubject(e.target.value)}
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-400"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Body</label>
+              <div className="border border-slate-200 rounded-lg overflow-hidden">
+                <EditorToolbar editor={editBodyEditor} />
+                <EditorContent editor={editBodyEditor} />
+              </div>
+            </div>
+
+            {editError && <p className="text-sm text-red-600">{editError}</p>}
+
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingId(null);
+                  setEditName("");
+                  setEditSubject("");
+                  editBodyEditor?.commands.setContent("");
+                  setEditError(null);
+                }}
+                className="px-4 py-2 text-sm text-slate-600 rounded-lg border border-slate-200 hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveEdit}
+                disabled={!editName.trim() || editSaving}
+                className="px-4 py-2 text-sm font-semibold text-white bg-slate-800 rounded-lg hover:bg-slate-700 disabled:opacity-40"
+              >
+                {editSaving ? "Saving…" : "Save Changes"}
               </button>
             </div>
           </div>
