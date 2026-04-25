@@ -77,6 +77,13 @@ export default function EmailPage() {
   const [savingTemplate, setSavingTemplate] = useState(false);
   const [savingSettings, setSavingSettings] = useState(false);
   const [sendResult, setSendResult] = useState<{ ok: boolean; msg: string } | null>(null);
+
+  // Edit template modal state
+  const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null);
+  const [editTemplateName, setEditTemplateName] = useState("");
+  const [editTemplateSubject, setEditTemplateSubject] = useState("");
+  const [editTemplateSaving, setEditTemplateSaving] = useState(false);
+  const [editTemplateError, setEditTemplateError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const templatesRef = useRef<HTMLDivElement>(null);
   const defaultBodyEditorRef = useRef<ReturnType<typeof useEditor> | null>(null);
@@ -101,6 +108,16 @@ export default function EmailPage() {
     editorProps: {
       attributes: {
         class: "prose prose-sm max-w-none min-h-[160px] px-4 py-3 focus:outline-none text-slate-800",
+      },
+    },
+  });
+
+  const editTemplateEditor = useEditor({
+    extensions: [StarterKit, Underline, TiptapLink.configure({ openOnClick: false })],
+    content: "",
+    editorProps: {
+      attributes: {
+        class: "prose prose-sm max-w-none min-h-[200px] px-4 py-3 focus:outline-none text-slate-800",
       },
     },
   });
@@ -216,6 +233,57 @@ export default function EmailPage() {
     const res = await fetch(`/api/physician/email/templates/${id}`, { method: "DELETE" });
     if (res.ok) {
       setTemplates((prev) => prev.filter((t) => t.id !== id));
+    }
+  };
+
+  const handleEditTemplate = (tpl: EmailTemplate) => {
+    setEditingTemplateId(tpl.id);
+    setEditTemplateName(tpl.name);
+    setEditTemplateSubject(tpl.subject);
+    editTemplateEditor?.commands.setContent(tpl.body || "");
+    setEditTemplateError(null);
+    setTemplatesOpen(false);
+  };
+
+  const handleSaveEditTemplate = async () => {
+    if (!editingTemplateId || !editTemplateName.trim() || !editTemplateEditor) return;
+    setEditTemplateSaving(true);
+    setEditTemplateError(null);
+    try {
+      const res = await fetch(`/api/physician/email/templates/${editingTemplateId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: editTemplateName.trim(),
+          subject: editTemplateSubject.trim(),
+          body: editTemplateEditor.getHTML(),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setEditTemplateError(data.error || "Failed to update template.");
+        return;
+      }
+      setTemplates((prev) =>
+        prev.map((t) =>
+          t.id === editingTemplateId
+            ? {
+                ...t,
+                name: editTemplateName.trim(),
+                subject: editTemplateSubject.trim(),
+                body: editTemplateEditor.getHTML(),
+              }
+            : t
+        )
+      );
+      setEditingTemplateId(null);
+      setEditTemplateName("");
+      setEditTemplateSubject("");
+      editTemplateEditor.commands.setContent("");
+    } catch {
+      setEditTemplateError("An unexpected error occurred.");
+    } finally {
+      setEditTemplateSaving(false);
     }
   };
 
@@ -357,13 +425,22 @@ export default function EmailPage() {
                             )}
                           </button>
                           {!tpl.isGlobal && (
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteTemplate(tpl.id)}
-                              className="opacity-0 group-hover:opacity-100 ml-2 text-xs text-red-400 hover:text-red-600 transition"
-                            >
-                              Delete
-                            </button>
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => handleEditTemplate(tpl)}
+                                className="opacity-0 group-hover:opacity-100 ml-2 text-xs text-blue-500 hover:text-blue-700 transition"
+                              >
+                                Edit
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteTemplate(tpl.id)}
+                                className="opacity-0 group-hover:opacity-100 ml-2 text-xs text-red-400 hover:text-red-600 transition"
+                              >
+                                Delete
+                              </button>
+                            </>
                           )}
                         </div>
                       ))}
@@ -541,6 +618,72 @@ export default function EmailPage() {
                 className="px-4 py-2 text-sm font-semibold text-white bg-slate-800 rounded-lg hover:bg-slate-700 disabled:opacity-40"
               >
                 {savingSettings ? "Saving…" : "Save"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Template Modal */}
+      {editingTemplateId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl p-6 space-y-4">
+            <h2 className="text-base font-semibold text-slate-800">Edit Template</h2>
+
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">
+                Template name <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                value={editTemplateName}
+                onChange={(e) => setEditTemplateName(e.target.value)}
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-400"
+                autoFocus
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Subject</label>
+              <input
+                type="text"
+                value={editTemplateSubject}
+                onChange={(e) => setEditTemplateSubject(e.target.value)}
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-400"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Body</label>
+              <div className="border border-slate-200 rounded-lg overflow-hidden">
+                <EditorToolbar editor={editTemplateEditor} />
+                <EditorContent editor={editTemplateEditor} />
+              </div>
+            </div>
+
+            {editTemplateError && <p className="text-sm text-red-600">{editTemplateError}</p>}
+
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingTemplateId(null);
+                  setEditTemplateName("");
+                  setEditTemplateSubject("");
+                  editTemplateEditor?.commands.setContent("");
+                  setEditTemplateError(null);
+                }}
+                className="px-4 py-2 text-sm text-slate-600 rounded-lg border border-slate-200 hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveEditTemplate}
+                disabled={!editTemplateName.trim() || editTemplateSaving}
+                className="px-4 py-2 text-sm font-semibold text-white bg-slate-800 rounded-lg hover:bg-slate-700 disabled:opacity-40"
+              >
+                {editTemplateSaving ? "Saving…" : "Save Changes"}
               </button>
             </div>
           </div>
