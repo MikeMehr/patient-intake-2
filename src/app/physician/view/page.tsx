@@ -216,7 +216,7 @@ type ParsedUnifiedHpi = {
   patientFinalComments: string;
 };
 
-const parseUnifiedHpiText = (value: string): ParsedUnifiedHpi | null => {
+const parseUnifiedHpiText = (value: string): ParsedUnifiedHpi => {
   const normalized = value.replace(/\r\n/g, "\n").trim();
   const currentOrderPattern =
     /Subjective:\s*([\s\S]*?)\n\s*Physical Findings:\s*([\s\S]*?)\n\s*Assessment:\s*([\s\S]*?)\n\s*Investigations:\s*([\s\S]*?)\n\s*Plan:\s*([\s\S]*?)\n\s*Patient Final Comments:\s*([\s\S]*)$/i;
@@ -250,14 +250,51 @@ const parseUnifiedHpiText = (value: string): ParsedUnifiedHpi | null => {
   }
 
   const legacyMatch = normalized.match(legacyOrderPattern);
-  if (!legacyMatch) return null;
+  if (legacyMatch) {
+    return {
+      subjective: stripOptionalNone(legacyMatch[1] || ""),
+      assessment: stripOptionalNone(legacyMatch[2] || ""),
+      physicalFindings: normalizeListBlock(legacyMatch[3] || ""),
+      investigations: [],
+      plan: normalizeListBlock(legacyMatch[4] || ""),
+      patientFinalComments: stripOptionalNone(legacyMatch[5] || ""),
+    };
+  }
+
+  // Lenient fallback: extract each section independently; missing headers produce empty values.
+  const allHeaderPatterns = [
+    "Subjective",
+    "Physical\\s+Findings",
+    "Assessment",
+    "Investigations",
+    "Plan",
+    "Patient\\s+Final\\s+Comments",
+  ];
+
+  const extractSection = (header: string): string => {
+    const headerRe = new RegExp(header + ":\\s*", "i");
+    const headerIdx = normalized.search(headerRe);
+    if (headerIdx === -1) return "";
+    const colonOffset = normalized.slice(headerIdx).search(/:/);
+    const contentStart = headerIdx + colonOffset + 1;
+    let end = normalized.length;
+    for (const h of allHeaderPatterns) {
+      const nextRe = new RegExp("\n\\s*" + h + ":", "i");
+      const nextIdx = normalized.slice(contentStart).search(nextRe);
+      if (nextIdx !== -1 && contentStart + nextIdx < end) {
+        end = contentStart + nextIdx;
+      }
+    }
+    return normalized.slice(contentStart, end).trim();
+  };
+
   return {
-    subjective: stripOptionalNone(legacyMatch[1] || ""),
-    assessment: stripOptionalNone(legacyMatch[2] || ""),
-    physicalFindings: normalizeListBlock(legacyMatch[3] || ""),
-    investigations: [],
-    plan: normalizeListBlock(legacyMatch[4] || ""),
-    patientFinalComments: stripOptionalNone(legacyMatch[5] || ""),
+    subjective: stripOptionalNone(extractSection("Subjective")),
+    physicalFindings: normalizeListBlock(extractSection("Physical\\s+Findings")),
+    assessment: stripOptionalNone(extractSection("Assessment")),
+    investigations: normalizeListBlock(extractSection("Investigations")),
+    plan: normalizeListBlock(extractSection("Plan")),
+    patientFinalComments: stripOptionalNone(extractSection("Patient\\s+Final\\s+Comments")),
   };
 };
 
@@ -1113,12 +1150,6 @@ function PhysicianViewContent() {
     }
 
     const parsed = parseUnifiedHpiText(hpiCombinedDraft);
-    if (!parsed) {
-      setHpiSaveError(
-        "Invalid HPI format. Keep the section headers: Subjective, Physical Findings, Assessment, Investigations, Plan, Patient Final Comments.",
-      );
-      return;
-    }
 
     if (parsed.subjective.length < 10 || parsed.subjective.length > 2500) {
       setHpiSaveError("Subjective must be between 10 and 2500 characters.");
