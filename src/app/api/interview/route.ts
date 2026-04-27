@@ -828,8 +828,8 @@ function parseInterviewTurn(payload: string) {
       // Truncate summary fields if too long
       if (fixed.type === "summary") {
         const maxLengths: Record<string, number> = {
-          summary: 1500,
-          assessment: 1500,
+          summary: 3000,
+          assessment: 3000,
         };
         
         for (const [field, maxLen] of Object.entries(maxLengths)) {

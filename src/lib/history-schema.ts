@@ -123,7 +123,7 @@ export const historyResponseSchema = z.object({
   physicalFindings: z.array(z.string()).min(0).max(6).optional(),
   summary: z.string().min(10).max(2500),
   investigations: z.array(z.string()).min(0).max(6),
-  assessment: z.string().min(10).max(1500),
+  assessment: z.string().min(10).max(3000),
   plan: z.array(z.string()).min(1).max(6),
   patientFinalQuestionsComments: z.string().min(1).max(2000).optional(),
   // The language used by the patient during the guided interview (e.g. "fa", "en").

@@ -592,19 +592,19 @@ export async function PUT(request: Request) {
         .map((item) => (typeof item === "string" ? item.trim() : ""))
         .filter((item) => item.length > 0);
       trimmedPatientFinalComments = (historyPatientFinalComments ?? "").trim();
-      if (trimmedSummary.length < 10 || trimmedSummary.length > 1500) {
+      if (trimmedSummary.length < 10 || trimmedSummary.length > 3000) {
         status = 400;
         const res = NextResponse.json(
-          { error: "historySummary must be between 10 and 1500 characters" },
+          { error: "historySummary must be between 10 and 3000 characters" },
           { status }
         );
         logRequestMeta("/api/sessions", requestId, status, Date.now() - started);
         return res;
       }
-      if (trimmedAssessment.length < 10 || trimmedAssessment.length > 1500) {
+      if (trimmedAssessment.length < 10 || trimmedAssessment.length > 3000) {
         status = 400;
         const res = NextResponse.json(
-          { error: "historyAssessment must be between 10 and 1500 characters" },
+          { error: "historyAssessment must be between 10 and 3000 characters" },
           { status }
         );
         logRequestMeta("/api/sessions", requestId, status, Date.now() - started);

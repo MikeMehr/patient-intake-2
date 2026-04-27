@@ -1124,8 +1124,8 @@ function PhysicianViewContent() {
       setHpiSaveError("Subjective must be between 10 and 2500 characters.");
       return;
     }
-    if (parsed.assessment.length < 10 || parsed.assessment.length > 1500) {
-      setHpiSaveError("Assessment must be between 10 and 1500 characters.");
+    if (parsed.assessment.length < 10 || parsed.assessment.length > 3000) {
+      setHpiSaveError("Assessment must be between 10 and 3000 characters.");
       return;
     }
     if (parsed.physicalFindings.length > 60) {
