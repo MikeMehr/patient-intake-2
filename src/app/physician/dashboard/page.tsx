@@ -152,6 +152,7 @@ function PhysicianDashboard() {
   const router = useRouter();
   const patientLookupSectionRef = useRef<HTMLDivElement | null>(null);
   const inviteSectionRef = useRef<HTMLDivElement | null>(null);
+  const patientPhotoInputRef = useRef<HTMLInputElement>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [sessions, setSessions] = useState<PatientSessionWithChartLink[]>([]);
   const [invitations, setInvitations] = useState<Invitation[]>([]);
@@ -205,6 +206,8 @@ function PhysicianDashboard() {
   const [formQuestionsModalOpen, setFormQuestionsModalOpen] = useState(false);
   const [extractingFormQuestions, setExtractingFormQuestions] = useState(false);
   const [formQuestionsError, setFormQuestionsError] = useState<string | null>(null);
+  const [extractingPatientPhoto, setExtractingPatientPhoto] = useState(false);
+  const [patientPhotoError, setPatientPhotoError] = useState<string | null>(null);
 
   // Existing Forms library state
   type PhysicianFormItem = {
@@ -780,6 +783,36 @@ function PhysicianDashboard() {
     }
   };
 
+  const handlePatientPhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      setPatientPhotoError("Please upload an image file.");
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      setPatientPhotoError("Image must be under 10 MB.");
+      return;
+    }
+    setExtractingPatientPhoto(true);
+    setPatientPhotoError(null);
+    const fd = new FormData();
+    fd.append("image", file);
+    try {
+      const res = await fetch("/api/extract-patient-info-from-image", { method: "POST", body: fd });
+      if (!res.ok) throw new Error("Extraction failed");
+      const data = await res.json();
+      if (data.patientName) setInvitePatientName(data.patientName);
+      if (data.patientEmail) setInvitePatientEmail(data.patientEmail);
+      if (data.patientDob) setInvitePatientDob(data.patientDob);
+    } catch {
+      setPatientPhotoError("Could not extract patient info from the photo. Please fill in manually.");
+    } finally {
+      setExtractingPatientPhoto(false);
+      e.target.value = "";
+    }
+  };
+
   const handleLabReportFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -1238,8 +1271,30 @@ function PhysicianDashboard() {
                       >
                         {emrLookupLoading ? "Fetching..." : "Fetch from EMR"}
                       </button>
+                      <button
+                        type="button"
+                        onClick={() => patientPhotoInputRef.current?.click()}
+                        disabled={inviteLoading || extractingPatientPhoto}
+                        className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 flex items-center gap-1.5"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                        </svg>
+                        {extractingPatientPhoto ? "Scanning..." : "Scan Photo"}
+                      </button>
+                      <input
+                        ref={patientPhotoInputRef}
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={handlePatientPhotoUpload}
+                      />
                       <span className="self-center text-sm text-slate-500">(Optional)</span>
                     </div>
+                    {patientPhotoError && (
+                      <p className="text-xs text-red-600 mt-1">{patientPhotoError}</p>
+                    )}
                     <p className="text-xs text-slate-500 mt-1">
                       DOB is required to match returning patients to the same chart. EMR fetch remains optional.
                     </p>
