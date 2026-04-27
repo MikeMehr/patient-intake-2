@@ -8,6 +8,7 @@ import SessionKeepAlive from "@/components/auth/SessionKeepAlive";
 import PasskeyEnrollmentBanner from "@/components/auth/PasskeyEnrollmentBanner";
 import PasskeyManagement from "@/components/auth/PasskeyManagement";
 import CollapsibleSection from "@/components/CollapsibleSection";
+import QuickAskAiModal from "@/components/QuickAskAiModal";
 
 class DashboardErrorBoundary extends Component<{children: React.ReactNode}, {error: Error | null}> {
   constructor(props: {children: React.ReactNode}) {
@@ -204,6 +205,7 @@ function PhysicianDashboard() {
   const [inviteSuccess, setInviteSuccess] = useState<string | null>(null);
   const [formQuestions, setFormQuestions] = useState<{ text: string; checked: boolean }[]>([]);
   const [formQuestionsModalOpen, setFormQuestionsModalOpen] = useState(false);
+  const [showQuickAskAi, setShowQuickAskAi] = useState(false);
   const [extractingFormQuestions, setExtractingFormQuestions] = useState(false);
   const [formQuestionsError, setFormQuestionsError] = useState<string | null>(null);
   const [extractingPatientPhoto, setExtractingPatientPhoto] = useState(false);
@@ -963,6 +965,13 @@ function PhysicianDashboard() {
               )}
             </div>
             <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setShowQuickAskAi(true)}
+                className="px-3 py-1.5 sm:px-4 sm:py-2 text-[0.8rem] sm:text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50"
+              >
+                Ask AI
+              </button>
               <button
                 onClick={handleOpenTranscription}
                 className="px-3 py-1.5 sm:px-4 sm:py-2 text-[0.8rem] sm:text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50"
@@ -2408,6 +2417,7 @@ function PhysicianDashboard() {
           </div>
         </div>
       )}
+      <QuickAskAiModal isOpen={showQuickAskAi} onClose={() => setShowQuickAskAi(false)} />
     </>
   );
 }
