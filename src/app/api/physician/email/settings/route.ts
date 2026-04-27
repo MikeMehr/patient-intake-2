@@ -30,7 +30,47 @@ export async function GET(request: NextRequest) {
       [physicianId]
     );
 
-    const defaultBody = result.rows[0]?.default_body ?? "";
+    let defaultBody = result.rows[0]?.default_body ?? "";
+
+    if (!defaultBody) {
+      const profileResult = await query<{
+        first_name: string;
+        last_name: string;
+        clinic_name: string;
+        address: string | null;
+      }>(
+        `SELECT p.first_name, p.last_name, p.clinic_name,
+                COALESCE(NULLIF(p.clinic_address, ''), o.business_address) AS address
+         FROM physicians p
+         LEFT JOIN organizations o ON o.id = p.organization_id
+         WHERE p.id = $1`,
+        [physicianId]
+      );
+
+      if (profileResult.rows[0]) {
+        const { first_name, last_name, clinic_name, address } = profileResult.rows[0];
+        const addressLines = (address || "")
+          .split("\n")
+          .map((l) => l.trim())
+          .filter(Boolean)
+          .map((l) => `<p>${l}</p>`)
+          .join("");
+        const disclaimer =
+          "This email and any files transmitted with it are considered confidential and are intended " +
+          "only for the use of the individual(s) to whom they are addressed (intended). If you are not " +
+          "the intended recipient (received in error) or the person responsible for delivering the email " +
+          "to the intended recipient, be advised that you have received this email in error and that any " +
+          "use, dissemination, forwarding, printing or copying of this email is strictly prohibited. " +
+          "If you have received this email in error, please notify the sender immediately.";
+        defaultBody =
+          `<p>Regards,</p>` +
+          `<p>Office of Dr. ${first_name} ${last_name}</p>` +
+          `<p><strong>${clinic_name}</strong></p>` +
+          addressLines +
+          `<p><em>${disclaimer}</em></p>` +
+          `<p>Thank you.</p>`;
+      }
+    }
 
     const res = NextResponse.json({ defaultBody }, { status });
     logRequestMeta("/api/physician/email/settings", requestId, status, Date.now() - started);
