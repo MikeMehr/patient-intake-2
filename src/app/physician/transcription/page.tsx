@@ -142,6 +142,7 @@ export default function PhysicianTranscriptionPage() {
   const [aiFileMime, setAiFileMime] = useState<string>("image/jpeg");
   const [aiFileName, setAiFileName] = useState<string>("");
   const [aiFileIsImage, setAiFileIsImage] = useState<boolean>(true);
+  const [aiPatientName, setAiPatientName] = useState<string>("");
   const [aiCopyFeedback, setAiCopyFeedback] = useState(false);
 
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -437,6 +438,26 @@ export default function PhysicianTranscriptionPage() {
     pendingTranscriptionsRef.current.push(task);
   }
 
+  function getMicrophoneErrorMessage(err: unknown): string {
+    if (err instanceof DOMException) {
+      switch (err.name) {
+        case "NotFoundError":
+          return "No microphone found. Please connect a microphone and try again.";
+        case "NotAllowedError":
+          return "Microphone access was denied. Please allow microphone access in your browser settings and try again.";
+        case "NotReadableError":
+          return "Your microphone is in use by another application. Please close other apps using the microphone and try again.";
+        case "OverconstrainedError":
+          return "Your microphone does not meet the required audio constraints. Please try a different microphone.";
+        case "SecurityError":
+          return "Microphone access is blocked. Please ensure the page is loaded over HTTPS.";
+        default:
+          return `Microphone error: ${err.message}`;
+      }
+    }
+    return err instanceof Error ? err.message : "Unable to start recording.";
+  }
+
   /** Resume recording without resetting segment index or pending transcriptions. */
   async function resumeRecording() {
     setRecordingError(null);
@@ -468,7 +489,7 @@ export default function PhysicianTranscriptionPage() {
       }, 120_000);
     } catch (err) {
       setIsStartingRecording(false);
-      setRecordingError(err instanceof Error ? err.message : "Unable to start recording.");
+      setRecordingError(getMicrophoneErrorMessage(err));
     }
   }
 
@@ -504,7 +525,7 @@ export default function PhysicianTranscriptionPage() {
       }, 120_000);
     } catch (err) {
       setIsStartingRecording(false);
-      setRecordingError(err instanceof Error ? err.message : "Unable to start recording.");
+      setRecordingError(getMicrophoneErrorMessage(err));
     }
   }
 
@@ -926,6 +947,9 @@ export default function PhysicianTranscriptionPage() {
       if (aiFile) {
         body.fileBase64 = aiFile.split(",")[1];
         body.fileMimeType = aiFileMime;
+        if (!aiFileIsImage && aiPatientName.trim()) {
+          body.patientName = aiPatientName.trim();
+        }
       }
       const res = await fetch("/api/physician/transcription/ask-ai", {
         method: "POST",
@@ -1284,6 +1308,21 @@ export default function PhysicianTranscriptionPage() {
                           </label>
                         )}
                       </div>
+                      {aiFile && !aiFileIsImage && (
+                        <div>
+                          <label className="block text-xs font-medium text-slate-600 mb-1">
+                            Patient name <span className="font-normal text-slate-400">(optional — redacted before sending to AI)</span>
+                          </label>
+                          <input
+                            type="text"
+                            value={aiPatientName}
+                            onChange={(e) => setAiPatientName(e.target.value)}
+                            placeholder="e.g. Jane Doe"
+                            className="w-full rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            disabled={aiLoading}
+                          />
+                        </div>
+                      )}
                       {!reviewText.trim() && (
                         <p className="text-xs text-amber-600">
                           Generate a SOAP note first (Capture tab) before asking AI.
