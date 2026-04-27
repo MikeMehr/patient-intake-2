@@ -53,8 +53,17 @@ export async function runMigrations(): Promise<void> {
   let applied = 0;
   let skipped = 0;
 
+  let client;
   try {
-    const client = await pool.connect();
+    client = await pool.connect();
+  } catch (err: unknown) {
+    const msg = (err as { message?: string }).message ?? String(err);
+    console.error("[migrations] Cannot connect to DB — skipping migrations:", msg);
+    await pool.end();
+    return;
+  }
+
+  try {
     try {
       for (const file of files) {
         const sql = fs.readFileSync(path.join(migrationsDir, file), "utf-8");
