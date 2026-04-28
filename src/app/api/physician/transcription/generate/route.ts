@@ -25,7 +25,7 @@ Return valid JSON only: an array of objects, each with keys: label, subjective, 
 - "subjective": patient symptoms, history, and relevant context
 - "objective": exam findings and vitals (if documented)
 - "assessment": likely diagnosis and differentials
-- "plan": recommended investigations if appropriate, treatment, and follow-up
+- "plan": only what was explicitly discussed or decided in the transcript (tests ordered, referrals made, medications prescribed, follow-up instructions given); do not add recommendations not mentioned in the transcript
 If there is only one case, still return a single-element array.
 Do not include markdown, code fences, or extra keys.
 Each field should be clinically useful and concise.
