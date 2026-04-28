@@ -27,15 +27,6 @@ export function getAzureOpenAIClient() {
     baseURL,
     defaultQuery: { "api-version": apiVersion },
     defaultHeaders: { "api-key": apiKey },
-    fetch: async (url, init) => {
-      const res = await globalThis.fetch(url, init);
-      if (!res.ok) {
-        res.clone().text().then((body) => {
-          console.error("[azure-openai] raw error body:", res.status, body);
-        }).catch(() => undefined);
-      }
-      return res;
-    },
   });
 
   return { client, deployment, apiVersion };
