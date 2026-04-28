@@ -154,7 +154,10 @@ export default function PhysicianTranscriptionPage() {
   const [patientSectionOpen, setPatientSectionOpen] = useState(false);
   const [snapshotSectionOpen, setSnapshotSectionOpen] = useState(false);
   const [snapshotFilterDate, setSnapshotFilterDate] = useState<string>(
-    () => new Date().toISOString().slice(0, 10),
+    () => {
+      const d = new Date();
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    },
   );
   const [snapshotAnonOnly, setSnapshotAnonOnly] = useState(false);
   const [language, setLanguage] = useState<string>("");
