@@ -37,7 +37,7 @@ export async function POST(request: NextRequest) {
 4. **Normalize capitalization** — capitalize first word of each sentence.
 5. **Preserve ALL content** — keep every sentence in its original order. Do NOT summarize, condense, reorder, or omit any part of the conversation.
 
-Keep the same language (${langName}). Do NOT add commentary or explanations. Return ONLY the corrected text, preserving the full length of the original.`;
+Keep the same language (${langName}). Do NOT add commentary or explanations. Return ONLY the corrected text, preserving the full length of the original.
 
     let azure;
     try {
