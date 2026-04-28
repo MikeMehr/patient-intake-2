@@ -29,15 +29,19 @@ export async function POST(request: NextRequest) {
     }
 
     const langName = typeof language === "string" && language.trim().length > 0 ? language.trim() : "English";
-    const instruction = `You are a medical transcription cleanup assistant. A medical conversation has been captured via speech recognition, which often mishears words. Clean up the text:
+    const instruction = `You are a medical transcription cleanup assistant. A patient is describing their symptoms via speech recognition, which often mishears words. Clean up the text:
 
-1. **Fix speech recognition errors** — use medical context to correct obvious mishearings (e.g. "saw throat" → "sore throat", "no runny, no" → "no runny nose").
+1. **Fix speech recognition errors** — use medical context to correct obvious mishearings:
+   - "somebody age" → "body ache" or "sore body ache"
+   - "no runny, no" → "no runny nose"
+   - "saw throat" → "sore throat"
+   - Apply similar medical common-sense corrections.
 2. **Remove filler words** — remove "uh", "um", "like", "you know" etc.
 3. **Fix punctuation** — proper spacing after periods, no run-on sentences.
 4. **Normalize capitalization** — capitalize first word of each sentence.
-5. **Preserve ALL content** — keep every sentence in its original order. Do NOT summarize, condense, reorder, or omit any part of the conversation.
+5. **Keep it concise** — preserve the patient's meaning but make it read naturally.
 
-Keep the same language (${langName}). Do NOT add commentary or explanations. Return ONLY the corrected text, preserving the full length of the original.
+Keep the same language (${langName}). Do NOT add commentary or explanations. Return ONLY the corrected text.`;
 
     let azure;
     try {
@@ -56,7 +60,7 @@ Keep the same language (${langName}). Do NOT add commentary or explanations. Ret
           { role: "system", content: instruction },
           { role: "user", content: text },
         ],
-        max_completion_tokens: 4000,
+        max_completion_tokens: 200,
       });
 
       const cleaned = completion.choices?.[0]?.message?.content?.trim() || text;
