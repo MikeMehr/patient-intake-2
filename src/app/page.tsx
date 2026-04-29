@@ -601,6 +601,10 @@ export default function Home() {
   const [sessionSavePendingHistory, setSessionSavePendingHistory] = useState<HistoryResponse | null>(null);
   const [sex, setSex] = useState<PatientProfile["sex"]>("female");
   const [language, setLanguage] = useState<string>("");
+  useEffect(() => {
+    const saved = localStorage.getItem("defaultTranscriptionLanguage");
+    if (saved) setLanguage(saved);
+  }, []);
   const [ageInput, setAgeInput] = useState("");
   const [pmh, setPmh] = useState("");
   const [familyHistory, setFamilyHistory] = useState("");
@@ -4869,6 +4873,24 @@ export default function Home() {
                           </svg>
                           Reset conversation
                         </button>
+                        <div className="border-t border-slate-100 mt-1 pt-1 px-4 py-2.5">
+                          <p className="text-xs text-slate-500 mb-1.5">Default language</p>
+                          <select
+                            value={localStorage.getItem("defaultTranscriptionLanguage") ?? ""}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              if (val) localStorage.setItem("defaultTranscriptionLanguage", val);
+                              else localStorage.removeItem("defaultTranscriptionLanguage");
+                              setLanguage(val);
+                            }}
+                            className="w-full rounded-lg border border-slate-300 bg-white px-2 py-1 text-sm text-slate-900 outline-none"
+                          >
+                            <option value="">No default</option>
+                            {languageOptions.map((opt) => (
+                              <option key={opt.value} value={opt.value}>{opt.label}</option>
+                            ))}
+                          </select>
+                        </div>
                         {(status === "awaitingPatient" || status === "awaitingAi" || status === "paused") &&
                           !awaitingFinalComments &&
                           !awaitingPhqGad &&

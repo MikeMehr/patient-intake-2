@@ -162,6 +162,10 @@ export default function PhysicianTranscriptionPage() {
   );
   const [snapshotAnonOnly, setSnapshotAnonOnly] = useState(false);
   const [language, setLanguage] = useState<string>("");
+  useEffect(() => {
+    const saved = localStorage.getItem("defaultTranscriptionLanguage");
+    if (saved) setLanguage(saved);
+  }, []);
 
   const hasNewPatientIdentity = useMemo(
     () => newPatientFullName.trim().length >= 3 && /^\d{4}-\d{2}-\d{2}$/.test(newPatientDob.trim()),
@@ -796,7 +800,7 @@ export default function PhysicianTranscriptionPage() {
     setActiveWorkflowTab("capture");
     setActionError(null);
     setActionSuccess(null);
-    setLanguage("");
+    setLanguage(localStorage.getItem("defaultTranscriptionLanguage") ?? "");
   }
 
   async function deleteSnapshot(item: TranscriptionListItem) {
@@ -906,6 +910,18 @@ export default function PhysicianTranscriptionPage() {
     navigator.clipboard.writeText(aiResponse);
     setAiCopyFeedback(true);
     setTimeout(() => setAiCopyFeedback(false), 1500);
+  }
+
+  function handleResetAi() {
+    setAiPrompt("");
+    setAiResponse("");
+    setAiFile(null);
+    setAiFileMime("image/jpeg");
+    setAiFileName("");
+    setAiFileIsImage(true);
+    setAiPatientName("");
+    setAiError(null);
+    setAiCopyFeedback(false);
   }
 
   return (
@@ -1272,13 +1288,22 @@ export default function PhysicianTranscriptionPage() {
                       <div className="space-y-2">
                         <div className="flex items-center justify-between">
                           <span className="text-xs font-medium text-slate-700">AI Response</span>
-                          <button
-                            type="button"
-                            onClick={copyAiResponse}
-                            className="px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50"
-                          >
-                            {aiCopyFeedback ? "Copied!" : "Copy"}
-                          </button>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={handleResetAi}
+                              className="px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50"
+                            >
+                              Reset
+                            </button>
+                            <button
+                              type="button"
+                              onClick={copyAiResponse}
+                              className="px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50"
+                            >
+                              {aiCopyFeedback ? "Copied!" : "Copy"}
+                            </button>
+                          </div>
                         </div>
                         <textarea
                           value={aiResponse}
