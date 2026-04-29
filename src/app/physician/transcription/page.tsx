@@ -162,6 +162,7 @@ export default function PhysicianTranscriptionPage() {
   );
   const [snapshotAnonOnly, setSnapshotAnonOnly] = useState(false);
   const [language, setLanguage] = useState<string>("");
+  const [showMenu, setShowMenu] = useState(false);
   useEffect(() => {
     const saved = localStorage.getItem("defaultTranscriptionLanguage");
     if (saved) setLanguage(saved);
@@ -964,6 +965,43 @@ export default function PhysicianTranscriptionPage() {
                 >
                   {isRecording ? "Dashboard (new tab)" : "Back to dashboard"}
                 </button>
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setShowMenu((v) => !v)}
+                    className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-600 hover:bg-slate-100 transition"
+                    aria-label="Menu"
+                  >
+                    <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                    </svg>
+                  </button>
+                  {showMenu && (
+                    <>
+                      <div className="fixed inset-0 z-10" onClick={() => setShowMenu(false)} />
+                      <div className="absolute right-0 top-9 z-20 min-w-[200px] rounded-xl border border-slate-200 bg-white py-1 shadow-lg">
+                        <div className="px-4 py-2.5">
+                          <p className="text-xs text-slate-500 mb-1.5">Default language</p>
+                          <select
+                            value={localStorage.getItem("defaultTranscriptionLanguage") ?? ""}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              if (val) localStorage.setItem("defaultTranscriptionLanguage", val);
+                              else localStorage.removeItem("defaultTranscriptionLanguage");
+                              setLanguage(val);
+                            }}
+                            className="w-full rounded-lg border border-slate-300 bg-white px-2 py-1 text-sm text-slate-900 outline-none"
+                          >
+                            <option value="">No default</option>
+                            {languageOptions.map((opt) => (
+                              <option key={opt.value} value={opt.value}>{opt.label}</option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
               </div>
             </div>
           </div>
