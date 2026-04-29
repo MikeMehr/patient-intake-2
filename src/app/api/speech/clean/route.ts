@@ -36,6 +36,7 @@ export async function POST(request: NextRequest) {
 3. **Fix punctuation** — proper spacing after periods, no run-on sentences.
 4. **Normalize capitalization** — capitalize first word of each sentence.
 5. **Preserve ALL content** — keep every sentence in its original order. Do NOT summarize, condense, reorder, or omit any part of the conversation.
+6. **Format as dialogue** — separate each speaker turn with a blank line. Every time the speaker changes, start a new paragraph (blank line before it).
 
 Keep the same language (${langName}). Do NOT add commentary or explanations. Return ONLY the corrected text, preserving the full length of the original.`;
 
@@ -56,7 +57,8 @@ Keep the same language (${langName}). Do NOT add commentary or explanations. Ret
           { role: "system", content: instruction },
           { role: "user", content: text },
         ],
-        max_completion_tokens: 4000,
+        max_completion_tokens: 16000,
+        temperature: 0,
       });
 
       const cleaned = completion.choices?.[0]?.message?.content?.trim() || text;

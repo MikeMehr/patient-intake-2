@@ -118,6 +118,7 @@ export default function PhysicianTranscriptionPage() {
   const flushIntervalRef = useRef<number | null>(null);
   const pendingTranscriptionsRef = useRef<Promise<void>[]>([]);
   const segmentIndexRef = useRef(0);
+  const segmentTextsRef = useRef<string[]>([]);
 
   const [soapVersionId, setSoapVersionId] = useState<string | null>(null);
   const [encounterId, setEncounterId] = useState<string | null>(null);
@@ -374,13 +375,8 @@ export default function PhysicianTranscriptionPage() {
       try {
         const text = await transcribeAudio(blob);
         if (text) {
-          setTranscript((prev) => {
-            const parts = prev ? prev.split("\n") : [];
-            // Ensure we insert at the right position (segments may finish out of order)
-            while (parts.length <= idx) parts.push("");
-            parts[idx] = text;
-            return parts.filter(Boolean).join(" ").trim();
-          });
+          segmentTextsRef.current[idx] = text;
+          setTranscript(segmentTextsRef.current.filter(Boolean).map(s => s.trim()).join("\n\n").trim());
         }
       } catch (err) {
         setRecordingError(err instanceof Error ? err.message : "Transcription failed for a segment.");
@@ -428,6 +424,7 @@ export default function PhysicianTranscriptionPage() {
   async function startRecording() {
     setRecordingError(null);
     segmentIndexRef.current = 0;
+    segmentTextsRef.current = [];
     pendingTranscriptionsRef.current = [];
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
