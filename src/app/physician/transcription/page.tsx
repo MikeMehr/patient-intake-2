@@ -1579,7 +1579,7 @@ export default function PhysicianTranscriptionPage() {
                   setShowStartNewConfirm(false);
                   setTranscript("");
                   setRecordingElapsed(0);
-                  setLanguage("");
+                  setLanguage(localStorage.getItem("defaultTranscriptionLanguage") ?? "");
                 }}
                 className="px-3 py-1.5 text-sm font-medium text-white rounded-lg bg-slate-900 hover:bg-slate-800"
               >
