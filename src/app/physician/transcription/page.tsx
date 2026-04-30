@@ -605,6 +605,36 @@ export default function PhysicianTranscriptionPage() {
     setReviewText(c.reviewText);
   }
 
+  function mergeCases() {
+    const updatedCases = [...soapCases];
+    const parsedDraft = parseUnifiedSoapText(reviewText);
+    updatedCases[activeCaseIndex] = {
+      ...updatedCases[activeCaseIndex],
+      reviewText,
+      draft: parsedDraft ?? updatedCases[activeCaseIndex].draft,
+    };
+
+    const mergedDraft: SoapDraft = {
+      subjective: updatedCases.map((c) => `${c.label}: ${c.draft.subjective}`).join("\n\n"),
+      objective: updatedCases.filter((c) => c.draft.objective.trim()).map((c) => `${c.label}: ${c.draft.objective}`).join("\n\n"),
+      assessment: updatedCases.map((c) => `${c.label}: ${c.draft.assessment}`).join("\n\n"),
+      plan: updatedCases.map((c) => `${c.label}: ${c.draft.plan}`).join("\n\n"),
+    };
+
+    const mergedReviewText = composeUnifiedSoapText(mergedDraft);
+    const baseCase = updatedCases[0];
+    const mergedCase: SoapCase = { ...baseCase, label: "Merged", draft: mergedDraft, reviewText: mergedReviewText };
+
+    setSoapCases([mergedCase]);
+    setActiveCaseIndex(0);
+    setSoapVersionId(baseCase.soapVersionId);
+    setEncounterId(baseCase.encounterId);
+    setLifecycleState(baseCase.lifecycleState);
+    setSoapHasPatient(baseCase.hasPatient);
+    setDraft(mergedDraft);
+    setReviewText(mergedReviewText);
+  }
+
   async function saveDraft() {
     if (!soapVersionId) return;
     const parsedDraft = parseUnifiedSoapText(reviewText);
@@ -1157,7 +1187,7 @@ export default function PhysicianTranscriptionPage() {
                 {activeWorkflowTab === "review" && (
                   <>
                     {soapCases.length > 1 && (
-                      <div className="flex flex-wrap gap-1">
+                      <div className="flex flex-wrap gap-1 items-center">
                         {soapCases.map((c, i) => (
                           <button
                             key={c.soapVersionId}
@@ -1172,6 +1202,13 @@ export default function PhysicianTranscriptionPage() {
                             {c.label}
                           </button>
                         ))}
+                        <button
+                          type="button"
+                          onClick={mergeCases}
+                          className="ml-1 px-3 py-1.5 text-xs font-medium rounded-md border bg-white text-slate-700 border-slate-300 hover:bg-slate-50"
+                        >
+                          Merge
+                        </button>
                       </div>
                     )}
                     <div className="flex items-center justify-end">
