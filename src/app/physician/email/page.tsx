@@ -199,7 +199,10 @@ export default function EmailPage() {
       const data = await res.json();
       if (res.ok) {
         setSendResult({ ok: true, msg: "Email sent successfully." });
-        // Clear attachments after successful send
+        setTo("");
+        setSubject("");
+        editor.commands.setContent("");
+        setBodyEmpty(true);
         setAttachments([]);
       } else {
         setSendResult({ ok: false, msg: data.error || "Failed to send email." });
