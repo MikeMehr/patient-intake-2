@@ -74,6 +74,7 @@ export default function EmailPage() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [defaultBodyEdit, setDefaultBodyEdit] = useState("");
   const [sending, setSending] = useState(false);
+  const [bodyEmpty, setBodyEmpty] = useState(true);
   const [savingTemplate, setSavingTemplate] = useState(false);
   const [savingSettings, setSavingSettings] = useState(false);
   const [sendResult, setSendResult] = useState<{ ok: boolean; msg: string } | null>(null);
@@ -95,6 +96,9 @@ export default function EmailPage() {
       TiptapLink.configure({ openOnClick: false }),
     ],
     content: "",
+    onUpdate: ({ editor }) => {
+      setBodyEmpty(editor.isEmpty);
+    },
     editorProps: {
       attributes: {
         class: "prose prose-sm max-w-none min-h-[300px] px-4 py-3 focus:outline-none text-slate-800",
@@ -137,6 +141,7 @@ export default function EmailPage() {
           : "";
         const body = greeting + (data.defaultBody || "");
         editor?.commands.setContent(body);
+        if (editor) setBodyEmpty(editor.isEmpty);
         setDefaultBodyLoaded(true);
       }
 
@@ -164,6 +169,7 @@ export default function EmailPage() {
     setSubject(tpl.subject);
     const greeting = nameParam ? `<p>Hello ${nameParam},</p><p></p>` : "";
     editor?.commands.setContent(greeting + tpl.body);
+    if (editor) setBodyEmpty(editor.isEmpty);
     setTemplatesOpen(false);
   };
 
@@ -313,7 +319,7 @@ export default function EmailPage() {
     }
   };
 
-  const canSend = to.trim() && subject.trim() && editor && !editor.isEmpty && !sending;
+  const canSend = to.trim() && subject.trim() && editor && !bodyEmpty && !sending;
 
   return (
     <div className="min-h-screen bg-slate-50">
