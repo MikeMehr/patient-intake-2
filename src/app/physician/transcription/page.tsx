@@ -47,6 +47,28 @@ type TranscriptionListItem = {
   finalizedForExportAt: string | null;
 };
 
+type WoundAnalysis = {
+  length: string;
+  width: string;
+  surfaceArea: string;
+  borders: string;
+  woundBase: string;
+  woundBaseComposition: string;
+  periwound: string;
+  drainageType: string;
+  signsOfInfection: string;
+  stage: string;
+  notes: string;
+};
+
+type WoundImage = {
+  id: string;
+  dataUrl: string;
+  mimeType: string;
+  analysis: WoundAnalysis | null;
+  analyzing: boolean;
+};
+
 const initialDraft: SoapDraft = {
   subjective: "",
   objective: "",
@@ -103,7 +125,7 @@ export default function PhysicianTranscriptionPage() {
   const [newPatientFullName, setNewPatientFullName] = useState("");
   const [newPatientDob, setNewPatientDob] = useState("");
   const chiefComplaint = "";
-  const [activeWorkflowTab, setActiveWorkflowTab] = useState<"capture" | "review" | "ask_ai">("capture");
+  const [activeWorkflowTab, setActiveWorkflowTab] = useState<"capture" | "review" | "ask_ai" | "wound_images" | "merge">("capture");
 
   const [isRecording, setIsRecording] = useState(false);
   const [isStartingRecording, setIsStartingRecording] = useState(false);
@@ -168,6 +190,24 @@ export default function PhysicianTranscriptionPage() {
     if (saved) setLanguage(saved);
   }, []);
 
+  // Wound care org feature flag
+  const [orgWoundCare, setOrgWoundCare] = useState(false);
+  // Wound Images tab
+  const [woundImages, setWoundImages] = useState<WoundImage[]>([]);
+  const woundImageInputRef = useRef<HTMLInputElement | null>(null);
+  const [pdfDownloadingId, setPdfDownloadingId] = useState<string | null>(null);
+  const [pdfAllDownloading, setPdfAllDownloading] = useState(false);
+  // Merge tab
+  const [woundCareNote, setWoundCareNote] = useState("");
+  const [woundCareNoteLoading, setWoundCareNoteLoading] = useState(false);
+  const [woundCareNoteError, setWoundCareNoteError] = useState<string | null>(null);
+  const [woundCareNoteCopied, setWoundCareNoteCopied] = useState(false);
+  // Background file (capture tab, wound care orgs only)
+  const [bgFile, setBgFile] = useState<{ base64: string; mimeType: string; name: string } | null>(null);
+  const [bgFileText, setBgFileText] = useState<string>("");
+  // Wound reminder modal
+  const [showWoundReminder, setShowWoundReminder] = useState(false);
+
   const hasNewPatientIdentity = useMemo(
     () => newPatientFullName.trim().length >= 3 && /^\d{4}-\d{2}-\d{2}$/.test(newPatientDob.trim()),
     [newPatientFullName, newPatientDob],
@@ -204,6 +244,21 @@ export default function PhysicianTranscriptionPage() {
 
   useEffect(() => {
     void loadHistory();
+  }, []);
+
+  useEffect(() => {
+    async function loadOrgFeatures() {
+      try {
+        const res = await fetch("/api/physician/org-features");
+        if (res.ok) {
+          const data = await res.json().catch(() => ({}));
+          setOrgWoundCare(Boolean(data?.woundCare));
+        }
+      } catch {
+        // silently default to false
+      }
+    }
+    void loadOrgFeatures();
   }, []);
 
   useEffect(() => {
@@ -821,6 +876,188 @@ export default function PhysicianTranscriptionPage() {
     setRecordingElapsed(0);
     setSoapCases([]);
     setActiveCaseIndex(0);
+    // Reset wound care state
+    setWoundImages([]);
+    setWoundCareNote("");
+    setWoundCareNoteError(null);
+    setBgFile(null);
+    setBgFileText("");
+  }
+
+  async function handleWoundImageFiles(files: FileList) {
+    const MAX_SIZE = 5 * 1024 * 1024;
+    for (const file of Array.from(files)) {
+      if (!file.type.startsWith("image/")) continue;
+      if (file.size > MAX_SIZE) {
+        setActionError(`${file.name} is too large (max 5 MB).`);
+        continue;
+      }
+      const dataUrl = await new Promise<string>((resolve) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.readAsDataURL(file);
+      });
+      const id = crypto.randomUUID();
+      setWoundImages((prev) => [
+        ...prev,
+        { id, dataUrl, mimeType: file.type || "image/jpeg", analysis: null, analyzing: true },
+      ]);
+      void analyzeWoundImage(id, dataUrl, file.type || "image/jpeg");
+    }
+    setShowWoundReminder(true);
+  }
+
+  async function analyzeWoundImage(id: string, dataUrl: string, mimeType: string) {
+    const base64 = dataUrl.split(",")[1];
+    try {
+      const res = await fetch("/api/physician/transcription/analyze-wound", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ imageBase64: base64, mimeType }),
+      });
+      const data = await res.json().catch(() => ({}));
+      const analysis: WoundAnalysis = res.ok
+        ? {
+            length: data.length ?? "—",
+            width: data.width ?? "—",
+            surfaceArea: data.surfaceArea ?? "—",
+            borders: data.borders ?? "—",
+            woundBase: data.woundBase ?? "—",
+            woundBaseComposition: data.woundBaseComposition ?? "—",
+            periwound: data.periwound ?? "—",
+            drainageType: data.drainageType ?? "—",
+            signsOfInfection: data.signsOfInfection ?? "—",
+            stage: data.stage ?? "—",
+            notes: data.notes ?? "",
+          }
+        : { length: "—", width: "—", surfaceArea: "—", borders: "—", woundBase: "—", woundBaseComposition: "—", periwound: "—", drainageType: "—", signsOfInfection: "—", stage: "—", notes: "Analysis failed." };
+      setWoundImages((prev) =>
+        prev.map((img) => (img.id === id ? { ...img, analysis, analyzing: false } : img)),
+      );
+    } catch {
+      setWoundImages((prev) =>
+        prev.map((img) =>
+          img.id === id
+            ? { ...img, analysis: { length: "—", width: "—", surfaceArea: "—", borders: "—", woundBase: "—", woundBaseComposition: "—", periwound: "—", drainageType: "—", signsOfInfection: "—", stage: "—", notes: "Analysis failed." }, analyzing: false }
+            : img,
+        ),
+      );
+    }
+  }
+
+  async function downloadSingleImagePdf(img: WoundImage) {
+    setPdfDownloadingId(img.id);
+    try {
+      const res = await fetch("/api/physician/transcription/wound-images-pdf", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ images: [{ imageBase64: img.dataUrl.split(",")[1], mimeType: img.mimeType, analysis: img.analysis }] }),
+      });
+      if (!res.ok) throw new Error("PDF generation failed");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "wound-image.pdf";
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "PDF download failed");
+    } finally {
+      setPdfDownloadingId(null);
+    }
+  }
+
+  async function downloadAllImagesPdf() {
+    if (woundImages.length === 0) return;
+    setPdfAllDownloading(true);
+    try {
+      const res = await fetch("/api/physician/transcription/wound-images-pdf", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          images: woundImages.map((img) => ({ imageBase64: img.dataUrl.split(",")[1], mimeType: img.mimeType, analysis: img.analysis })),
+        }),
+      });
+      if (!res.ok) throw new Error("PDF generation failed");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "wound-images-all.pdf";
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "PDF download failed");
+    } finally {
+      setPdfAllDownloading(false);
+    }
+  }
+
+  async function generateWoundCareNote() {
+    if (!transcript.trim()) return;
+    setWoundCareNoteLoading(true);
+    setWoundCareNoteError(null);
+    try {
+      const res = await fetch("/api/physician/transcription/wound-care-note", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          transcript: transcript.trim(),
+          woundAnalyses: woundImages.map((img, i) => ({ ...img.analysis, woundNumber: i + 1 })).filter((a) => a.length !== undefined),
+          backgroundText: bgFileText || undefined,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || "Failed to generate wound care note");
+      setWoundCareNote(data.note || "");
+    } catch (err) {
+      setWoundCareNoteError(err instanceof Error ? err.message : "Failed to generate wound care note");
+    } finally {
+      setWoundCareNoteLoading(false);
+    }
+  }
+
+  function handleBgFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) {
+      setActionError("Background file must be 5 MB or smaller.");
+      e.target.value = "";
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = reader.result as string;
+      const base64 = dataUrl.split(",")[1];
+      setBgFile({ base64, mimeType: file.type || "application/pdf", name: file.name });
+      if (file.type === "application/pdf") {
+        void extractBgFileText(base64, file.type);
+      }
+    };
+    reader.readAsDataURL(file);
+    e.target.value = "";
+  }
+
+  async function extractBgFileText(base64: string, mimeType: string) {
+    try {
+      const res = await fetch("/api/physician/transcription/ask-ai", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          soapText: "Background document provided for clinical context.",
+          prompt: "Extract and return the full text content of the attached document without summarization.",
+          fileBase64: base64,
+          fileMimeType: mimeType,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && typeof data?.result === "string") {
+        setBgFileText(data.result);
+      }
+    } catch {
+      // bgFileText stays empty — note generation still works without it
+    }
   }
 
   function handleStartNew() {
@@ -1039,7 +1276,7 @@ export default function PhysicianTranscriptionPage() {
           <div className="space-y-6">
               <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6 space-y-4">
                 <div className="flex items-center justify-start">
-                  <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-1">
+                  <div className="inline-flex flex-wrap gap-0.5 rounded-lg border border-slate-200 bg-slate-50 p-1">
                     <button
                       type="button"
                       onClick={() => setActiveWorkflowTab("capture")}
@@ -1073,6 +1310,37 @@ export default function PhysicianTranscriptionPage() {
                     >
                       Ask AI
                     </button>
+                    {orgWoundCare && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => setActiveWorkflowTab("wound_images")}
+                          className={`px-3 py-1.5 text-xs font-medium rounded-md flex items-center gap-1 ${
+                            activeWorkflowTab === "wound_images"
+                              ? "bg-white text-slate-900 shadow-sm"
+                              : "text-slate-600 hover:text-slate-900"
+                          }`}
+                        >
+                          Wound Images
+                          {woundImages.length > 0 && (
+                            <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-slate-200 text-slate-700 text-[10px] font-semibold">
+                              {woundImages.length}
+                            </span>
+                          )}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setActiveWorkflowTab("merge")}
+                          className={`px-3 py-1.5 text-xs font-medium rounded-md ${
+                            activeWorkflowTab === "merge"
+                              ? "bg-white text-slate-900 shadow-sm"
+                              : "text-slate-600 hover:text-slate-900"
+                          }`}
+                        >
+                          Merge
+                        </button>
+                      </>
+                    )}
                   </div>
                 </div>
                 {activeWorkflowTab === "capture" && (
@@ -1166,10 +1434,41 @@ export default function PhysicianTranscriptionPage() {
                     <textarea
                       value={transcript}
                       onChange={(e) => setTranscript(e.target.value)}
-                      rows={14}
-                      className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm text-slate-900 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
+                      rows={20}
+                      className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm text-slate-900 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200 resize-y"
                       placeholder="Transcript text..."
                     />
+                    {orgWoundCare && (
+                      <div className="border border-slate-200 rounded-lg p-3 space-y-2">
+                        <p className="text-xs font-medium text-slate-600">Background file (history, PMH, SH, medications)</p>
+                        {bgFile ? (
+                          <div className="flex items-center gap-3">
+                            <span className="text-sm text-slate-600 truncate max-w-[200px]">{bgFile.name}</span>
+                            <button
+                              type="button"
+                              onClick={() => { setBgFile(null); setBgFileText(""); }}
+                              className="text-xs text-red-600 hover:text-red-800"
+                            >
+                              Remove
+                            </button>
+                          </div>
+                        ) : (
+                          <label className="inline-flex items-center gap-2 cursor-pointer rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                            </svg>
+                            Attach background file
+                            <input
+                              type="file"
+                              accept="image/png,image/jpeg,image/webp,application/pdf"
+                              className="sr-only"
+                              onChange={handleBgFileChange}
+                            />
+                          </label>
+                        )}
+                        <p className="text-xs text-slate-400">PDF or image, max 5 MB. Used as context when generating the Wound Care Note.</p>
+                      </div>
+                    )}
                     <button
                       type="button"
                       onClick={generateSoap}
@@ -1177,7 +1476,7 @@ export default function PhysicianTranscriptionPage() {
                       title={generateDisabledReason ?? undefined}
                       className="px-4 py-2 text-sm font-medium text-white bg-slate-900 rounded-lg hover:bg-slate-800 disabled:bg-slate-400 disabled:cursor-not-allowed"
                     >
-                      {actionLoading ? "Generating..." : "Generate SOAP"}
+                      {actionLoading ? "Generating..." : orgWoundCare ? "Generate Wound Care Note" : "Generate SOAP"}
                     </button>
                     {generateDisabledReason && (
                       <p className="text-xs text-slate-500">{generateDisabledReason}</p>
@@ -1390,6 +1689,152 @@ export default function PhysicianTranscriptionPage() {
                     )}
                   </>
                 )}
+                {activeWorkflowTab === "wound_images" && orgWoundCare && (
+                  <div className="space-y-4">
+                    <p className="text-xs text-slate-500">
+                      Upload wound photos with a ruler in frame. AI will measure length, width, and surface area, and describe tissue composition for Medicare documentation.
+                    </p>
+                    <div
+                      className="border-2 border-dashed border-slate-300 rounded-lg p-6 text-center cursor-pointer hover:border-slate-400 transition"
+                      onDragOver={(e) => e.preventDefault()}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        if (e.dataTransfer.files.length > 0) void handleWoundImageFiles(e.dataTransfer.files);
+                      }}
+                      onClick={() => woundImageInputRef.current?.click()}
+                    >
+                      <input
+                        ref={woundImageInputRef}
+                        type="file"
+                        accept="image/png,image/jpeg,image/webp,image/heic,image/heif"
+                        multiple
+                        capture="environment"
+                        className="sr-only"
+                        onChange={(e) => {
+                          if (e.target.files?.length) void handleWoundImageFiles(e.target.files);
+                          e.target.value = "";
+                        }}
+                      />
+                      <svg xmlns="http://www.w3.org/2000/svg" className="mx-auto h-8 w-8 text-slate-400 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                      </svg>
+                      <p className="text-sm text-slate-600">Drag & drop wound photos here, or tap to select / take a photo</p>
+                      <p className="text-xs text-slate-400 mt-1">PNG, JPEG, WEBP, HEIC accepted · Max 5 MB each · Place ruler in frame for measurements</p>
+                    </div>
+                    {woundImages.length > 0 && (
+                      <>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          {woundImages.map((img, idx) => (
+                            <div key={img.id} className="border border-slate-200 rounded-lg overflow-hidden">
+                              <img
+                                src={img.dataUrl}
+                                alt={`Wound image ${idx + 1}`}
+                                className="w-full h-48 object-cover"
+                              />
+                              <div className="p-3 space-y-1">
+                                {img.analyzing ? (
+                                  <p className="text-xs text-slate-500 animate-pulse">Analyzing wound...</p>
+                                ) : img.analysis ? (
+                                  <div className="space-y-0.5">
+                                    {img.analysis.length !== "—" && img.analysis.width !== "—" && (
+                                      <p className="text-sm font-semibold text-slate-800">
+                                        {img.analysis.length} × {img.analysis.width} cm
+                                        {img.analysis.surfaceArea !== "—" && ` · ${img.analysis.surfaceArea}`}
+                                      </p>
+                                    )}
+                                    {img.analysis.woundBaseComposition !== "—" && (
+                                      <p className="text-xs text-slate-600">{img.analysis.woundBaseComposition}</p>
+                                    )}
+                                    {img.analysis.notes && (
+                                      <p className="text-xs text-slate-500 line-clamp-2">{img.analysis.notes}</p>
+                                    )}
+                                  </div>
+                                ) : null}
+                                <div className="flex items-center gap-2 pt-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => void downloadSingleImagePdf(img)}
+                                    disabled={pdfDownloadingId === img.id || img.analyzing}
+                                    className="px-2 py-1 text-xs rounded border border-slate-300 hover:bg-slate-50 disabled:opacity-60"
+                                  >
+                                    {pdfDownloadingId === img.id ? "Generating..." : "Download PDF"}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setWoundImages((prev) => prev.filter((i) => i.id !== img.id))}
+                                    className="px-2 py-1 text-xs rounded border border-red-300 text-red-700 hover:bg-red-50"
+                                  >
+                                    Remove
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => void downloadAllImagesPdf()}
+                          disabled={pdfAllDownloading || woundImages.some((i) => i.analyzing)}
+                          className="px-4 py-2 text-sm font-medium text-white bg-slate-900 rounded-lg hover:bg-slate-800 disabled:bg-slate-400 disabled:cursor-not-allowed"
+                        >
+                          {pdfAllDownloading ? "Generating PDF..." : `Download All ${woundImages.length} Image${woundImages.length !== 1 ? "s" : ""} as PDF`}
+                        </button>
+                      </>
+                    )}
+                  </div>
+                )}
+                {activeWorkflowTab === "merge" && orgWoundCare && (
+                  <div className="space-y-4">
+                    <p className="text-xs text-slate-500">
+                      Combines transcript, wound image AI analyses, and background file into a complete CMS/Medicare-compliant Wound Care Note ready to copy into NextGen or your EHR.
+                    </p>
+                    <div className="flex flex-wrap gap-3 text-xs">
+                      <span className={transcript.trim() ? "text-emerald-700 font-medium" : "text-amber-600"}>
+                        {transcript.trim() ? "✓ Transcript ready" : "✗ Transcript missing — dictate first"}
+                      </span>
+                      <span className={woundImages.length > 0 ? "text-emerald-700 font-medium" : "text-slate-400"}>
+                        {woundImages.length > 0 ? `✓ ${woundImages.length} wound image${woundImages.length !== 1 ? "s" : ""}` : "○ No wound images"}
+                      </span>
+                      {bgFile && (
+                        <span className="text-emerald-700 font-medium">✓ Background file: {bgFile.name}</span>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void generateWoundCareNote()}
+                      disabled={!transcript.trim() || woundCareNoteLoading}
+                      className="px-4 py-2 text-sm font-medium text-white bg-slate-900 rounded-lg hover:bg-slate-800 disabled:bg-slate-400 disabled:cursor-not-allowed"
+                    >
+                      {woundCareNoteLoading ? "Generating..." : "Generate Wound Care Note"}
+                    </button>
+                    {woundCareNoteError && <p className="text-sm text-red-700">{woundCareNoteError}</p>}
+                    {woundCareNote && (
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-medium text-slate-700">Wound Care Note</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              void navigator.clipboard.writeText(woundCareNote);
+                              setWoundCareNoteCopied(true);
+                              setTimeout(() => setWoundCareNoteCopied(false), 2000);
+                            }}
+                            className="px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50"
+                          >
+                            {woundCareNoteCopied ? "Copied!" : "Copy"}
+                          </button>
+                        </div>
+                        <textarea
+                          value={woundCareNote}
+                          onChange={(e) => setWoundCareNote(e.target.value)}
+                          rows={35}
+                          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono resize-y"
+                        />
+                        <p className="text-xs text-slate-400">Plain text — paste directly into NextGen or any EHR note field.</p>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               <div className="bg-white rounded-lg shadow-sm border border-slate-200">
@@ -1596,6 +2041,39 @@ export default function PhysicianTranscriptionPage() {
         </div>
       </div>
       <QuickAskAiModal isOpen={showQuickAskAi} onClose={() => setShowQuickAskAi(false)} />
+      {showWoundReminder && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50">
+          <div className="bg-white rounded-xl shadow-xl max-w-sm w-full mx-4 p-6 space-y-4">
+            <h2 className="text-base font-semibold text-slate-900">Wound Documentation Checklist</h2>
+            <p className="text-sm text-slate-600">
+              When dictating/transcribing, please include the following:
+            </p>
+            <ul className="text-sm text-slate-700 space-y-1 list-disc list-inside">
+              <li>Wound location</li>
+              <li>Wound type &amp; initial etiology</li>
+              <li>Drainage (amount &amp; type)</li>
+              <li>Odour</li>
+              <li>Wound bed description</li>
+              <li>Periwound skin condition</li>
+              <li>Pain (score, character, timing)</li>
+              <li>Signs of infection</li>
+              <li>Dressing application</li>
+              <li>Debridement performed (tissue layer, instruments)</li>
+              <li>Treatment plan</li>
+              <li>Follow up</li>
+              <li>Healing trajectory vs. prior visit</li>
+              <li>Medical necessity statement</li>
+            </ul>
+            <button
+              type="button"
+              onClick={() => setShowWoundReminder(false)}
+              className="w-full px-4 py-2 text-sm font-medium text-white bg-slate-900 rounded-lg hover:bg-slate-800"
+            >
+              Got it
+            </button>
+          </div>
+        </div>
+      )}
       {showStartNewConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50">
           <div className="mx-4 max-w-sm rounded-xl border border-slate-200 bg-white p-6 shadow-xl">

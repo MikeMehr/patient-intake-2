@@ -37,6 +37,19 @@ async function hasOrganizationWebsiteColumn(): Promise<boolean> {
   return Boolean(result.rows[0]?.exists);
 }
 
+async function hasOrganizationWoundCareColumn(): Promise<boolean> {
+  const result = await query<{ exists: boolean }>(
+    `SELECT EXISTS (
+       SELECT 1
+       FROM information_schema.columns
+       WHERE table_schema = 'public'
+         AND table_name = 'organizations'
+         AND column_name = 'wound_care'
+     ) AS exists`,
+  );
+  return Boolean(result.rows[0]?.exists);
+}
+
 async function hasOrganizationUserRecoveryColumns(): Promise<boolean> {
   const result = await query<{ exists: boolean }>(
     `SELECT EXISTS (
@@ -76,6 +89,11 @@ export async function GET(
       ? "website_url"
       : "NULL::varchar AS website_url";
 
+    const supportsWoundCare = await hasOrganizationWoundCareColumn();
+    const woundCareColumnSelect = supportsWoundCare
+      ? "wound_care"
+      : "FALSE AS wound_care";
+
     // Get organization details
     const orgResult = await query<{
       id: string;
@@ -85,10 +103,11 @@ export async function GET(
       phone: string | null;
       fax: string | null;
       website_url: string | null;
+      wound_care: boolean;
       is_active: boolean;
       created_at: Date;
     }>(
-      `SELECT id, name, email, business_address, phone, fax, ${websiteColumnSelect}, is_active, created_at
+      `SELECT id, name, email, business_address, phone, fax, ${websiteColumnSelect}, ${woundCareColumnSelect}, is_active, created_at
        FROM organizations
        WHERE id = $1`,
       [id]
@@ -156,6 +175,7 @@ export async function GET(
         phone: org.phone,
         fax: org.fax,
         websiteUrl: org.website_url,
+        woundCare: Boolean(org.wound_care),
         isActive: org.is_active,
         createdAt: org.created_at,
       },
@@ -223,7 +243,9 @@ export async function PUT(
     const normalizedPhone = typeof phone === "string" ? phone.trim() : "";
     const normalizedFax = typeof fax === "string" ? fax.trim() : "";
     const normalizedIsActive = typeof isActive === "boolean" ? isActive : undefined;
+    const normalizedWoundCare = typeof body?.woundCare === "boolean" ? body.woundCare : null;
     const supportsWebsiteUrl = await hasOrganizationWebsiteColumn();
+    const supportsWoundCare = await hasOrganizationWoundCareColumn();
     const websiteUrl = normalizeWebsiteUrl(body?.websiteUrl);
     if (body?.websiteUrl !== undefined && websiteUrl === undefined) {
       status = 400;
@@ -238,6 +260,15 @@ export async function PUT(
       status = 503;
       const res = NextResponse.json(
         { error: "Organization website requires DB migration 024_add_organization_website.sql." },
+        { status },
+      );
+      logRequestMeta("/api/admin/organizations/[id]", requestId, status, Date.now() - started);
+      return res;
+    }
+    if (!supportsWoundCare && normalizedWoundCare === true) {
+      status = 503;
+      const res = NextResponse.json(
+        { error: "Wound care feature requires DB migration 050_add_wound_care_org.sql." },
         { status },
       );
       logRequestMeta("/api/admin/organizations/[id]", requestId, status, Date.now() - started);
@@ -300,35 +331,42 @@ export async function PUT(
       return res;
     }
 
-    // Update organization
+    // Update organization — build query based on which optional columns exist
+    const includeWebsite = supportsWebsiteUrl;
+    const includeWoundCare = supportsWoundCare && normalizedWoundCare !== null;
+
+    const setClauses = [
+      "name = $1",
+      "email = $2",
+      "business_address = $3",
+      "phone = $4",
+      "fax = $5",
+      "is_active = $6",
+    ];
+    const queryParams: unknown[] = [
+      normalizedName,
+      normalizedEmail,
+      normalizedBusinessAddress,
+      normalizedPhone || null,
+      normalizedFax || null,
+      normalizedIsActive,
+    ];
+
+    if (includeWebsite) {
+      queryParams.push(websiteUrl);
+      setClauses.push(`website_url = $${queryParams.length}`);
+    }
+    if (includeWoundCare) {
+      queryParams.push(normalizedWoundCare);
+      setClauses.push(`wound_care = $${queryParams.length}`);
+    }
+
+    queryParams.push(id);
+    const idParam = `$${queryParams.length}`;
+
     await query(
-      supportsWebsiteUrl
-        ? `UPDATE organizations
-           SET name = $1, email = $2, business_address = $3, phone = $4, fax = $5, is_active = $6, website_url = $7
-           WHERE id = $8`
-        : `UPDATE organizations
-           SET name = $1, email = $2, business_address = $3, phone = $4, fax = $5, is_active = $6
-           WHERE id = $7`,
-      supportsWebsiteUrl
-        ? [
-            normalizedName,
-            normalizedEmail,
-            normalizedBusinessAddress,
-            normalizedPhone || null,
-            normalizedFax || null,
-            normalizedIsActive,
-            websiteUrl,
-            id,
-          ]
-        : [
-            normalizedName,
-            normalizedEmail,
-            normalizedBusinessAddress,
-            normalizedPhone || null,
-            normalizedFax || null,
-            normalizedIsActive,
-            id,
-          ]
+      `UPDATE organizations SET ${setClauses.join(", ")} WHERE id = ${idParam}`,
+      queryParams,
     );
 
     const res = NextResponse.json({ success: true });

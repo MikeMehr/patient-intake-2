@@ -12,6 +12,7 @@ interface Organization {
   phone: string | null;
   fax: string | null;
   websiteUrl: string | null;
+  woundCare: boolean;
   isActive: boolean;
   createdAt: string;
 }
@@ -55,6 +56,7 @@ export default function OrganizationDetailPage() {
     phone: "",
     fax: "",
     websiteUrl: "",
+    woundCare: false,
     isActive: true,
   });
   const [savingOrg, setSavingOrg] = useState(false);
@@ -226,6 +228,7 @@ export default function OrganizationDetailPage() {
           phone: data.organization?.phone || "",
           fax: data.organization?.fax || "",
           websiteUrl: data.organization?.websiteUrl || "",
+          woundCare: Boolean(data.organization?.woundCare),
           isActive: Boolean(data.organization?.isActive),
         });
         setProviders(data.providers || []);
@@ -285,6 +288,7 @@ export default function OrganizationDetailPage() {
           fax: orgForm.fax.trim() || null,
           isActive: orgForm.isActive,
           websiteUrl: orgForm.websiteUrl.trim() || null,
+          woundCare: orgForm.woundCare,
         }),
       });
       const data = await response.json().catch(() => ({}));
@@ -476,6 +480,23 @@ export default function OrganizationDetailPage() {
                     <option value="active">Active</option>
                     <option value="inactive">Inactive</option>
                   </select>
+                </div>
+                <div>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={orgForm.woundCare}
+                      onChange={(e) =>
+                        setOrgForm((prev) => ({ ...prev, woundCare: e.target.checked }))
+                      }
+                      disabled={savingOrg}
+                      className="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-400"
+                    />
+                    <span className="text-sm font-medium text-slate-700">Wound Care</span>
+                  </label>
+                  <p className="mt-1 text-xs text-slate-500 ml-6">
+                    Enables wound image upload, AI measurement, and wound care note generation on the transcription page.
+                  </p>
                 </div>
               </div>
               <div className="mt-5 pt-5 border-t border-slate-200 space-y-3">
