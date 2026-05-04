@@ -5,8 +5,7 @@ import { getSession } from "@/lib/session-store";
 import { getAzureOpenAIClient } from "@/lib/azure-openai";
 import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
 import { logDebug } from "@/lib/secure-logger";
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const pdfParse: (buf: Buffer) => Promise<{ text: string }> = require("pdf-parse");
+import { extractPdfText } from "@/lib/pdf-extract";
 
 const ALLOWED_FILE_MIME_TYPES = new Set([
   "image/png", "image/jpeg", "image/webp", "image/heic", "image/heif",
@@ -320,8 +319,7 @@ Patient Final Comments:
   if (isPdf) {
     try {
       const buffer = Buffer.from(fileBase64!, "base64");
-      const parsed = await pdfParse(buffer);
-      pdfText = parsed.text?.trim() || null;
+      pdfText = await extractPdfText(buffer) || null;
     } catch {
       return NextResponse.json({ error: "Could not read the PDF. Make sure it is a valid, text-based PDF." }, { status: 400 });
     }

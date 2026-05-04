@@ -3,8 +3,7 @@ import { getCurrentSession } from "@/lib/auth";
 import { getAzureOpenAIClient } from "@/lib/azure-openai";
 import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
 import { logDebug } from "@/lib/secure-logger";
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const pdfParse: (buf: Buffer) => Promise<{ text: string }> = require("pdf-parse");
+import { extractPdfText } from "@/lib/pdf-extract";
 
 const MAX_SOAP_TEXT_LENGTH = 15000;
 const MAX_PROMPT_LENGTH = 2000;
@@ -162,8 +161,7 @@ export async function POST(request: NextRequest) {
   if (isPdf) {
     try {
       const buffer = Buffer.from(fileBase64!, "base64");
-      const parsed = await pdfParse(buffer);
-      pdfText = parsed.text?.trim() || null;
+      pdfText = await extractPdfText(buffer) || null;
     } catch {
       return NextResponse.json({ error: "Could not read the PDF. Make sure it is a valid, text-based PDF." }, { status: 400 });
     }
