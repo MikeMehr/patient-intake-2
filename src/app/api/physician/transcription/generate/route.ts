@@ -188,13 +188,6 @@ export async function POST(request: NextRequest) {
         draft,
         transcript: parsed.data.transcript,
       });
-      await upsertTranscriptionSessionPointer({
-        physicianId,
-        patientId,
-        encounterId: caseEncounterId,
-        soapVersionId: saved.soapVersionId,
-        previewSummary: buildPreview(String(soap.subjective || ""), String(soap.assessment || "")),
-      });
 
       await logPhysicianPhiAudit({
         physicianId,
@@ -223,6 +216,16 @@ export async function POST(request: NextRequest) {
         draft,
       });
     }
+
+    // One session pointer for the entire batch, linking all case soap IDs
+    await upsertTranscriptionSessionPointer({
+      physicianId,
+      patientId,
+      encounterId: caseResults[0].encounterId,
+      soapVersionId: caseResults[0].soapVersionId,
+      previewSummary: buildPreview(String(soapArray[0].subjective || ""), String(soapArray[0].assessment || "")),
+      caseSoapIds: caseResults.length > 1 ? caseResults.map((c) => c.soapVersionId) : undefined,
+    });
 
     const res = NextResponse.json({
       // Legacy single-case fields (first case) for backward compat

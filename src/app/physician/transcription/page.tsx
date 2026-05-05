@@ -43,6 +43,7 @@ type TranscriptionListItem = {
   lifecycleState: "DRAFT" | "FINALIZED_FOR_EXPORT";
   version: number;
   previewSummary: string | null;
+  caseSoapIds: string[] | null;
   createdAt: string;
   finalizedForExportAt: string | null;
 };
@@ -828,38 +829,69 @@ export default function PhysicianTranscriptionPage() {
     }
   }
 
-  async function loadSoapVersion(soapId: string) {
+  async function loadSoapVersion(primarySoapId: string, caseSoapIds?: string[] | null) {
     setActionError(null);
     setActionSuccess(null);
     try {
-      const res = await fetch(`/api/physician/transcription/soap/${encodeURIComponent(soapId)}`);
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.error || "Failed to load SOAP version");
-      setSoapVersionId(data.soapVersionId || null);
-      setEncounterId(data.encounterId || null);
-      setLifecycleState(data.lifecycleState || null);
-      setSoapHasPatient(Boolean(data.patientId));
-      const nextDraft = {
-        subjective: data?.draft?.subjective || "",
-        objective: data?.draft?.objective || "",
-        assessment: data?.draft?.assessment || "",
-        plan: data?.draft?.plan || "",
+      const allIds = caseSoapIds && caseSoapIds.length > 1 ? caseSoapIds : [primarySoapId];
+
+      type RawSoapData = {
+        soapVersionId: string;
+        encounterId: string;
+        patientId: string | null;
+        lifecycleState: string;
+        chiefComplaint: string | null;
+        draftTranscript: string | null;
+        snapshotLabel: string | undefined;
+        draft: { subjective: string; objective: string; assessment: string; plan: string };
       };
-      setDraft(nextDraft);
-      const nextReviewText = composeUnifiedSoapText(nextDraft);
-      setReviewText(nextReviewText);
-      setTranscript(data?.draftTranscript || "");
-      if (typeof data?.snapshotLabel === "string") setSnapshotLabel(data.snapshotLabel);
-      setSoapCases([{
-        label: "Case 1",
-        soapVersionId: data.soapVersionId || "",
-        encounterId: data.encounterId || "",
-        lifecycleState: data.lifecycleState || "DRAFT",
-        hasPatient: Boolean(data.patientId),
-        draft: nextDraft,
-        reviewText: nextReviewText,
-      }]);
+
+      const fetchRaw = async (soapId: string): Promise<RawSoapData | null> => {
+        try {
+          const r = await fetch(`/api/physician/transcription/soap/${encodeURIComponent(soapId)}`);
+          const d = await r.json().catch(() => ({}));
+          return r.ok ? d : null;
+        } catch {
+          return null;
+        }
+      };
+
+      const rawResults = await Promise.all(allIds.map(fetchRaw));
+      const cases: SoapCase[] = rawResults
+        .map((d, i) => {
+          if (!d) return null;
+          const nextDraft = {
+            subjective: d.draft?.subjective || "",
+            objective: d.draft?.objective || "",
+            assessment: d.draft?.assessment || "",
+            plan: d.draft?.plan || "",
+          };
+          return {
+            label: d.chiefComplaint || `Case ${i + 1}`,
+            soapVersionId: d.soapVersionId || "",
+            encounterId: d.encounterId || "",
+            lifecycleState: (d.lifecycleState as "DRAFT" | "FINALIZED_FOR_EXPORT") || "DRAFT",
+            hasPatient: Boolean(d.patientId),
+            draft: nextDraft,
+            reviewText: composeUnifiedSoapText(nextDraft),
+          };
+        })
+        .filter((c): c is SoapCase => c !== null);
+
+      if (cases.length === 0) throw new Error("Failed to load SOAP version");
+
+      const primaryData = rawResults[0];
+      setSoapCases(cases);
       setActiveCaseIndex(0);
+      setSoapVersionId(cases[0].soapVersionId);
+      setEncounterId(cases[0].encounterId);
+      setLifecycleState(cases[0].lifecycleState);
+      setSoapHasPatient(cases[0].hasPatient);
+      setDraft(cases[0].draft);
+      setReviewText(cases[0].reviewText);
+      setTranscript(primaryData?.draftTranscript || "");
+      if (typeof primaryData?.snapshotLabel === "string") setSnapshotLabel(primaryData.snapshotLabel);
+      setActiveWorkflowTab("review");
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "Failed to load SOAP version");
     }
@@ -2003,7 +2035,7 @@ export default function PhysicianTranscriptionPage() {
                         <div className="flex items-start justify-between gap-2">
                           <button
                             type="button"
-                            onClick={() => loadSoapVersion(item.soapVersionId)}
+                            onClick={() => loadSoapVersion(item.soapVersionId, item.caseSoapIds)}
                             className="flex-1 text-left hover:bg-slate-50 rounded-md"
                           >
                             <div className="text-sm font-medium text-slate-900">

@@ -301,7 +301,11 @@ export async function upsertTranscriptionSessionPointer(params: {
   encounterId: string;
   soapVersionId: string;
   previewSummary: string | null;
+  caseSoapIds?: string[];
 }): Promise<string> {
+  const caseSoapIdsJson = params.caseSoapIds && params.caseSoapIds.length > 1
+    ? JSON.stringify(params.caseSoapIds)
+    : null;
   const existing = await query<{ id: string }>(
     `SELECT id FROM physician_transcription_sessions
      WHERE encounter_id = $1
@@ -314,16 +318,17 @@ export async function upsertTranscriptionSessionPointer(params: {
       `UPDATE physician_transcription_sessions
        SET soap_version_id = $2,
            preview_summary = $3,
+           case_soap_ids = $4,
            updated_at = NOW()
        WHERE id = $1`,
-      [existing.rows[0].id, params.soapVersionId, params.previewSummary],
+      [existing.rows[0].id, params.soapVersionId, params.previewSummary, caseSoapIdsJson],
     );
     return existing.rows[0].id;
   }
   const inserted = await query<{ id: string }>(
     `INSERT INTO physician_transcription_sessions (
-       physician_id, patient_id, encounter_id, soap_version_id, preview_summary
-     ) VALUES ($1,$2,$3,$4,$5)
+       physician_id, patient_id, encounter_id, soap_version_id, preview_summary, case_soap_ids
+     ) VALUES ($1,$2,$3,$4,$5,$6)
      RETURNING id`,
     [
       params.physicianId,
@@ -331,6 +336,7 @@ export async function upsertTranscriptionSessionPointer(params: {
       params.encounterId,
       params.soapVersionId,
       params.previewSummary,
+      caseSoapIdsJson,
     ],
   );
   return inserted.rows[0].id;
@@ -455,6 +461,7 @@ export async function getTranscriptionSessionsForScope(scope: Scope, physicianId
     lifecycle_state: string;
     version: number;
     preview_summary: string | null;
+    case_soap_ids: string[] | null;
     created_at: Date;
     finalized_for_export_at: Date | null;
   }>(
@@ -468,6 +475,7 @@ export async function getTranscriptionSessionsForScope(scope: Scope, physicianId
        snv.lifecycle_state,
        snv.version,
        pts.preview_summary,
+       pts.case_soap_ids,
        pts.created_at,
        snv.finalized_for_export_at
      FROM physician_transcription_sessions pts
@@ -489,6 +497,7 @@ export async function getTranscriptionSessionsForScope(scope: Scope, physicianId
     lifecycleState: r.lifecycle_state,
     version: r.version,
     previewSummary: r.preview_summary,
+    caseSoapIds: Array.isArray(r.case_soap_ids) ? r.case_soap_ids : null,
     createdAt: r.created_at.toISOString(),
     finalizedForExportAt: r.finalized_for_export_at ? r.finalized_for_export_at.toISOString() : null,
   }));
@@ -535,10 +544,12 @@ export async function getSoapVersionByIdForScope(params: { soapVersionId: string
     plan: string;
     draft_transcript: string | null;
     finalized_for_export_at: Date | null;
+    chief_complaint: string | null;
   }>(
     `SELECT
        snv.id, snv.encounter_id, snv.patient_id, snv.version, snv.lifecycle_state,
-       snv.subjective, snv.objective, snv.assessment, snv.plan, snv.draft_transcript, snv.finalized_for_export_at
+       snv.subjective, snv.objective, snv.assessment, snv.plan, snv.draft_transcript, snv.finalized_for_export_at,
+       pe.chief_complaint
      FROM soap_note_versions snv
      JOIN patient_encounters pe ON pe.id = snv.encounter_id
      LEFT JOIN patients p ON p.id = pe.patient_id

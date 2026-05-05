@@ -49,6 +49,7 @@ export async function GET(
       lifecycleState: soap.lifecycle_state,
       finalizedForExportAt: soap.finalized_for_export_at ? soap.finalized_for_export_at.toISOString() : null,
       draftTranscript: soap.draft_transcript,
+      chiefComplaint: soap.chief_complaint ?? null,
       draft: {
         subjective: soap.subjective,
         objective: soap.objective,
