@@ -364,7 +364,10 @@ export async function POST(request: Request) {
 
     const languageInstruction = languageName === "English"
       ? `LANGUAGE: Respond in English.`
-      : `LANGUAGE: For all patient-facing questions and messages (the conversation), respond ONLY in ${languageName}. Do NOT include English translations or mixed language unless ${languageName} is English. If you cannot reliably produce ${languageName}, fall back to English. Keep summaries/assessment/plan in English for the clinician. Preserve medical accuracy.
+      : `LANGUAGE: The patient's preferred language is ${languageName}.
+- Patient-facing fields ("question"): MUST be written in ${languageName}. Do NOT use English in these fields.
+- Clinician-facing fields ("summary", "assessment", "plan", "positives", "negatives", "investigations", "rationale"): MUST ALWAYS be in English regardless of patient language. Do NOT write these in ${languageName}.
+- If you cannot reliably produce ${languageName} for patient-facing fields, fall back to English.
 PHYSICIAN MONITOR (hidden from patient): When type is "question", also include:
 - "question_en": the English translation of the question field (for the physician's live monitor).
 - "patient_message_en": the English translation of the patient's most recent message in the transcript (for the physician's live monitor). Omit if there is no patient message yet.
