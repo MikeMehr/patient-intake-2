@@ -1421,6 +1421,14 @@ export default function PhysicianTranscriptionPage() {
                           >
                             Stop transcription
                           </button>
+                          <button
+                            type="button"
+                            onClick={async () => { await stopRecording(); await generateSoap(); }}
+                            disabled={transcriptLoading}
+                            className="px-4 py-2 text-sm font-medium text-white rounded-lg bg-slate-900 hover:bg-slate-800 disabled:bg-slate-400"
+                          >
+                            Stop &amp; Generate SOAP
+                          </button>
                           <span className="font-mono text-sm font-semibold text-slate-700 tabular-nums">
                             {formatElapsed(recordingElapsed)}
                           </span>
