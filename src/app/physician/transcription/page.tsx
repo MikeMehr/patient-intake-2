@@ -184,7 +184,6 @@ export default function PhysicianTranscriptionPage() {
   const [historyItems, setHistoryItems] = useState<TranscriptionListItem[]>([]);
   const [deletingSnapshotId, setDeletingSnapshotId] = useState<string | null>(null);
   const [deletingAllSnapshots, setDeletingAllSnapshots] = useState(false);
-  const [showStartNewConfirm, setShowStartNewConfirm] = useState(false);
   const [showQuickAskAi, setShowQuickAskAi] = useState(false);
   const [patientSectionOpen, setPatientSectionOpen] = useState(false);
   const [snapshotSectionOpen, setSnapshotSectionOpen] = useState(false);
@@ -1425,7 +1424,7 @@ export default function PhysicianTranscriptionPage() {
                         <>
                           <button
                             type="button"
-                            onClick={() => setShowStartNewConfirm(true)}
+                            onClick={() => { setTranscript(""); setRecordingElapsed(0); setLanguage(localStorage.getItem("defaultTranscriptionLanguage") ?? ""); }}
                             disabled={transcriptLoading}
                             className="px-4 py-2 text-sm font-medium text-white rounded-lg bg-slate-900 hover:bg-slate-800 disabled:bg-slate-400"
                           >
@@ -1444,7 +1443,7 @@ export default function PhysicianTranscriptionPage() {
                           </button>
                           <button
                             type="button"
-                            onClick={() => setShowStartNewConfirm(true)}
+                            onClick={() => { setTranscript(""); setRecordingElapsed(0); setLanguage(localStorage.getItem("defaultTranscriptionLanguage") ?? ""); }}
                             disabled={transcriptLoading}
                             className="px-4 py-2 text-sm font-medium text-white rounded-lg bg-slate-900 hover:bg-slate-800 disabled:bg-slate-400"
                           >
@@ -2115,36 +2114,6 @@ export default function PhysicianTranscriptionPage() {
             >
               Got it
             </button>
-          </div>
-        </div>
-      )}
-      {showStartNewConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50">
-          <div className="mx-4 max-w-sm rounded-xl border border-slate-200 bg-white p-6 shadow-xl">
-            <p className="text-sm text-slate-800">
-              Are you sure you want to start new? The current transcript will be deleted.
-            </p>
-            <div className="mt-4 flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setShowStartNewConfirm(false)}
-                className="px-3 py-1.5 text-sm font-medium text-slate-700 rounded-lg border border-slate-300 bg-white hover:bg-slate-50"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowStartNewConfirm(false);
-                  setTranscript("");
-                  setRecordingElapsed(0);
-                  setLanguage(localStorage.getItem("defaultTranscriptionLanguage") ?? "");
-                }}
-                className="px-3 py-1.5 text-sm font-medium text-white rounded-lg bg-slate-900 hover:bg-slate-800"
-              >
-                Okay
-              </button>
-            </div>
           </div>
         </div>
       )}
