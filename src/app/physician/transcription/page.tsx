@@ -245,11 +245,12 @@ export default function PhysicianTranscriptionPage() {
       historyItems
         .filter((item) => item.lifecycleState !== "FINALIZED_FOR_EXPORT")
         .filter((item) => !snapshotAnonOnly || item.patientId === null)
-        .filter(
-          (item) =>
-            !snapshotFilterDate ||
-            item.createdAt.startsWith(snapshotFilterDate),
-        ),
+        .filter((item) => {
+          if (!snapshotFilterDate) return true;
+          const d = new Date(item.createdAt);
+          const localDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+          return localDate === snapshotFilterDate;
+        }),
     [historyItems, snapshotAnonOnly, snapshotFilterDate],
   );
   const canCopySoap = useMemo(() => reviewText.trim().length > 0, [reviewText]);
