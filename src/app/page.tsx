@@ -73,6 +73,7 @@ const COMPLETION_REDIRECT_FALLBACK = "https://www.health-assist.org/";
 
 const UI_JSON_KEY_MAP: Record<string, string> = {
   startInterview: "buttons.start_interview",
+  startQuestionnaire: "buttons.start_questionnaire",
   nameLabel: "form.name_label",
   emailLabel: "form.email_label",
   sexLabel: "form.sex_label",
@@ -956,6 +957,7 @@ export default function Home() {
       consentBody:
         "Do not proceed with this interview if this is a medical emergency. Call 911 instead. This AI-guided interview is optional — you may decline and provide your history directly to your physician. I consent to the collection of my health information using Health Assist AI to prepare an AI-assisted intake summary for my physician. My information will be processed on Microsoft Azure, including servers in the United States. This tool does not provide medical advice and is not a substitute for care from your physician. I agree to the",
       startInterview: "Start interview",
+      startQuestionnaire: "Start questionnaire",
       nameLabel: "Your Name (Required)",
       emailLabel: "Your Email (Required)",
       chiefComplaintLabel: "Chief complaint (Required)",
@@ -4833,7 +4835,9 @@ export default function Home() {
                   className="inline-flex flex-1 items-center justify-center rounded-2xl bg-[#52A882] px-5 py-2.5 text-base font-semibold text-white transition hover:bg-[#459970] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#52A882] disabled:cursor-not-allowed disabled:bg-[#F2FCF8] disabled:text-[#3a7a5e]"
                   disabled={status !== "idle" || !language || isUiTranslating}
                 >
-                  {uiT.startInterview || "Start interview"}
+                  {formsOnly
+                    ? (uiT.startQuestionnaire || "Start questionnaire")
+                    : (uiT.startInterview || "Start interview")}
                 </button>
               </div>
             </form>
@@ -5353,7 +5357,11 @@ export default function Home() {
                         ) : (
                           <>
                             <span>Interview status:</span>
-                            <span>{statusCopy[status]}</span>
+                            <span>
+                              {status === "idle" && formsOnly
+                                ? "Click 'Start questionnaire' when you're ready."
+                                : statusCopy[status]}
+                            </span>
                           </>
                         )}
                         {interviewStartTime && status !== "idle" && (
