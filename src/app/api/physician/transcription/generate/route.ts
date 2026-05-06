@@ -22,7 +22,7 @@ Analyze the physician-patient transcript and identify all distinct patient cases
 For EACH distinct case, create a concise SOAP note.
 Return valid JSON only: an array of objects, each with keys: label, subjective, objective, assessment, plan.
 - "label": brief case identifier (e.g. "Headache", "Left Elbow Pain")
-- "subjective": patient symptoms, history, and relevant context
+- "subjective": comprehensive patient history including chief complaint, symptom onset/duration/severity/character, associated symptoms, aggravating and relieving factors, relevant past medical history, current medications and recent changes, allergies if mentioned, family history, social history, and any other details the patient reported — capture everything the patient said, do not omit details
 - "objective": exam findings and vitals (if documented)
 - "assessment": likely diagnosis and differentials
 - "plan": only what was explicitly discussed or decided in the transcript (tests ordered, referrals made, medications prescribed, follow-up instructions given); do not add recommendations not mentioned in the transcript
