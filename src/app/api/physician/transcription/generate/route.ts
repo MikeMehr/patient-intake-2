@@ -29,8 +29,7 @@ Return valid JSON only: an array of objects, each with keys: label, subjective, 
 If there is only one case, still return a single-element array.
 Do not include markdown, code fences, or extra keys.
 Each field should be clinically useful and concise.
-IMPORTANT: Always write the SOAP note entirely in English, regardless of the language used in the transcript.
-IMPORTANT: Format each field (subjective, objective, assessment, plan) as bullet points — one distinct point per line, each line starting with "- ". Do not write paragraph prose.`;
+IMPORTANT: Always write the SOAP note entirely in English, regardless of the language used in the transcript.`;
 
 function buildPreview(subjective: string, assessment: string) {
   const text = `${subjective.trim()} ${assessment.trim()}`.trim();
