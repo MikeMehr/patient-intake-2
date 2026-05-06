@@ -451,7 +451,12 @@ export default function PhysicianTranscriptionPage() {
           setTranscript(segmentTextsRef.current.filter(Boolean).map(s => s.trim()).join("\n\n").trim());
         }
       } catch (err) {
-        setRecordingError(err instanceof Error ? err.message : "Transcription failed for a segment.");
+        const msg = err instanceof Error ? err.message : "Transcription failed for a segment.";
+        const hasTranscript = segmentTextsRef.current.filter(Boolean).length > 0;
+        if (msg === "No speech detected." && (!isFinal || hasTranscript)) {
+          return;
+        }
+        setRecordingError(msg);
       }
     })();
 
