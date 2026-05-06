@@ -77,19 +77,30 @@ const initialDraft: SoapDraft = {
   plan: "",
 };
 
+function formatSectionToBullets(text: string): string {
+  const trimmed = text.trim();
+  if (!trimmed) return "";
+  if (/^- /m.test(trimmed)) return trimmed;
+  const sentences = trimmed
+    .split(/(?<=\.)\s+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  return sentences.map((s) => `- ${s}`).join("\n");
+}
+
 function composeUnifiedSoapText(draft: SoapDraft): string {
   return [
     "Subjective:",
-    draft.subjective || "",
+    formatSectionToBullets(draft.subjective || ""),
     "",
     "Objective:",
-    draft.objective || "",
+    formatSectionToBullets(draft.objective || ""),
     "",
     "Assessment:",
-    draft.assessment || "",
+    formatSectionToBullets(draft.assessment || ""),
     "",
     "Plan:",
-    draft.plan || "",
+    formatSectionToBullets(draft.plan || ""),
   ].join("\n");
 }
 
