@@ -131,7 +131,9 @@ export async function POST(request: NextRequest) {
       ],
       max_completion_tokens: 3000,
     });
-    const payload = completion.choices?.[0]?.message?.content?.trim() || "";
+    const rawContent = completion.choices?.[0]?.message?.content?.trim() || "";
+    // Strip markdown code fences the model occasionally emits despite the prompt
+    const payload = rawContent.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/, "").trim();
     let soapArray: Array<{ label: string; subjective: string; objective: string; assessment: string; plan: string }>;
     try {
       const rawParsed = parseJsonValue(payload, "SOAP model output");

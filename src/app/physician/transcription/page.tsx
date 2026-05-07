@@ -569,10 +569,13 @@ export default function PhysicianTranscriptionPage() {
     await Promise.allSettled(pendingTranscriptionsRef.current);
     pendingTranscriptionsRef.current = [];
     setTranscriptLoading(false);
+    // Return the up-to-date transcript from the ref so callers don't depend on stale React state
+    return segmentTextsRef.current.filter(Boolean).map(s => s.trim()).join("\n\n").trim();
   }
 
-  async function generateSoap() {
-    if (!canGenerate) return;
+  async function generateSoap(transcriptOverride?: string) {
+    const effectiveTranscript = (transcriptOverride ?? transcript).trim();
+    if (effectiveTranscript.length < 10 || actionLoading) return;
     setActionLoading(true);
     setActionError(null);
     setActionSuccess(null);
@@ -589,7 +592,7 @@ export default function PhysicianTranscriptionPage() {
                   dateOfBirth: newPatientDob.trim(),
                 }
               : undefined,
-          transcript: transcript.trim(),
+          transcript: effectiveTranscript,
           chiefComplaint: chiefComplaint.trim() || undefined,
           encounterId: encounterId || undefined,
         }),
@@ -1423,7 +1426,7 @@ export default function PhysicianTranscriptionPage() {
                           </button>
                           <button
                             type="button"
-                            onClick={async () => { await stopRecording(); await generateSoap(); }}
+                            onClick={async () => { const t = await stopRecording(); await generateSoap(t); }}
                             disabled={transcriptLoading}
                             className="px-4 py-2 text-sm font-medium text-white rounded-lg bg-slate-900 hover:bg-slate-800 disabled:bg-slate-400"
                           >
