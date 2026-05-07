@@ -167,7 +167,17 @@ export async function POST(request: NextRequest) {
       ],
       max_completion_tokens: 3000,
     });
-    const rawContent = completion.choices?.[0]?.message?.content?.trim() || "";
+    const choice = completion.choices?.[0];
+    if (choice?.finish_reason === "content_filter") {
+      status = 422;
+      const res = NextResponse.json(
+        { error: "The transcript was blocked by the content filter. Please review the content and try again." },
+        { status },
+      );
+      logRequestMeta("/api/physician/transcription/generate", requestId, status, Date.now() - started);
+      return res;
+    }
+    const rawContent = choice?.message?.content?.trim() || "";
     // Strip markdown code fences the model occasionally emits despite the prompt
     const stripped = rawContent.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/, "").trim();
     // Escape any literal newlines inside JSON string values (model sometimes emits them)
@@ -290,7 +300,21 @@ export async function POST(request: NextRequest) {
     return res;
   } catch (error) {
     status = 500;
-    console.error("[physician/transcription/generate] failed:", error);
+    // Differentiate Azure OpenAI API errors from internal errors for better debugging
+    const isApiError = error instanceof Error && "status" in error;
+    const apiStatus = isApiError ? (error as { status: number }).status : null;
+    if (apiStatus === 429) {
+      status = 429;
+      console.error("[physician/transcription/generate] Azure OpenAI rate limit:", error);
+      const res = NextResponse.json({ error: "AI service is busy. Please try again in a moment." }, { status });
+      logRequestMeta("/api/physician/transcription/generate", requestId, status, Date.now() - started);
+      return res;
+    }
+    if (apiStatus && apiStatus >= 500) {
+      console.error("[physician/transcription/generate] Azure OpenAI service error:", error);
+    } else {
+      console.error("[physician/transcription/generate] failed:", error);
+    }
     const res = NextResponse.json({ error: "Failed to generate SOAP note." }, { status });
     logRequestMeta("/api/physician/transcription/generate", requestId, status, Date.now() - started);
     return res;
