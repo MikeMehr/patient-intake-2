@@ -29,7 +29,43 @@ Return valid JSON only: an array of objects, each with keys: label, subjective, 
 If there is only one case, still return a single-element array.
 Do not include markdown, code fences, or extra keys.
 Each field should be clinically useful and concise.
+CRITICAL JSON RULE: Every field value must be plain prose on a single line. Do NOT use bullet points, numbered lists, or any line breaks (\\n) inside any string value. Literal newline characters inside JSON strings produce invalid JSON and will cause an error. Write all content as flowing sentences separated by spaces or semicolons.
 IMPORTANT: Always write the SOAP note entirely in English, regardless of the language used in the transcript.`;
+
+/**
+ * Escapes unescaped newlines/carriage-returns that appear inside JSON string
+ * values. Models sometimes emit literal line-breaks in strings, which is
+ * invalid JSON and causes JSON.parse to throw.
+ */
+function escapeRawNewlinesInJsonStrings(raw: string): string {
+  let inString = false;
+  let result = "";
+  let i = 0;
+  while (i < raw.length) {
+    const ch = raw[i];
+    if (inString) {
+      if (ch === "\\") {
+        result += ch + (raw[i + 1] ?? "");
+        i += 2;
+        continue;
+      } else if (ch === '"') {
+        inString = false;
+        result += ch;
+      } else if (ch === "\n") {
+        result += "\\n";
+      } else if (ch === "\r") {
+        result += "\\r";
+      } else {
+        result += ch;
+      }
+    } else {
+      if (ch === '"') inString = true;
+      result += ch;
+    }
+    i++;
+  }
+  return result;
+}
 
 function buildPreview(subjective: string, assessment: string) {
   const text = `${subjective.trim()} ${assessment.trim()}`.trim();
@@ -133,7 +169,9 @@ export async function POST(request: NextRequest) {
     });
     const rawContent = completion.choices?.[0]?.message?.content?.trim() || "";
     // Strip markdown code fences the model occasionally emits despite the prompt
-    const payload = rawContent.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/, "").trim();
+    const stripped = rawContent.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/, "").trim();
+    // Escape any literal newlines inside JSON string values (model sometimes emits them)
+    const payload = escapeRawNewlinesInJsonStrings(stripped);
     let soapArray: Array<{ label: string; subjective: string; objective: string; assessment: string; plan: string }>;
     try {
       const rawParsed = parseJsonValue(payload, "SOAP model output");
