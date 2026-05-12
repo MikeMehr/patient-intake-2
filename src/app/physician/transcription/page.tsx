@@ -165,6 +165,7 @@ export default function PhysicianTranscriptionPage() {
   const [activeCaseIndex, setActiveCaseIndex] = useState(0);
   const [actionLoading, setActionLoading] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [showInsufficientContentDialog, setShowInsufficientContentDialog] = useState(false);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
   const [copyFeedbackState, setCopyFeedbackState] = useState<"idle" | "copied">("idle");
   const copyFeedbackTimeoutRef = useRef<number | null>(null);
@@ -575,7 +576,11 @@ export default function PhysicianTranscriptionPage() {
 
   async function generateSoap(transcriptOverride?: string) {
     const effectiveTranscript = (transcriptOverride ?? transcript).trim();
-    if (effectiveTranscript.length < 10 || actionLoading) return;
+    if (actionLoading) return;
+    if (effectiveTranscript.split(/\s+/).filter(Boolean).length < 30) {
+      setShowInsufficientContentDialog(true);
+      return;
+    }
     setActionLoading(true);
     setActionError(null);
     setActionSuccess(null);
@@ -2100,6 +2105,22 @@ export default function PhysicianTranscriptionPage() {
         </div>
       </div>
       <QuickAskAiModal isOpen={showQuickAskAi} onClose={() => setShowQuickAskAi(false)} />
+      {showInsufficientContentDialog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-lg shadow-xl p-6 max-w-sm w-full mx-4">
+            <h2 className="text-lg font-semibold text-gray-900 mb-2">Not enough content</h2>
+            <p className="text-sm text-gray-600 mb-5">
+              The transcript is too short to generate a SOAP note. Please record more of the conversation and try again.
+            </p>
+            <button
+              className="w-full bg-gray-900 text-white rounded-md py-2 text-sm font-medium hover:bg-gray-700"
+              onClick={() => setShowInsufficientContentDialog(false)}
+            >
+              OK
+            </button>
+          </div>
+        </div>
+      )}
       {showWoundReminder && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50">
           <div className="bg-white rounded-xl shadow-xl max-w-sm w-full mx-4 p-6 space-y-4">

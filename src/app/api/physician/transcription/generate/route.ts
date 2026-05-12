@@ -198,7 +198,13 @@ export async function POST(request: NextRequest) {
       });
       if (soapArray.length === 0) throw new Error("Model returned empty array.");
     } catch {
-      throw new Error("Model returned invalid SOAP JSON.");
+      status = 422;
+      const res = NextResponse.json(
+        { error: "Not enough clinical content to generate a SOAP note. Please add more detail to the transcript." },
+        { status },
+      );
+      logRequestMeta("/api/physician/transcription/generate", requestId, status, Date.now() - started);
+      return res;
     }
 
     // Create one encounter + SOAP version per case
