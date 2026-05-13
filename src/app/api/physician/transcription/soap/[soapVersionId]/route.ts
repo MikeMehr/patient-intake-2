@@ -50,6 +50,7 @@ export async function GET(
       finalizedForExportAt: soap.finalized_for_export_at ? soap.finalized_for_export_at.toISOString() : null,
       draftTranscript: soap.draft_transcript,
       chiefComplaint: soap.chief_complaint ?? null,
+      hasAudio: Boolean(soap.audio_blob_path),
       draft: {
         subjective: soap.subjective,
         objective: soap.objective,

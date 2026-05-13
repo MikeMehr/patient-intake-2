@@ -147,6 +147,9 @@ export default function PhysicianTranscriptionPage() {
   const [recordingElapsed, setRecordingElapsed] = useState(0);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const mediaChunksRef = useRef<Blob[]>([]);
+  const fullAudioChunksRef = useRef<Blob[]>([]);
+  const fullAudioMimeTypeRef = useRef<string>("audio/webm");
+  const pendingFullAudioRef = useRef<Blob | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const timerIntervalRef = useRef<number | null>(null);
   const flushIntervalRef = useRef<number | null>(null);
@@ -196,6 +199,13 @@ export default function PhysicianTranscriptionPage() {
   );
   const [snapshotAnonOnly, setSnapshotAnonOnly] = useState(false);
   const [language, setLanguage] = useState<string>("");
+  const [hasAudio, setHasAudio] = useState(false);
+  const [audioBlobPath, setAudioBlobPath] = useState<string | null>(null);
+  const [audioUploading, setAudioUploading] = useState(false);
+  const [audioUploadError, setAudioUploadError] = useState<string | null>(null);
+  const [retranscribeLanguage, setRetranscribeLanguage] = useState<string>("");
+  const [retranscribeLoading, setRetranscribeLoading] = useState(false);
+  const [retranscribeError, setRetranscribeError] = useState<string | null>(null);
   const [showMenu, setShowMenu] = useState(false);
   useEffect(() => {
     const saved = localStorage.getItem("defaultTranscriptionLanguage");
@@ -433,7 +443,10 @@ export default function PhysicianTranscriptionPage() {
       const newRecorder = new MediaRecorder(stream);
       mediaRecorderRef.current = newRecorder;
       newRecorder.ondataavailable = (e) => {
-        if (e.data && e.data.size > 0) mediaChunksRef.current.push(e.data);
+        if (e.data && e.data.size > 0) {
+          mediaChunksRef.current.push(e.data);
+          fullAudioChunksRef.current.push(e.data);
+        }
       };
       newRecorder.start(250);
     }
@@ -473,11 +486,15 @@ export default function PhysicianTranscriptionPage() {
         audio: { noiseSuppression: true, echoCancellation: true, autoGainControl: true },
       });
       const recorder = new MediaRecorder(stream);
+      fullAudioMimeTypeRef.current = recorder.mimeType || "audio/webm";
       mediaChunksRef.current = [];
       mediaStreamRef.current = stream;
       mediaRecorderRef.current = recorder;
       recorder.ondataavailable = (e) => {
-        if (e.data && e.data.size > 0) mediaChunksRef.current.push(e.data);
+        if (e.data && e.data.size > 0) {
+          mediaChunksRef.current.push(e.data);
+          fullAudioChunksRef.current.push(e.data);
+        }
       };
       recorder.start(250);
       setIsStartingRecording(false);
@@ -504,16 +521,22 @@ export default function PhysicianTranscriptionPage() {
     segmentIndexRef.current = 0;
     segmentTextsRef.current = [];
     pendingTranscriptionsRef.current = [];
+    fullAudioChunksRef.current = [];
+    pendingFullAudioRef.current = null;
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: { noiseSuppression: true, echoCancellation: true, autoGainControl: true },
       });
       const recorder = new MediaRecorder(stream);
+      fullAudioMimeTypeRef.current = recorder.mimeType || "audio/webm";
       mediaChunksRef.current = [];
       mediaStreamRef.current = stream;
       mediaRecorderRef.current = recorder;
       recorder.ondataavailable = (e) => {
-        if (e.data && e.data.size > 0) mediaChunksRef.current.push(e.data);
+        if (e.data && e.data.size > 0) {
+          mediaChunksRef.current.push(e.data);
+          fullAudioChunksRef.current.push(e.data);
+        }
       };
       recorder.start(250);
       setIsStartingRecording(false);
@@ -569,6 +592,15 @@ export default function PhysicianTranscriptionPage() {
     // Wait for all pending transcriptions to finish
     await Promise.allSettled(pendingTranscriptionsRef.current);
     pendingTranscriptionsRef.current = [];
+
+    // Store the full combined audio for potential re-transcription after SOAP is saved
+    if (fullAudioChunksRef.current.length > 0) {
+      pendingFullAudioRef.current = new Blob(fullAudioChunksRef.current, {
+        type: fullAudioMimeTypeRef.current,
+      });
+      fullAudioChunksRef.current = [];
+    }
+
     setTranscriptLoading(false);
     // Return the up-to-date transcript from the ref so callers don't depend on stale React state
     return segmentTextsRef.current.filter(Boolean).map(s => s.trim()).join("\n\n").trim();
@@ -657,6 +689,39 @@ export default function PhysicianTranscriptionPage() {
       setReviewText(cases[0].reviewText);
       setActiveWorkflowTab("review");
       setActionSuccess(cases.length > 1 ? `${cases.length} SOAP drafts generated.` : "SOAP draft generated.");
+
+      // Upload the full session audio so re-transcription is possible if the wrong language was used
+      const fullBlob = pendingFullAudioRef.current;
+      pendingFullAudioRef.current = null;
+      if (fullBlob && fullBlob.size > 0 && cases[0].soapVersionId) {
+        setAudioUploading(true);
+        setAudioUploadError(null);
+        void (async () => {
+          try {
+            const wavBlob = await convertToWav(fullBlob);
+            const fd = new FormData();
+            fd.append("audio", new File([wavBlob], "recording.wav", { type: "audio/wav" }));
+            fd.append("soapVersionId", cases[0].soapVersionId);
+            const uploadRes = await fetch("/api/physician/transcription/audio/upload", {
+              method: "POST",
+              body: fd,
+            });
+            const uploadData = await uploadRes.json().catch(() => ({}));
+            if (uploadRes.ok) {
+              setAudioBlobPath(uploadData.audioBlobPath ?? null);
+              setHasAudio(true);
+              setRetranscribeLanguage(language);
+            } else {
+              setAudioUploadError(uploadData?.error ?? "Failed to save audio for re-transcription.");
+            }
+          } catch (e) {
+            setAudioUploadError(e instanceof Error ? e.message : "Failed to save audio.");
+          } finally {
+            setAudioUploading(false);
+          }
+        })();
+      }
+
       await loadHistory();
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "Failed to generate SOAP");
@@ -867,6 +932,7 @@ export default function PhysicianTranscriptionPage() {
         chiefComplaint: string | null;
         draftTranscript: string | null;
         snapshotLabel: string | undefined;
+        hasAudio: boolean | undefined;
         draft: { subjective: string; objective: string; assessment: string; plan: string };
       };
 
@@ -915,6 +981,10 @@ export default function PhysicianTranscriptionPage() {
       setReviewText(cases[0].reviewText);
       setTranscript(primaryData?.draftTranscript || "");
       if (typeof primaryData?.snapshotLabel === "string") setSnapshotLabel(primaryData.snapshotLabel);
+      const loadedHasAudio = Boolean(primaryData?.hasAudio);
+      setHasAudio(loadedHasAudio);
+      setAudioBlobPath(null);
+      if (loadedHasAudio) setRetranscribeLanguage(language || localStorage.getItem("defaultTranscriptionLanguage") || "");
       setActiveWorkflowTab("review");
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "Failed to load SOAP version");
@@ -932,12 +1002,41 @@ export default function PhysicianTranscriptionPage() {
     setRecordingElapsed(0);
     setSoapCases([]);
     setActiveCaseIndex(0);
+    setHasAudio(false);
+    setAudioBlobPath(null);
+    setAudioUploading(false);
+    setAudioUploadError(null);
+    setRetranscribeLanguage("");
+    setRetranscribeError(null);
     // Reset wound care state
     setWoundImages([]);
     setWoundCareNote("");
     setWoundCareNoteError(null);
     setBgFile(null);
     setBgFileText("");
+  }
+
+  async function handleRetranscribe() {
+    if (!soapVersionId || retranscribeLoading) return;
+    setRetranscribeLoading(true);
+    setRetranscribeError(null);
+    try {
+      const res = await fetch("/api/physician/transcription/audio/retranscribe", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ soapVersionId, language: retranscribeLanguage }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || "Re-transcription failed");
+      const newText = typeof data?.text === "string" ? data.text.trim() : "";
+      if (!newText) throw new Error("No speech detected.");
+      setTranscript(newText);
+      setActiveWorkflowTab("capture");
+    } catch (e) {
+      setRetranscribeError(e instanceof Error ? e.message : "Re-transcription failed");
+    } finally {
+      setRetranscribeLoading(false);
+    }
   }
 
   async function handleWoundImageFiles(files: FileList) {
@@ -1418,6 +1517,39 @@ export default function PhysicianTranscriptionPage() {
                         ))}
                       </select>
                     </div>
+                    {(hasAudio || Boolean(audioBlobPath)) && lifecycleState === "DRAFT" && (
+                      <div className="flex flex-wrap items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+                        <span className="text-sm text-amber-700 whitespace-nowrap">Wrong language used?</span>
+                        <select
+                          value={retranscribeLanguage}
+                          onChange={(e) => setRetranscribeLanguage(e.target.value)}
+                          disabled={retranscribeLoading}
+                          className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          <option value="" disabled>Select language...</option>
+                          {languageOptions.map((opt) => (
+                            <option key={opt.value} value={opt.value}>{opt.label}</option>
+                          ))}
+                        </select>
+                        <button
+                          type="button"
+                          onClick={() => void handleRetranscribe()}
+                          disabled={retranscribeLoading || !soapVersionId || !retranscribeLanguage}
+                          className="px-3 py-1.5 text-sm font-medium text-white rounded-lg bg-amber-600 hover:bg-amber-700 disabled:bg-slate-400 disabled:cursor-not-allowed"
+                        >
+                          {retranscribeLoading ? "Re-transcribing…" : "Re-transcribe"}
+                        </button>
+                        {audioUploading && (
+                          <span className="text-xs text-slate-500">Saving audio…</span>
+                        )}
+                        {retranscribeError && (
+                          <p className="w-full text-xs text-red-600">{retranscribeError}</p>
+                        )}
+                        {audioUploadError && (
+                          <p className="w-full text-xs text-red-600">Audio save failed: {audioUploadError}</p>
+                        )}
+                      </div>
+                    )}
                     <div className="flex flex-wrap items-center gap-3">
                       {isRecording ? (
                         <>
