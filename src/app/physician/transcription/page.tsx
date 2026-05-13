@@ -1517,7 +1517,7 @@ export default function PhysicianTranscriptionPage() {
                         ))}
                       </select>
                     </div>
-                    {(hasAudio || Boolean(audioBlobPath)) && lifecycleState === "DRAFT" && (
+                    {soapVersionId && (hasAudio || Boolean(audioBlobPath)) && lifecycleState === "DRAFT" && (
                       <div className="flex flex-wrap items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
                         <span className="text-sm text-amber-700 whitespace-nowrap">Wrong language used?</span>
                         <select
