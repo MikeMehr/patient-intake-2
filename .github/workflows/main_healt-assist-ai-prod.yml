@@ -40,7 +40,7 @@ jobs:
           attempts=3
           for attempt in $(seq 1 "$attempts"); do
             echo "Running runtime security audit (attempt ${attempt}/${attempts})..."
-            if npm run audit:prod; then
+            if npm audit --omit=dev --audit-level=critical; then
               exit 0
             fi
             if [ "$attempt" -lt "$attempts" ]; then
