@@ -1454,17 +1454,6 @@ export default function PhysicianTranscriptionPage() {
                     >
                       Review and export
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => setActiveWorkflowTab("ask_ai")}
-                      className={`px-3 py-1.5 text-xs font-medium rounded-md ${
-                        activeWorkflowTab === "ask_ai"
-                          ? "bg-white text-slate-900 shadow-sm"
-                          : "text-slate-600 hover:text-slate-900"
-                      }`}
-                    >
-                      Ask AI
-                    </button>
                     {orgWoundCare && (
                       <>
                         <button
@@ -1496,6 +1485,17 @@ export default function PhysicianTranscriptionPage() {
                         </button>
                       </>
                     )}
+                    <button
+                      type="button"
+                      onClick={() => setActiveWorkflowTab("ask_ai")}
+                      className={`px-3 py-1.5 text-xs font-medium rounded-md ${
+                        activeWorkflowTab === "ask_ai"
+                          ? "bg-white text-slate-900 shadow-sm"
+                          : "text-slate-600 hover:text-slate-900"
+                      }`}
+                    >
+                      Ask AI
+                    </button>
                   </div>
                 </div>
                 {activeWorkflowTab === "capture" && (
