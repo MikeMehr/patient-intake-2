@@ -1165,7 +1165,10 @@ export default function PhysicianTranscriptionPage() {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || "Failed to generate wound care note");
-      setWoundCareNote(data.note || "");
+      const note = data.note || "";
+      setWoundCareNote(note);
+      // Mirror into reviewText so Review & export tab shows the wound care note
+      if (note) setReviewText(note);
     } catch (err) {
       setWoundCareNoteError(err instanceof Error ? err.message : "Failed to generate wound care note");
     } finally {
@@ -1713,16 +1716,18 @@ export default function PhysicianTranscriptionPage() {
                         disabled={!canCopySoap || actionLoading}
                         className="px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 disabled:opacity-60"
                       >
-                        {copyFeedbackState === "copied" ? "Copied!" : "Copy SOAP"}
+                        {copyFeedbackState === "copied" ? "Copied!" : orgWoundCare ? "Copy Note" : "Copy SOAP"}
                       </button>
                     </div>
                     <div className="grid grid-cols-1 gap-3">
                       <textarea
                         value={reviewText}
                         onChange={(e) => setReviewText(e.target.value)}
-                        rows={16}
-                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                        placeholder={"Subjective:\n\nObjective:\n\nAssessment:\n\nPlan:"}
+                        rows={orgWoundCare ? 30 : 16}
+                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm resize-y"
+                        placeholder={orgWoundCare
+                          ? "SUBJECTIVE\nChief Complaint:\nLocation of Service:\nHistory of Present Illness:\n  Onset/Duration:\n  Initial Etiology:\n  Number of Wounds:\n  Patient-Reported Course:\n  Primary Symptoms:\n  Previous Treatment:\n  Barriers to Healing:\n  Comorbid Risk Factors:\n  Functional Impact:\n  Medical Necessity Statement:\nSocial History:\nReview of Systems:\n\nOBJECTIVE\nVital Signs:\nPhysical Exam:\nDermatologic - Wound Exam\nWound #1:\n  • Location:\n  • Size: ___ cm x ___ cm x ___ cm\n  • Tissue composition:\n  • Borders:\n  • Wound base:\n  • Periwound:\n  • Drainage:\n  • Signs of infection:\n\nASSESSMENT\nDiagnosis:\nMedical Decision Making:\n\nPLAN\nOffice Procedures:\nCare Plan:\nFollow-Up:"
+                          : "Subjective:\n\nObjective:\n\nAssessment:\n\nPlan:"}
                         disabled={!soapVersionId || lifecycleState === "FINALIZED_FOR_EXPORT"}
                       />
                     </div>
