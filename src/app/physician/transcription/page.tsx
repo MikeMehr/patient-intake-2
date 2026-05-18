@@ -1158,8 +1158,9 @@ export default function PhysicianTranscriptionPage() {
     }
   }
 
-  async function generateWoundCareNote() {
-    if (!transcript.trim()) return;
+  async function generateWoundCareNote(transcriptOverride?: string) {
+    const txText = transcriptOverride ?? transcript.trim();
+    if (!txText) return;
     setWoundCareNoteLoading(true);
     setWoundCareNoteError(null);
     try {
@@ -1167,7 +1168,7 @@ export default function PhysicianTranscriptionPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          transcript: transcript.trim(),
+          transcript: txText,
           woundAnalyses: woundImages.map((img, i) => ({ ...img.analysis, woundNumber: i + 1 })).filter((a) => a.length !== undefined),
           backgroundText: bgFileText || undefined,
         }),
@@ -1177,7 +1178,10 @@ export default function PhysicianTranscriptionPage() {
       const note = data.note || "";
       setWoundCareNote(note);
       // Mirror into reviewText so Review & export tab shows the wound care note
-      if (note) setReviewText(note);
+      if (note) {
+        setReviewText(note);
+        setActionSuccess("Wound care note generated.");
+      }
     } catch (err) {
       setWoundCareNoteError(err instanceof Error ? err.message : "Failed to generate wound care note");
     } finally {
@@ -1575,11 +1579,11 @@ export default function PhysicianTranscriptionPage() {
                           </button>
                           <button
                             type="button"
-                            onClick={async () => { const t = await stopRecording(); await generateSoap(t); }}
+                            onClick={async () => { const t = await stopRecording(); if (orgWoundCare) await generateWoundCareNote(t); else await generateSoap(t); }}
                             disabled={transcriptLoading}
                             className="px-4 py-2 text-sm font-medium text-white rounded-lg bg-slate-900 hover:bg-slate-800 disabled:bg-slate-400"
                           >
-                            Stop &amp; Generate SOAP
+                            {orgWoundCare ? "Stop & Generate Wound Care Note" : "Stop & Generate SOAP"}
                           </button>
                           <span className="font-mono text-sm font-semibold text-slate-700 tabular-nums">
                             {formatElapsed(recordingElapsed)}
@@ -1679,12 +1683,12 @@ export default function PhysicianTranscriptionPage() {
                     )}
                     <button
                       type="button"
-                      onClick={() => generateSoap()}
-                      disabled={!canGenerate}
-                      title={generateDisabledReason ?? undefined}
+                      onClick={() => orgWoundCare ? void generateWoundCareNote() : void generateSoap()}
+                      disabled={orgWoundCare ? (!transcript.trim() || woundCareNoteLoading) : !canGenerate}
+                      title={orgWoundCare ? undefined : (generateDisabledReason ?? undefined)}
                       className="px-4 py-2 text-sm font-medium text-white bg-slate-900 rounded-lg hover:bg-slate-800 disabled:bg-slate-400 disabled:cursor-not-allowed"
                     >
-                      {actionLoading ? "Generating..." : orgWoundCare ? "Generate Wound Care Note" : "Generate SOAP"}
+                      {(orgWoundCare ? woundCareNoteLoading : actionLoading) ? "Generating..." : orgWoundCare ? "Generate Wound Care Note" : "Generate SOAP"}
                     </button>
                     {generateDisabledReason && (
                       <p className="text-xs text-slate-500">{generateDisabledReason}</p>
