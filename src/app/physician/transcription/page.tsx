@@ -275,7 +275,16 @@ export default function PhysicianTranscriptionPage() {
         const res = await fetch("/api/physician/org-features");
         if (res.ok) {
           const data = await res.json().catch(() => ({}));
-          setOrgWoundCare(Boolean(data?.woundCare));
+          const isWoundCare = Boolean(data?.woundCare);
+          setOrgWoundCare(isWoundCare);
+          // If this is a wound care org and reviewText still holds the default
+          // empty SOAP skeleton, clear it so the wound care placeholder shows.
+          if (isWoundCare) {
+            setReviewText((prev) => {
+              const defaultSoap = composeUnifiedSoapText(initialDraft);
+              return prev === defaultSoap ? "" : prev;
+            });
+          }
         }
       } catch {
         // silently default to false
@@ -997,7 +1006,7 @@ export default function PhysicianTranscriptionPage() {
     setLifecycleState(null);
     setSoapHasPatient(false);
     setDraft(initialDraft);
-    setReviewText(composeUnifiedSoapText(initialDraft));
+    setReviewText(orgWoundCare ? "" : composeUnifiedSoapText(initialDraft));
     setTranscript("");
     setRecordingElapsed(0);
     setSoapCases([]);
