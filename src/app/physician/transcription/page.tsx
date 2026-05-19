@@ -1746,14 +1746,16 @@ export default function PhysicianTranscriptionPage() {
                       />
                     </div>
                     <div className="flex flex-wrap gap-2">
-                      <button
-                        type="button"
-                        onClick={saveDraft}
-                        disabled={!soapVersionId || lifecycleState === "FINALIZED_FOR_EXPORT" || actionLoading}
-                        className="px-4 py-2 text-sm font-medium text-white bg-slate-900 rounded-lg hover:bg-slate-800 disabled:bg-slate-400"
-                      >
-                        Save changes
-                      </button>
+                      {!orgWoundCare && (
+                        <button
+                          type="button"
+                          onClick={saveDraft}
+                          disabled={!soapVersionId || lifecycleState === "FINALIZED_FOR_EXPORT" || actionLoading}
+                          className="px-4 py-2 text-sm font-medium text-white bg-slate-900 rounded-lg hover:bg-slate-800 disabled:bg-slate-400"
+                        >
+                          Save changes
+                        </button>
+                      )}
                       <button
                         type="button"
                         onClick={finalizeAndSaveToEmr}
