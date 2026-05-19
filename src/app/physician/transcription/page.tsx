@@ -1182,6 +1182,25 @@ export default function PhysicianTranscriptionPage() {
         setReviewText(note);
         setActionSuccess("Wound care note generated.");
         setActiveWorkflowTab("review");
+
+        // Persist a snapshot so it appears in Recent snapshots
+        try {
+          const snapRes = await fetch("/api/physician/transcription/wound-care-snapshot", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ note, transcript: txText }),
+          });
+          const snapData = await snapRes.json().catch(() => ({}));
+          if (snapRes.ok && snapData.soapVersionId) {
+            setSoapVersionId(snapData.soapVersionId);
+            setEncounterId(snapData.encounterId || "");
+            setLifecycleState("DRAFT");
+            setSoapHasPatient(false);
+            await loadHistory();
+          }
+        } catch {
+          // Snapshot save failing should not block the note display
+        }
       }
     } catch (err) {
       setWoundCareNoteError(err instanceof Error ? err.message : "Failed to generate wound care note");
