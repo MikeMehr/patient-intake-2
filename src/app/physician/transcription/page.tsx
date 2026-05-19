@@ -175,6 +175,10 @@ function formatDateTime(value: string | null): string {
 
 export default function PhysicianTranscriptionPage() {
   const router = useRouter();
+  const handleLogout = async () => {
+    await fetch("/api/auth/logout", { method: "POST" });
+    router.push("/auth/login");
+  };
   const [patientSearchLoading, setPatientSearchLoading] = useState(false);
   const [patientSearchError, setPatientSearchError] = useState<string | null>(null);
   const [patientIdentityMessage, setPatientIdentityMessage] = useState<string | null>(null);
@@ -1488,6 +1492,11 @@ export default function PhysicianTranscriptionPage() {
                     <>
                       <div className="fixed inset-0 z-10" onClick={() => setShowMenu(false)} />
                       <div className="absolute right-0 top-9 z-20 min-w-[200px] rounded-xl border border-slate-200 bg-white py-1 shadow-lg">
+                        <a href="/physician/forms" className="flex w-full items-center rounded-md px-2 py-2 text-sm text-slate-700 hover:bg-slate-50">Forms</a>
+                        <a href="/physician/summarizing" className="flex w-full items-center rounded-md px-2 py-2 text-sm text-slate-700 hover:bg-slate-50">Summarizing</a>
+                        <a href="/physician/email" className="flex w-full items-center rounded-md px-2 py-2 text-sm text-slate-700 hover:bg-slate-50">Email</a>
+                        <button type="button" onClick={() => { setShowMenu(false); handleLogout(); }} className="flex w-full items-center rounded-md px-2 py-2 text-sm text-slate-700 hover:bg-slate-50">Sign Out</button>
+                        <div className="my-1 border-t border-slate-100" />
                         <div className="px-4 py-2.5">
                           <p className="text-xs text-slate-500 mb-1.5">Default language</p>
                           <select
