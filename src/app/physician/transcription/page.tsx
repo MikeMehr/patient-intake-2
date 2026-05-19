@@ -2037,7 +2037,7 @@ export default function PhysicianTranscriptionPage() {
                               <img
                                 src={img.dataUrl}
                                 alt={`Wound image ${idx + 1}`}
-                                className="w-full h-48 object-cover"
+                                className="w-full object-contain"
                               />
                               <div className="p-3 space-y-1">
                                 {img.analyzing ? (
