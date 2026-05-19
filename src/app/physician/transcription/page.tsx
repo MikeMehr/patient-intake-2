@@ -1181,6 +1181,7 @@ export default function PhysicianTranscriptionPage() {
       if (note) {
         setReviewText(note);
         setActionSuccess("Wound care note generated.");
+        setActiveWorkflowTab("review");
       }
     } catch (err) {
       setWoundCareNoteError(err instanceof Error ? err.message : "Failed to generate wound care note");
