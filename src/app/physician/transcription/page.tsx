@@ -77,6 +77,54 @@ const initialDraft: SoapDraft = {
   plan: "",
 };
 
+function WoundCareNoteDisplay({ text }: { text: string }) {
+  const SECTION_HEADERS = /^(SUBJECTIVE|OBJECTIVE|ASSESSMENT|PLAN)\s*$/;
+  const SPECIAL_LINE =
+    /^(Wound\s*#\d+|Patient Education|Treatment Plan|Care Plan|Follow[\s-]?Up|Office Procedures|Medical Decision Making)\s*:?\s*$/i;
+
+  const lines = text.split("\n");
+  return (
+    <div className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono leading-relaxed min-h-[200px]">
+      {lines.map((line, i) => {
+        // All-caps section headers
+        if (SECTION_HEADERS.test(line.trim())) {
+          return (
+            <div key={i}>
+              <strong>{line}</strong>
+            </div>
+          );
+        }
+        // Bullet lines — no bold label
+        if (/^\s*[•\-]/.test(line)) {
+          return <div key={i}>{line}</div>;
+        }
+        // Special whole-line patterns — bold entire line
+        if (SPECIAL_LINE.test(line.trim())) {
+          return (
+            <div key={i}>
+              <strong>{line}</strong>
+            </div>
+          );
+        }
+        // Lines with "Label: value" — bold label if label portion ≤ 70 chars
+        const colonIdx = line.indexOf(":");
+        if (colonIdx > 0 && colonIdx <= 70) {
+          const label = line.slice(0, colonIdx);
+          const rest = line.slice(colonIdx); // includes the colon
+          return (
+            <div key={i}>
+              <strong>{label}</strong>
+              {rest}
+            </div>
+          );
+        }
+        // Plain line (empty lines get a space to preserve vertical rhythm)
+        return <div key={i}>{line || " "}</div>;
+      })}
+    </div>
+  );
+}
+
 function formatSectionToBullets(text: string): string {
   const trimmed = text.trim();
   if (!trimmed) return "";
@@ -229,6 +277,7 @@ export default function PhysicianTranscriptionPage() {
   const [bgFileText, setBgFileText] = useState<string>("");
   // Wound reminder modal
   const [showWoundReminder, setShowWoundReminder] = useState(false);
+  const [isEditingNote, setIsEditingNote] = useState(false);
 
   const hasNewPatientIdentity = useMemo(
     () => newPatientFullName.trim().length >= 3 && /^\d{4}-\d{2}-\d{2}$/.test(newPatientDob.trim()),
@@ -1180,6 +1229,7 @@ export default function PhysicianTranscriptionPage() {
       // Mirror into reviewText so Review & export tab shows the wound care note
       if (note) {
         setReviewText(note);
+        setIsEditingNote(false);
         setActionSuccess("Wound care note generated.");
         setActiveWorkflowTab("review");
 
@@ -1742,7 +1792,16 @@ export default function PhysicianTranscriptionPage() {
                         </button>
                       </div>
                     )}
-                    <div className="flex items-center justify-end">
+                    <div className="flex items-center justify-end gap-2">
+                      {orgWoundCare && (
+                        <button
+                          type="button"
+                          onClick={() => setIsEditingNote((v) => !v)}
+                          className="px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50"
+                        >
+                          {isEditingNote ? "Done Editing" : "Edit"}
+                        </button>
+                      )}
                       <button
                         type="button"
                         onClick={copySoapText}
@@ -1753,16 +1812,20 @@ export default function PhysicianTranscriptionPage() {
                       </button>
                     </div>
                     <div className="grid grid-cols-1 gap-3">
-                      <textarea
-                        value={reviewText}
-                        onChange={(e) => setReviewText(e.target.value)}
-                        rows={orgWoundCare ? 30 : 16}
-                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm resize-y"
-                        placeholder={orgWoundCare
-                          ? "SUBJECTIVE\nChief Complaint:\nLocation of Service:\nHistory of Present Illness:\n  Onset/Duration:\n  Initial Etiology:\n  Number of Wounds:\n  Patient-Reported Course:\n  Primary Symptoms:\n  Previous Treatment:\n  Barriers to Healing:\n  Comorbid Risk Factors:\n  Functional Impact:\n  Medical Necessity Statement:\nSocial History:\nReview of Systems:\n\nOBJECTIVE\nVital Signs:\nPhysical Exam:\nDermatologic - Wound Exam\nWound #1:\n  • Location:\n  • Size: ___ cm x ___ cm x ___ cm\n  • Tissue composition:\n  • Borders:\n  • Wound base:\n  • Periwound:\n  • Drainage:\n  • Signs of infection:\n\nASSESSMENT\nDiagnosis:\nMedical Decision Making:\n\nPLAN\nOffice Procedures:\nCare Plan:\nFollow-Up:"
-                          : "Subjective:\n\nObjective:\n\nAssessment:\n\nPlan:"}
-                        disabled={!soapVersionId || lifecycleState === "FINALIZED_FOR_EXPORT"}
-                      />
+                      {orgWoundCare && !isEditingNote ? (
+                        <WoundCareNoteDisplay text={reviewText} />
+                      ) : (
+                        <textarea
+                          value={reviewText}
+                          onChange={(e) => setReviewText(e.target.value)}
+                          rows={orgWoundCare ? 30 : 16}
+                          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm resize-y"
+                          placeholder={orgWoundCare
+                            ? "SUBJECTIVE\nChief Complaint:\nLocation of Service:\nHistory of Present Illness:\n  Onset/Duration:\n  Initial Etiology:\n  Number of Wounds:\n  Patient-Reported Course:\n  Primary Symptoms:\n  Previous Treatment:\n  Barriers to Healing:\n  Comorbid Risk Factors:\n  Functional Impact:\n  Medical Necessity Statement:\nSocial History:\nReview of Systems:\n\nOBJECTIVE\nVital Signs:\nPhysical Exam:\nDermatologic - Wound Exam\nWound #1:\n  • Location:\n  • Size: ___ cm x ___ cm x ___ cm\n  • Tissue composition:\n  • Borders:\n  • Wound base:\n  • Periwound:\n  • Drainage:\n  • Signs of infection:\n\nASSESSMENT\nDiagnosis:\nMedical Decision Making:\n\nPLAN\nOffice Procedures:\nCare Plan:\nFollow-Up:"
+                            : "Subjective:\n\nObjective:\n\nAssessment:\n\nPlan:"}
+                          disabled={!soapVersionId || lifecycleState === "FINALIZED_FOR_EXPORT"}
+                        />
+                      )}
                     </div>
                     <div className="flex flex-wrap gap-2">
                       {!orgWoundCare && (
