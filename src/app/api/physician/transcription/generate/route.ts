@@ -316,6 +316,25 @@ export async function POST(request: NextRequest) {
       logRequestMeta("/api/physician/transcription/generate", requestId, status, Date.now() - started);
       return res;
     }
+    if (apiStatus === 400) {
+      const errBody = (error as Record<string, unknown>)?.error as Record<string, unknown> | undefined;
+      const code = errBody?.code as string | undefined;
+      const innerCode = (errBody?.innererror as Record<string, unknown>)?.code as string | undefined;
+      const isContentFilter =
+        code === "content_filter" ||
+        innerCode === "ResponsibleAIPolicyViolation" ||
+        (error instanceof Error && error.message.toLowerCase().includes("content_filter"));
+      if (isContentFilter) {
+        status = 422;
+        console.warn("[physician/transcription/generate] Azure content filter blocked input:", error);
+        const res = NextResponse.json(
+          { error: "The transcript was blocked by the content filter. Please review the content and try again." },
+          { status },
+        );
+        logRequestMeta("/api/physician/transcription/generate", requestId, status, Date.now() - started);
+        return res;
+      }
+    }
     if (apiStatus && apiStatus >= 500) {
       console.error("[physician/transcription/generate] Azure OpenAI service error:", error);
     } else {
