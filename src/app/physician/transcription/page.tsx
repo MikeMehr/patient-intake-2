@@ -1822,6 +1822,15 @@ export default function PhysicianTranscriptionPage() {
                         {copyFeedbackState === "copied" ? "Copied!" : orgWoundCare ? "Copy Note" : "Copy SOAP"}
                       </button>
                     </div>
+                    {orgWoundCare && woundImages.some((img) => img.analysis) && (
+                      <div className="flex items-start gap-2 rounded-lg border border-yellow-300 bg-yellow-50 px-3 py-2 text-xs text-yellow-800">
+                        <span className="mt-0.5 shrink-0">⚠</span>
+                        <span>
+                          This note includes findings from AI wound image analysis. Fields marked{" "}
+                          <strong>[from image analysis]</strong> are AI-estimated, not physician-dictated — verify before signing.
+                        </span>
+                      </div>
+                    )}
                     <div className="grid grid-cols-1 gap-3">
                       {orgWoundCare && !isEditingNote ? (
                         <WoundCareNoteDisplay text={reviewText} />
