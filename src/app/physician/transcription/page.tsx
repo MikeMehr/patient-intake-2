@@ -282,6 +282,7 @@ export default function PhysicianTranscriptionPage() {
   // Wound reminder modal
   const [showWoundReminder, setShowWoundReminder] = useState(false);
   const [isEditingNote, setIsEditingNote] = useState(false);
+  const [isEditingMergeNote, setIsEditingMergeNote] = useState(false);
 
   const hasNewPatientIdentity = useMemo(
     () => newPatientFullName.trim().length >= 3 && /^\d{4}-\d{2}-\d{2}$/.test(newPatientDob.trim()),
@@ -1234,6 +1235,7 @@ export default function PhysicianTranscriptionPage() {
       if (note) {
         setReviewText(note);
         setIsEditingNote(false);
+        setIsEditingMergeNote(false);
         setActionSuccess("Wound care note generated.");
         setActiveWorkflowTab("review");
 
@@ -2120,24 +2122,37 @@ export default function PhysicianTranscriptionPage() {
                       <div className="space-y-2">
                         <div className="flex items-center justify-between">
                           <span className="text-xs font-medium text-slate-700">Wound Care Note</span>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              void navigator.clipboard.writeText(woundCareNote);
-                              setWoundCareNoteCopied(true);
-                              setTimeout(() => setWoundCareNoteCopied(false), 2000);
-                            }}
-                            className="px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50"
-                          >
-                            {woundCareNoteCopied ? "Copied!" : "Copy"}
-                          </button>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setIsEditingMergeNote((v) => !v)}
+                              className="px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50"
+                            >
+                              {isEditingMergeNote ? "Done Editing" : "Edit"}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                void navigator.clipboard.writeText(woundCareNote);
+                                setWoundCareNoteCopied(true);
+                                setTimeout(() => setWoundCareNoteCopied(false), 2000);
+                              }}
+                              className="px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50"
+                            >
+                              {woundCareNoteCopied ? "Copied!" : "Copy"}
+                            </button>
+                          </div>
                         </div>
-                        <textarea
-                          value={woundCareNote}
-                          onChange={(e) => setWoundCareNote(e.target.value)}
-                          rows={35}
-                          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono resize-y"
-                        />
+                        {isEditingMergeNote ? (
+                          <textarea
+                            value={woundCareNote}
+                            onChange={(e) => setWoundCareNote(e.target.value)}
+                            rows={35}
+                            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono resize-y"
+                          />
+                        ) : (
+                          <WoundCareNoteDisplay text={woundCareNote} />
+                        )}
                         <p className="text-xs text-slate-400">Plain text — paste directly into NextGen or any EHR note field.</p>
                       </div>
                     )}
