@@ -269,6 +269,7 @@ export default function PhysicianTranscriptionPage() {
   // Wound Images tab
   const [woundImages, setWoundImages] = useState<WoundImage[]>([]);
   const woundImageInputRef = useRef<HTMLInputElement | null>(null);
+  const reviewTextareaRef = useRef<HTMLTextAreaElement>(null);
   const [pdfDownloadingId, setPdfDownloadingId] = useState<string | null>(null);
   const [pdfAllDownloading, setPdfAllDownloading] = useState(false);
   // Merge tab
@@ -346,6 +347,13 @@ export default function PhysicianTranscriptionPage() {
     }
     void loadOrgFeatures();
   }, []);
+
+  useEffect(() => {
+    const el = reviewTextareaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }, [reviewText]);
 
   useEffect(() => {
     return () => {
@@ -1836,10 +1844,12 @@ export default function PhysicianTranscriptionPage() {
                         <WoundCareNoteDisplay text={reviewText} />
                       ) : (
                         <textarea
+                          ref={reviewTextareaRef}
                           value={reviewText}
                           onChange={(e) => setReviewText(e.target.value)}
-                          rows={orgWoundCare ? 30 : 16}
-                          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm resize-y"
+                          rows={1}
+                          style={{ overflow: "hidden" }}
+                          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
                           placeholder={orgWoundCare
                             ? "SUBJECTIVE\nChief Complaint:\nLocation of Service:\nHistory of Present Illness:\n  Onset/Duration:\n  Initial Etiology:\n  Number of Wounds:\n  Patient-Reported Course:\n  Primary Symptoms:\n  Previous Treatment:\n  Barriers to Healing:\n  Comorbid Risk Factors:\n  Functional Impact:\n  Medical Necessity Statement:\nSocial History:\nReview of Systems:\n\nOBJECTIVE\nVital Signs:\nPhysical Exam:\nDermatologic - Wound Exam\nWound #1:\n  • Location:\n  • Size: ___ cm x ___ cm x ___ cm\n  • Tissue composition:\n  • Borders:\n  • Wound base:\n  • Periwound:\n  • Drainage:\n  • Signs of infection:\n\nASSESSMENT\nDiagnosis:\nMedical Decision Making:\n\nPLAN\nOffice Procedures:\nCare Plan:\nFollow-Up:"
                             : "Subjective:\n\nObjective:\n\nAssessment:\n\nPlan:"}
