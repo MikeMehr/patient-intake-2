@@ -137,6 +137,11 @@ function formatSectionToBullets(text: string): string {
 }
 
 function composeUnifiedSoapText(draft: SoapDraft): string {
+  const assessmentPlan = [
+    formatSectionToBullets(draft.assessment || ""),
+    draft.plan?.trim() ? formatSectionToBullets(draft.plan) : "",
+  ].filter(Boolean).join("\n");
+
   return [
     "Subjective:",
     formatSectionToBullets(draft.subjective || ""),
@@ -144,16 +149,28 @@ function composeUnifiedSoapText(draft: SoapDraft): string {
     "Objective:",
     formatSectionToBullets(draft.objective || ""),
     "",
-    "Assessment:",
-    formatSectionToBullets(draft.assessment || ""),
-    "",
-    "Plan:",
-    formatSectionToBullets(draft.plan || ""),
+    "Assessment/Plan:",
+    assessmentPlan,
   ].join("\n");
 }
 
 function parseUnifiedSoapText(value: string): SoapDraft | null {
   const normalized = value.replace(/\r\n/g, "\n").trim();
+
+  // New combined format
+  const combinedPattern =
+    /Subjective:\s*([\s\S]*?)\n\s*Objective:\s*([\s\S]*?)\n\s*Assessment\/Plan:\s*([\s\S]*)$/i;
+  const combinedMatch = normalized.match(combinedPattern);
+  if (combinedMatch) {
+    return {
+      subjective: (combinedMatch[1] || "").trim(),
+      objective: (combinedMatch[2] || "").trim(),
+      assessment: (combinedMatch[3] || "").trim(),
+      plan: "",
+    };
+  }
+
+  // Legacy format (separate Assessment + Plan)
   const pattern =
     /Subjective:\s*([\s\S]*?)\n\s*Objective:\s*([\s\S]*?)\n\s*Assessment:\s*([\s\S]*?)\n\s*Plan:\s*([\s\S]*)$/i;
   const match = normalized.match(pattern);
@@ -855,7 +872,7 @@ export default function PhysicianTranscriptionPage() {
     if (!soapVersionId) return;
     const parsedDraft = parseUnifiedSoapText(reviewText);
     if (!parsedDraft) {
-      setActionError("Invalid SOAP format. Keep the headers: Subjective, Objective, Assessment, Plan.");
+      setActionError("Invalid SOAP format. Keep the headers: Subjective, Objective, Assessment/Plan.");
       return;
     }
     setActionLoading(true);
@@ -1852,7 +1869,7 @@ export default function PhysicianTranscriptionPage() {
                           className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
                           placeholder={orgWoundCare
                             ? "SUBJECTIVE\nChief Complaint:\nLocation of Service:\nHistory of Present Illness:\n  Onset/Duration:\n  Initial Etiology:\n  Number of Wounds:\n  Patient-Reported Course:\n  Primary Symptoms:\n  Previous Treatment:\n  Barriers to Healing:\n  Comorbid Risk Factors:\n  Functional Impact:\n  Medical Necessity Statement:\nSocial History:\nReview of Systems:\n\nOBJECTIVE\nVital Signs:\nPhysical Exam:\nDermatologic - Wound Exam\nWound #1:\n  • Location:\n  • Size: ___ cm x ___ cm x ___ cm\n  • Tissue composition:\n  • Borders:\n  • Wound base:\n  • Periwound:\n  • Drainage:\n  • Signs of infection:\n\nASSESSMENT\nDiagnosis:\nMedical Decision Making:\n\nPLAN\nOffice Procedures:\nCare Plan:\nFollow-Up:"
-                            : "Subjective:\n\nObjective:\n\nAssessment:\n\nPlan:"}
+                            : "Subjective:\n\nObjective:\n\nAssessment/Plan:"}
                           disabled={!soapVersionId || lifecycleState === "FINALIZED_FOR_EXPORT"}
                         />
                       )}

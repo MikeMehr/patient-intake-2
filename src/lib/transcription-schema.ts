@@ -4,7 +4,7 @@ export const soapDraftSchema = z.object({
   subjective: z.string().trim().min(1).max(6000),
   objective: z.string().trim().max(6000).default(""),
   assessment: z.string().trim().min(1).max(6000),
-  plan: z.string().trim().min(1).max(6000),
+  plan: z.string().trim().max(6000).default(""),
 });
 
 export const generateSoapFromTranscriptRequestSchema = z.object({

@@ -24,8 +24,8 @@ Return valid JSON only: an array of objects, each with keys: label, subjective, 
 - "label": brief case identifier (e.g. "Headache", "Left Elbow Pain")
 - "subjective": comprehensive patient history including chief complaint, symptom onset/duration/severity/character, associated symptoms, aggravating and relieving factors, relevant past medical history, current medications and recent changes, allergies if mentioned, family history, social history, and any other clinically relevant details the patient reported — exclude administrative details such as greetings, caller introductions, who called whom, office identification, and pharmacy/logistics coordination
 - "objective": exam findings and vitals (if documented)
-- "assessment": likely diagnosis and differentials
-- "plan": only what was explicitly discussed or decided in the transcript (tests ordered, referrals made, medications prescribed, follow-up instructions given); do not add recommendations not mentioned in the transcript
+- "assessment": brief telegraphic diagnosis and differentials (e.g. "psoriasis; r/o eczema")
+- "plan": brief telegraphic actions only — use 2–5 word phrases separated by semicolons; omit filler words like "prescribe", "recommend", "suggest", "advise"; use drug-name + route/frequency format (e.g. "clobetasol cream daily; Cetaphil prn; avoid irritants; f/u 4 wks"); only include what was explicitly discussed or decided in the transcript
 If there is only one case, still return a single-element array.
 Do not include markdown, code fences, or extra keys.
 Each field should be clinically useful and concise.
