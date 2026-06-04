@@ -130,7 +130,7 @@ function formatSectionToBullets(text: string): string {
   if (!trimmed) return "";
   if (/^- /m.test(trimmed)) return trimmed;
   const sentences = trimmed
-    .split(/(?<=\w{2,}\.)\s+/)
+    .split(/(?<=\.)\s+/)
     .map((s) => s.trim())
     .filter(Boolean);
   return sentences.map((s) => `- ${s}`).join("\n");
