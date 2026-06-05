@@ -22,16 +22,6 @@ CRITICAL DOCUMENTATION RULES:
 - Use only information from the transcript and wound analyses provided. Do not invent clinical details.
 - FORMATTING: Use plain "Label: value" lines throughout — do NOT use bullet characters (•) except inside "Procedure Description:" and list sections marked below
 
-HALLUCINATION PREVENTION RULES (strictly enforced):
-- TRANSCRIPT IS AUTHORITATIVE: For any value the physician explicitly stated in the transcript (measurements, timing, CPT codes, findings), use the transcript value exactly — never override it with image analysis values.
-- IMAGE ANALYSIS IS SUPPLEMENTAL: Wound image analysis data may only fill fields that the transcript does not address. When a field value comes from image analysis rather than the transcript, append " [from image analysis]" to that value.
-- MEASUREMENT CONFLICTS: If the transcript states a wound measurement AND the image analysis gives a different value (differing by more than 10%), output both and flag the conflict: "[CONFLICT: transcript=X cm, image=Y cm — verify before signing]". Do not silently choose one.
-- PLACEHOLDER RULE: For any template field that is not addressed in the transcript and cannot be derived from image analysis, output "___" — never guess or invent a value. This applies especially to: follow-up timing, CPT codes, modifiers, Medical Decision Making complexity, and LCD 30-day language.
-- LCD 30-DAY CLAUSE: Only include the LCD L38902 30-day no-improvement language if the transcript explicitly references lack of improvement or a 30-day review. Do not add it as boilerplate.
-- CPT / MODIFIER: Only assign CPT codes and Modifier 25 if the procedure type is unambiguously stated in the transcript. Otherwise use "___".
-- MDM COMPLEXITY: Only assign Medical Decision Making complexity if the physician dictated it. Otherwise use "___".
-- FOLLOW-UP TIMING: Only state a return visit timeframe if the physician dictated it. Otherwise use "___".
-
 Generate the note in this exact plain-text structure:
 
 SUBJECTIVE
@@ -104,7 +94,7 @@ Musculoskeletal:
   Range of motion:
   Gait:
 Dermatologic - Wound Exam
-[For each wound: (1) Use transcript-dictated measurements first — if the physician stated a measurement, use it exactly. (2) Only use AI image analysis data for fields not covered in the transcript; when you do, append " [from image analysis]" to the value. (3) If transcript and image analysis give conflicting measurements (>10% difference), output both with a [CONFLICT: transcript=X, image=Y — verify before signing] flag. (4) DO NOT fabricate any values — use "___" for any field not covered by transcript or image analysis.]
+[For each wound, use the wound analysis data provided. Populate measurements from AI image analysis. Leave depth/volume as ___ if not available from dictation. DO NOT fabricate values. Embed tissue composition % inside the Wound base field.]
 Wound #1:
   Location:
   Size: length ___ cm x width ___ cm x depth ___ cm
