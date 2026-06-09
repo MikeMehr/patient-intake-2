@@ -65,6 +65,7 @@ export default function OrganizationDetailPage() {
 
   const [oscarLoading, setOscarLoading] = useState(false);
   const [oscarError, setOscarError] = useState<string | null>(null);
+  const [oscarErrorDetail, setOscarErrorDetail] = useState<string | null>(null);
   const [oscarStatus, setOscarStatus] = useState<string>("not_connected");
   const [oscarBaseUrl, setOscarBaseUrl] = useState<string>("");
   const [oscarClientKey, setOscarClientKey] = useState<string>("");
@@ -88,6 +89,7 @@ export default function OrganizationDetailPage() {
 
   const fetchOscarConfig = async () => {
     setOscarError(null);
+    setOscarErrorDetail(null);
     setOscarLoading(true);
     try {
       const response = await fetch(`/api/admin/organizations/${organizationId}/emr/oscar`);
@@ -115,6 +117,7 @@ export default function OrganizationDetailPage() {
 
   const saveOscarConfig = async () => {
     setOscarError(null);
+    setOscarErrorDetail(null);
     setOscarLoading(true);
     try {
       const response = await fetch(`/api/admin/organizations/${organizationId}/emr/oscar`, {
@@ -143,6 +146,7 @@ export default function OrganizationDetailPage() {
 
   const connectOscar = async () => {
     setOscarError(null);
+    setOscarErrorDetail(null);
     setOscarLoading(true);
     try {
       const response = await fetch(`/api/admin/organizations/${organizationId}/emr/oscar/connect`, {
@@ -168,6 +172,7 @@ export default function OrganizationDetailPage() {
 
   const testOscar = async () => {
     setOscarError(null);
+    setOscarErrorDetail(null);
     setOscarLoading(true);
     try {
       const response = await fetch(`/api/admin/organizations/${organizationId}/emr/oscar/test`, {
@@ -176,6 +181,11 @@ export default function OrganizationDetailPage() {
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {
         setOscarError(data?.error || "OSCAR test failed");
+        const detailParts = [
+          data?.wwwAuthenticate ? `WWW-Authenticate: ${data.wwwAuthenticate}` : null,
+          data?.details ? `Response: ${data.details}` : null,
+        ].filter(Boolean);
+        setOscarErrorDetail(detailParts.length ? detailParts.join("\n") : null);
         return;
       }
       await fetchOscarConfig();
@@ -190,6 +200,7 @@ export default function OrganizationDetailPage() {
   const disconnectOscar = async () => {
     if (!confirm("Disconnect OSCAR for this organization?")) return;
     setOscarError(null);
+    setOscarErrorDetail(null);
     setOscarLoading(true);
     try {
       const response = await fetch(`/api/admin/organizations/${organizationId}/emr/oscar/disconnect`, {
@@ -541,6 +552,11 @@ export default function OrganizationDetailPage() {
               {oscarError && (
                 <div className="mt-4 rounded-lg bg-red-50 border border-red-200 px-4 py-3">
                   <p className="text-sm text-red-800">{oscarError}</p>
+                  {oscarErrorDetail && (
+                    <pre className="mt-2 text-xs text-red-700 whitespace-pre-wrap break-words font-mono">
+                      {oscarErrorDetail}
+                    </pre>
+                  )}
                 </div>
               )}
 
