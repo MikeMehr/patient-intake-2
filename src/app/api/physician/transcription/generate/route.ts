@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentSession } from "@/lib/auth";
 import { getEffectivePhysicianId } from "@/lib/auth-helpers";
-import { getAzureOpenAIClient } from "@/lib/azure-openai";
+import { getAzureSoapClient } from "@/lib/azure-openai";
 import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
 import { getRequestIp } from "@/lib/invitation-security";
 import { logPhysicianPhiAudit } from "@/lib/phi-audit";
@@ -158,7 +158,7 @@ export async function POST(request: NextRequest) {
       encounterId = encounter.encounterId;
     }
 
-    const azure = getAzureOpenAIClient();
+    const azure = getAzureSoapClient();
     const completion = await azure.client.chat.completions.create({
       model: azure.deployment,
       messages: [

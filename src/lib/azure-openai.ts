@@ -33,6 +33,35 @@ export function getAzureOpenAIClient() {
 }
 
 /**
+ * Creates an Azure OpenAI client for SOAP generation.
+ * Uses AZURE_SOAP_DEPLOYMENT if set (e.g. gpt-5.4-mini), otherwise falls back to AZURE_OPENAI_DEPLOYMENT.
+ */
+export function getAzureSoapClient() {
+  ensureProdEnv(["AZURE_OPENAI_ENDPOINT", "AZURE_OPENAI_API_KEY", "AZURE_OPENAI_DEPLOYMENT"]);
+  const endpoint = process.env.AZURE_OPENAI_ENDPOINT;
+  const apiKey = process.env.AZURE_OPENAI_API_KEY;
+  const deployment = process.env.AZURE_SOAP_DEPLOYMENT || process.env.AZURE_OPENAI_DEPLOYMENT;
+  const apiVersion = process.env.AZURE_OPENAI_API_VERSION || "2024-12-01-preview";
+
+  if (!endpoint || !apiKey || !deployment) {
+    throw new Error(
+      "Azure OpenAI is not configured. Set AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_API_KEY, AZURE_OPENAI_DEPLOYMENT."
+    );
+  }
+
+  const baseURL = `${endpoint.replace(/\/$/, "")}/openai/deployments/${deployment}`;
+
+  const client = new OpenAI({
+    apiKey,
+    baseURL,
+    defaultQuery: { "api-version": apiVersion },
+    defaultHeaders: { "api-key": apiKey },
+  });
+
+  return { client, deployment, apiVersion };
+}
+
+/**
  * Creates an Azure OpenAI vision client (Phi-4-multimodal or other vision-capable model)
  * using env vars:
  * AZURE_PHI_ENDPOINT, AZURE_PHI_API_KEY, AZURE_PHI_DEPLOYMENT, AZURE_PHI_API_VERSION?
