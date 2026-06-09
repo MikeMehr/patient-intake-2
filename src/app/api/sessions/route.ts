@@ -11,7 +11,7 @@ import {
 import type { PatientSession } from "@/lib/session-store";
 import type { SessionHistory } from "@/lib/session-store";
 import type { PatientProfile } from "@/lib/interview-schema";
-import { getAzureOpenAIClient } from "@/lib/azure-openai";
+import { getAzureSoapClient } from "@/lib/azure-openai";
 import { getCurrentSession } from "@/lib/auth";
 import { getEffectivePhysicianId } from "@/lib/auth-helpers";
 import { logPhysicianPhiAudit } from "@/lib/phi-audit";
@@ -38,7 +38,7 @@ async function translatePatientTextToEnglish(text: string): Promise<string> {
   const trimmed = text.trim();
   if (!trimmed) return "";
 
-  const azure = getAzureOpenAIClient();
+  const azure = getAzureSoapClient();
   const instruction =
     "You are a medical translation assistant. Translate the patient's message into English. " +
     "Return only the English translation. Preserve medical meaning. Keep it concise.";

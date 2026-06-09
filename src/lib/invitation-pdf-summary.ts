@@ -1,4 +1,4 @@
-import { getAzureOpenAIClient } from "@/lib/azure-openai";
+import { getAzureSoapClient } from "@/lib/azure-openai";
 import { ensureProdEnv } from "@/lib/required-env";
 import { assertSafeOperationLocation, assertSafeOutboundUrl } from "@/lib/outbound-url";
 
@@ -163,7 +163,7 @@ export async function summarizeExtractedPdfTextWithAzureOpenAI(
   const clippedText =
     normalized.length > 60000 ? `${normalized.slice(0, 60000)}\n\n[TRUNCATED]` : normalized;
 
-  const azure = getAzureOpenAIClient();
+  const azure = getAzureSoapClient();
   const completion = await azure.client.chat.completions.create({
     model: azure.deployment,
     messages: [
