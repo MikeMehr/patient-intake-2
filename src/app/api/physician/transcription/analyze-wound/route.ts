@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentSession } from "@/lib/auth";
-import { getAzureOpenAIClient } from "@/lib/azure-openai";
+import { getAzureSoapClient } from "@/lib/azure-openai";
 import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
 
 const MAX_IMAGE_BASE64_LENGTH = 7_000_000;
@@ -84,7 +84,7 @@ export async function POST(request: NextRequest) {
 
   let azure;
   try {
-    azure = getAzureOpenAIClient();
+    azure = getAzureSoapClient();
   } catch (err) {
     status = 500;
     const res = NextResponse.json(
