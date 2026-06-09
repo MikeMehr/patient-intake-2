@@ -44,6 +44,17 @@ export default function OrganizationDetailPage() {
   const params = useParams();
   const organizationId = params.id as string;
 
+  // The middleware returns 401 "Authentication required" once the admin session
+  // expires (idle/absolute timeout). Surface a clear session-expired banner for
+  // user-initiated actions instead of leaking the raw middleware error.
+  const handleAuthExpired = (response: Response): boolean => {
+    if (response.status === 401) {
+      setSessionExpired(true);
+      return true;
+    }
+    return false;
+  };
+
   const [organization, setOrganization] = useState<Organization | null>(null);
   const [providers, setProviders] = useState<Provider[]>([]);
   const [orgAdmins, setOrgAdmins] = useState<OrgAdminUser[]>([]);
@@ -66,6 +77,7 @@ export default function OrganizationDetailPage() {
   const [oscarLoading, setOscarLoading] = useState(false);
   const [oscarError, setOscarError] = useState<string | null>(null);
   const [oscarErrorDetail, setOscarErrorDetail] = useState<string | null>(null);
+  const [sessionExpired, setSessionExpired] = useState(false);
   const [oscarStatus, setOscarStatus] = useState<string>("not_connected");
   const [oscarBaseUrl, setOscarBaseUrl] = useState<string>("");
   const [oscarClientKey, setOscarClientKey] = useState<string>("");
@@ -129,6 +141,7 @@ export default function OrganizationDetailPage() {
           clientSecret: oscarClientSecret,
         }),
       });
+      if (handleAuthExpired(response)) return;
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {
         setOscarError(data?.error || "Failed to save OSCAR configuration");
@@ -152,6 +165,7 @@ export default function OrganizationDetailPage() {
       const response = await fetch(`/api/admin/organizations/${organizationId}/emr/oscar/connect`, {
         method: "POST",
       });
+      if (handleAuthExpired(response)) return;
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {
         setOscarError(data?.error || "Failed to start OSCAR connect");
@@ -178,6 +192,7 @@ export default function OrganizationDetailPage() {
       const response = await fetch(`/api/admin/organizations/${organizationId}/emr/oscar/test`, {
         method: "POST",
       });
+      if (handleAuthExpired(response)) return;
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {
         setOscarError(data?.error || "OSCAR test failed");
@@ -206,6 +221,7 @@ export default function OrganizationDetailPage() {
       const response = await fetch(`/api/admin/organizations/${organizationId}/emr/oscar/disconnect`, {
         method: "POST",
       });
+      if (handleAuthExpired(response)) return;
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {
         setOscarError(data?.error || "Failed to disconnect OSCAR");
@@ -302,6 +318,7 @@ export default function OrganizationDetailPage() {
           woundCare: orgForm.woundCare,
         }),
       });
+      if (handleAuthExpired(response)) return;
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {
         setOrgSaveError(data?.error || "Failed to update organization details.");
@@ -388,6 +405,22 @@ export default function OrganizationDetailPage() {
           </div>
         </div>
       </div>
+
+      {sessionExpired && (
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6">
+          <div className="rounded-lg bg-amber-50 border border-amber-300 px-4 py-3 flex items-center justify-between gap-4">
+            <p className="text-sm text-amber-900">
+              Your session expired — please sign in again to continue.
+            </p>
+            <button
+              onClick={() => router.push("/admin/login")}
+              className="shrink-0 px-3 py-2 rounded-lg bg-amber-600 text-white text-sm font-medium hover:bg-amber-700"
+            >
+              Sign in again
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
