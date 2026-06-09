@@ -565,10 +565,17 @@ export default function PhysicianTranscriptionPage() {
     pendingTranscriptionsRef.current.push(task);
   }
 
-  /** Resume recording without resetting segment index or pending transcriptions. */
+  /** Resume recording, appending new segments after the current transcript. */
   async function resumeRecording() {
     setRecordingError(null);
-    // Do NOT reset segmentIndexRef or pendingTranscriptionsRef — keep appending
+    // Seed segment refs from the live transcript state so new segments are
+    // appended after whatever is currently in the textarea — including manual
+    // edits and transcripts loaded from a saved version, which never went
+    // through segmentTextsRef.
+    const current = transcript.trim();
+    segmentTextsRef.current = current ? [current] : [];
+    segmentIndexRef.current = segmentTextsRef.current.length;
+    pendingTranscriptionsRef.current = [];
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: { noiseSuppression: true, echoCancellation: true, autoGainControl: true },
@@ -1705,9 +1712,6 @@ export default function PhysicianTranscriptionPage() {
                           >
                             Start New
                           </button>
-                        </>
-                      ) : transcript.trim().length > 0 && !soapVersionId ? (
-                        <>
                           <button
                             type="button"
                             onClick={() => { setIsStartingRecording(true); resumeRecording(); }}
@@ -1716,6 +1720,9 @@ export default function PhysicianTranscriptionPage() {
                           >
                             {isStartingRecording ? "Starting..." : "Resume"}
                           </button>
+                        </>
+                      ) : transcript.trim().length > 0 && !soapVersionId ? (
+                        <>
                           <button
                             type="button"
                             onClick={() => { setTranscript(""); setRecordingElapsed(0); setLanguage(localStorage.getItem("defaultTranscriptionLanguage") ?? ""); }}
@@ -1723,6 +1730,14 @@ export default function PhysicianTranscriptionPage() {
                             className="px-4 py-2 text-sm font-medium text-white rounded-lg bg-slate-900 hover:bg-slate-800 disabled:bg-slate-400"
                           >
                             Start New
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => { setIsStartingRecording(true); resumeRecording(); }}
+                            disabled={transcriptLoading || isStartingRecording}
+                            className={`px-4 py-2 text-sm font-medium text-white rounded-lg disabled:bg-slate-400 ${isStartingRecording ? "bg-orange-500" : "bg-slate-900 hover:bg-slate-800"}`}
+                          >
+                            {isStartingRecording ? "Starting..." : "Resume"}
                           </button>
                           {recordingElapsed > 0 && (
                             <span className="font-mono text-sm font-semibold text-slate-500 tabular-nums">
