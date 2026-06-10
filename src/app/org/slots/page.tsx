@@ -124,34 +124,58 @@ export default function SlotsPage() {
 
   async function handleAddSlot(e: React.FormEvent) {
     e.preventDefault();
-    setAdding(true);
     setAddError(null);
 
-    const startISO = new Date(newSlot.startTime).toISOString();
-    const endISO = new Date(newSlot.endTime).toISOString();
-
-    const body: Record<string, unknown> = {
-      physicianId: newSlot.physicianId,
-      startTime: startISO,
-      endTime: endISO,
-      slotStatus: newSlot.slotStatus,
-    };
-    if (bulkMode) body.intervalMinutes = intervalMinutes;
-
-    const res = await fetch("/api/org/slots", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-
-    const data = await res.json();
-    if (!res.ok) {
-      setAddError(data.error ?? "Failed to add slot.");
-    } else {
-      setShowAdd(false);
-      loadSlots();
+    // Validate before touching dates — the Hour/Min/AM-PM fields aren't natively
+    // "required", so guard against incomplete entries (which would otherwise make
+    // `new Date("").toISOString()` throw and leave the button stuck on "Adding…").
+    if (!newSlot.physicianId) {
+      setAddError("Please select a physician.");
+      return;
     }
-    setAdding(false);
+    const start = new Date(newSlot.startTime);
+    if (!newSlot.startTime || Number.isNaN(start.getTime())) {
+      setAddError("Please enter a complete start time (date, hour, minute, AM/PM).");
+      return;
+    }
+    const end = new Date(newSlot.endTime);
+    if (!newSlot.endTime || Number.isNaN(end.getTime())) {
+      setAddError("Please enter a complete end time (date, hour, minute, AM/PM).");
+      return;
+    }
+    if (end.getTime() <= start.getTime()) {
+      setAddError("End time must be after start time.");
+      return;
+    }
+
+    setAdding(true);
+    try {
+      const body: Record<string, unknown> = {
+        physicianId: newSlot.physicianId,
+        startTime: start.toISOString(),
+        endTime: end.toISOString(),
+        slotStatus: newSlot.slotStatus,
+      };
+      if (bulkMode) body.intervalMinutes = intervalMinutes;
+
+      const res = await fetch("/api/org/slots", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        setAddError(data.error ?? "Failed to add slot.");
+      } else {
+        setShowAdd(false);
+        loadSlots();
+      }
+    } catch {
+      setAddError("Something went wrong while adding the slot. Please try again.");
+    } finally {
+      setAdding(false);
+    }
   }
 
   const STATUS_COLORS: Record<string, string> = {
@@ -306,7 +330,15 @@ export default function SlotsPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Start time</label>
                 <DateTimeField
                   value={newSlot.startTime}
-                  onChange={(v) => setNewSlot((prev) => ({ ...prev, startTime: v }))}
+                  onChange={(v) =>
+                    setNewSlot((prev) => ({
+                      ...prev,
+                      startTime: v,
+                      // Convenience: seed the end time from the start the first time
+                      // it's set, so the End date isn't accidentally left blank.
+                      endTime: prev.endTime ? prev.endTime : v,
+                    }))
+                  }
                 />
               </div>
               <div>
