@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import DateTimeField from "./DateTimeField";
 
 type Physician = { id: string; firstName: string; lastName: string };
 type Slot = {
@@ -38,11 +39,6 @@ function formatTime(iso: string): string {
   } catch {
     return iso;
   }
-}
-
-function toInputDT(iso: string): string {
-  // Strip timezone for datetime-local input
-  return iso.substring(0, 16);
 }
 
 export default function SlotsPage() {
@@ -308,22 +304,16 @@ export default function SlotsPage() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Start time</label>
-                <input
-                  required
-                  type="datetime-local"
+                <DateTimeField
                   value={newSlot.startTime}
-                  onChange={(e) => setNewSlot((prev) => ({ ...prev, startTime: e.target.value }))}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                  onChange={(v) => setNewSlot((prev) => ({ ...prev, startTime: v }))}
                 />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">End time</label>
-                <input
-                  required
-                  type="datetime-local"
+                <DateTimeField
                   value={newSlot.endTime}
-                  onChange={(e) => setNewSlot((prev) => ({ ...prev, endTime: e.target.value }))}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                  onChange={(v) => setNewSlot((prev) => ({ ...prev, endTime: v }))}
                 />
               </div>
               <div>
