@@ -27,10 +27,19 @@ interface Provider {
   createdAt: string;
 }
 
+interface EmrStatus {
+  configured: boolean;
+  connected: boolean;
+  status: string;
+  baseUrl: string | null;
+  lastTestedAt: string | null;
+}
+
 export default function OrgDashboard() {
   const router = useRouter();
   const [organization, setOrganization] = useState<Organization | null>(null);
   const [providers, setProviders] = useState<Provider[]>([]);
+  const [emrStatus, setEmrStatus] = useState<EmrStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -40,10 +49,11 @@ export default function OrgDashboard() {
 
   const fetchData = async () => {
     try {
-      // Fetch organization and providers in parallel
-      const [orgResponse, providersResponse] = await Promise.all([
+      // Fetch organization, providers, and EMR status in parallel
+      const [orgResponse, providersResponse, emrResponse] = await Promise.all([
         fetch("/api/org/organization"),
         fetch("/api/org/providers"),
+        fetch("/api/org/emr-status"),
       ]);
 
       if (orgResponse.status === 401 || providersResponse.status === 401) {
@@ -53,6 +63,10 @@ export default function OrgDashboard() {
 
       const orgData = await orgResponse.json();
       const providersData = await providersResponse.json();
+
+      if (emrResponse.ok) {
+        setEmrStatus(await emrResponse.json());
+      }
 
       if (orgData.error) {
         setError(orgData.error);
@@ -222,6 +236,39 @@ export default function OrgDashboard() {
                       >
                         {organization.isActive ? "Active" : "Inactive"}
                       </span>
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-sm font-medium text-slate-500">EMR (OSCAR)</dt>
+                    <dd className="mt-1">
+                      {(() => {
+                        const connected = emrStatus?.connected;
+                        const isError = emrStatus?.status === "error";
+                        const label = connected
+                          ? "Connected"
+                          : isError
+                            ? "Connection error"
+                            : emrStatus?.configured
+                              ? "Not connected"
+                              : "Not configured";
+                        const cls = connected
+                          ? "bg-green-100 text-green-800"
+                          : isError
+                            ? "bg-red-100 text-red-800"
+                            : "bg-slate-100 text-slate-700";
+                        return (
+                          <span
+                            className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${cls}`}
+                          >
+                            {label}
+                          </span>
+                        );
+                      })()}
+                      {!emrStatus?.connected && (
+                        <p className="text-xs text-slate-400 mt-1">
+                          Managed by your administrator (Guided Interview dashboard).
+                        </p>
+                      )}
                     </dd>
                   </div>
                 </dl>
