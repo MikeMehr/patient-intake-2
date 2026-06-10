@@ -267,17 +267,23 @@ export async function getSlots(
     dateTo: string;
     includeBlocked?: boolean;
     statusFilter?: string[];
+    // IANA timezone the dateFrom/dateTo day boundaries are interpreted in.
+    // Defaults to the clinic's local zone so "2026-06-10" means local midnight,
+    // not UTC midnight (which would leak the prior evening's slots into range).
+    timezone?: string;
   },
 ): Promise<AppointmentSlot[]> {
   await releaseExpiredHolds();
 
+  const tz = opts.timezone || "America/Vancouver";
   const conditions: string[] = [
     "s.organization_id = $1",
-    "s.start_time >= $2::TIMESTAMPTZ",
-    "s.start_time < ($3::DATE + INTERVAL '1 day')::TIMESTAMPTZ",
+    // Interpret the day boundaries at local midnight in the clinic timezone.
+    "s.start_time >= (($2::date)::timestamp AT TIME ZONE $4)",
+    "s.start_time < ((($3::date + 1)::timestamp) AT TIME ZONE $4)",
   ];
-  const params: unknown[] = [orgId, opts.dateFrom, opts.dateTo];
-  let idx = 4;
+  const params: unknown[] = [orgId, opts.dateFrom, opts.dateTo, tz];
+  let idx = 5;
 
   if (opts.physicianId) {
     conditions.push(`s.physician_id = $${idx++}`);

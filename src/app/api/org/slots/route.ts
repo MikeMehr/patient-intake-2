@@ -5,7 +5,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentSession } from "@/lib/auth";
-import { getSlots, createSlot } from "@/lib/booking-store";
+import { getSlots, createSlot, getBookingSettingsByOrgId } from "@/lib/booking-store";
 import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -30,11 +30,16 @@ export async function GET(request: NextRequest) {
     const dateTo = sp.get("dateTo") ?? new Date(Date.now() + 30 * 86400000).toISOString().substring(0, 10);
     const physicianId = sp.get("physicianId") ?? undefined;
 
+    // Interpret the From/To day boundaries in the clinic's local timezone so the
+    // list matches the dates the admin sees (not UTC-shifted by ~a day).
+    const settings = await getBookingSettingsByOrgId(session.organizationId);
+
     const slots = await getSlots(session.organizationId, {
       physicianId,
       dateFrom,
       dateTo,
       statusFilter: ["OPEN", "BLOCKED", "HELD", "BOOKED"],
+      timezone: settings?.timezone,
     });
 
     const res = NextResponse.json({ slots });

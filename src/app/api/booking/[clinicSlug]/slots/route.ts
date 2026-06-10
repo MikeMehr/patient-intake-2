@@ -70,15 +70,31 @@ export async function GET(
     ? ["OPEN", "BLOCKED", "HELD", "BOOKED"]
     : ["OPEN", "HELD", "BOOKED"];
 
+  // Never offer past days: floor the range at "today" in the clinic's timezone.
+  // The browser-supplied dateFrom is a UTC-derived date that can be off by a day
+  // from the clinic-local day, so we derive the floor server-side instead.
+  const todayLocal = new Intl.DateTimeFormat("en-CA", {
+    timeZone: settings.timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+
   const allSlots = await getSlots(clinic.id, {
     physicianId,
-    dateFrom,
+    dateFrom: todayLocal,
     dateTo,
     statusFilter,
+    timezone: settings.timezone,
   });
 
-  // Filter slots to those within the public booking window hours
+  const now = Date.now();
+  // Filter to slots that are (a) still in the future and (b) within the public
+  // booking window hours.
   const bookableSlots = allSlots.filter((slot) => {
+    // Exclude slots that have already started/passed.
+    if (new Date(slot.startTime).getTime() <= now) return false;
+
     const slotLocal = new Intl.DateTimeFormat("en-CA", {
       timeZone: settings.timezone,
       hour: "numeric",
