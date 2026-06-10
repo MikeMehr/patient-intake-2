@@ -122,6 +122,19 @@ export default function SlotsPage() {
     loadSlots();
   }
 
+  function openAddModal() {
+    // Prefill the date (and a sensible default time) so the Date fields are
+    // never left blank — that was causing the form to fail/stall.
+    const day = dateFrom || new Date().toISOString().substring(0, 10);
+    setNewSlot((prev) => ({
+      ...prev,
+      startTime: `${day}T09:00`,
+      endTime: `${day}T09:30`,
+    }));
+    setAddError(null);
+    setShowAdd(true);
+  }
+
   async function handleAddSlot(e: React.FormEvent) {
     e.preventDefault();
     setAddError(null);
@@ -194,7 +207,7 @@ export default function SlotsPage() {
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-2xl font-bold text-gray-900">Appointment Slots</h1>
           <button
-            onClick={() => setShowAdd(true)}
+            onClick={openAddModal}
             className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-blue-700 transition"
           >
             + Add Slot
