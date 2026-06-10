@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import TimeField from "@/components/TimeField";
 
 const TIMEZONES = [
   "America/Vancouver",
@@ -191,20 +192,16 @@ export default function BookingSettingsPage() {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Opens at</label>
-                <input
-                  type="time"
+                <TimeField
                   value={settings.publicBookingStart}
-                  onChange={(e) => set("publicBookingStart", e.target.value)}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  onChange={(v) => set("publicBookingStart", v)}
                 />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Closes at</label>
-                <input
-                  type="time"
+                <TimeField
                   value={settings.publicBookingEnd}
-                  onChange={(e) => set("publicBookingEnd", e.target.value)}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  onChange={(v) => set("publicBookingEnd", v)}
                 />
               </div>
             </div>
