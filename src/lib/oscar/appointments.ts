@@ -101,15 +101,56 @@ export async function createOscarAppointment(
   };
   if (args.name) payload.name = args.name;
 
+  const result = await oscarSignedJsonPost(url, payload, args.creds);
+  if (!result.ok) return { ok: false, status: result.status, detail: result.detail };
+  try {
+    return { ok: true, appointmentNo: extractAppointmentNo(JSON.parse(result.text)) };
+  } catch {
+    // OSCAR returned 2xx but non-JSON — treat as created, id unknown.
+    return { ok: true, appointmentNo: null };
+  }
+}
+
+export type UpdateOscarStatusResult =
+  | { ok: true }
+  | { ok: false; status: number; detail: string };
+
+/**
+ * Update an existing OSCAR appointment's status (e.g. "C" = Cancelled).
+ *   POST {base}/ws/services/schedule/appointment/{id}/updateStatus
+ * Body: AppointmentTo1 — only `status` is read by OSCAR's updateAppointmentStatus.
+ */
+export async function updateOscarAppointmentStatus(args: {
+  oscarBaseUrl: string;
+  creds: OscarCreds;
+  appointmentNo: string; // OSCAR appointment id
+  status: string; // OSCAR status code, e.g. "C" for cancelled
+}): Promise<UpdateOscarStatusResult> {
+  const url = `${getOscarRestBase(args.oscarBaseUrl)}/schedule/appointment/${encodeURIComponent(
+    args.appointmentNo,
+  )}/updateStatus`;
+  const result = await oscarSignedJsonPost(url, { status: args.status }, args.creds);
+  return result.ok ? { ok: true } : { ok: false, status: result.status, detail: result.detail };
+}
+
+/**
+ * Shared OAuth1-signed JSON POST to OSCAR. Authorization header first, with a
+ * query-param fallback on 401 (some OSCAR deployments don't parse the header).
+ */
+async function oscarSignedJsonPost(
+  url: string,
+  payload: Record<string, unknown>,
+  creds: OscarCreds,
+): Promise<{ ok: true; text: string } | { ok: false; status: number; detail: string }> {
   const bodyStr = JSON.stringify(payload);
 
   const signed = signOAuth1Request({
     method: "POST",
     url,
-    consumerKey: args.creds.clientKey,
-    consumerSecret: args.creds.clientSecret,
-    token: args.creds.accessToken,
-    tokenSecret: args.creds.tokenSecret,
+    consumerKey: creds.clientKey,
+    consumerSecret: creds.clientSecret,
+    token: creds.accessToken,
+    tokenSecret: creds.tokenSecret,
   });
 
   const doFetch = async (useHeader: boolean) => {
@@ -145,13 +186,6 @@ export async function createOscarAppointment(
   }
 
   const text = await res.text();
-  if (!res.ok) {
-    return { ok: false, status: res.status, detail: text.slice(0, 500) };
-  }
-  try {
-    return { ok: true, appointmentNo: extractAppointmentNo(JSON.parse(text)) };
-  } catch {
-    // OSCAR returned 2xx but non-JSON — treat as created, id unknown.
-    return { ok: true, appointmentNo: null };
-  }
+  if (!res.ok) return { ok: false, status: res.status, detail: text.slice(0, 500) };
+  return { ok: true, text };
 }

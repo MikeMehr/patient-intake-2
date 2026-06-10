@@ -61,6 +61,16 @@ function OscarBadge({ status }: { status: string | null }) {
       </span>
     );
   }
+  if (status === "CANCELLED") {
+    return (
+      <span
+        className="inline-block px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 text-xs font-medium"
+        title="This appointment was marked Cancelled in OSCAR."
+      >
+        Cancelled in OSCAR
+      </span>
+    );
+  }
   if (status === "SKIPPED") {
     return (
       <span
