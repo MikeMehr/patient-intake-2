@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import DateTimeField from "./DateTimeField";
 
@@ -29,6 +29,37 @@ function formatLocalDT(iso: string): string {
   }
 }
 
+// Return the set of slot ids that overlap at least one other slot for the same
+// physician (half-open interval test). Used to surface/clean up existing overlaps.
+function computeOverlapIds(slots: Slot[]): Set<string> {
+  const ids = new Set<string>();
+  const byPhysician = new Map<string, Slot[]>();
+  for (const s of slots) {
+    const arr = byPhysician.get(s.physicianId) ?? [];
+    arr.push(s);
+    byPhysician.set(s.physicianId, arr);
+  }
+  for (const arr of byPhysician.values()) {
+    const sorted = [...arr].sort(
+      (a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime(),
+    );
+    for (let i = 0; i < sorted.length; i++) {
+      const aEnd = new Date(sorted[i]!.endTime).getTime();
+      const aStart = new Date(sorted[i]!.startTime).getTime();
+      for (let j = i + 1; j < sorted.length; j++) {
+        const bStart = new Date(sorted[j]!.startTime).getTime();
+        if (bStart >= aEnd) break; // sorted by start: nothing further overlaps i
+        const bEnd = new Date(sorted[j]!.endTime).getTime();
+        if (aStart < bEnd && bStart < aEnd) {
+          ids.add(sorted[i]!.id);
+          ids.add(sorted[j]!.id);
+        }
+      }
+    }
+  }
+  return ids;
+}
+
 function formatTime(iso: string): string {
   try {
     return new Intl.DateTimeFormat("en-CA", {
@@ -46,6 +77,7 @@ export default function SlotsPage() {
   const [physicians, setPhysicians] = useState<Physician[]>([]);
   const [slots, setSlots] = useState<Slot[]>([]);
   const [filterPhysicianId, setFilterPhysicianId] = useState("all");
+  const [showOverlapsOnly, setShowOverlapsOnly] = useState(false);
   const [dateFrom, setDateFrom] = useState(new Date().toISOString().substring(0, 10));
   const [dateTo, setDateTo] = useState(
     new Date(Date.now() + 14 * 86400000).toISOString().substring(0, 10),
@@ -213,6 +245,11 @@ export default function SlotsPage() {
     BOOKED: "bg-blue-100 text-blue-700",
   };
 
+  const overlapIds = useMemo(() => computeOverlapIds(slots), [slots]);
+  const displayedSlots = showOverlapsOnly
+    ? slots.filter((s) => overlapIds.has(s.id))
+    : slots;
+
   return (
     <main className="min-h-screen bg-gray-50 py-10 px-4">
       <div className="max-w-4xl mx-auto">
@@ -261,6 +298,20 @@ export default function SlotsPage() {
               className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
             />
           </div>
+          {(overlapIds.size > 0 || showOverlapsOnly) && (
+            <button
+              type="button"
+              onClick={() => setShowOverlapsOnly((v) => !v)}
+              className={`px-3 py-2 rounded-lg text-sm font-medium border ${
+                showOverlapsOnly
+                  ? "bg-amber-600 text-white border-amber-600 hover:bg-amber-700"
+                  : "bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100"
+              }`}
+              title="Slots that overlap another slot for the same physician"
+            >
+              {showOverlapsOnly ? "Show all" : `⚠ Overlapping (${overlapIds.size})`}
+            </button>
+          )}
         </div>
 
         {error && (
@@ -273,9 +324,11 @@ export default function SlotsPage() {
         <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
           {loading ? (
             <p className="text-gray-400 text-sm p-6 text-center">Loading…</p>
-          ) : slots.length === 0 ? (
+          ) : displayedSlots.length === 0 ? (
             <p className="text-gray-400 text-sm p-6 text-center">
-              No slots in this date range. Use "+ Add Slot" to create one.
+              {showOverlapsOnly
+                ? "No overlapping slots in this date range."
+                : 'No slots in this date range. Use "+ Add Slot" to create one.'}
             </p>
           ) : (
             <table className="w-full text-sm">
@@ -288,8 +341,13 @@ export default function SlotsPage() {
                 </tr>
               </thead>
               <tbody>
-                {slots.map((slot) => (
-                  <tr key={slot.id} className="border-b border-gray-100 last:border-0">
+                {displayedSlots.map((slot) => (
+                  <tr
+                    key={slot.id}
+                    className={`border-b border-gray-100 last:border-0 ${
+                      overlapIds.has(slot.id) ? "bg-amber-50" : ""
+                    }`}
+                  >
                     <td className="px-4 py-3 text-gray-800">
                       {formatLocalDT(slot.startTime)}
                       <span className="text-gray-400"> – {formatTime(slot.endTime)}</span>
