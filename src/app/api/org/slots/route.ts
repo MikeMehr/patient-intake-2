@@ -5,7 +5,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentSession } from "@/lib/auth";
-import { getSlots, createSlot, getBookingSettingsByOrgId } from "@/lib/booking-store";
+import { getSlots, createSlot, getBookingSettingsByOrgId, findOverlappingSlots } from "@/lib/booking-store";
 import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -88,8 +88,9 @@ export async function POST(request: NextRequest) {
     const resolvedStatus: "OPEN" | "BLOCKED" =
       slotStatus === "BLOCKED" ? "BLOCKED" : "OPEN";
 
-    // Bulk generation: if intervalMinutes is provided, create multiple slots
+    // Build the list of slot ranges to create (single, or bulk by interval).
     const interval = intervalMinutes ? Number(intervalMinutes) : 0;
+    const ranges: { start: Date; end: Date }[] = [];
     if (interval > 0) {
       const blockStart = new Date(String(startTime));
       const blockEnd = new Date(String(endTime));
@@ -102,35 +103,49 @@ export async function POST(request: NextRequest) {
         return res;
       }
 
-      const slotIds: string[] = [];
       let slotStart = blockStart;
       while (slotStart.getTime() + intervalMs <= blockEnd.getTime()) {
         const slotEnd = new Date(slotStart.getTime() + intervalMs);
-        const id = await createSlot(
-          session.organizationId,
-          String(physicianId),
-          slotStart.toISOString(),
-          slotEnd.toISOString(),
-          resolvedStatus,
-        );
-        slotIds.push(id);
+        ranges.push({ start: slotStart, end: slotEnd });
         slotStart = slotEnd;
       }
-
-      const res = NextResponse.json({ slotIds, count: slotIds.length }, { status });
-      logRequestMeta("/api/org/slots", requestId, status, Date.now() - started);
-      return res;
+    } else {
+      ranges.push({ start: new Date(String(startTime)), end: new Date(String(endTime)) });
     }
 
-    const slotId = await createSlot(
-      session.organizationId,
-      String(physicianId),
-      String(startTime),
-      String(endTime),
-      resolvedStatus,
-    );
+    // Unless the caller explicitly overrides, warn about overlaps with existing
+    // slots for this physician instead of creating them.
+    const allowOverlap = (body as Record<string, unknown>).allowOverlap === true;
+    if (!allowOverlap) {
+      const overlaps = await findOverlappingSlots(
+        session.organizationId,
+        String(physicianId),
+        ranges,
+      );
+      if (overlaps.length > 0) {
+        status = 409;
+        const res = NextResponse.json({ error: "overlap", overlaps }, { status });
+        logRequestMeta("/api/org/slots", requestId, status, Date.now() - started);
+        return res;
+      }
+    }
 
-    const res = NextResponse.json({ slotId }, { status });
+    const slotIds: string[] = [];
+    for (const r of ranges) {
+      const id = await createSlot(
+        session.organizationId,
+        String(physicianId),
+        r.start.toISOString(),
+        r.end.toISOString(),
+        resolvedStatus,
+      );
+      slotIds.push(id);
+    }
+
+    const res =
+      interval > 0
+        ? NextResponse.json({ slotIds, count: slotIds.length }, { status })
+        : NextResponse.json({ slotId: slotIds[0] }, { status });
     logRequestMeta("/api/org/slots", requestId, status, Date.now() - started);
     return res;
   } catch {

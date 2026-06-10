@@ -65,6 +65,9 @@ export default function SlotsPage() {
   const [intervalMinutes, setIntervalMinutes] = useState(15);
   const [adding, setAdding] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
+  const [overlapWarning, setOverlapWarning] = useState<
+    { startTime: string; endTime: string; status: string }[] | null
+  >(null);
 
   function loadSlots() {
     const qs = new URLSearchParams({ dateFrom, dateTo });
@@ -132,12 +135,19 @@ export default function SlotsPage() {
       endTime: `${day}T09:30`,
     }));
     setAddError(null);
+    setOverlapWarning(null);
     setShowAdd(true);
   }
 
-  async function handleAddSlot(e: React.FormEvent) {
+  function handleAddSlot(e: React.FormEvent) {
     e.preventDefault();
+    void submitSlot(false);
+  }
+
+  // `force` = true bypasses the server-side overlap check ("Add anyway").
+  async function submitSlot(force: boolean) {
     setAddError(null);
+    if (!force) setOverlapWarning(null);
 
     // Validate before touching dates — the Hour/Min/AM-PM fields aren't natively
     // "required", so guard against incomplete entries (which would otherwise make
@@ -170,6 +180,7 @@ export default function SlotsPage() {
         slotStatus: newSlot.slotStatus,
       };
       if (bulkMode) body.intervalMinutes = intervalMinutes;
+      if (force) body.allowOverlap = true;
 
       const res = await fetch("/api/org/slots", {
         method: "POST",
@@ -178,9 +189,13 @@ export default function SlotsPage() {
       });
 
       const data = await res.json();
-      if (!res.ok) {
+      if (res.status === 409 && data.error === "overlap") {
+        // Warn and let the user decide whether to add anyway.
+        setOverlapWarning(data.overlaps ?? []);
+      } else if (!res.ok) {
         setAddError(data.error ?? "Failed to add slot.");
       } else {
+        setOverlapWarning(null);
         setShowAdd(false);
         loadSlots();
       }
@@ -321,6 +336,31 @@ export default function SlotsPage() {
             {addError && (
               <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-red-700 text-sm mb-4">
                 {addError}
+              </div>
+            )}
+            {overlapWarning && overlapWarning.length > 0 && (
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-amber-800 text-sm mb-4">
+                <p className="font-medium mb-1">
+                  ⚠ This overlaps {overlapWarning.length} existing slot
+                  {overlapWarning.length === 1 ? "" : "s"} for this physician:
+                </p>
+                <ul className="list-disc list-inside space-y-0.5 mb-3 max-h-28 overflow-y-auto">
+                  {overlapWarning.slice(0, 10).map((o, i) => (
+                    <li key={i}>
+                      {formatLocalDT(o.startTime)} – {formatTime(o.endTime)}
+                      {o.status !== "OPEN" ? ` (${o.status})` : ""}
+                    </li>
+                  ))}
+                  {overlapWarning.length > 10 && <li>…and {overlapWarning.length - 10} more</li>}
+                </ul>
+                <button
+                  type="button"
+                  onClick={() => void submitSlot(true)}
+                  disabled={adding}
+                  className="bg-amber-600 text-white px-4 py-1.5 rounded-lg text-sm font-semibold hover:bg-amber-700 disabled:opacity-50"
+                >
+                  {adding ? "Adding…" : "Add anyway"}
+                </button>
               </div>
             )}
             <form onSubmit={handleAddSlot} className="space-y-4">

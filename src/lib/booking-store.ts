@@ -326,6 +326,42 @@ export async function getSlots(
   }));
 }
 
+/**
+ * Return existing slots for a physician that overlap any of the given time
+ * ranges (half-open intervals: they overlap when existingStart < rangeEnd and
+ * rangeStart < existingEnd). Used to warn before creating overlapping slots.
+ */
+export async function findOverlappingSlots(
+  orgId: string,
+  physicianId: string,
+  ranges: { start: Date; end: Date }[],
+): Promise<{ startTime: string; endTime: string; status: string }[]> {
+  if (ranges.length === 0) return [];
+  const minStart = new Date(Math.min(...ranges.map((r) => r.start.getTime())));
+  const maxEnd = new Date(Math.max(...ranges.map((r) => r.end.getTime())));
+
+  const result = await query<{ start_time: Date; end_time: Date; status: string }>(
+    `SELECT start_time, end_time, status
+     FROM appointment_slots
+     WHERE organization_id = $1 AND physician_id = $2
+       AND start_time < $4::TIMESTAMPTZ AND end_time > $3::TIMESTAMPTZ
+     ORDER BY start_time`,
+    [orgId, physicianId, minStart.toISOString(), maxEnd.toISOString()],
+  );
+
+  return result.rows
+    .filter((row) => {
+      const s = row.start_time instanceof Date ? row.start_time.getTime() : new Date(row.start_time).getTime();
+      const e = row.end_time instanceof Date ? row.end_time.getTime() : new Date(row.end_time).getTime();
+      return ranges.some((r) => s < r.end.getTime() && r.start.getTime() < e);
+    })
+    .map((row) => ({
+      startTime: row.start_time instanceof Date ? row.start_time.toISOString() : String(row.start_time),
+      endTime: row.end_time instanceof Date ? row.end_time.toISOString() : String(row.end_time),
+      status: row.status,
+    }));
+}
+
 export async function createSlot(
   orgId: string,
   physicianId: string,
