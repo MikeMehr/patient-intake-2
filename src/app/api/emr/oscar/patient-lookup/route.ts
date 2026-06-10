@@ -5,9 +5,10 @@ import { decryptString } from "@/lib/encrypted-field";
 import { getOscarRestBase } from "@/lib/oscar/client";
 import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
 import { signOAuth1Request } from "@/lib/oscar/oauth1";
+import { extractOscarDob, normalizeOscarDob } from "@/lib/oscar/dob";
 
 export const runtime = "nodejs";
-const HANDLER_VERSION = "2026-02-17-quicksearch-v3";
+const HANDLER_VERSION = "2026-06-10-dob-tolerant-v4";
 
 function splitName(input: string): { firstName: string; lastName: string } | null {
   const trimmed = input.trim().replace(/\s+/g, " ");
@@ -24,12 +25,10 @@ function splitName(input: string): { firstName: string; lastName: string } | nul
   return { firstName, lastName };
 }
 
+// Tolerant of OSCAR's various DOB shapes (datetime suffixes, slashes, epoch).
+// See src/lib/oscar/dob.ts.
 function normalizeDob(dob: string): string | null {
-  const cleaned = dob.trim();
-  if (!cleaned) return null;
-  // Expect YYYY-MM-DD
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(cleaned)) return null;
-  return cleaned;
+  return normalizeOscarDob(dob);
 }
 
 function pickArray(value: unknown): any[] {
@@ -101,8 +100,7 @@ function normalizeToMatch(item: any): {
 
   const firstName = String(item?.firstName ?? item?.first_name ?? item?.givenName ?? item?.given_name ?? item?.fname ?? "").trim();
   const lastName = String(item?.lastName ?? item?.last_name ?? item?.surname ?? item?.familyName ?? item?.family_name ?? item?.lname ?? "").trim();
-  const dateOfBirthRaw = String(item?.dob ?? item?.dateOfBirth ?? item?.birthDate ?? item?.birth_date ?? item?.dateOfBirthStr ?? "").trim();
-  const dateOfBirth = normalizeDob(dateOfBirthRaw || "") ?? undefined;
+  const dateOfBirth = extractOscarDob(item) ?? undefined;
 
   const displayName = [firstName, lastName].filter(Boolean).join(" ").trim() || `${lastName}`.trim() || `Demographic #${demographicNo}`;
   return { demographicNo, firstName, lastName, dateOfBirth, displayName };
@@ -161,8 +159,7 @@ async function fetchDobForDemographicNo(args: {
     tokenSecret: args.tokenSecret,
   });
   if (summaryRes.ok) {
-    const obj = summaryRes.json as any;
-    const dob = normalizeDob(String(obj?.dob ?? obj?.dateOfBirth ?? obj?.birthDate ?? "").trim() || "");
+    const dob = extractOscarDob(summaryRes.json);
     if (dob) return dob;
   }
 
@@ -175,9 +172,7 @@ async function fetchDobForDemographicNo(args: {
     tokenSecret: args.tokenSecret,
   });
   if (!fullRes.ok) return null;
-  const obj = fullRes.json as any;
-  const dob = normalizeDob(String(obj?.dob ?? obj?.dateOfBirth ?? obj?.birthDate ?? obj?.dateOfBirthStr ?? "").trim() || "");
-  return dob;
+  return extractOscarDob(fullRes.json);
 }
 
 function buildQuickSearchQueries(args: {

@@ -25,22 +25,17 @@ import { query } from "@/lib/db";
 import { decryptString } from "@/lib/encrypted-field";
 import { getOscarRestBase, oscarFetch } from "@/lib/oscar/client";
 import { signOAuth1Request } from "@/lib/oscar/oauth1";
+import { extractOscarDob, normalizeOscarDob } from "@/lib/oscar/dob";
 
 export const runtime = "nodejs";
 
 const HOLD_COOKIE = "booking_hold_key";
-const DOB_RE = /^\d{4}-\d{2}-\d{2}$/;
 // Limit name length to prevent oversized queries reaching Oscar
 const MAX_NAME_LEN = 100;
 
 // ---------------------------------------------------------------------------
 // Oscar search utilities (mirrors logic in /api/emr/oscar/patient-lookup)
 // ---------------------------------------------------------------------------
-
-function normalizeDob(dob: string): string | null {
-  const cleaned = dob.trim();
-  return DOB_RE.test(cleaned) ? cleaned : null;
-}
 
 function pickArray(value: unknown): any[] {
   if (Array.isArray(value)) return value;
@@ -80,10 +75,7 @@ function normalizeMatch(item: any): { demographicNo: string; dateOfBirth?: strin
     item?.demographicNo ?? item?.demographic_no ?? item?.demographicNumber ?? item?.id ?? item?.dataId ?? ""
   ).trim();
   if (!demographicNo) return null;
-  const dobRaw = String(
-    item?.dob ?? item?.dateOfBirth ?? item?.birthDate ?? item?.birth_date ?? item?.dateOfBirthStr ?? ""
-  ).trim();
-  return { demographicNo, dateOfBirth: normalizeDob(dobRaw) ?? undefined };
+  return { demographicNo, dateOfBirth: extractOscarDob(item) ?? undefined };
 }
 
 type OscarCreds = {
@@ -152,8 +144,7 @@ async function fetchDobForDemographic(demographicNo: string, creds: OscarCreds):
     creds
   );
   if (summaryRes.ok) {
-    const obj = summaryRes.json as any;
-    const dob = normalizeDob(String(obj?.dob ?? obj?.dateOfBirth ?? obj?.birthDate ?? "").trim() || "");
+    const dob = extractOscarDob(summaryRes.json);
     if (dob) return dob;
   }
   const fullRes = await oscarGet(
@@ -161,10 +152,7 @@ async function fetchDobForDemographic(demographicNo: string, creds: OscarCreds):
     creds
   );
   if (!fullRes.ok) return null;
-  const obj = fullRes.json as any;
-  return normalizeDob(
-    String(obj?.dob ?? obj?.dateOfBirth ?? obj?.birthDate ?? obj?.dateOfBirthStr ?? "").trim() || ""
-  );
+  return extractOscarDob(fullRes.json);
 }
 
 async function fetchEmailForDemographic(demographicNo: string, creds: OscarCreds): Promise<string | null> {
@@ -229,10 +217,12 @@ export async function POST(
 
   const firstName = String(body.firstName ?? "").trim().slice(0, MAX_NAME_LEN);
   const lastName = String(body.lastName ?? "").trim().slice(0, MAX_NAME_LEN);
-  const dateOfBirth = String(body.dateOfBirth ?? "").trim();
+  // Normalize the submitted DOB to canonical YYYY-MM-DD so the comparison below
+  // is apples-to-apples with the Oscar-derived (also normalized) value.
+  const dateOfBirth = normalizeOscarDob(String(body.dateOfBirth ?? "").trim());
   const emailRaw = String(body.email ?? "").trim();
 
-  if (!firstName || !lastName || !normalizeDob(dateOfBirth)) {
+  if (!firstName || !lastName || !dateOfBirth) {
     return NextResponse.json(
       { error: "firstName, lastName, and dateOfBirth (YYYY-MM-DD) are required" },
       { status: 400 }
