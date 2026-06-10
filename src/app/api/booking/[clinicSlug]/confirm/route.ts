@@ -13,6 +13,10 @@ import { getClinicBySlug, getPhysiciansForBooking, confirmAppointment } from "@/
 import { generateManageToken } from "@/lib/booking-token";
 import { sendBookingConfirmation } from "@/lib/booking-email";
 import { query } from "@/lib/db";
+import { decryptString } from "@/lib/encrypted-field";
+import { createOscarAppointment, toClinicLocalParts } from "@/lib/oscar/appointments";
+
+export const runtime = "nodejs";
 
 const HOLD_COOKIE = "booking_hold_key";
 const COVERAGE_TYPES = [
@@ -116,12 +120,28 @@ export async function POST(
   const physicians = await getPhysiciansForBooking(clinic.id);
   const physician = physicians.find((p) => p.id === result.physicianId);
 
-  // Fetch slot start time for email
-  const slotRow = await query<{ start_time: Date }>(
-    "SELECT start_time FROM appointment_slots WHERE id = $1",
+  // Fetch slot start/end time for email + OSCAR sync
+  const slotRow = await query<{ start_time: Date; end_time: Date }>(
+    "SELECT start_time, end_time FROM appointment_slots WHERE id = $1",
     [slotId],
   );
-  const slotStartTime = slotRow.rows[0]?.start_time?.toISOString() ?? "";
+  const slotStart = slotRow.rows[0]?.start_time ?? null;
+  const slotEnd = slotRow.rows[0]?.end_time ?? null;
+  const slotStartTime = slotStart?.toISOString() ?? "";
+
+  // Best-effort: push the booked appointment into OSCAR so it appears on the
+  // provider's day sheet. Never block the booking — it's already committed.
+  await syncAppointmentToOscar({
+    appointmentId: result.appointmentId,
+    physicianId: result.physicianId,
+    organizationId: clinic.id,
+    timezone: clinic.settings.timezone,
+    slotStart,
+    slotEnd,
+    demographicNo: oscarDemographicNo ? String(oscarDemographicNo) : undefined,
+    patientFirstName: String(firstName),
+    patientLastName: String(lastName),
+  });
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://mymd.health-asisst.org";
   const manageUrl = `${appUrl}/booking/manage/${manageTokenRaw}`;
@@ -152,4 +172,112 @@ export async function POST(
   // Clear the hold cookie
   response.cookies.set(HOLD_COOKIE, "", { maxAge: 0, path: "/" });
   return response;
+}
+
+/**
+ * Best-effort creation of the appointment in OSCAR's schedule, recording the
+ * outcome on the appointments row (oscar_sync_status). This never throws — a
+ * failure here only flags the appointment as not-synced so staff can enter it
+ * manually; the patient's booking has already been committed.
+ */
+async function syncAppointmentToOscar(args: {
+  appointmentId: string;
+  physicianId: string;
+  organizationId: string;
+  timezone: string;
+  slotStart: Date | null;
+  slotEnd: Date | null;
+  demographicNo?: string;
+  patientFirstName: string;
+  patientLastName: string;
+}): Promise<void> {
+  const setSync = async (status: "SYNCED" | "FAILED" | "SKIPPED", apptNo: string | null, err: string | null) => {
+    try {
+      await query(
+        `UPDATE appointments SET oscar_sync_status = $1, oscar_appointment_no = $2, oscar_sync_error = $3 WHERE id = $4`,
+        [status, apptNo, err, args.appointmentId],
+      );
+    } catch {
+      // Flag write is itself best-effort.
+    }
+  };
+
+  try {
+    if (!args.demographicNo || !/^\d+$/.test(args.demographicNo)) {
+      console.error(`[confirm] OSCAR sync skipped — no demographicNo for appointment ${args.appointmentId}`);
+      await setSync("SKIPPED", null, "No OSCAR patient (demographic) number");
+      return;
+    }
+    if (!args.slotStart || !args.slotEnd) {
+      await setSync("SKIPPED", null, "Slot times unavailable");
+      return;
+    }
+
+    // Physician → OSCAR provider number
+    const physRow = await query<{ oscar_provider_no: string | null }>(
+      `SELECT oscar_provider_no FROM physicians WHERE id = $1`,
+      [args.physicianId],
+    );
+    const providerNo = physRow.rows[0]?.oscar_provider_no?.trim();
+    if (!providerNo) {
+      console.error(`[confirm] OSCAR sync skipped — physician ${args.physicianId} has no oscar_provider_no`);
+      await setSync("SKIPPED", null, "Physician has no OSCAR provider number");
+      return;
+    }
+
+    // Org OSCAR connection
+    const connRes = await query<{
+      base_url: string;
+      client_key: string;
+      client_secret_enc: string;
+      access_token_enc: string | null;
+      token_secret_enc: string | null;
+      status: string;
+    }>(
+      `SELECT base_url, client_key, client_secret_enc, access_token_enc, token_secret_enc, status
+       FROM emr_connections
+       WHERE organization_id = $1 AND vendor = 'OSCAR'
+       LIMIT 1`,
+      [args.organizationId],
+    );
+    const conn = connRes.rows[0];
+    if (!conn || conn.status !== "connected" || !conn.access_token_enc || !conn.token_secret_enc) {
+      await setSync("SKIPPED", null, "OSCAR not connected for this clinic");
+      return;
+    }
+
+    const { date, time } = toClinicLocalParts(args.slotStart, args.timezone);
+    const durationMinutes = Math.max(
+      1,
+      Math.round((args.slotEnd.getTime() - args.slotStart.getTime()) / 60000),
+    );
+
+    const res = await createOscarAppointment({
+      oscarBaseUrl: conn.base_url,
+      creds: {
+        clientKey: conn.client_key,
+        clientSecret: decryptString(conn.client_secret_enc),
+        accessToken: decryptString(conn.access_token_enc),
+        tokenSecret: decryptString(conn.token_secret_enc),
+      },
+      providerNo,
+      demographicNo: Number(args.demographicNo),
+      appointmentDate: date,
+      startTime: time,
+      durationMinutes,
+      name: `${args.patientLastName}, ${args.patientFirstName}`,
+      reason: "Online booking",
+      notes: "Booked via online scheduling",
+    });
+
+    if (res.ok) {
+      await setSync("SYNCED", res.appointmentNo, null);
+    } else {
+      console.error(`[confirm] OSCAR appointment create failed (${res.status}) for appointment ${args.appointmentId}`);
+      await setSync("FAILED", null, `OSCAR ${res.status}: ${res.detail.slice(0, 200)}`);
+    }
+  } catch (err) {
+    console.error("[confirm] OSCAR sync unexpected error:", err);
+    await setSync("FAILED", null, "Unexpected error during OSCAR sync");
+  }
 }

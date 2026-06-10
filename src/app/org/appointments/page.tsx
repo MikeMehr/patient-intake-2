@@ -16,6 +16,7 @@ type Appointment = {
   billingNote: string | null;
   cancelledAt: string | null;
   createdAt: string;
+  oscarSyncStatus: string | null;
 };
 
 type Physician = { id: string; firstName: string; lastName: string };
@@ -40,6 +41,37 @@ function formatDT(iso: string): string {
   } catch {
     return iso;
   }
+}
+
+function OscarBadge({ status }: { status: string | null }) {
+  if (status === "SYNCED") {
+    return (
+      <span className="inline-block px-2 py-0.5 rounded-full bg-green-100 text-green-700 text-xs font-medium">
+        In OSCAR
+      </span>
+    );
+  }
+  if (status === "FAILED") {
+    return (
+      <span
+        className="inline-block px-2 py-0.5 rounded-full bg-red-100 text-red-600 text-xs font-medium"
+        title="The appointment could not be written to OSCAR. Enter it manually or retry."
+      >
+        Not in OSCAR
+      </span>
+    );
+  }
+  if (status === "SKIPPED") {
+    return (
+      <span
+        className="inline-block px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 text-xs font-medium"
+        title="OSCAR sync was skipped (no provider number / patient record / connection). Enter manually if needed."
+      >
+        Not synced
+      </span>
+    );
+  }
+  return <span className="text-gray-300 text-xs">—</span>;
 }
 
 export default function AppointmentsPage() {
@@ -156,6 +188,7 @@ export default function AppointmentsPage() {
                     <th className="text-left px-4 py-3 text-gray-600 font-medium">Physician</th>
                     <th className="text-left px-4 py-3 text-gray-600 font-medium">Coverage</th>
                     <th className="text-left px-4 py-3 text-gray-600 font-medium">Status</th>
+                    <th className="text-left px-4 py-3 text-gray-600 font-medium">OSCAR</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -192,6 +225,9 @@ export default function AppointmentsPage() {
                             Booked
                           </span>
                         )}
+                      </td>
+                      <td className="px-4 py-3">
+                        <OscarBadge status={appt.oscarSyncStatus} />
                       </td>
                     </tr>
                   ))}

@@ -17,6 +17,7 @@ export default function NewOrgProviderPage() {
     password: "",
     email: "",
     phone: "",
+    oscarProviderNo: "",
   });
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -50,6 +51,7 @@ export default function NewOrgProviderPage() {
         password: "",
         email: "",
         phone: "",
+        oscarProviderNo: "",
       });
       setLoading(false);
     } catch (err) {
@@ -222,6 +224,29 @@ export default function NewOrgProviderPage() {
                   className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200 disabled:cursor-not-allowed disabled:opacity-70"
                 />
               </div>
+            </div>
+
+            <div>
+              <label
+                htmlFor="oscarProviderNo"
+                className="block text-sm font-medium text-slate-700 mb-1"
+              >
+                OSCAR provider number
+              </label>
+              <input
+                id="oscarProviderNo"
+                type="text"
+                inputMode="numeric"
+                value={formData.oscarProviderNo}
+                onChange={(e) => setFormData({ ...formData, oscarProviderNo: e.target.value })}
+                disabled={loading}
+                placeholder="e.g. 29328"
+                className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200 disabled:cursor-not-allowed disabled:opacity-70"
+              />
+              <p className="mt-1 text-xs text-slate-500">
+                The provider&apos;s number in OSCAR. Required for online bookings to appear on their
+                OSCAR day sheet. Can be added later by editing the provider.
+              </p>
             </div>
 
             <div className="flex items-center justify-end gap-4 pt-4">

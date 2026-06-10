@@ -70,6 +70,7 @@ export type AppointmentRow = {
   manageTokenExpiresAt: string;
   cancelledAt: string | null;
   createdAt: string;
+  oscarSyncStatus: string | null; // 'SYNCED' | 'FAILED' | 'SKIPPED' | null
 };
 
 // ---------------------------------------------------------------------------
@@ -522,6 +523,7 @@ export async function getAppointmentByToken(tokenHash: string): Promise<Appointm
     manage_token_expires_at: Date;
     cancelled_at: Date | null;
     created_at: Date;
+    oscar_sync_status: string | null;
   }>(
     `SELECT
        a.id, a.organization_id, a.physician_id,
@@ -530,7 +532,7 @@ export async function getAppointmentByToken(tokenHash: string): Promise<Appointm
        s.start_time, s.end_time,
        a.first_name, a.last_name, a.date_of_birth::TEXT, a.email,
        a.coverage_type, a.province, a.health_card_number_enc, a.billing_note,
-       a.manage_token_expires_at, a.cancelled_at, a.created_at
+       a.manage_token_expires_at, a.cancelled_at, a.created_at, a.oscar_sync_status
      FROM appointments a
      JOIN appointment_slots s ON s.id = a.slot_id
      JOIN physicians ph ON ph.id = a.physician_id
@@ -574,6 +576,7 @@ export async function getAppointmentByToken(tokenHash: string): Promise<Appointm
       ? (row.cancelled_at instanceof Date ? row.cancelled_at.toISOString() : String(row.cancelled_at))
       : null,
     createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at),
+    oscarSyncStatus: row.oscar_sync_status,
   };
 }
 
@@ -635,6 +638,7 @@ export async function getAppointmentsForOrg(
     manage_token_expires_at: Date;
     cancelled_at: Date | null;
     created_at: Date;
+    oscar_sync_status: string | null;
   }>(
     `SELECT
        a.id, a.organization_id, a.physician_id,
@@ -642,7 +646,7 @@ export async function getAppointmentsForOrg(
        a.slot_id, s.start_time, s.end_time,
        a.first_name, a.last_name, a.date_of_birth::TEXT, a.email,
        a.coverage_type, a.province, a.health_card_number_enc, a.billing_note,
-       a.manage_token_expires_at, a.cancelled_at, a.created_at
+       a.manage_token_expires_at, a.cancelled_at, a.created_at, a.oscar_sync_status
      FROM appointments a
      JOIN appointment_slots s ON s.id = a.slot_id
      JOIN physicians ph ON ph.id = a.physician_id
@@ -675,6 +679,7 @@ export async function getAppointmentsForOrg(
       ? (row.cancelled_at instanceof Date ? row.cancelled_at.toISOString() : String(row.cancelled_at))
       : null,
     createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at),
+    oscarSyncStatus: row.oscar_sync_status,
   }));
 }
 

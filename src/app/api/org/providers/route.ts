@@ -96,7 +96,8 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { firstName, lastName, clinicName, username, password, email, phone } = body;
+    const { firstName, lastName, clinicName, username, password, email, phone, oscarProviderNo } = body;
+    const cleanedOscarProviderNo = oscarProviderNo ? String(oscarProviderNo).replace(/\D/g, "") : "";
 
     if (!firstName || !lastName || !clinicName || !username || !password) {
       status = 400;
@@ -195,8 +196,8 @@ export async function POST(request: NextRequest) {
 
     // Insert provider with organization_id from session
     const result = await query<{ id: string }>(
-      `INSERT INTO physicians (first_name, last_name, clinic_name, username, password_hash, unique_slug, email, phone, organization_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      `INSERT INTO physicians (first_name, last_name, clinic_name, username, password_hash, unique_slug, email, phone, organization_id, oscar_provider_no)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
        RETURNING id`,
       [
         firstName.trim(),
@@ -208,6 +209,7 @@ export async function POST(request: NextRequest) {
         email ? email.toLowerCase().trim() : null,
         phone ? phone.trim() : null,
         session.organizationId,
+        cleanedOscarProviderNo || null,
       ]
     );
 

@@ -55,8 +55,9 @@ export async function GET(
       unique_slug: string;
       organization_id: string | null;
       mfa_enabled: boolean;
+      oscar_provider_no: string | null;
     }>(
-      `SELECT id, first_name, last_name, clinic_name, username, email, phone, unique_slug, organization_id, mfa_enabled
+      `SELECT id, first_name, last_name, clinic_name, username, email, phone, unique_slug, organization_id, mfa_enabled, oscar_provider_no
        FROM physicians
        WHERE id = $1 AND organization_id = $2`,
       [id, session.organizationId]
@@ -86,6 +87,7 @@ export async function GET(
         uniqueSlug: provider.unique_slug,
         organizationId: provider.organization_id,
         mfaEnabled: provider.mfa_enabled,
+        oscarProviderNo: provider.oscar_provider_no,
       },
     });
     logRequestMeta("/api/org/providers/[id]", requestId, status, Date.now() - started);
@@ -123,7 +125,7 @@ export async function PUT(
 
     const { id } = await params;
     const body = await request.json();
-    const { firstName, lastName, clinicName, email, phone, password, mfaEnabled } = body;
+    const { firstName, lastName, clinicName, email, phone, password, mfaEnabled, oscarProviderNo } = body;
 
     // Verify provider belongs to organization
     const existingProvider = await query<{ id: string; organization_id: string | null }>(
@@ -233,6 +235,12 @@ export async function PUT(
     if (mfaEnabled !== undefined) {
       updates.push(`mfa_enabled = $${paramIndex++}`);
       values.push(Boolean(mfaEnabled));
+    }
+    if (oscarProviderNo !== undefined) {
+      // OSCAR provider numbers are numeric; store digits only, allow clearing.
+      const cleaned = oscarProviderNo ? String(oscarProviderNo).replace(/\D/g, "") : "";
+      updates.push(`oscar_provider_no = $${paramIndex++}`);
+      values.push(cleaned || null);
     }
 
     if (updates.length === 0) {

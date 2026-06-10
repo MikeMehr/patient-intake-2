@@ -20,6 +20,7 @@ export default function EditOrgProviderPage() {
     username: "",
     email: "",
     phone: "",
+    oscarProviderNo: "",
     password: "",
     confirmPassword: "",
     mfaEnabled: false,
@@ -54,6 +55,7 @@ export default function EditOrgProviderPage() {
           username: provider.username,
           email: provider.email || "",
           phone: provider.phone || "",
+          oscarProviderNo: provider.oscarProviderNo || "",
           password: "",
           confirmPassword: "",
           mfaEnabled: Boolean(provider.mfaEnabled),
@@ -150,6 +152,7 @@ export default function EditOrgProviderPage() {
         clinicName: formData.clinicName,
         email: formData.email || null,
         phone: formData.phone || null,
+        oscarProviderNo: formData.oscarProviderNo || null,
         mfaEnabled: formData.mfaEnabled,
       };
 
@@ -415,6 +418,29 @@ export default function EditOrgProviderPage() {
                   className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200 disabled:cursor-not-allowed disabled:opacity-70"
                 />
               </div>
+            </div>
+
+            <div>
+              <label
+                htmlFor="oscarProviderNo"
+                className="block text-sm font-medium text-slate-700 mb-1"
+              >
+                OSCAR provider number
+              </label>
+              <input
+                id="oscarProviderNo"
+                type="text"
+                inputMode="numeric"
+                value={formData.oscarProviderNo}
+                onChange={(e) => setFormData({ ...formData, oscarProviderNo: e.target.value })}
+                disabled={saving}
+                placeholder="e.g. 29328"
+                className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200 disabled:cursor-not-allowed disabled:opacity-70"
+              />
+              <p className="mt-1 text-xs text-slate-500">
+                The provider&apos;s number in OSCAR (shown on their schedule, e.g. &quot;Nahid 29328 Mehraein&quot;).
+                Required for online bookings to appear on this provider&apos;s OSCAR day sheet.
+              </p>
             </div>
 
             <div>
