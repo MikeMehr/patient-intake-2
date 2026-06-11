@@ -36,7 +36,7 @@ export function AppHeader() {
   const useOrganizationHeaderVariant = isAdminOrganizationPage(pathname);
 
   return (
-    <header className="w-full">
+    <header className="w-full bg-white">
       <div
         className={[
           "mx-auto px-4",

@@ -141,9 +141,9 @@ export default function OrgDashboard() {
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-2xl font-semibold text-slate-900">
-                Organization Dashboard
+                Online Booking Dashboard
               </h1>
-              <p className="text-sm text-slate-600 mt-1">
+              <p className="text-[1.1375rem] text-slate-600 mt-1">
                 {organization?.name || "Loading..."}
               </p>
             </div>
@@ -204,6 +204,10 @@ export default function OrgDashboard() {
               <h2 className="text-lg font-semibold text-slate-900 mb-4">Organization Details</h2>
               {organization ? (
                 <dl className="space-y-3">
+                  <div>
+                    <dt className="text-sm font-medium text-slate-500">Name</dt>
+                    <dd className="text-sm text-slate-900 mt-1">{organization.name}</dd>
+                  </div>
                   <div>
                     <dt className="text-sm font-medium text-slate-500">Email</dt>
                     <dd className="text-sm text-slate-900 mt-1">{organization.email}</dd>

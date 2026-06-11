@@ -74,6 +74,18 @@ export default function OrganizationDetailPage() {
   const [orgSaveError, setOrgSaveError] = useState<string | null>(null);
   const [orgSaveSuccess, setOrgSaveSuccess] = useState<string | null>(null);
 
+  const [showAddAdmin, setShowAddAdmin] = useState(false);
+  const [adminForm, setAdminForm] = useState({
+    firstName: "",
+    lastName: "",
+    username: "",
+    email: "",
+    password: "",
+  });
+  const [savingAdmin, setSavingAdmin] = useState(false);
+  const [adminError, setAdminError] = useState<string | null>(null);
+  const [adminSuccess, setAdminSuccess] = useState<string | null>(null);
+
   const [oscarLoading, setOscarLoading] = useState(false);
   const [oscarError, setOscarError] = useState<string | null>(null);
   const [oscarErrorDetail, setOscarErrorDetail] = useState<string | null>(null);
@@ -295,6 +307,42 @@ export default function OrganizationDetailPage() {
     } catch (err) {
       console.error("Error running org admin recovery action:", err);
       alert("Failed to update MFA recovery state");
+    }
+  };
+
+  const createOrgAdmin = async () => {
+    setAdminError(null);
+    setAdminSuccess(null);
+    setSavingAdmin(true);
+    try {
+      const response = await fetch(`/api/admin/organizations/${organizationId}/admins`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          firstName: adminForm.firstName.trim(),
+          lastName: adminForm.lastName.trim(),
+          username: adminForm.username.trim(),
+          email: adminForm.email.trim(),
+          password: adminForm.password,
+        }),
+      });
+      if (handleAuthExpired(response)) return;
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setAdminError(data?.error || "Failed to create admin account.");
+        return;
+      }
+      setAdminSuccess(
+        `Admin account "${adminForm.username.trim()}" created. They can sign in at /org/login.`,
+      );
+      setAdminForm({ firstName: "", lastName: "", username: "", email: "", password: "" });
+      setShowAddAdmin(false);
+      await fetchOrganizationDetails();
+    } catch (err) {
+      console.error("Error creating org admin:", err);
+      setAdminError("Failed to create admin account.");
+    } finally {
+      setSavingAdmin(false);
     }
   };
 
@@ -730,11 +778,106 @@ export default function OrganizationDetailPage() {
             </div>
 
             <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden mt-6">
-              <div className="px-6 py-4 border-b border-slate-200">
+              <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between gap-3">
                 <h2 className="text-lg font-semibold text-slate-900">
                   Organization Admin Accounts ({orgAdmins.length})
                 </h2>
+                <button
+                  onClick={() => {
+                    setAdminError(null);
+                    setAdminSuccess(null);
+                    setShowAddAdmin((prev) => !prev);
+                  }}
+                  className="px-4 py-2 bg-slate-900 text-white text-sm font-medium rounded-lg hover:bg-slate-800 transition"
+                >
+                  {showAddAdmin ? "Cancel" : "Add Admin"}
+                </button>
               </div>
+
+              {adminSuccess && (
+                <div className="px-6 py-3 bg-emerald-50 border-b border-emerald-200">
+                  <p className="text-sm text-emerald-800">{adminSuccess}</p>
+                </div>
+              )}
+
+              {showAddAdmin && (
+                <div className="px-6 py-5 border-b border-slate-200 bg-slate-50">
+                  <p className="text-xs text-slate-500 mb-4">
+                    Creates an account that signs in at <span className="font-mono">/org/login</span> to manage this
+                    organization&apos;s online booking, providers, and EMR settings.
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">First Name</label>
+                      <input
+                        type="text"
+                        value={adminForm.firstName}
+                        onChange={(e) => setAdminForm((prev) => ({ ...prev, firstName: e.target.value }))}
+                        className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
+                        disabled={savingAdmin}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">Last Name</label>
+                      <input
+                        type="text"
+                        value={adminForm.lastName}
+                        onChange={(e) => setAdminForm((prev) => ({ ...prev, lastName: e.target.value }))}
+                        className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
+                        disabled={savingAdmin}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">Username</label>
+                      <input
+                        type="text"
+                        value={adminForm.username}
+                        onChange={(e) => setAdminForm((prev) => ({ ...prev, username: e.target.value }))}
+                        placeholder="e.g. mymd-admin"
+                        autoCapitalize="none"
+                        className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
+                        disabled={savingAdmin}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">Email</label>
+                      <input
+                        type="email"
+                        value={adminForm.email}
+                        onChange={(e) => setAdminForm((prev) => ({ ...prev, email: e.target.value }))}
+                        className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
+                        disabled={savingAdmin}
+                      />
+                    </div>
+                    <div className="sm:col-span-2">
+                      <label className="block text-sm font-medium text-slate-700 mb-1">Password</label>
+                      <input
+                        type="text"
+                        value={adminForm.password}
+                        onChange={(e) => setAdminForm((prev) => ({ ...prev, password: e.target.value }))}
+                        placeholder="Min 8 chars, with a letter and a number"
+                        className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
+                        disabled={savingAdmin}
+                      />
+                      <p className="mt-1 text-xs text-slate-500">
+                        Shown in plain text so you can copy it for the clinic. Share it securely.
+                      </p>
+                    </div>
+                  </div>
+                  {adminError && <p className="mt-3 text-xs text-red-700">{adminError}</p>}
+                  <div className="mt-4">
+                    <button
+                      type="button"
+                      onClick={createOrgAdmin}
+                      disabled={savingAdmin}
+                      className="px-3 py-2 rounded-lg bg-slate-900 text-white text-sm font-medium hover:bg-slate-800 disabled:opacity-60 disabled:cursor-not-allowed"
+                    >
+                      {savingAdmin ? "Creating..." : "Create Admin Account"}
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {orgAdmins.length === 0 ? (
                 <div className="px-6 py-8 text-center text-sm text-slate-500">
                   No organization admin users found.
