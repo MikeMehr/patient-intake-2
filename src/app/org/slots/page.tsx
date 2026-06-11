@@ -163,6 +163,9 @@ export default function SlotsPage() {
     const day = dateFrom || new Date().toISOString().substring(0, 10);
     setNewSlot((prev) => ({
       ...prev,
+      // Default to the physician currently being filtered, so "Add Slot" matches
+      // who you're viewing. Falls back to the existing default when viewing "All".
+      physicianId: filterPhysicianId !== "all" ? filterPhysicianId : prev.physicianId,
       startTime: `${day}T09:00`,
       endTime: `${day}T09:30`,
     }));
