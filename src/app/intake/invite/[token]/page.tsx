@@ -10,6 +10,7 @@ type OpenInvitationResponse = {
   clinicName: string;
   patientName: string;
   maskedEmail: string;
+  maskedPhone: string | null;
   tokenExpiresAt: string | null;
   openable: boolean;
   invalidReason: "used" | "revoked" | "expired" | null;
@@ -87,7 +88,7 @@ export default function InvitationTokenIntakePage() {
         const lastSentAt = sessionStorage.getItem(key);
         if (lastSentAt) {
           setOtpSent(true);
-          setOtpMessage("Verification code already sent. Please check your email.");
+          setOtpMessage("Verification code already sent. Please check your phone.");
           return;
         }
       } catch {
@@ -108,7 +109,7 @@ export default function InvitationTokenIntakePage() {
         return;
       }
       setOtpSent(true);
-      setOtpMessage("Verification code sent to your email. It may take up to 2 minutes to arrive.");
+      setOtpMessage("Verification code sent by text message. It may take a minute to arrive.");
       if (opts.source === "auto") {
         try {
           sessionStorage.setItem(`inviteAutoOtpRequested:${token}`, String(Date.now()));
@@ -312,7 +313,7 @@ export default function InvitationTokenIntakePage() {
         <h1 className="text-xl font-semibold text-slate-900">Verify your invitation</h1>
         <p className="mt-2 text-sm text-slate-600">
           {openInfo
-            ? `We sent a 6-digit code to ${openInfo.maskedEmail}.`
+            ? `We sent a 6-digit code by text message to ${openInfo.maskedPhone || "your phone"}.`
             : "Enter your verification code."}
         </p>
 

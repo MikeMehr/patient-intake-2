@@ -8,6 +8,7 @@ import {
   isInvitationOpenable,
   logInvitationAudit,
   maskEmail,
+  maskPhone,
 } from "@/lib/invitation-security";
 import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
 
@@ -101,6 +102,7 @@ export async function GET(
       // remains unguessable; full patient email is only revealed after OTP verification.
       patientName: invitation.patientName,
       maskedEmail: maskEmail(invitation.patientEmail),
+      maskedPhone: invitation.patientPhone ? maskPhone(invitation.patientPhone) : null,
       tokenExpiresAt: invitation.tokenExpiresAt || invitation.expiresAt,
       openable,
       invalidReason,

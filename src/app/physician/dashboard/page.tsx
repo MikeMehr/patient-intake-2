@@ -579,6 +579,10 @@ function PhysicianDashboard() {
       setInviteError("Date of birth is required to send an invitation.");
       return;
     }
+    if (inviteRequire2fa && invitePrimaryPhone.replace(/\D/g, "").length < 10) {
+      setInviteError("A valid patient mobile phone is required for SMS verification.");
+      return;
+    }
     setInviteLoading(true);
 
     try {
@@ -1309,6 +1313,27 @@ function PhysicianDashboard() {
                     </p>
                   </div>
                   <div className="md:col-span-2">
+                    <label
+                      htmlFor="patientPhone"
+                      className="block text-sm font-medium text-slate-700 mb-1"
+                    >
+                      Patient mobile phone{inviteRequire2fa ? "" : " (Optional)"}
+                    </label>
+                    <input
+                      id="patientPhone"
+                      type="tel"
+                      value={invitePrimaryPhone}
+                      onChange={(e) => setInvitePrimaryPhone(e.target.value)}
+                      required={inviteRequire2fa}
+                      disabled={inviteLoading}
+                      className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200 disabled:cursor-not-allowed disabled:opacity-70"
+                      placeholder="e.g., 555-555-5555"
+                    />
+                    <p className="text-xs text-slate-500 mt-1">
+                      The patient verifies with a one-time code sent by SMS to this number.
+                    </p>
+                  </div>
+                  <div className="md:col-span-2">
                     <label className="flex items-center gap-2 cursor-pointer select-none">
                       <input
                         type="checkbox"
@@ -1318,11 +1343,11 @@ function PhysicianDashboard() {
                         className="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-500 disabled:cursor-not-allowed"
                       />
                       <span className="text-sm font-medium text-slate-700">
-                        Require patient 2FA (email verification)
+                        Require patient 2FA (SMS verification)
                       </span>
                     </label>
                     <p className="text-xs text-slate-500 mt-1 ml-6">
-                      When checked, patients must verify their email with a one-time code before accessing the intake form.
+                      When checked, patients must verify their mobile phone with a one-time code (sent by SMS) before accessing the intake form.
                     </p>
                   </div>
                 </div>
@@ -1366,19 +1391,6 @@ function PhysicianDashboard() {
               </summary>
               <div className="mt-4 space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">
-                      Primary phone (Optional)
-                    </label>
-                    <input
-                      type="tel"
-                      value={invitePrimaryPhone}
-                      onChange={(e) => setInvitePrimaryPhone(e.target.value)}
-                      disabled={inviteLoading}
-                      className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200 disabled:cursor-not-allowed disabled:opacity-70"
-                      placeholder="e.g., 555-555-5555"
-                    />
-                  </div>
                   <div>
                     <label className="block text-sm font-medium text-slate-700 mb-1">
                       Secondary phone (Optional)

@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { Resend } from "resend";
 import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
 import {
   consumeRateLimit,
@@ -10,8 +9,7 @@ import {
   logInvitationAudit,
   upsertOtpChallenge,
 } from "@/lib/invitation-security";
-
-const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
+import { sendVerificationSMS } from "@/lib/sms";
 
 export async function POST(request: NextRequest) {
   const requestId = getRequestId(request.headers);
@@ -51,7 +49,17 @@ export async function POST(request: NextRequest) {
 
     if (!invitation.require2fa) {
       status = 400;
-      const res = NextResponse.json({ error: "This invitation does not require email verification" }, { status });
+      const res = NextResponse.json({ error: "This invitation does not require verification" }, { status });
+      logRequestMeta("/api/invitations/otp/request", requestId, status, Date.now() - started);
+      return res;
+    }
+
+    if (!invitation.patientPhone || invitation.patientPhone.replace(/\D/g, "").length < 10) {
+      status = 400;
+      const res = NextResponse.json(
+        { error: "No phone number on file for this invitation. Please contact your clinic." },
+        { status },
+      );
       logRequestMeta("/api/invitations/otp/request", requestId, status, Date.now() - started);
       return res;
     }
@@ -59,16 +67,17 @@ export async function POST(request: NextRequest) {
     const otp = createOtpCode();
     await upsertOtpChallenge(invitation.invitationId, otp);
 
-    const subject = `${invitation.clinicName} intake verification code`;
-    const text = `Your intake verification code is ${otp}. It expires in 10 minutes.`;
-    if (resend && process.env.HIPAA_MODE !== "true" && process.env.DISABLE_SCAN_EMAILS !== "true") {
-      await resend.emails.send({
-        from: process.env.RESEND_FROM_EMAIL || "onboarding@resend.dev",
-        to: invitation.patientEmail,
-        subject,
-        html: `<p>Your intake verification code is:</p><div style="margin:24px 0;text-align:center"><span style="display:inline-block;font-size:32px;font-weight:700;letter-spacing:8px;font-family:monospace;background:#f3f4f6;border:1px solid #d1d5db;border-radius:8px;padding:16px 32px;user-select:all;cursor:text">${otp}</span></div><p style="color:#6b7280;font-size:13px">Click the code above to select it, then copy. This code expires in 10 minutes.</p>`,
-        text,
-      });
+    let smsSent = false;
+    if (process.env.HIPAA_MODE !== "true" && process.env.DISABLE_SCAN_EMAILS !== "true") {
+      const smsResult = await sendVerificationSMS(invitation.patientPhone, otp, invitation.clinicName);
+      smsSent = smsResult.success;
+      if (!smsResult.success) {
+        console.error("[invitations/otp/request] SMS send failed", smsResult.error);
+        status = 502;
+        const res = NextResponse.json({ error: "Failed to send verification code by SMS." }, { status });
+        logRequestMeta("/api/invitations/otp/request", requestId, status, Date.now() - started);
+        return res;
+      }
     }
 
     await logInvitationAudit({
@@ -76,7 +85,7 @@ export async function POST(request: NextRequest) {
       eventType: "otp_requested",
       ipAddress,
       userAgent,
-      metadata: { emailSent: !!resend && process.env.HIPAA_MODE !== "true" },
+      metadata: { channel: "sms", smsSent },
     });
 
     const res = NextResponse.json({ success: true });

@@ -101,6 +101,7 @@ export async function POST(request: NextRequest) {
     const {
       patientName,
       patientEmail,
+      patientPhone,
       patientDob,
       patientBackground,
       requestPhqGad,
@@ -134,6 +135,20 @@ export async function POST(request: NextRequest) {
       );
       logRequestMeta("/api/invitations/send", requestId, status, Date.now() - started);
       return res;
+    }
+
+    // SMS-based 2FA requires a deliverable phone number (at least 10 digits).
+    if (require2fa) {
+      const phoneDigits = (patientPhone || "").replace(/\D/g, "");
+      if (phoneDigits.length < 10) {
+        status = 400;
+        const res = NextResponse.json(
+          { error: "A valid patient phone number is required to send the SMS verification code" },
+          { status },
+        );
+        logRequestMeta("/api/invitations/send", requestId, status, Date.now() - started);
+        return res;
+      }
     }
 
     // Validate email format
@@ -234,6 +249,7 @@ export async function POST(request: NextRequest) {
              physician_id,
              patient_name,
              patient_email,
+             patient_phone,
              patient_dob,
              invitation_link,
              token_hash,
@@ -254,12 +270,13 @@ export async function POST(request: NextRequest) {
              forms_only,
              require_2fa
            )
-          VALUES ($1, $2, $3, $4::date, $5, $6, $7, $7, NOW(), $8, $9, $10, $11, $12, $13, NULL, $14, $15, $16, $17, $18, $19)
+          VALUES ($1, $2, $3, $4, $5::date, $6, $7, $8, $8, NOW(), $9, $10, $11, $12, $13, $14, NULL, $15, $16, $17, $18, $19, $20)
            RETURNING id`,
           [
             physicianId,
             patientName,
             patientEmail.toLowerCase(),
+            patientPhone,
             patientDob,
             retainInvitationLink ? invitationLink : null,
             tokenHash,
@@ -422,6 +439,7 @@ export async function POST(request: NextRequest) {
 async function parseRequestBody(request: NextRequest): Promise<{
   patientName: string;
   patientEmail: string;
+  patientPhone: string | null;
   patientDob: string | null;
   patientBackground: string | null;
   requestPhqGad: boolean;
@@ -456,6 +474,7 @@ async function parseRequestBody(request: NextRequest): Promise<{
     return {
       patientName: (formData.get("patientName") as string | null) || "",
       patientEmail: (formData.get("patientEmail") as string | null) || "",
+      patientPhone: ((formData.get("primaryPhone") as string | null) || "").trim() || null,
       patientDob: ((formData.get("patientDob") as string | null) || "").trim() || null,
       patientBackground: ((formData.get("patientBackground") as string | null) || "").trim() || null,
       requestPhqGad: formData.get("requestPhqGad") === "true",
@@ -484,6 +503,7 @@ async function parseRequestBody(request: NextRequest): Promise<{
     return {
       patientName: (body?.patientName as string) || "",
       patientEmail: (body?.patientEmail as string) || "",
+      patientPhone: (body?.primaryPhone as string)?.trim() || null,
       patientDob: (body?.patientDob as string)?.trim() || null,
       patientBackground: (body?.patientBackground as string)?.trim() || null,
       requestPhqGad: Boolean(body?.requestPhqGad),
@@ -505,6 +525,7 @@ async function parseRequestBody(request: NextRequest): Promise<{
     return {
       patientName: "",
       patientEmail: "",
+      patientPhone: null,
       patientDob: null,
       patientBackground: null,
       requestPhqGad: false,

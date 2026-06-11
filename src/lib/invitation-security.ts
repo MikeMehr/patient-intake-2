@@ -16,6 +16,7 @@ type InvitationRow = {
   id: string;
   physician_id: string;
   patient_email: string;
+  patient_phone: string | null;
   patient_name: string;
   patient_dob: Date | string | null;
   oscar_demographic_no: string | null;
@@ -45,6 +46,7 @@ export type InvitationContext = {
   invitationId: string;
   physicianId: string;
   patientEmail: string;
+  patientPhone: string | null;
   patientName: string;
   patientDob: string | null;
   oscarDemographicNo: string | null;
@@ -77,6 +79,19 @@ async function hasRequire2faColumn(): Promise<boolean> {
        WHERE table_schema = 'public'
          AND table_name = 'patient_invitations'
          AND column_name = 'require_2fa'
+     ) AS exists`,
+  );
+  return Boolean(result.rows[0]?.exists);
+}
+
+async function hasPatientPhoneColumn(): Promise<boolean> {
+  const result = await query<{ exists: boolean }>(
+    `SELECT EXISTS (
+       SELECT 1
+       FROM information_schema.columns
+       WHERE table_schema = 'public'
+         AND table_name = 'patient_invitations'
+         AND column_name = 'patient_phone'
      ) AS exists`,
   );
   return Boolean(result.rows[0]?.exists);
@@ -192,6 +207,7 @@ function toInvitationContext(row: InvitationRow): InvitationContext {
     invitationId: row.id,
     physicianId: row.physician_id,
     patientEmail: row.patient_email,
+    patientPhone: row.patient_phone ?? null,
     patientName: row.patient_name,
     patientDob: row.patient_dob
       ? new Date(row.patient_dob).toISOString().slice(0, 10)
@@ -291,11 +307,12 @@ export async function logInvitationAudit(params: {
 
 export async function getInvitationByRawToken(rawToken: string): Promise<InvitationContext | null> {
   const tokenHash = hashValue(rawToken);
-  const [supportsWebsiteUrl, supportsRequire2fa, supportsPwdE6f, supportsFormsOnly] = await Promise.all([
+  const [supportsWebsiteUrl, supportsRequire2fa, supportsPwdE6f, supportsFormsOnly, supportsPatientPhone] = await Promise.all([
     hasOrganizationWebsiteColumn(),
     hasRequire2faColumn(),
     hasPwdE6fColumn(),
     hasFormsOnlyColumn(),
+    hasPatientPhoneColumn(),
   ]);
   const websiteSelect = supportsWebsiteUrl
     ? "o.website_url AS organization_website_url"
@@ -309,8 +326,11 @@ export async function getInvitationByRawToken(rawToken: string): Promise<Invitat
   const formsOnlySelect = supportsFormsOnly
     ? "pi.forms_only"
     : "FALSE::boolean AS forms_only";
+  const patientPhoneSelect = supportsPatientPhone
+    ? "pi.patient_phone"
+    : "NULL::varchar AS patient_phone";
   const result = await query<InvitationRow>(
-    `SELECT pi.id, pi.physician_id, pi.patient_email, pi.patient_name, pi.patient_dob, pi.oscar_demographic_no, pi.token_expires_at, pi.used_at, pi.revoked_at,
+    `SELECT pi.id, pi.physician_id, pi.patient_email, ${patientPhoneSelect}, pi.patient_name, pi.patient_dob, pi.oscar_demographic_no, pi.token_expires_at, pi.used_at, pi.revoked_at,
             pi.expires_at, pi.lab_report_summary, pi.previous_lab_report_summary, pi.form_summary, pi.summary_expires_at, pi.summary_deleted_at, pi.patient_background,
             pi.interview_guidance, pi.monitor_guidance, pi.request_phq_gad, ${pwdE6fSelect}, ${formsOnlySelect}, ${require2faSelect}, ${websiteSelect}, p.first_name, p.last_name, p.clinic_name
      FROM patient_invitations pi
@@ -425,11 +445,12 @@ export async function resolveInvitationFromCookie(): Promise<InvitationContext |
   );
 
   // Prefer the last cookie in the header (most recently set).
-  const [supportsWebsiteUrl, supportsRequire2fa, supportsPwdE6f, supportsFormsOnly] = await Promise.all([
+  const [supportsWebsiteUrl, supportsRequire2fa, supportsPwdE6f, supportsFormsOnly, supportsPatientPhone] = await Promise.all([
     hasOrganizationWebsiteColumn(),
     hasRequire2faColumn(),
     hasPwdE6fColumn(),
     hasFormsOnlyColumn(),
+    hasPatientPhoneColumn(),
   ]);
   const websiteSelect = supportsWebsiteUrl
     ? "o.website_url AS organization_website_url"
@@ -443,13 +464,16 @@ export async function resolveInvitationFromCookie(): Promise<InvitationContext |
   const formsOnlySelect = supportsFormsOnly
     ? "pi.forms_only"
     : "FALSE::boolean AS forms_only";
+  const patientPhoneSelect = supportsPatientPhone
+    ? "pi.patient_phone"
+    : "NULL::varchar AS patient_phone";
   for (let idx = candidates.length - 1; idx >= 0; idx -= 1) {
     const parsed = parseInvitationSessionCookie(candidates[idx]);
     if (!parsed) continue;
 
     const sessionHash = hashValue(parsed.sessionToken);
     const result = await query<InvitationRow>(
-      `SELECT pi.id, pi.physician_id, pi.patient_email, pi.patient_name, pi.patient_dob, pi.oscar_demographic_no, pi.token_expires_at, pi.used_at, pi.revoked_at,
+      `SELECT pi.id, pi.physician_id, pi.patient_email, ${patientPhoneSelect}, pi.patient_name, pi.patient_dob, pi.oscar_demographic_no, pi.token_expires_at, pi.used_at, pi.revoked_at,
               pi.expires_at, pi.lab_report_summary, pi.previous_lab_report_summary, pi.form_summary, pi.summary_expires_at, pi.summary_deleted_at, pi.patient_background,
               pi.interview_guidance, pi.monitor_guidance, pi.request_phq_gad, ${pwdE6fSelect}, ${formsOnlySelect}, ${require2faSelect}, ${websiteSelect}, p.first_name, p.last_name, p.clinic_name
        FROM invitation_sessions isess
@@ -713,4 +737,12 @@ export function maskEmail(email: string): string {
       ? `${local.slice(0, 1)}*`
       : `${local.slice(0, 2)}${"*".repeat(Math.max(local.length - 2, 1))}`;
   return `${safeLocal}@${domain}`;
+}
+
+/** Mask a phone number, revealing only the last 4 digits (e.g. "(•••) •••-1234"). */
+export function maskPhone(phone: string): string {
+  const digits = (phone || "").replace(/\D/g, "");
+  if (digits.length < 4) return "•••• ••••";
+  const last4 = digits.slice(-4);
+  return `(•••) •••-${last4}`;
 }
