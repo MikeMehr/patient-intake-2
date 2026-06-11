@@ -142,6 +142,9 @@ export async function POST(
   const province   = truncate(body.province, 50);
   const postal     = truncate(body.postal, 10);
   const email      = truncate(body.email);
+  // OSCAR demographic sex code; default to "U" (unknown) if not a recognised value.
+  const genderRaw  = truncate(body.gender, 1).toUpperCase();
+  const sex        = ["M", "F", "O", "U"].includes(genderRaw) ? genderRaw : "U";
 
   if (!firstName || !lastName) {
     return NextResponse.json({ error: "firstName and lastName are required" }, { status: 400 });
@@ -227,7 +230,7 @@ export async function POST(
     dobYear,
     dobMonth,
     dobDay,
-    sex: "U",
+    sex,
     phone,
     address: {
       address,

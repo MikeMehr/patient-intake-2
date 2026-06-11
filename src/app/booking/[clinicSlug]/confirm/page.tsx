@@ -75,6 +75,7 @@ export default function BookingConfirmPage({
   // Extra info for new Oscar patients (Step 2 not-found)
   const [extra, setExtra] = useState({
     phone: "", email: "", address: "", city: "", province: "British Columbia", postal: "",
+    gender: "", // OSCAR sex code: M | F | O | U
   });
 
   // Coverage form (shown for not-found and no-oscar paths)
@@ -228,6 +229,7 @@ export default function BookingConfirmPage({
           city:        extra.city.trim(),
           province:    extra.province,
           postal:      extra.postal.trim(),
+          gender:      extra.gender,
         }),
       });
       const createData = await createRes.json();
@@ -567,6 +569,22 @@ export default function BookingConfirmPage({
                   onChange={(e) => setEx("phone", e.target.value)}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Gender *</label>
+                <select
+                  required
+                  value={extra.gender}
+                  onChange={(e) => setEx("gender", e.target.value)}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="" disabled>Select…</option>
+                  <option value="M">Male</option>
+                  <option value="F">Female</option>
+                  <option value="O">Other</option>
+                  <option value="U">Prefer not to say</option>
+                </select>
               </div>
 
               {/* Show email field if not provided in Step 1 */}
