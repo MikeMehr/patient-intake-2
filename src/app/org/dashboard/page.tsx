@@ -25,6 +25,13 @@ interface Provider {
   phone: string | null;
   uniqueSlug: string;
   createdAt: string;
+  oscarProviderNo: string | null;
+}
+
+interface SyncSummary {
+  failed: number;
+  skipped: number;
+  total: number;
 }
 
 interface EmrStatus {
@@ -40,6 +47,7 @@ export default function OrgDashboard() {
   const [organization, setOrganization] = useState<Organization | null>(null);
   const [providers, setProviders] = useState<Provider[]>([]);
   const [emrStatus, setEmrStatus] = useState<EmrStatus | null>(null);
+  const [syncSummary, setSyncSummary] = useState<SyncSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -49,11 +57,12 @@ export default function OrgDashboard() {
 
   const fetchData = async () => {
     try {
-      // Fetch organization, providers, and EMR status in parallel
-      const [orgResponse, providersResponse, emrResponse] = await Promise.all([
+      // Fetch organization, providers, EMR status, and OSCAR sync summary in parallel
+      const [orgResponse, providersResponse, emrResponse, syncResponse] = await Promise.all([
         fetch("/api/org/organization"),
         fetch("/api/org/providers"),
         fetch("/api/org/emr-status"),
+        fetch("/api/org/oscar-sync-summary"),
       ]);
 
       if (orgResponse.status === 401 || providersResponse.status === 401) {
@@ -66,6 +75,10 @@ export default function OrgDashboard() {
 
       if (emrResponse.ok) {
         setEmrStatus(await emrResponse.json());
+      }
+
+      if (syncResponse.ok) {
+        setSyncSummary(await syncResponse.json());
       }
 
       if (orgData.error) {
@@ -163,6 +176,26 @@ export default function OrgDashboard() {
           <div className="mb-6 rounded-lg bg-red-50 border border-red-200 px-4 py-3">
             <p className="text-sm text-red-800">{error}</p>
           </div>
+        )}
+
+        {emrStatus?.connected && syncSummary && syncSummary.total > 0 && (
+          <Link
+            href="/org/appointments"
+            className="mb-6 flex items-start gap-3 rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 hover:bg-amber-100 transition"
+          >
+            <span className="text-xl leading-none">⚠️</span>
+            <div className="text-sm">
+              <p className="font-semibold text-amber-900">
+                {syncSummary.total} upcoming {syncSummary.total === 1 ? "booking" : "bookings"} did not reach OSCAR&apos;s schedule
+              </p>
+              <p className="text-amber-700 mt-0.5">
+                {syncSummary.failed > 0 && `${syncSummary.failed} failed`}
+                {syncSummary.failed > 0 && syncSummary.skipped > 0 && ", "}
+                {syncSummary.skipped > 0 && `${syncSummary.skipped} skipped`}
+                {" "}— these appointments won&apos;t appear on the provider&apos;s OSCAR day sheet. Review and enter them manually if needed →
+              </p>
+            </div>
+          </Link>
         )}
 
         <div className="grid grid-cols-1 gap-4 mb-6 sm:grid-cols-3">
@@ -305,8 +338,18 @@ export default function OrgDashboard() {
                     <div key={provider.id} className="px-6 py-4 hover:bg-slate-50">
                       <div className="flex items-center justify-between">
                         <div className="flex-1">
-                          <div className="text-sm font-medium text-slate-900">
-                            {provider.firstName} {provider.lastName}
+                          <div className="flex items-center gap-2">
+                            <div className="text-sm font-medium text-slate-900">
+                              {provider.firstName} {provider.lastName}
+                            </div>
+                            {emrStatus?.connected && !provider.oscarProviderNo && (
+                              <span
+                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-xs font-medium"
+                                title="This provider has no OSCAR provider number, so their online bookings will NOT sync to the OSCAR schedule. Click Edit to add it."
+                              >
+                                ⚠️ Not synced to OSCAR
+                              </span>
+                            )}
                           </div>
                           <div className="text-xs text-slate-500 mt-1">
                             Username: {provider.username}

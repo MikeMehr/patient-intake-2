@@ -45,8 +45,9 @@ export async function GET(request: NextRequest) {
       phone: string | null;
       unique_slug: string;
       created_at: Date;
+      oscar_provider_no: string | null;
     }>(
-      `SELECT id, first_name, last_name, username, email, phone, unique_slug, created_at
+      `SELECT id, first_name, last_name, username, email, phone, unique_slug, created_at, oscar_provider_no
        FROM physicians
        WHERE organization_id = $1
        ORDER BY created_at DESC`,
@@ -63,6 +64,7 @@ export async function GET(request: NextRequest) {
         phone: p.phone,
         uniqueSlug: p.unique_slug,
         createdAt: p.created_at,
+        oscarProviderNo: p.oscar_provider_no,
       })),
     });
     logRequestMeta("/api/org/providers", requestId, status, Date.now() - started);

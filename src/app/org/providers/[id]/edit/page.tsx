@@ -434,12 +434,14 @@ export default function EditOrgProviderPage() {
                 value={formData.oscarProviderNo}
                 onChange={(e) => setFormData({ ...formData, oscarProviderNo: e.target.value })}
                 disabled={saving}
-                placeholder="e.g. 29328"
+                placeholder="e.g. 101"
                 className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200 disabled:cursor-not-allowed disabled:opacity-70"
               />
               <p className="mt-1 text-xs text-slate-500">
-                The provider&apos;s number in OSCAR (shown on their schedule, e.g. &quot;Nahid 29328 Mehraein&quot;).
-                Required for online bookings to appear on this provider&apos;s OSCAR day sheet.
+                The provider&apos;s <strong>internal OSCAR provider number</strong> (usually a small number
+                like 100 or 101) — <strong>not</strong> their billing number. Required for online bookings
+                to appear on this provider&apos;s OSCAR day sheet; if it&apos;s missing or wrong, bookings
+                are silently skipped.
               </p>
             </div>
 
