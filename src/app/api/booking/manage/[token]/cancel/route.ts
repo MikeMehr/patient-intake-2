@@ -49,9 +49,11 @@ export async function POST(
   );
   const slug = orgRow.rows[0]?.slug;
   let timezone = "America/Vancouver";
+  let emailFooter: string | null = null;
   if (slug) {
     const clinic = await getClinicBySlug(slug);
     timezone = clinic?.settings?.timezone ?? timezone;
+    emailFooter = clinic?.settings?.emailFooter ?? null;
   }
 
   try {
@@ -62,6 +64,7 @@ export async function POST(
       physicianName: `Dr. ${appointment.physicianFirstName} ${appointment.physicianLastName}`,
       slotStartTime: appointment.slotStartTime,
       timezone,
+      emailFooter,
     });
   } catch {
     // Non-fatal

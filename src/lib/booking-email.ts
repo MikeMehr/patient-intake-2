@@ -6,6 +6,24 @@ function getFromEmail(): string {
   return process.env.RESEND_FROM_EMAIL || "onboarding@resend.dev";
 }
 
+/**
+ * Renders the clinic's configured plain-text email footer as a safe HTML block.
+ * Escapes HTML and preserves the author's line breaks. Returns "" when no footer
+ * is configured so callers can concatenate unconditionally.
+ */
+function renderFooter(footer?: string | null): string {
+  const text = (footer ?? "").trim();
+  if (!text) return "";
+  const escaped = text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\n/g, "<br>");
+  return `
+        <hr style="border:none;border-top:1px solid #e5e7eb;margin:24px 0" />
+        <div style="font-size:12px;color:#888;line-height:1.5">${escaped}</div>`;
+}
+
 function formatDateTime(isoString: string, timezone = "America/Vancouver"): string {
   try {
     return new Intl.DateTimeFormat("en-CA", {
@@ -32,6 +50,7 @@ export async function sendBookingConfirmation(opts: {
   slotEndTime: string;
   timezone: string;
   manageUrl: string;
+  emailFooter?: string | null;
 }): Promise<void> {
   if (!resend || process.env.HIPAA_MODE === "true") return;
 
@@ -63,7 +82,7 @@ export async function sendBookingConfirmation(opts: {
         <p style="margin-top:24px;font-size:13px;color:#888">
           This link is valid for 30 days. If you need to cancel, please do so as soon as possible
           so the time slot can be made available to other patients.
-        </p>
+        </p>${renderFooter(opts.emailFooter)}
       </div>`,
   });
 }
@@ -75,6 +94,7 @@ export async function sendCancellationConfirmation(opts: {
   physicianName: string;
   slotStartTime: string;
   timezone: string;
+  emailFooter?: string | null;
 }): Promise<void> {
   if (!resend || process.env.HIPAA_MODE === "true") return;
 
@@ -99,7 +119,7 @@ export async function sendCancellationConfirmation(opts: {
         </table>
         <p style="font-size:13px;color:#888">
           If you did not request this cancellation, please contact the clinic directly.
-        </p>
+        </p>${renderFooter(opts.emailFooter)}
       </div>`,
   });
 }

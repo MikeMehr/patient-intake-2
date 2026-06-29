@@ -119,6 +119,7 @@ export async function PATCH(request: NextRequest) {
       showBlockedSlots: body.showBlockedSlots,
       cancellationPolicy: body.cancellationPolicy,
       bookingInstructions: body.bookingInstructions,
+      emailFooter: body.emailFooter,
       timezone: body.timezone,
     });
 

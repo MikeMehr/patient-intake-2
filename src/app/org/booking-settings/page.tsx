@@ -32,6 +32,7 @@ type Settings = {
   showBlockedSlots: boolean;
   cancellationPolicy: string | null;
   bookingInstructions: string | null;
+  emailFooter: string | null;
   timezone: string;
 };
 
@@ -50,6 +51,7 @@ export default function BookingSettingsPage() {
     showBlockedSlots: false,
     cancellationPolicy: "",
     bookingInstructions: "",
+    emailFooter: "",
     timezone: "America/Vancouver",
   });
   const [loading, setLoading] = useState(true);
@@ -298,6 +300,23 @@ export default function BookingSettingsPage() {
                 placeholder="e.g. Please cancel at least 24 hours in advance."
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Email footer (added to the bottom of confirmation &amp; cancellation emails)
+              </label>
+              <textarea
+                rows={8}
+                value={settings.emailFooter ?? ""}
+                onChange={(e) => set("emailFooter", e.target.value)}
+                placeholder={
+                  "MyMD Medical Clinic\n\nOffice line: 778-839-3651\nFax: 604-628-3830\n\nThis e-mail and any files transmitted with it are confidential and intended only for the addressee. If you received it in error, please notify the sender and delete it."
+                }
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <p className="text-xs text-gray-400 mt-1">
+                Plain text. Line breaks are preserved in the email.
+              </p>
             </div>
           </section>
 

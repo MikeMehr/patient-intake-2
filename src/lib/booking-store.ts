@@ -21,6 +21,7 @@ export type BookingSettings = {
   showBlockedSlots: boolean;
   cancellationPolicy: string | null;
   bookingInstructions: string | null;
+  emailFooter: string | null;
   timezone: string;
 };
 
@@ -95,6 +96,7 @@ export async function getClinicBySlug(slug: string): Promise<ClinicInfo | null> 
     show_blocked_slots: boolean | null;
     cancellation_policy: string | null;
     booking_instructions: string | null;
+    email_footer: string | null;
     timezone: string | null;
   }>(
     `SELECT
@@ -109,6 +111,7 @@ export async function getClinicBySlug(slug: string): Promise<ClinicInfo | null> 
        bs.show_blocked_slots,
        bs.cancellation_policy,
        bs.booking_instructions,
+       bs.email_footer,
        bs.timezone
      FROM organizations o
      LEFT JOIN booking_settings bs ON bs.organization_id = o.id
@@ -138,6 +141,7 @@ export async function getClinicBySlug(slug: string): Promise<ClinicInfo | null> 
           showBlockedSlots: row.show_blocked_slots ?? false,
           cancellationPolicy: row.cancellation_policy,
           bookingInstructions: row.booking_instructions,
+          emailFooter: row.email_footer,
           timezone: row.timezone ?? "America/Vancouver",
         }
       : null,
@@ -156,13 +160,14 @@ export async function getBookingSettingsByOrgId(orgId: string): Promise<BookingS
     show_blocked_slots: boolean;
     cancellation_policy: string | null;
     booking_instructions: string | null;
+    email_footer: string | null;
     timezone: string;
   }>(
     `SELECT id, online_booking_enabled,
             public_booking_start::TEXT, public_booking_end::TEXT,
             enforce_booking_window, slot_interval_minutes,
             health_card_required, show_blocked_slots,
-            cancellation_policy, booking_instructions, timezone
+            cancellation_policy, booking_instructions, email_footer, timezone
      FROM booking_settings WHERE organization_id = $1`,
     [orgId],
   );
@@ -182,6 +187,7 @@ export async function getBookingSettingsByOrgId(orgId: string): Promise<BookingS
     showBlockedSlots: row.show_blocked_slots,
     cancellationPolicy: row.cancellation_policy,
     bookingInstructions: row.booking_instructions,
+    emailFooter: row.email_footer,
     timezone: row.timezone,
   };
 }
@@ -194,11 +200,11 @@ export async function upsertBookingSettings(
     `INSERT INTO booking_settings (organization_id, online_booking_enabled, public_booking_start,
        public_booking_end, enforce_booking_window, slot_interval_minutes,
        health_card_required, show_blocked_slots, cancellation_policy,
-       booking_instructions, timezone, updated_at)
+       booking_instructions, timezone, email_footer, updated_at)
      VALUES ($1,
        COALESCE($2, FALSE), COALESCE($3, '07:00')::TIME, COALESCE($4, '22:00')::TIME,
        COALESCE($5, TRUE), COALESCE($6, 15), COALESCE($7, FALSE), COALESCE($8, FALSE),
-       $9, $10, COALESCE($11, 'America/Vancouver'), NOW())
+       $9, $10, COALESCE($11, 'America/Vancouver'), $12, NOW())
      ON CONFLICT (organization_id) DO UPDATE SET
        online_booking_enabled  = COALESCE($2, booking_settings.online_booking_enabled),
        public_booking_start    = COALESCE($3::TIME, booking_settings.public_booking_start),
@@ -210,6 +216,7 @@ export async function upsertBookingSettings(
        cancellation_policy     = COALESCE($9, booking_settings.cancellation_policy),
        booking_instructions    = COALESCE($10, booking_settings.booking_instructions),
        timezone                = COALESCE($11, booking_settings.timezone),
+       email_footer            = COALESCE($12, booking_settings.email_footer),
        updated_at              = NOW()`,
     [
       orgId,
@@ -223,6 +230,7 @@ export async function upsertBookingSettings(
       updates.cancellationPolicy ?? null,
       updates.bookingInstructions ?? null,
       updates.timezone ?? null,
+      updates.emailFooter ?? null,
     ],
   );
 }
