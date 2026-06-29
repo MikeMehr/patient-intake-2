@@ -128,7 +128,7 @@ export default function BookingSettingsPage() {
     );
   }
 
-  const bookingUrl = orgSlug ? `${process.env.NEXT_PUBLIC_APP_URL ?? "https://mymd.health-asisst.org"}/booking/${orgSlug}` : null;
+  const bookingUrl = orgSlug ? `${process.env.NEXT_PUBLIC_APP_URL ?? "https://mymd.health-assist.org"}/booking/${orgSlug}` : null;
 
   return (
     <main className="min-h-screen bg-gray-50 py-10 px-4">

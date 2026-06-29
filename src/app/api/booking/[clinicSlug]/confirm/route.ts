@@ -143,7 +143,7 @@ export async function POST(
     patientLastName: String(lastName),
   });
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://mymd.health-asisst.org";
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://mymd.health-assist.org";
   const manageUrl = `${appUrl}/booking/manage/${manageTokenRaw}`;
 
   // Send confirmation email (best-effort, don't fail booking if email fails)
