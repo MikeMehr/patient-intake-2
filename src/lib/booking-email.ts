@@ -7,6 +7,22 @@ function getFromEmail(): string {
 }
 
 /**
+ * Builds the "from" header. When the clinic has a configured email, send from
+ * that address (with the clinic name as the display name) so patients see the
+ * clinic as the sender — e.g. `MyMD Telehealth <info@mymdonline.ca>`. Falls
+ * back to the platform's verified sender when no clinic email is set.
+ *
+ * Note: the clinic email's domain must be verified in Resend, otherwise Resend
+ * rejects the send.
+ */
+function buildFrom(clinicName?: string | null, clinicEmail?: string | null): string {
+  const addr = (clinicEmail ?? "").trim();
+  if (!addr) return getFromEmail();
+  const name = (clinicName ?? "").trim().replace(/["\\<>]/g, "");
+  return name ? `${name} <${addr}>` : addr;
+}
+
+/**
  * Renders the clinic's configured plain-text email footer as a safe HTML block.
  * Escapes HTML and preserves the author's line breaks. Returns "" when no footer
  * is configured so callers can concatenate unconditionally.
@@ -51,13 +67,14 @@ export async function sendBookingConfirmation(opts: {
   timezone: string;
   manageUrl: string;
   emailFooter?: string | null;
+  clinicEmail?: string | null;
 }): Promise<void> {
   if (!resend || process.env.HIPAA_MODE === "true") return;
 
   const dateLabel = formatDateTime(opts.slotStartTime, opts.timezone);
 
   await resend.emails.send({
-    from: getFromEmail(),
+    from: buildFrom(opts.clinicName, opts.clinicEmail),
     to: opts.email,
     subject: `Appointment Confirmed — ${opts.clinicName}`,
     html: `
@@ -95,13 +112,14 @@ export async function sendCancellationConfirmation(opts: {
   slotStartTime: string;
   timezone: string;
   emailFooter?: string | null;
+  clinicEmail?: string | null;
 }): Promise<void> {
   if (!resend || process.env.HIPAA_MODE === "true") return;
 
   const dateLabel = formatDateTime(opts.slotStartTime, opts.timezone);
 
   await resend.emails.send({
-    from: getFromEmail(),
+    from: buildFrom(opts.clinicName, opts.clinicEmail),
     to: opts.email,
     subject: `Appointment Cancelled — ${opts.clinicName}`,
     html: `

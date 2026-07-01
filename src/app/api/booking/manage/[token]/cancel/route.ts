@@ -50,21 +50,26 @@ export async function POST(
   const slug = orgRow.rows[0]?.slug;
   let timezone = "America/Vancouver";
   let emailFooter: string | null = null;
+  let clinicName = "";
+  let clinicEmail: string | null = null;
   if (slug) {
     const clinic = await getClinicBySlug(slug);
     timezone = clinic?.settings?.timezone ?? timezone;
     emailFooter = clinic?.settings?.emailFooter ?? null;
+    clinicName = clinic?.name ?? "";
+    clinicEmail = clinic?.email ?? null;
   }
 
   try {
     await sendCancellationConfirmation({
       email: appointment.email,
       patientFirstName: appointment.firstName,
-      clinicName: "", // will show "Your physician" if clinic name lookup fails
+      clinicName,
       physicianName: `Dr. ${appointment.physicianFirstName} ${appointment.physicianLastName}`,
       slotStartTime: appointment.slotStartTime,
       timezone,
       emailFooter,
+      clinicEmail,
     });
   } catch {
     // Non-fatal

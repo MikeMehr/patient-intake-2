@@ -158,6 +158,7 @@ export async function POST(
       timezone: clinic.settings.timezone,
       manageUrl,
       emailFooter: clinic.settings.emailFooter,
+      clinicEmail: clinic.email,
     });
   } catch {
     // Email failure is non-fatal — appointment is already committed

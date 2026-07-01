@@ -29,6 +29,7 @@ export type ClinicInfo = {
   id: string;
   name: string;
   slug: string;
+  email: string | null;
   address: string | null;
   phone: string | null;
   settings: BookingSettings | null;
@@ -84,6 +85,7 @@ export async function getClinicBySlug(slug: string): Promise<ClinicInfo | null> 
     id: string;
     name: string;
     slug: string;
+    email: string | null;
     business_address: string | null;
     phone: string | null;
     bs_id: string | null;
@@ -100,7 +102,7 @@ export async function getClinicBySlug(slug: string): Promise<ClinicInfo | null> 
     timezone: string | null;
   }>(
     `SELECT
-       o.id, o.name, o.slug, o.business_address, o.phone,
+       o.id, o.name, o.slug, o.email, o.business_address, o.phone,
        bs.id                    AS bs_id,
        bs.online_booking_enabled,
        bs.public_booking_start::TEXT,
@@ -126,6 +128,7 @@ export async function getClinicBySlug(slug: string): Promise<ClinicInfo | null> 
     id: row.id,
     name: row.name,
     slug: row.slug,
+    email: row.email,
     address: row.business_address,
     phone: row.phone,
     settings: row.bs_id
