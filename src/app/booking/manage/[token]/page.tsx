@@ -7,6 +7,7 @@ type Appointment = {
   id: string;
   physicianFirstName: string;
   physicianLastName: string;
+  physicianOnlineBookingEnabled: boolean;
   slotStartTime: string;
   slotEndTime: string;
   firstName: string;
@@ -128,7 +129,9 @@ export default function ManageAppointmentPage({
 
             <div className="space-y-3 mb-8">
               <Row label="Patient" value={`${appointment.firstName} ${appointment.lastName}`} />
-              <Row label="Physician" value={`Dr. ${appointment.physicianFirstName} ${appointment.physicianLastName}`} />
+              {appointment.physicianOnlineBookingEnabled && (
+                <Row label="Physician" value={`Dr. ${appointment.physicianFirstName} ${appointment.physicianLastName}`} />
+              )}
               <Row label="Date & time" value={formatDateTime(appointment.slotStartTime)} />
               <Row label="Coverage" value={appointment.coverageType.replace(/_/g, " ")} />
             </div>

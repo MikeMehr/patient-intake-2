@@ -58,6 +58,7 @@ export type AppointmentRow = {
   physicianId: string;
   physicianFirstName: string;
   physicianLastName: string;
+  physicianOnlineBookingEnabled: boolean;
   slotId: string;
   slotStartTime: string;
   slotEndTime: string;
@@ -521,6 +522,7 @@ export async function getAppointmentByToken(tokenHash: string): Promise<Appointm
     physician_id: string;
     p_first_name: string;
     p_last_name: string;
+    p_online_booking_enabled: boolean;
     slot_id: string;
     start_time: Date;
     end_time: Date;
@@ -541,6 +543,7 @@ export async function getAppointmentByToken(tokenHash: string): Promise<Appointm
     `SELECT
        a.id, a.organization_id, a.physician_id,
        ph.first_name AS p_first_name, ph.last_name AS p_last_name,
+       ph.online_booking_enabled AS p_online_booking_enabled,
        a.slot_id,
        s.start_time, s.end_time,
        a.first_name, a.last_name, a.date_of_birth::TEXT, a.email,
@@ -571,6 +574,7 @@ export async function getAppointmentByToken(tokenHash: string): Promise<Appointm
     physicianId: row.physician_id,
     physicianFirstName: row.p_first_name,
     physicianLastName: row.p_last_name,
+    physicianOnlineBookingEnabled: row.p_online_booking_enabled === true,
     slotId: row.slot_id,
     slotStartTime: row.start_time instanceof Date ? row.start_time.toISOString() : String(row.start_time),
     slotEndTime: row.end_time instanceof Date ? row.end_time.toISOString() : String(row.end_time),
@@ -638,6 +642,7 @@ export async function getAppointmentsForOrg(
     physician_id: string;
     p_first_name: string;
     p_last_name: string;
+    p_online_booking_enabled: boolean;
     slot_id: string;
     start_time: Date;
     end_time: Date;
@@ -658,6 +663,7 @@ export async function getAppointmentsForOrg(
     `SELECT
        a.id, a.organization_id, a.physician_id,
        ph.first_name AS p_first_name, ph.last_name AS p_last_name,
+       ph.online_booking_enabled AS p_online_booking_enabled,
        a.slot_id, s.start_time, s.end_time,
        a.first_name, a.last_name, a.date_of_birth::TEXT, a.email,
        a.coverage_type, a.province, a.health_card_number_enc, a.billing_note,
@@ -676,6 +682,7 @@ export async function getAppointmentsForOrg(
     physicianId: row.physician_id,
     physicianFirstName: row.p_first_name,
     physicianLastName: row.p_last_name,
+    physicianOnlineBookingEnabled: row.p_online_booking_enabled === true,
     slotId: row.slot_id,
     slotStartTime: row.start_time instanceof Date ? row.start_time.toISOString() : String(row.start_time),
     slotEndTime: row.end_time instanceof Date ? row.end_time.toISOString() : String(row.end_time),
