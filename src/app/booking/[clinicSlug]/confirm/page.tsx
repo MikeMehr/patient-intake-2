@@ -303,6 +303,15 @@ export default function BookingConfirmPage({
           >
             Manage Appointment
           </a>
+          <div className="mt-4">
+            <button
+              type="button"
+              onClick={() => window.close()}
+              className="text-sm text-gray-500 hover:text-gray-700 underline"
+            >
+              Close window
+            </button>
+          </div>
         </div>
       </main>
     );
