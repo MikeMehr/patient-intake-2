@@ -7,19 +7,49 @@ function getFromEmail(): string {
 }
 
 /**
- * Builds the "from" header. When the clinic has a configured email, send from
- * that address (with the clinic name as the display name) so patients see the
- * clinic as the sender — e.g. `MyMD Telehealth <info@mymdonline.ca>`. Falls
- * back to the platform's verified sender when no clinic email is set.
- *
- * Note: the clinic email's domain must be verified in Resend, otherwise Resend
- * rejects the send.
+ * The set of email domains verified for sending in Resend. Derived from the
+ * platform sender's domain, plus any listed in RESEND_VERIFIED_DOMAINS
+ * (comma-separated) — add a clinic's domain there once it's verified in Resend.
  */
-function buildFrom(clinicName?: string | null, clinicEmail?: string | null): string {
-  const addr = (clinicEmail ?? "").trim();
-  if (!addr) return getFromEmail();
+function verifiedDomains(): string[] {
+  const explicit = (process.env.RESEND_VERIFIED_DOMAINS || "")
+    .split(",")
+    .map((d) => d.trim().toLowerCase())
+    .filter(Boolean);
+  const platformDomain = getFromEmail().split("@")[1]?.toLowerCase();
+  return [...new Set([...explicit, ...(platformDomain ? [platformDomain] : [])])];
+}
+
+function domainOf(email: string): string {
+  return email.split("@")[1]?.toLowerCase() ?? "";
+}
+
+/**
+ * Chooses the From header (and optional Reply-To) for a clinic message.
+ *
+ * When the clinic's email domain is verified in Resend, the message is sent
+ * *from* the clinic address (e.g. `MyMD Telehealth <info@mymdonline.ca>`).
+ * When it isn't verified — Resend would reject that send — we fall back to the
+ * platform's verified sender (keeping the clinic name) and set Reply-To to the
+ * clinic email so patient replies still reach the clinic. This upgrades to a
+ * true clinic From automatically once the domain is verified.
+ */
+function resolveSender(
+  clinicName?: string | null,
+  clinicEmail?: string | null,
+): { from: string; replyTo?: string } {
   const name = (clinicName ?? "").trim().replace(/["\\<>]/g, "");
-  return name ? `${name} <${addr}>` : addr;
+  const addr = (clinicEmail ?? "").trim();
+  const platformFrom = getFromEmail();
+  const withName = (address: string) => (name ? `${name} <${address}>` : address);
+
+  if (!addr) return { from: withName(platformFrom) };
+
+  if (verifiedDomains().includes(domainOf(addr))) {
+    return { from: withName(addr) };
+  }
+
+  return { from: withName(platformFrom), replyTo: addr };
 }
 
 /**
@@ -72,9 +102,11 @@ export async function sendBookingConfirmation(opts: {
   if (!resend || process.env.HIPAA_MODE === "true") return;
 
   const dateLabel = formatDateTime(opts.slotStartTime, opts.timezone);
+  const sender = resolveSender(opts.clinicName, opts.clinicEmail);
 
   await resend.emails.send({
-    from: buildFrom(opts.clinicName, opts.clinicEmail),
+    from: sender.from,
+    ...(sender.replyTo ? { replyTo: sender.replyTo } : {}),
     to: opts.email,
     subject: `Appointment Confirmed — ${opts.clinicName}`,
     html: `
@@ -117,9 +149,11 @@ export async function sendCancellationConfirmation(opts: {
   if (!resend || process.env.HIPAA_MODE === "true") return;
 
   const dateLabel = formatDateTime(opts.slotStartTime, opts.timezone);
+  const sender = resolveSender(opts.clinicName, opts.clinicEmail);
 
   await resend.emails.send({
-    from: buildFrom(opts.clinicName, opts.clinicEmail),
+    from: sender.from,
+    ...(sender.replyTo ? { replyTo: sender.replyTo } : {}),
     to: opts.email,
     subject: `Appointment Cancelled — ${opts.clinicName}`,
     html: `
