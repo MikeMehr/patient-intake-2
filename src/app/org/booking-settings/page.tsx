@@ -323,9 +323,13 @@ export default function BookingSettingsPage() {
           {/* Per-physician toggles */}
           {physicians.length > 0 && (
             <section className="bg-white border border-gray-200 rounded-xl p-5">
-              <h2 className="font-semibold text-gray-800 mb-4">
+              <h2 className="font-semibold text-gray-800 mb-1">
                 Physician online booking access
               </h2>
+              <p className="text-sm text-gray-500 mb-4">
+                (Checked = patients can book this doctor online. Unchecked = doctor
+                is hidden from the public booking page entirely.)
+              </p>
               <div className="space-y-3">
                 {physicians.map((p) => (
                   <label key={p.id} className="flex items-center justify-between gap-4 cursor-pointer">
