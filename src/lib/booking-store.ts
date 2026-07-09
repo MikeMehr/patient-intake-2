@@ -34,6 +34,7 @@ export type ClinicInfo = {
   email: string | null;
   address: string | null;
   phone: string | null;
+  websiteUrl: string | null;
   settings: BookingSettings | null;
 };
 
@@ -91,6 +92,7 @@ export async function getClinicBySlug(slug: string): Promise<ClinicInfo | null> 
     email: string | null;
     business_address: string | null;
     phone: string | null;
+    website_url: string | null;
     bs_id: string | null;
     online_booking_enabled: boolean | null;
     public_booking_start: string | null;
@@ -107,7 +109,7 @@ export async function getClinicBySlug(slug: string): Promise<ClinicInfo | null> 
     self_serve_interview_physician_id: string | null;
   }>(
     `SELECT
-       o.id, o.name, o.slug, o.email, o.business_address, o.phone,
+       o.id, o.name, o.slug, o.email, o.business_address, o.phone, o.website_url,
        bs.id                    AS bs_id,
        bs.online_booking_enabled,
        bs.public_booking_start::TEXT,
@@ -138,6 +140,7 @@ export async function getClinicBySlug(slug: string): Promise<ClinicInfo | null> 
     email: row.email,
     address: row.business_address,
     phone: row.phone,
+    websiteUrl: row.website_url,
     settings: row.bs_id
       ? {
           id: row.bs_id,

@@ -34,7 +34,15 @@ type ClinicInfo = {
   slug: string;
   address: string | null;
   phone: string | null;
+  websiteUrl: string | null;
 };
+
+/** Ensure a stored website value is an absolute URL (prefix https:// when missing). */
+function normalizeWebsiteUrl(raw: string | null | undefined): string | null {
+  const t = (raw ?? "").trim();
+  if (!t) return null;
+  return /^https?:\/\//i.test(t) ? t : `https://${t}`;
+}
 
 function addDays(date: Date, days: number): Date {
   const d = new Date(date);
@@ -201,7 +209,16 @@ export default function ClinicBookingPage({
       <div className="max-w-3xl mx-auto">
         {/* Header */}
         <div className="mb-6">
-          <h1 className="text-2xl font-bold text-gray-900">{clinic?.name}</h1>
+          {(() => {
+            const website = normalizeWebsiteUrl(clinic?.websiteUrl);
+            return website ? (
+              <a href={website} className="text-2xl font-bold text-gray-900 hover:underline">
+                {clinic?.name}
+              </a>
+            ) : (
+              <h1 className="text-2xl font-bold text-gray-900">{clinic?.name}</h1>
+            );
+          })()}
           {settings?.bookingInstructions && (
             <p className="text-gray-600 text-sm mt-2 bg-blue-50 border border-blue-100 rounded-lg p-3">
               {settings.bookingInstructions}
