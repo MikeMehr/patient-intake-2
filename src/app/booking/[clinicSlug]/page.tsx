@@ -298,9 +298,6 @@ export default function ClinicBookingPage({
                         ].join(" ")}
                       >
                         {isHolding ? "…" : toLocalTimeString(slot.startTime, tz)}
-                        {selectedPhysicianId === "any" && isOpen && (
-                          <span className="block text-xs text-blue-500">{slot.physicianName.replace("Dr. ", "Dr.")}</span>
-                        )}
                       </button>
                     );
                   })}
