@@ -152,6 +152,7 @@ export default function SlotsPage() {
   }
 
   async function handleDelete(slot: Slot) {
+    if (!confirm(`Delete slot at ${formatLocalDT(slot.startTime)}?`)) return;
     await fetch(`/api/org/slots/${slot.id}`, { method: "DELETE" });
     loadSlots();
   }

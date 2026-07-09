@@ -33,111 +33,6 @@ import {
 } from "@/lib/session-access";
 import { startSessionRetentionCleanup } from "@/lib/session-retention-cleanup";
 import { query } from "@/lib/db";
-import { decryptString } from "@/lib/encrypted-field";
-import { createOscarDemographic } from "@/lib/oscar/self-serve";
-
-/**
- * For a self-serve guided-interview invitation with a NEW patient, create the
- * OSCAR chart now that the interview is finished (this runs on both normal
- * completion and an early "End interview"). Returns the resulting demographicNo,
- * or null when there is nothing to do / creation failed.
- *
- * An atomic sentinel claim on oscar_demographic_no prevents duplicate charts on
- * refresh / double-submit.
- */
-async function maybeCreateSelfServeOscarChart(invitationId: string): Promise<string | null> {
-  const inv = await query<{
-    is_self_serve: boolean;
-    oscar_demographic_no: string | null;
-    pending_oscar_demographics: Record<string, unknown> | null;
-    physician_id: string;
-    patient_name: string;
-    patient_phone: string | null;
-    patient_dob: string | null;
-  }>(
-    `SELECT is_self_serve, oscar_demographic_no, pending_oscar_demographics,
-            physician_id, patient_name, patient_phone, patient_dob::TEXT AS patient_dob
-     FROM patient_invitations WHERE id = $1 LIMIT 1`,
-    [invitationId],
-  );
-  const row = inv.rows[0];
-  if (
-    !row ||
-    !row.is_self_serve ||
-    row.oscar_demographic_no ||
-    !row.pending_oscar_demographics
-  ) {
-    return null;
-  }
-
-  // Atomic claim: only one request proceeds to create the chart.
-  const claim = await query<{ id: string }>(
-    `UPDATE patient_invitations
-     SET oscar_demographic_no = 'PENDING'
-     WHERE id = $1 AND oscar_demographic_no IS NULL
-     RETURNING id`,
-    [invitationId],
-  );
-  if (claim.rowCount === 0) return null; // someone else claimed it
-
-  try {
-    const org = await query<{ organization_id: string | null }>(
-      `SELECT organization_id FROM physicians WHERE id = $1 LIMIT 1`,
-      [row.physician_id],
-    );
-    const orgId = org.rows[0]?.organization_id ?? null;
-    if (!orgId) throw new Error("Physician has no organization; cannot create OSCAR chart.");
-
-    const demo = row.pending_oscar_demographics as Record<string, unknown>;
-    const nameParts = String(row.patient_name || "").trim().replace(/\s+/g, " ").split(" ");
-    const firstName = nameParts.length > 1 ? nameParts.slice(0, -1).join(" ") : nameParts[0] || "";
-    const lastName = nameParts.length > 1 ? nameParts[nameParts.length - 1] : "";
-
-    let healthCard: string | null = null;
-    if (typeof demo.healthCardEnc === "string" && demo.healthCardEnc) {
-      try {
-        healthCard = decryptString(demo.healthCardEnc);
-      } catch {
-        healthCard = null;
-      }
-    }
-
-    const result = await createOscarDemographic(orgId, {
-      firstName,
-      lastName,
-      dateOfBirth: row.patient_dob || "",
-      phone: row.patient_phone || "",
-      address: String(demo.address ?? ""),
-      city: String(demo.city ?? ""),
-      province: String(demo.province ?? ""),
-      postal: String(demo.postal ?? ""),
-      gender: typeof demo.gender === "string" ? demo.gender : null,
-      // healthCard is intentionally not sent to demographic create (no field on
-      // DemographicTo1 here); it is retained encrypted on the invitation only.
-    });
-
-    if ("error" in result) throw new Error(`OSCAR create failed: ${result.error}`);
-
-    await query(
-      `UPDATE patient_invitations
-       SET oscar_demographic_no = $1, pending_oscar_demographics = NULL
-       WHERE id = $2`,
-      [result.demographicNo, invitationId],
-    );
-    void healthCard; // reserved for future insuranceNumber wiring
-    return result.demographicNo;
-  } catch (err) {
-    // Roll back the sentinel so it can be retried / reconciled manually.
-    await query(
-      `UPDATE patient_invitations
-       SET oscar_demographic_no = NULL
-       WHERE id = $1 AND oscar_demographic_no = 'PENDING'`,
-      [invitationId],
-    ).catch(() => {});
-    console.error("[api/sessions] Self-serve OSCAR chart creation failed:", err);
-    return null;
-  }
-}
 
 async function translatePatientTextToEnglish(text: string): Promise<string> {
   const trimmed = text.trim();
@@ -503,19 +398,6 @@ export async function POST(request: Request) {
     
     await storeSession(session);
 
-    // Self-serve new patients: create the OSCAR chart now that the interview is
-    // finished (normal completion OR early "End interview"). No-op for invited
-    // flows and for existing patients (who already have oscar_demographic_no).
-    let resolvedOscarDemographicNo: string | null =
-      (invitation as any).oscarDemographicNo || null;
-    try {
-      const createdDemographicNo = await maybeCreateSelfServeOscarChart(invitation.invitationId);
-      if (createdDemographicNo) resolvedOscarDemographicNo = createdDemographicNo;
-    } catch (err) {
-      // Never block session saving on OSCAR chart creation.
-      console.error("[api/sessions] maybeCreateSelfServeOscarChart threw:", err);
-    }
-
     // Best-effort: persist structured chart data for Patient DB.
     // (If this fails, the session is still stored and can be viewed from the session list.)
     let patientId: string | null = null;
@@ -525,7 +407,7 @@ export async function POST(request: Request) {
         patientName,
         patientEmail,
         patientProfile,
-        oscarDemographicNo: resolvedOscarDemographicNo,
+        oscarDemographicNo: (invitation as any).oscarDemographicNo || null,
       });
       patientId = upserted.patientId;
 

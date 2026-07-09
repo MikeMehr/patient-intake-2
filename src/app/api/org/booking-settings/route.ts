@@ -31,9 +31,10 @@ export async function GET(request: NextRequest) {
       return res;
     }
 
-    // Also fetch org slug so the UI can show the booking URL preview
-    const orgRow = await query<{ name: string; slug: string | null }>(
-      "SELECT name, slug FROM organizations WHERE id = $1",
+    // Also fetch org slug + website so the UI can show the booking URL preview
+    // and let the admin manage the public website link.
+    const orgRow = await query<{ name: string; slug: string | null; website_url: string | null }>(
+      "SELECT name, slug, website_url FROM organizations WHERE id = $1",
       [session.organizationId],
     );
     const org = orgRow.rows[0];
@@ -43,6 +44,7 @@ export async function GET(request: NextRequest) {
     const res = NextResponse.json({
       orgName: org?.name ?? "",
       orgSlug: org?.slug ?? null,
+      orgWebsiteUrl: org?.website_url ?? null,
       settings,
     });
     logRequestMeta("/api/org/booking-settings", requestId, status, Date.now() - started);
@@ -93,6 +95,19 @@ export async function PATCH(request: NextRequest) {
         }
         await query("UPDATE organizations SET slug = $1 WHERE id = $2", [slug, session.organizationId]);
       }
+    }
+
+    // Handle clinic website (public front-door link, e.g. the clinic's own site).
+    // Normalize to an absolute URL; empty string clears it.
+    if (body.websiteUrl !== undefined) {
+      const raw = String(body.websiteUrl ?? "").trim();
+      const website = raw
+        ? (/^https?:\/\//i.test(raw) ? raw : `https://${raw}`).substring(0, 300)
+        : null;
+      await query("UPDATE organizations SET website_url = $1 WHERE id = $2", [
+        website,
+        session.organizationId,
+      ]);
     }
 
     // Handle per-physician booking toggle
@@ -148,8 +163,8 @@ export async function PATCH(request: NextRequest) {
     });
 
     const updatedSettings = await getBookingSettingsByOrgId(session.organizationId);
-    const orgRow = await query<{ name: string; slug: string | null }>(
-      "SELECT name, slug FROM organizations WHERE id = $1",
+    const orgRow = await query<{ name: string; slug: string | null; website_url: string | null }>(
+      "SELECT name, slug, website_url FROM organizations WHERE id = $1",
       [session.organizationId],
     );
     const org = orgRow.rows[0];
@@ -157,6 +172,7 @@ export async function PATCH(request: NextRequest) {
     const res = NextResponse.json({
       orgName: org?.name ?? "",
       orgSlug: org?.slug ?? null,
+      orgWebsiteUrl: org?.website_url ?? null,
       settings: updatedSettings,
     });
     logRequestMeta("/api/org/booking-settings", requestId, status, Date.now() - started);

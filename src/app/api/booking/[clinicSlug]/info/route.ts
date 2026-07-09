@@ -30,7 +30,6 @@ export async function GET(
       slug: clinic.slug,
       address: clinic.address,
       phone: clinic.phone,
-      websiteUrl: clinic.websiteUrl,
     },
     settings: clinic.settings,
     physicians,

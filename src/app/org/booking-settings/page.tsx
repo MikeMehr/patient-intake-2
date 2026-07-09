@@ -42,6 +42,7 @@ export default function BookingSettingsPage() {
   const router = useRouter();
   const [orgName, setOrgName] = useState("");
   const [orgSlug, setOrgSlug] = useState("");
+  const [orgWebsite, setOrgWebsite] = useState("");
   const [physicians, setPhysicians] = useState<Physician[]>([]);
   const [settings, setSettings] = useState<Settings>({
     onlineBookingEnabled: false,
@@ -72,6 +73,7 @@ export default function BookingSettingsPage() {
         if (bsData.settings) setSettings(bsData.settings);
         setOrgName(bsData.orgName ?? "");
         setOrgSlug(bsData.orgSlug ?? "");
+        setOrgWebsite(bsData.orgWebsiteUrl ?? "");
         setPhysicians(
           (provData.providers ?? []).map((p: Record<string, unknown>) => ({
             id: p.id,
@@ -108,6 +110,7 @@ export default function BookingSettingsPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         orgSlug,
+        websiteUrl: orgWebsite,
         ...settings,
         physicianBookingToggles: physicians.map((p) => ({
           physicianId: p.id,
@@ -121,6 +124,7 @@ export default function BookingSettingsPage() {
       setError(data.error ?? "Failed to save.");
     } else {
       setOrgSlug(data.orgSlug ?? orgSlug);
+      setOrgWebsite(data.orgWebsiteUrl ?? orgWebsite);
       setSaved(true);
     }
     setSaving(false);
@@ -179,6 +183,23 @@ export default function BookingSettingsPage() {
                   </a>
                 </p>
               )}
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Clinic website
+              </label>
+              <input
+                type="text"
+                value={orgWebsite}
+                onChange={(e) => setOrgWebsite(e.target.value)}
+                placeholder="e.g. https://yourclinic.com"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <p className="text-xs text-gray-400 mt-1">
+                Your clinic&apos;s public website. The clinic name on the booking and interview
+                pages links here. Leave blank for no link.
+              </p>
             </div>
 
             <label className="flex items-center gap-3 cursor-pointer">
