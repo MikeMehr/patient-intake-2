@@ -42,7 +42,6 @@ export default function SelfServeInterviewPage({
   const [loading, setLoading] = useState(true);
   const [step, setStep] = useState<Step>("identity");
   const [clinicName, setClinicName] = useState("");
-  const [physicianName, setPhysicianName] = useState("");
 
   const [identity, setIdentity] = useState({
     firstName: "", lastName: "", dateOfBirth: "", email: "", phone: "",
@@ -72,7 +71,6 @@ export default function SelfServeInterviewPage({
       .then((r) => r.json())
       .then((data) => {
         setClinicName(data.clinicName ?? "");
-        setPhysicianName(data.physicianName ?? "");
         if (!data.enabled) setStep("unavailable");
         setLoading(false);
       })
@@ -277,7 +275,6 @@ export default function SelfServeInterviewPage({
         priority
       />
       {clinicName && <p className="font-semibold text-slate-900">{clinicName}</p>}
-      {physicianName && <p className="text-sm text-slate-500">{physicianName}</p>}
     </div>
   );
 
