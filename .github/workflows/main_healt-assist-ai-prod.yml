@@ -42,25 +42,28 @@ jobs:
           #   - FAIL when a valid report shows critical > 0
           #   - PASS when a valid report shows critical == 0
           #   - SKIP (warn) when no usable report could be fetched after retries
+          # NOTE: GitHub Actions runs this with `set -eo pipefail`, so the parser below
+          # ALWAYS exits 0 and signals its result via stdout ("SKIP" or a number) rather
+          # than a non-zero exit — otherwise an intentional error signal would trip set -e.
           attempts=3
           for attempt in $(seq 1 "$attempts"); do
             echo "Running runtime security audit (attempt ${attempt}/${attempts})..."
             report="$(npm audit --omit=dev --json 2>/dev/null || true)"
-            critical="$(printf '%s' "$report" | node -e '
+            result="$(printf '%s' "$report" | node -e '
               let s = "";
               process.stdin.on("data", d => s += d).on("end", () => {
                 try {
                   const j = JSON.parse(s);
-                  if (j && j.error) { process.exit(2); }
+                  if (j && j.error) { console.log("SKIP"); return; }
                   const v = (j && j.metadata && j.metadata.vulnerabilities) || null;
-                  if (!v) { process.exit(2); }
-                  process.stdout.write(String(v.critical || 0));
-                } catch (e) { process.exit(2); }
+                  if (!v) { console.log("SKIP"); return; }
+                  console.log(String(v.critical || 0));
+                } catch (e) { console.log("SKIP"); }
               });
-            ')"
-            if [ $? -eq 0 ]; then
-              if [ "${critical:-0}" -gt 0 ]; then
-                echo "Runtime security audit found ${critical} CRITICAL vulnerability(ies)."
+            ' || echo SKIP)"
+            if [ -n "$result" ] && [ "$result" != "SKIP" ]; then
+              if [ "$result" -gt 0 ] 2>/dev/null; then
+                echo "Runtime security audit found ${result} CRITICAL vulnerability(ies)."
                 exit 1
               fi
               echo "Runtime security audit passed (0 critical)."
