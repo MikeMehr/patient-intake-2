@@ -35,22 +35,46 @@ jobs:
           # Force the public registry explicitly; avoids occasional mirror/proxy mismatches.
           npm config set registry "https://registry.npmjs.org/"
 
-          # Retry transient npm audit endpoint failures (403/network/timeouts) but still fail
-          # hard if high/critical vulnerabilities persist.
+          # Fail the build on CRITICAL runtime vulnerabilities, but tolerate transient
+          # npm audit *endpoint* outages (403/network/timeouts) so a flaky advisory
+          # service can't block deploys. We parse the JSON report directly (ignoring
+          # npm's own exit code, which is non-zero whenever ANY vuln exists) and only:
+          #   - FAIL when a valid report shows critical > 0
+          #   - PASS when a valid report shows critical == 0
+          #   - SKIP (warn) when no usable report could be fetched after retries
           attempts=3
           for attempt in $(seq 1 "$attempts"); do
             echo "Running runtime security audit (attempt ${attempt}/${attempts})..."
-            if npm audit --omit=dev --audit-level=critical; then
+            report="$(npm audit --omit=dev --json 2>/dev/null || true)"
+            critical="$(printf '%s' "$report" | node -e '
+              let s = "";
+              process.stdin.on("data", d => s += d).on("end", () => {
+                try {
+                  const j = JSON.parse(s);
+                  if (j && j.error) { process.exit(2); }
+                  const v = (j && j.metadata && j.metadata.vulnerabilities) || null;
+                  if (!v) { process.exit(2); }
+                  process.stdout.write(String(v.critical || 0));
+                } catch (e) { process.exit(2); }
+              });
+            ')"
+            if [ $? -eq 0 ]; then
+              if [ "${critical:-0}" -gt 0 ]; then
+                echo "Runtime security audit found ${critical} CRITICAL vulnerability(ies)."
+                exit 1
+              fi
+              echo "Runtime security audit passed (0 critical)."
               exit 0
             fi
+            echo "Audit endpoint did not return a usable report."
             if [ "$attempt" -lt "$attempts" ]; then
-              echo "Audit failed; retrying in 10s..."
+              echo "Retrying in 10s..."
               sleep 10
             fi
           done
 
-          echo "Runtime dependency security audit failed after ${attempts} attempts."
-          exit 1
+          echo "::warning::npm audit endpoint unavailable after ${attempts} attempts; skipping the runtime security gate for this run (no report could be fetched)."
+          exit 0
 
       - name: Build
         run: npx next build --webpack
