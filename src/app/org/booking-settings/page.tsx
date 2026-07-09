@@ -34,6 +34,8 @@ type Settings = {
   bookingInstructions: string | null;
   emailFooter: string | null;
   timezone: string;
+  selfServeInterviewEnabled: boolean;
+  selfServeInterviewPhysicianId: string | null;
 };
 
 export default function BookingSettingsPage() {
@@ -53,6 +55,8 @@ export default function BookingSettingsPage() {
     bookingInstructions: "",
     emailFooter: "",
     timezone: "America/Vancouver",
+    selfServeInterviewEnabled: false,
+    selfServeInterviewPhysicianId: null,
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -347,6 +351,66 @@ export default function BookingSettingsPage() {
               </div>
             </section>
           )}
+
+          {/* Self-serve AI Guided Interview */}
+          <section className="bg-white border border-gray-200 rounded-xl p-5 space-y-4">
+            <h2 className="font-semibold text-gray-800">AI Guided Interview (self-serve)</h2>
+            <p className="text-sm text-gray-500">
+              Let patients start an AI guided interview directly (no physician invite),
+              from a public link on your website. Returning patients are matched to their
+              existing chart; new patients enter their details and a chart is created only
+              after they complete the interview.
+            </p>
+
+            <label className="flex items-center gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={settings.selfServeInterviewEnabled}
+                onChange={(e) => set("selfServeInterviewEnabled", e.target.checked)}
+                className="accent-blue-600 w-4 h-4"
+              />
+              <span className="text-sm font-medium text-gray-700">
+                Enable self-serve AI guided interview
+              </span>
+            </label>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Default physician for self-serve interviews
+              </label>
+              <select
+                value={settings.selfServeInterviewPhysicianId ?? ""}
+                onChange={(e) =>
+                  set("selfServeInterviewPhysicianId", e.target.value || null)
+                }
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">— Select a physician —</option>
+                {physicians.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    Dr. {p.firstName} {p.lastName}
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-gray-400 mt-1">
+                Self-serve interviews are attached to this physician. Required for the
+                feature to be live.
+              </p>
+            </div>
+
+            {orgSlug && settings.selfServeInterviewEnabled && settings.selfServeInterviewPhysicianId && (
+              <p className="text-xs text-gray-400">
+                Public URL:{" "}
+                <a
+                  href={`${process.env.NEXT_PUBLIC_APP_URL ?? "https://mymd.health-assist.org"}/interview/${orgSlug}`}
+                  target="_blank"
+                  className="text-blue-600 underline"
+                >
+                  {`${process.env.NEXT_PUBLIC_APP_URL ?? "https://mymd.health-assist.org"}/interview/${orgSlug}`}
+                </a>
+              </p>
+            )}
+          </section>
 
           <button
             type="submit"

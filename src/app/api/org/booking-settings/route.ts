@@ -108,6 +108,28 @@ export async function PATCH(request: NextRequest) {
       }
     }
 
+    // Validate the self-serve default physician belongs to this org (when provided)
+    let selfServeInterviewPhysicianId: string | undefined = undefined;
+    if (body.selfServeInterviewPhysicianId !== undefined) {
+      const pid = body.selfServeInterviewPhysicianId;
+      if (typeof pid === "string" && pid.trim()) {
+        const owns = await query<{ id: string }>(
+          "SELECT id FROM physicians WHERE id = $1 AND organization_id = $2 LIMIT 1",
+          [pid.trim(), session.organizationId],
+        );
+        if (owns.rows.length === 0) {
+          status = 400;
+          const res = NextResponse.json(
+            { error: "Selected physician is not part of this organization." },
+            { status },
+          );
+          logRequestMeta("/api/org/booking-settings", requestId, status, Date.now() - started);
+          return res;
+        }
+        selfServeInterviewPhysicianId = pid.trim();
+      }
+    }
+
     // Update booking settings
     await upsertBookingSettings(session.organizationId, {
       onlineBookingEnabled: body.onlineBookingEnabled,
@@ -121,6 +143,8 @@ export async function PATCH(request: NextRequest) {
       bookingInstructions: body.bookingInstructions,
       emailFooter: body.emailFooter,
       timezone: body.timezone,
+      selfServeInterviewEnabled: body.selfServeInterviewEnabled,
+      selfServeInterviewPhysicianId,
     });
 
     const updatedSettings = await getBookingSettingsByOrgId(session.organizationId);
