@@ -250,6 +250,22 @@ export default function SelfServeInterviewPage({
   // Render
   // ---------------------------------------------------------------------------
 
+  // Clinic-branded banner, keyed by slug — drop a /public/clinic-headers/<slug>.jpg
+  // to brand a clinic's interview page. Hides itself if the clinic has no banner.
+  const banner = (
+    <div className="w-full max-w-2xl mx-auto mb-5">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={`/clinic-headers/${clinicSlug}.jpg`}
+        alt={clinicName ? `${clinicName} header` : "Clinic header"}
+        className="w-full h-auto rounded-xl"
+        onError={(e) => {
+          (e.currentTarget as HTMLImageElement).style.display = "none";
+        }}
+      />
+    </div>
+  );
+
   const header = (
     <div className="text-center mb-6">
       <Image
@@ -283,8 +299,9 @@ export default function SelfServeInterviewPage({
 
   if (step === "unavailable") {
     return (
-      <main className="min-h-screen bg-slate-100 flex items-center justify-center px-4">
-        <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 text-center shadow-sm">
+      <main className="min-h-screen bg-slate-100 py-10 px-4">
+        {banner}
+        <div className="w-full max-w-md mx-auto rounded-2xl border border-slate-200 bg-white p-6 text-center shadow-sm">
           {header}
           <p className="text-slate-700">
             The AI guided interview isn’t available for this clinic right now. Please contact the
@@ -297,6 +314,7 @@ export default function SelfServeInterviewPage({
 
   return (
     <main className="min-h-screen bg-slate-100 py-10 px-4">
+      {banner}
       <div className="w-full max-w-lg mx-auto rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         {header}
 
