@@ -202,7 +202,6 @@ export default function ClinicBookingPage({
         {/* Header */}
         <div className="mb-6">
           <h1 className="text-2xl font-bold text-gray-900">{clinic?.name}</h1>
-          {clinic?.address && <p className="text-gray-500 text-sm mt-1">{clinic.address}</p>}
           {settings?.bookingInstructions && (
             <p className="text-gray-600 text-sm mt-2 bg-blue-50 border border-blue-100 rounded-lg p-3">
               {settings.bookingInstructions}
