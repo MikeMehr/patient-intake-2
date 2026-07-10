@@ -90,6 +90,7 @@ export default function BookingConfirmPage({
   const [submitting, setSubmitting]     = useState(false);
   const [error, setError]               = useState<string | null>(null);
   const [success, setSuccess]           = useState<{ manageUrl: string } | null>(null);
+  const [closeHint, setCloseHint]       = useState(false);
 
   // ---------------------------------------------------------------------------
   // Load clinic info
@@ -306,11 +307,22 @@ export default function BookingConfirmPage({
           <div className="mt-4">
             <button
               type="button"
-              onClick={() => window.close()}
+              onClick={() => {
+                // window.close() only works for tabs opened by script. Patients
+                // arrive here via a normal link, so the browser silently ignores
+                // it — if we're still running after the call, show guidance.
+                window.close();
+                setCloseHint(true);
+              }}
               className="text-sm text-gray-500 hover:text-gray-700 underline"
             >
               Close window
             </button>
+            {closeHint && (
+              <p className="text-xs text-gray-400 mt-2">
+                You can now close this browser tab.
+              </p>
+            )}
           </div>
         </div>
       </main>
