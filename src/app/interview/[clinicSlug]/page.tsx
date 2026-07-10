@@ -3,6 +3,7 @@
 import { use, useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
+import { isWithinInterviewHours } from "@/lib/interview-hours";
 
 const PROVINCES = [
   "Alberta", "British Columbia", "Manitoba", "New Brunswick",
@@ -18,7 +19,7 @@ const COVERAGE_OPTIONS = [
   { value: "UNINSURED", label: "Uninsured / other" },
 ] as const;
 
-type Step = "identity" | "demographics" | "otp" | "blocked" | "unavailable";
+type Step = "identity" | "demographics" | "otp" | "blocked" | "unavailable" | "closed";
 
 type VerifyOtpResponse = {
   success: boolean;
@@ -72,6 +73,7 @@ export default function SelfServeInterviewPage({
       .then((data) => {
         setClinicName(data.clinicName ?? "");
         if (!data.enabled) setStep("unavailable");
+        else if (!isWithinInterviewHours()) setStep("closed");
         setLoading(false);
       })
       .catch(() => {
@@ -122,6 +124,10 @@ export default function SelfServeInterviewPage({
       });
       const data = await res.json();
       if (!res.ok) {
+        if (data.closed) {
+          setStep("closed");
+          return;
+        }
         setError(data.error ?? "Something went wrong. Please try again.");
         return;
       }
@@ -303,6 +309,23 @@ export default function SelfServeInterviewPage({
           <p className="text-slate-700">
             The AI guided interview isn’t available for this clinic right now. Please contact the
             clinic directly.
+          </p>
+        </div>
+      </main>
+    );
+  }
+
+  if (step === "closed") {
+    return (
+      <main className="min-h-screen bg-slate-100 py-10 px-4">
+        {banner}
+        <div className="w-full max-w-md mx-auto rounded-2xl border border-slate-200 bg-white p-6 text-center shadow-sm">
+          {header}
+          <h1 className="text-xl font-semibold text-slate-900 mb-2">We’re currently closed</h1>
+          <p className="text-slate-700">
+            The AI guided interview is available between{" "}
+            <span className="font-medium">8:00&nbsp;am and 7:00&nbsp;pm Pacific time</span>. Please
+            come back during those hours to complete your interview.
           </p>
         </div>
       </main>

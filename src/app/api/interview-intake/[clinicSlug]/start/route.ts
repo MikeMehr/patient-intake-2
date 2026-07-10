@@ -30,6 +30,11 @@ import {
 } from "@/lib/invitation-security";
 import { query } from "@/lib/db";
 import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
+import {
+  INTERVIEW_CLOSE_HOUR,
+  INTERVIEW_OPEN_HOUR,
+  isWithinInterviewHours,
+} from "@/lib/interview-hours";
 
 export const runtime = "nodejs";
 
@@ -94,6 +99,22 @@ export async function POST(
       status = 400;
       const res = NextResponse.json(
         { error: "Date of birth is required in YYYY-MM-DD format." },
+        { status },
+      );
+      logRequestMeta(route, requestId, status, Date.now() - started);
+      return res;
+    }
+
+    // Business-hours gate: patients may only start the guided interview between
+    // 8:00am and 7:00pm Pacific time. Enforced server-side so it can't be
+    // bypassed by a client with a manipulated clock/timezone.
+    if (!isWithinInterviewHours()) {
+      status = 403;
+      const res = NextResponse.json(
+        {
+          closed: true,
+          error: `The AI guided interview is available between ${INTERVIEW_OPEN_HOUR}:00am and ${INTERVIEW_CLOSE_HOUR - 12}:00pm Pacific time. Please try again during those hours.`,
+        },
         { status },
       );
       logRequestMeta(route, requestId, status, Date.now() - started);
