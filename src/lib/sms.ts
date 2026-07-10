@@ -107,6 +107,82 @@ export async function sendEmergencyAlertSMS(
 }
 
 /**
+ * Notify a physician by SMS that a patient has booked an appointment online.
+ * Best-effort — the booking is already committed before this is called.
+ * @param physicianPhone - The physician's phone number (any North American format; normalized to E.164)
+ * @param details - Booking details to include in the message
+ * @returns Result object with success status and message SID or error
+ */
+export async function sendBookingAlertSMS(
+  physicianPhone: string,
+  details: {
+    patientName: string;
+    clinicName: string;
+    dateLabel: string;
+    manageUrl?: string;
+  }
+): Promise<SendSmsResult> {
+  // Respect HIPAA mode - don't send external SMS if disabled (message contains patient name)
+  if (process.env.HIPAA_MODE === "true") {
+    logDebug("[sms] HIPAA_MODE enabled - booking alert SMS disabled", {
+      physicianPhone: "***",
+    });
+    return {
+      success: true,
+      error: "SMS disabled in HIPAA mode",
+    };
+  }
+
+  try {
+    const fromNumber = process.env.TWILIO_PHONE_NUMBER;
+    if (!fromNumber) {
+      throw new Error(
+        "TWILIO_PHONE_NUMBER environment variable not configured"
+      );
+    }
+
+    const client = getTwilioClient();
+
+    let message = `New appointment: ${details.patientName} booked ${details.dateLabel} at ${details.clinicName}.`;
+    if (details.manageUrl) {
+      message += ` Details: ${details.manageUrl}`;
+    }
+
+    logDebug("[sms] Sending booking alert SMS", {
+      to: "***",
+      messageLength: message.length,
+    });
+
+    const toNumber = toE164(physicianPhone);
+    const result = await client.messages.create({
+      body: message,
+      from: fromNumber,
+      to: toNumber,
+    });
+
+    logDebug("[sms] Booking alert SMS sent successfully", {
+      messageSid: result.sid,
+      status: result.status,
+    });
+
+    return {
+      success: true,
+      messageSid: result.sid,
+    };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logDebug("[sms] Failed to send booking alert SMS", {
+      error: errorMessage,
+    });
+
+    return {
+      success: false,
+      error: errorMessage,
+    };
+  }
+}
+
+/**
  * Send a one-time verification code (2FA) to a patient via SMS.
  * Used by the guided-interview invitation flow in place of email OTP.
  * @param patientPhone - The patient's phone number (any North American format; normalized to E.164)

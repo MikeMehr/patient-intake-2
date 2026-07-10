@@ -12,6 +12,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { getClinicBySlug, getPhysiciansForBooking, confirmAppointment } from "@/lib/booking-store";
 import { generateManageToken } from "@/lib/booking-token";
 import { sendBookingConfirmation } from "@/lib/booking-email";
+import { sendBookingAlertSMS } from "@/lib/sms";
+import { getPhysicianPhone } from "@/lib/physician-lookup";
 import { query } from "@/lib/db";
 import { decryptString } from "@/lib/encrypted-field";
 import { createOscarAppointment, toClinicLocalParts } from "@/lib/oscar/appointments";
@@ -162,6 +164,31 @@ export async function POST(
     });
   } catch {
     // Email failure is non-fatal — appointment is already committed
+  }
+
+  // Notify the physician by SMS (best-effort, never blocks the booking)
+  try {
+    const physicianPhone = await getPhysicianPhone(result.physicianId);
+    if (physicianPhone) {
+      const dateLabel = slotStart
+        ? new Intl.DateTimeFormat("en-CA", {
+            timeZone: clinic.settings.timezone,
+            weekday: "short",
+            month: "short",
+            day: "numeric",
+            hour: "numeric",
+            minute: "2-digit",
+            hour12: true,
+          }).format(slotStart)
+        : "";
+      await sendBookingAlertSMS(physicianPhone, {
+        patientName: `${firstName} ${lastName}`,
+        clinicName: clinic.name,
+        dateLabel,
+      });
+    }
+  } catch {
+    // SMS failure is non-fatal — appointment is already committed
   }
 
   const response = NextResponse.json({
