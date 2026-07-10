@@ -34,8 +34,24 @@ export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ clinicSlug: string }> },
 ) {
-  const { clinicSlug } = await params;
+  try {
+    return await handleConfirm(req, await params);
+  } catch (err) {
+    // Last-resort guard: never return an empty-body 500. The client does
+    // `await res.json()` on the response, which itself throws if the body is
+    // empty, masking the real error. Always emit JSON.
+    console.error("[confirm] Unhandled error:", err);
+    return NextResponse.json(
+      { error: "Something went wrong while confirming your appointment. Please try again." },
+      { status: 500 },
+    );
+  }
+}
 
+async function handleConfirm(
+  req: NextRequest,
+  { clinicSlug }: { clinicSlug: string },
+) {
   let body: Record<string, unknown>;
   try {
     body = await req.json();

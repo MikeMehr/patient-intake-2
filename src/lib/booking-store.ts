@@ -524,8 +524,10 @@ export async function confirmAppointment(
     ? encryptString(data.healthCardNumber)
     : null;
 
-  const result = await query<{ appointment_id: string; physician_id: string }>(
-    `WITH hold_check AS (
+  let result;
+  try {
+    result = await query<{ appointment_id: string; physician_id: string }>(
+      `WITH hold_check AS (
        SELECT id, physician_id, organization_id
        FROM appointment_slots
        WHERE id = $1
@@ -554,23 +556,34 @@ export async function confirmAppointment(
        RETURNING id AS appointment_id, physician_id
      )
      SELECT appointment_id, physician_id FROM appt_insert`,
-    [
-      slotId,
-      orgId,
-      sessionKey,
-      data.firstName,
-      data.lastName,
-      data.dateOfBirth,
-      data.email,
-      data.coverageType,
-      data.province ?? null,
-      healthCardEnc,
-      data.billingNote ?? null,
-      data.manageTokenHash,
-      data.manageTokenExpiresAt.toISOString(),
-      data.oscarDemographicNo ?? null,
-    ],
-  );
+      [
+        slotId,
+        orgId,
+        sessionKey,
+        data.firstName,
+        data.lastName,
+        data.dateOfBirth,
+        data.email,
+        data.coverageType,
+        data.province ?? null,
+        healthCardEnc,
+        data.billingNote ?? null,
+        data.manageTokenHash,
+        data.manageTokenExpiresAt.toISOString(),
+        data.oscarDemographicNo ?? null,
+      ],
+    );
+  } catch (err) {
+    // 23505 = unique_violation. This slot already has a live (non-cancelled)
+    // appointment — e.g. a race where two sessions confirm the same slot, or a
+    // slot left inconsistent (marked OPEN while still holding an active booking).
+    // Treat it as "slot no longer available" (caller returns 409) rather than a
+    // hard 500, so the patient gets a clear message instead of an empty error.
+    if ((err as { code?: string }).code === "23505") {
+      return null;
+    }
+    throw err;
+  }
 
   const row = result.rows[0];
   if (!row) return null;
