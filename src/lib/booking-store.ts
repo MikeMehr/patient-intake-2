@@ -23,6 +23,8 @@ export type BookingSettings = {
   bookingInstructions: string | null;
   emailFooter: string | null;
   timezone: string;
+  selfServeInterviewEnabled: boolean;
+  selfServeInterviewPhysicianId: string | null;
 };
 
 export type ClinicInfo = {
@@ -32,6 +34,7 @@ export type ClinicInfo = {
   email: string | null;
   address: string | null;
   phone: string | null;
+  websiteUrl: string | null;
   settings: BookingSettings | null;
 };
 
@@ -89,6 +92,7 @@ export async function getClinicBySlug(slug: string): Promise<ClinicInfo | null> 
     email: string | null;
     business_address: string | null;
     phone: string | null;
+    website_url: string | null;
     bs_id: string | null;
     online_booking_enabled: boolean | null;
     public_booking_start: string | null;
@@ -101,9 +105,11 @@ export async function getClinicBySlug(slug: string): Promise<ClinicInfo | null> 
     booking_instructions: string | null;
     email_footer: string | null;
     timezone: string | null;
+    self_serve_interview_enabled: boolean | null;
+    self_serve_interview_physician_id: string | null;
   }>(
     `SELECT
-       o.id, o.name, o.slug, o.email, o.business_address, o.phone,
+       o.id, o.name, o.slug, o.email, o.business_address, o.phone, o.website_url,
        bs.id                    AS bs_id,
        bs.online_booking_enabled,
        bs.public_booking_start::TEXT,
@@ -115,7 +121,9 @@ export async function getClinicBySlug(slug: string): Promise<ClinicInfo | null> 
        bs.cancellation_policy,
        bs.booking_instructions,
        bs.email_footer,
-       bs.timezone
+       bs.timezone,
+       bs.self_serve_interview_enabled,
+       bs.self_serve_interview_physician_id
      FROM organizations o
      LEFT JOIN booking_settings bs ON bs.organization_id = o.id
      WHERE o.slug = $1`,
@@ -132,6 +140,7 @@ export async function getClinicBySlug(slug: string): Promise<ClinicInfo | null> 
     email: row.email,
     address: row.business_address,
     phone: row.phone,
+    websiteUrl: row.website_url,
     settings: row.bs_id
       ? {
           id: row.bs_id,
@@ -147,8 +156,50 @@ export async function getClinicBySlug(slug: string): Promise<ClinicInfo | null> 
           bookingInstructions: row.booking_instructions,
           emailFooter: row.email_footer,
           timezone: row.timezone ?? "America/Vancouver",
+          selfServeInterviewEnabled: row.self_serve_interview_enabled ?? false,
+          selfServeInterviewPhysicianId: row.self_serve_interview_physician_id ?? null,
         }
       : null,
+  };
+}
+
+/**
+ * Resolve the self-serve AI guided interview configuration for a clinic slug.
+ * Returns null when the clinic doesn't exist. `enabled` is only true when the
+ * feature is turned on AND a valid default physician is configured.
+ */
+export async function getSelfServeInterviewConfig(slug: string): Promise<{
+  clinic: ClinicInfo;
+  enabled: boolean;
+  physicianId: string | null;
+  physicianName: string | null;
+} | null> {
+  const clinic = await getClinicBySlug(slug);
+  if (!clinic) return null;
+
+  const featureOn = clinic.settings?.selfServeInterviewEnabled ?? false;
+  const physicianId = clinic.settings?.selfServeInterviewPhysicianId ?? null;
+
+  let physicianName: string | null = null;
+  let physicianValid = false;
+  if (physicianId) {
+    const res = await query<{ first_name: string; last_name: string }>(
+      `SELECT first_name, last_name FROM physicians
+       WHERE id = $1 AND organization_id = $2 LIMIT 1`,
+      [physicianId, clinic.id],
+    );
+    const row = res.rows[0];
+    if (row) {
+      physicianValid = true;
+      physicianName = `Dr. ${row.first_name} ${row.last_name}`;
+    }
+  }
+
+  return {
+    clinic,
+    enabled: featureOn && physicianValid,
+    physicianId: physicianValid ? physicianId : null,
+    physicianName,
   };
 }
 
@@ -166,12 +217,15 @@ export async function getBookingSettingsByOrgId(orgId: string): Promise<BookingS
     booking_instructions: string | null;
     email_footer: string | null;
     timezone: string;
+    self_serve_interview_enabled: boolean;
+    self_serve_interview_physician_id: string | null;
   }>(
     `SELECT id, online_booking_enabled,
             public_booking_start::TEXT, public_booking_end::TEXT,
             enforce_booking_window, slot_interval_minutes,
             health_card_required, show_blocked_slots,
-            cancellation_policy, booking_instructions, email_footer, timezone
+            cancellation_policy, booking_instructions, email_footer, timezone,
+            self_serve_interview_enabled, self_serve_interview_physician_id
      FROM booking_settings WHERE organization_id = $1`,
     [orgId],
   );
@@ -193,6 +247,8 @@ export async function getBookingSettingsByOrgId(orgId: string): Promise<BookingS
     bookingInstructions: row.booking_instructions,
     emailFooter: row.email_footer,
     timezone: row.timezone,
+    selfServeInterviewEnabled: row.self_serve_interview_enabled ?? false,
+    selfServeInterviewPhysicianId: row.self_serve_interview_physician_id ?? null,
   };
 }
 
@@ -204,11 +260,13 @@ export async function upsertBookingSettings(
     `INSERT INTO booking_settings (organization_id, online_booking_enabled, public_booking_start,
        public_booking_end, enforce_booking_window, slot_interval_minutes,
        health_card_required, show_blocked_slots, cancellation_policy,
-       booking_instructions, timezone, email_footer, updated_at)
+       booking_instructions, timezone, email_footer,
+       self_serve_interview_enabled, self_serve_interview_physician_id, updated_at)
      VALUES ($1,
        COALESCE($2, FALSE), COALESCE($3, '07:00')::TIME, COALESCE($4, '22:00')::TIME,
        COALESCE($5, TRUE), COALESCE($6, 15), COALESCE($7, FALSE), COALESCE($8, FALSE),
-       $9, $10, COALESCE($11, 'America/Vancouver'), $12, NOW())
+       $9, $10, COALESCE($11, 'America/Vancouver'), $12,
+       COALESCE($13, FALSE), $14, NOW())
      ON CONFLICT (organization_id) DO UPDATE SET
        online_booking_enabled  = COALESCE($2, booking_settings.online_booking_enabled),
        public_booking_start    = COALESCE($3::TIME, booking_settings.public_booking_start),
@@ -221,6 +279,8 @@ export async function upsertBookingSettings(
        booking_instructions    = COALESCE($10, booking_settings.booking_instructions),
        timezone                = COALESCE($11, booking_settings.timezone),
        email_footer            = COALESCE($12, booking_settings.email_footer),
+       self_serve_interview_enabled       = COALESCE($13, booking_settings.self_serve_interview_enabled),
+       self_serve_interview_physician_id  = COALESCE($14, booking_settings.self_serve_interview_physician_id),
        updated_at              = NOW()`,
     [
       orgId,
@@ -235,6 +295,8 @@ export async function upsertBookingSettings(
       updates.bookingInstructions ?? null,
       updates.timezone ?? null,
       updates.emailFooter ?? null,
+      updates.selfServeInterviewEnabled ?? null,
+      updates.selfServeInterviewPhysicianId ?? null,
     ],
   );
 }
