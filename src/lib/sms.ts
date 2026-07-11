@@ -183,6 +183,81 @@ export async function sendBookingAlertSMS(
 }
 
 /**
+ * Notify a physician by SMS that a patient has completed the guided interview,
+ * so they can review the intake and call the patient back.
+ * Best-effort — the session is already saved before this is called.
+ * @param physicianPhone - The physician's phone number (any North American format; normalized to E.164)
+ * @param details - Completion details to include in the message
+ * @returns Result object with success status and message SID or error
+ */
+export async function sendInterviewCompleteSMS(
+  physicianPhone: string,
+  details: {
+    patientName: string;
+    reviewUrl?: string;
+  }
+): Promise<SendSmsResult> {
+  // Respect HIPAA mode - don't send external SMS if disabled (message contains patient name)
+  if (process.env.HIPAA_MODE === "true") {
+    logDebug("[sms] HIPAA_MODE enabled - interview complete SMS disabled", {
+      physicianPhone: "***",
+    });
+    return {
+      success: true,
+      error: "SMS disabled in HIPAA mode",
+    };
+  }
+
+  try {
+    const fromNumber = process.env.TWILIO_PHONE_NUMBER;
+    if (!fromNumber) {
+      throw new Error(
+        "TWILIO_PHONE_NUMBER environment variable not configured"
+      );
+    }
+
+    const client = getTwilioClient();
+
+    let message = `Interview complete: ${details.patientName} finished their guided interview and is ready for a call back.`;
+    if (details.reviewUrl) {
+      message += ` Review: ${details.reviewUrl}`;
+    }
+
+    logDebug("[sms] Sending interview complete SMS", {
+      to: "***",
+      messageLength: message.length,
+    });
+
+    const toNumber = toE164(physicianPhone);
+    const result = await client.messages.create({
+      body: message,
+      from: fromNumber,
+      to: toNumber,
+    });
+
+    logDebug("[sms] Interview complete SMS sent successfully", {
+      messageSid: result.sid,
+      status: result.status,
+    });
+
+    return {
+      success: true,
+      messageSid: result.sid,
+    };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logDebug("[sms] Failed to send interview complete SMS", {
+      error: errorMessage,
+    });
+
+    return {
+      success: false,
+      error: errorMessage,
+    };
+  }
+}
+
+/**
  * Send a one-time verification code (2FA) to a patient via SMS.
  * Used by the guided-interview invitation flow in place of email OTP.
  * @param patientPhone - The patient's phone number (any North American format; normalized to E.164)

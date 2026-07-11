@@ -35,6 +35,8 @@ import { startSessionRetentionCleanup } from "@/lib/session-retention-cleanup";
 import { query } from "@/lib/db";
 import { decryptString } from "@/lib/encrypted-field";
 import { createOscarDemographic } from "@/lib/oscar/self-serve";
+import { sendInterviewCompleteSMS } from "@/lib/sms";
+import { getPhysicianPhone } from "@/lib/physician-lookup";
 
 /**
  * For a self-serve guided-interview invitation with a NEW patient, create the
@@ -503,6 +505,37 @@ export async function POST(request: Request) {
     
     await storeSession(session);
 
+    const viewUrl = `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/physician/view?code=${sessionCode}`;
+
+    // Fire-and-forget: text the physician that a patient finished the guided
+    // interview so they can review and call the patient back. Best-effort — the
+    // session is already saved, so a failed/absent SMS never blocks completion.
+    (async () => {
+      try {
+        const physicianPhone = await getPhysicianPhone(validatedPhysicianId);
+        if (!physicianPhone) {
+          logDebug("[api/sessions] Physician has no phone for interview-complete SMS", {
+            physicianId: validatedPhysicianId,
+          });
+          return;
+        }
+        const result = await sendInterviewCompleteSMS(physicianPhone, {
+          patientName: patientName || "A patient",
+          reviewUrl: viewUrl,
+        });
+        if (!result.success) {
+          logDebug("[api/sessions] Interview-complete SMS send failed", {
+            error: result.error,
+            physicianId: validatedPhysicianId,
+          });
+        }
+      } catch (smsError) {
+        logDebug("[api/sessions] Unexpected error sending interview-complete SMS", {
+          error: smsError instanceof Error ? smsError.message : String(smsError),
+        });
+      }
+    })();
+
     // Self-serve new patients: create the OSCAR chart now that the interview is
     // finished (normal completion OR early "End interview"). No-op for invited
     // flows and for existing patients (who already have oscar_demographic_no).
@@ -555,7 +588,7 @@ export async function POST(request: Request) {
     const res = NextResponse.json({
       sessionCode,
       patientId,
-      viewUrl: `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/physician/view?code=${sessionCode}`,
+      viewUrl,
     });
     logRequestMeta("/api/sessions", requestId, status, Date.now() - started);
     return res;
