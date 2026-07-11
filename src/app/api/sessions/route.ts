@@ -284,6 +284,7 @@ export async function POST(request: Request) {
       imageName,
       duration,
       transcript,
+      isEmergency,
     } = body as {
       physicianId: string;
       patientEmail: string;
@@ -296,6 +297,7 @@ export async function POST(request: Request) {
       imageName?: string;
       duration?: number;
       transcript?: import("@/lib/interview-schema").InterviewMessage[];
+      isEmergency?: boolean;
     };
 
     const invitation = await resolveInvitationFromCookie();
@@ -510,7 +512,14 @@ export async function POST(request: Request) {
     // Fire-and-forget: text the physician that a patient finished the guided
     // interview so they can review and call the patient back. Best-effort — the
     // session is already saved, so a failed/absent SMS never blocks completion.
-    (async () => {
+    // Skipped for emergencies: an urgent alert SMS was already sent the moment
+    // the summary was generated (see api/interview), so this would be redundant.
+    if (isEmergency === true) {
+      logDebug("[api/sessions] Skipping interview-complete SMS (emergency already alerted)", {
+        physicianId: validatedPhysicianId,
+      });
+    } else {
+      (async () => {
       try {
         const physicianPhone = await getPhysicianPhone(validatedPhysicianId);
         if (!physicianPhone) {
@@ -534,7 +543,8 @@ export async function POST(request: Request) {
           error: smsError instanceof Error ? smsError.message : String(smsError),
         });
       }
-    })();
+      })();
+    }
 
     // Self-serve new patients: create the OSCAR chart now that the interview is
     // finished (normal completion OR early "End interview"). No-op for invited

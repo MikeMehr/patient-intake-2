@@ -758,6 +758,10 @@ export default function Home() {
   const pendingSttSubmitFnRef = useRef<(() => void) | null>(null);
   const [interviewStartTime, setInterviewStartTime] = useState<number | null>(null);
   const interviewStartTimeRef = useRef<number | null>(null);
+  // Set when the AI flags the completed interview as an emergency. Used to suppress
+  // the physician "interview complete — call back" SMS, since an urgent emergency
+  // SMS is already sent the moment the summary is generated (see api/interview).
+  const interviewIsEmergencyRef = useRef<boolean>(false);
   const [elapsedTime, setElapsedTime] = useState<number>(0);
   const [interviewProgress, setInterviewProgress] = useState<InterviewProgress | null>(null);
   const cleaningSchema = z.object({ cleaned: z.string().min(1) });
@@ -3367,6 +3371,7 @@ export default function Home() {
     setInterviewProgress(null);
     setInterviewStartTime(null);
     interviewStartTimeRef.current = null;
+    interviewIsEmergencyRef.current = false;
     setElapsedTime(0);
 
     setSelectedImage(null);
@@ -3496,6 +3501,7 @@ export default function Home() {
       imageName: selectedImage?.name || undefined,
       duration,
       transcript: transcriptToSave,
+      isEmergency: interviewIsEmergencyRef.current,
     };
 
     if (process.env.NODE_ENV === "development") {
@@ -4052,6 +4058,7 @@ export default function Home() {
     }
 
     setDeferredIntentHint(null);
+    interviewIsEmergencyRef.current = (turn as { isEmergency?: boolean }).isEmergency === true;
     const historyResult: HistoryResponse = {
       positives: turn.positives,
       negatives: turn.negatives,
