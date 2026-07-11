@@ -111,29 +111,27 @@ export default function DateTimeField({
           className={inputClassName}
         />
       </div>
-      <div className="flex flex-col w-16">
+      <div className="flex flex-col w-20">
         <span className="text-[0.7rem] text-gray-500 mb-0.5">Min</span>
-        <input
-          type="number"
-          inputMode="numeric"
-          min={0}
-          max={59}
-          placeholder="MM"
-          value={minute}
+        <select
+          value={minute === "" ? "" : String(parseInt(minute, 10)).padStart(2, "0")}
           onChange={(e) => {
-            const v = clampInt(e.target.value, 0, 59);
+            const v = e.target.value;
             setMinute(v);
             emit({ minute: v });
           }}
-          onBlur={(e) => {
-            // Pad to 2 digits for a tidy display once they leave the field.
-            if (e.target.value !== "") {
-              const v = String(parseInt(e.target.value, 10)).padStart(2, "0");
-              setMinute(v);
-            }
-          }}
           className={inputClassName}
-        />
+        >
+          <option value="" disabled>MM</option>
+          {Array.from({ length: 12 }, (_, i) => i * 5).map((m) => {
+            const mm = String(m).padStart(2, "0");
+            return (
+              <option key={mm} value={mm}>
+                {mm}
+              </option>
+            );
+          })}
+        </select>
       </div>
       <div className="flex flex-col">
         <span className="text-[0.7rem] text-gray-500 mb-0.5">AM/PM</span>
