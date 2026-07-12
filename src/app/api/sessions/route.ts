@@ -114,8 +114,9 @@ async function maybeCreateSelfServeOscarChart(invitationId: string): Promise<str
       province: String(demo.province ?? ""),
       postal: String(demo.postal ?? ""),
       gender: typeof demo.gender === "string" ? demo.gender : null,
-      // healthCard is intentionally not sent to demographic create (no field on
-      // DemographicTo1 here); it is retained encrypted on the invitation only.
+      // PHN → OSCAR `hin`; issuing province defaults to the address province.
+      healthCardNumber: healthCard,
+      healthCardProvince: healthCard ? String(demo.province ?? "") : null,
     });
 
     if ("error" in result) throw new Error(`OSCAR create failed: ${result.error}`);
@@ -126,7 +127,6 @@ async function maybeCreateSelfServeOscarChart(invitationId: string): Promise<str
        WHERE id = $2`,
       [result.demographicNo, invitationId],
     );
-    void healthCard; // reserved for future insuranceNumber wiring
     return result.demographicNo;
   } catch (err) {
     // Roll back the sentinel so it can be retried / reconciled manually.

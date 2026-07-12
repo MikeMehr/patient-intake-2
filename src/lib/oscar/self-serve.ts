@@ -394,7 +394,32 @@ export type CreateDemographicInput = {
   postal: string;
   email?: string | null;
   gender?: string | null;
+  /** Patient's health card / PHN number → OSCAR `hin`. */
+  healthCardNumber?: string | null;
+  /** Province the health card was issued in (full name or 2-letter code) → OSCAR `hcType`. */
+  healthCardProvince?: string | null;
 };
+
+/** Map a Canadian province/territory name (or code) to OSCAR's 2-letter health-card type. */
+function toHcType(province: string): string {
+  const p = province.trim().toUpperCase();
+  const map: Record<string, string> = {
+    "ALBERTA": "AB", "AB": "AB",
+    "BRITISH COLUMBIA": "BC", "BC": "BC",
+    "MANITOBA": "MB", "MB": "MB",
+    "NEW BRUNSWICK": "NB", "NB": "NB",
+    "NEWFOUNDLAND AND LABRADOR": "NL", "NEWFOUNDLAND": "NL", "NL": "NL",
+    "NORTHWEST TERRITORIES": "NT", "NT": "NT",
+    "NOVA SCOTIA": "NS", "NS": "NS",
+    "NUNAVUT": "NU", "NU": "NU",
+    "ONTARIO": "ON", "ON": "ON",
+    "PRINCE EDWARD ISLAND": "PE", "PE": "PE", "PEI": "PE",
+    "QUEBEC": "QC", "QC": "QC",
+    "SASKATCHEWAN": "SK", "SK": "SK",
+    "YUKON": "YT", "YT": "YT",
+  };
+  return map[p] ?? "";
+}
 
 export type CreateDemographicResult =
   | { demographicNo: string }
@@ -419,6 +444,9 @@ export async function createOscarDemographic(
   const email = truncate(input.email);
   const genderRaw = truncate(input.gender, 1).toUpperCase();
   const sex = ["M", "F", "O", "U"].includes(genderRaw) ? genderRaw : "U";
+  // Health card / PHN → OSCAR `hin`; keep digits/letters only, drop spaces & dashes.
+  const hin = truncate(input.healthCardNumber, 20).replace(/[\s-]/g, "");
+  const hcType = input.healthCardProvince ? toHcType(input.healthCardProvince) : "";
 
   if (!firstName || !lastName) {
     return { error: "firstName and lastName are required", status: 400 };
@@ -449,6 +477,11 @@ export async function createOscarDemographic(
     patientStatus: "AC",
   };
   if (email) demographicPayload.email = email;
+  if (hin) {
+    demographicPayload.hin = hin;
+    // OSCAR requires a health-card type for the HIN to be usable/billable.
+    if (hcType) demographicPayload.hcType = hcType;
+  }
 
   const result = await oscarPost(`${creds.restBase}/demographics`, demographicPayload, creds);
 

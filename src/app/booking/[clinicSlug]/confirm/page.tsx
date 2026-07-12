@@ -231,6 +231,12 @@ export default function BookingConfirmPage({
           province:    extra.province,
           postal:      extra.postal.trim(),
           gender:      extra.gender,
+          healthCardNumber:   coverage.coverageType === "CANADIAN_HEALTH_CARD" && coverage.healthCardNumber.trim()
+                                ? coverage.healthCardNumber.trim()
+                                : undefined,
+          healthCardProvince: coverage.coverageType === "CANADIAN_HEALTH_CARD" && coverage.healthCardNumber.trim()
+                                ? coverage.province
+                                : undefined,
         }),
       });
       const createData = await createRes.json();

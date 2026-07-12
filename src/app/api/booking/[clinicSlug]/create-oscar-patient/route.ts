@@ -13,7 +13,8 @@
  *
  * Body: {
  *   firstName, lastName, dateOfBirth, email?,
- *   phone, address, city, province, postal, gender?
+ *   phone, address, city, province, postal, gender?,
+ *   healthCardNumber?, healthCardProvince?
  * }
  */
 
@@ -83,6 +84,8 @@ export async function POST(
       postal: String(body.postal ?? ""),
       email: body.email != null ? String(body.email) : null,
       gender: body.gender != null ? String(body.gender) : null,
+      healthCardNumber: body.healthCardNumber != null ? String(body.healthCardNumber) : null,
+      healthCardProvince: body.healthCardProvince != null ? String(body.healthCardProvince) : null,
     });
 
     if ("error" in result) {
