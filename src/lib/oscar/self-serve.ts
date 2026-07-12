@@ -398,6 +398,8 @@ export type CreateDemographicInput = {
   healthCardNumber?: string | null;
   /** Province the health card was issued in (full name or 2-letter code) → OSCAR `hcType`. */
   healthCardProvince?: string | null;
+  /** Version code (Ontario cards carry a 2-letter code) → OSCAR `ver`. */
+  healthCardVersion?: string | null;
 };
 
 /** Map a Canadian province/territory name (or code) to OSCAR's 2-letter health-card type. */
@@ -447,6 +449,8 @@ export async function createOscarDemographic(
   // Health card / PHN → OSCAR `hin`; keep digits/letters only, drop spaces & dashes.
   const hin = truncate(input.healthCardNumber, 20).replace(/[\s-]/g, "");
   const hcType = input.healthCardProvince ? toHcType(input.healthCardProvince) : "";
+  // Version code (Ontario) → OSCAR `ver`; letters only, 2-char max.
+  const ver = truncate(input.healthCardVersion, 2).replace(/[^A-Za-z]/g, "").toUpperCase();
 
   if (!firstName || !lastName) {
     return { error: "firstName and lastName are required", status: 400 };
@@ -481,6 +485,8 @@ export async function createOscarDemographic(
     demographicPayload.hin = hin;
     // OSCAR requires a health-card type for the HIN to be usable/billable.
     if (hcType) demographicPayload.hcType = hcType;
+    // Version code applies to Ontario cards; BC PHNs have none.
+    if (ver && hcType === "ON") demographicPayload.ver = ver;
   }
 
   const result = await oscarPost(`${creds.restBase}/demographics`, demographicPayload, creds);

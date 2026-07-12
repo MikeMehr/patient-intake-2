@@ -117,6 +117,7 @@ async function maybeCreateSelfServeOscarChart(invitationId: string): Promise<str
       // PHN → OSCAR `hin`; issuing province defaults to the address province.
       healthCardNumber: healthCard,
       healthCardProvince: healthCard ? String(demo.province ?? "") : null,
+      healthCardVersion: healthCard && typeof demo.healthCardVersion === "string" ? demo.healthCardVersion : null,
     });
 
     if ("error" in result) throw new Error(`OSCAR create failed: ${result.error}`);

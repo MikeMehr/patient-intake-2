@@ -14,7 +14,7 @@
  * Body: {
  *   firstName, lastName, dateOfBirth, email?,
  *   phone, address, city, province, postal, gender?,
- *   healthCardNumber?, healthCardProvince?
+ *   healthCardNumber?, healthCardProvince?, healthCardVersion?
  * }
  */
 
@@ -86,6 +86,7 @@ export async function POST(
       gender: body.gender != null ? String(body.gender) : null,
       healthCardNumber: body.healthCardNumber != null ? String(body.healthCardNumber) : null,
       healthCardProvince: body.healthCardProvince != null ? String(body.healthCardProvince) : null,
+      healthCardVersion: body.healthCardVersion != null ? String(body.healthCardVersion) : null,
     });
 
     if ("error" in result) {

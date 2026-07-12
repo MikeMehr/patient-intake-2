@@ -83,6 +83,7 @@ export default function BookingConfirmPage({
     coverageType: "CANADIAN_HEALTH_CARD",
     province: "British Columbia",
     healthCardNumber: "",
+    healthCardVersion: "", // Ontario cards carry a 2-letter version code
     billingNote: "",
   });
 
@@ -236,6 +237,9 @@ export default function BookingConfirmPage({
                                 : undefined,
           healthCardProvince: coverage.coverageType === "CANADIAN_HEALTH_CARD" && coverage.healthCardNumber.trim()
                                 ? coverage.province
+                                : undefined,
+          healthCardVersion:  coverage.coverageType === "CANADIAN_HEALTH_CARD" && coverage.healthCardNumber.trim() && coverage.healthCardVersion.trim()
+                                ? coverage.healthCardVersion.trim()
                                 : undefined,
         }),
       });
@@ -726,6 +730,28 @@ export default function BookingConfirmPage({
                 onChange={(e) => setCov("healthCardNumber", e.target.value)}
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
+            </div>
+          )}
+
+          {/* Version code — Ontario health cards only */}
+          {coverage.coverageType === "CANADIAN_HEALTH_CARD" &&
+            settings?.healthCardRequired &&
+            coverage.province === "Ontario" && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Version code
+              </label>
+              <input
+                type="text"
+                maxLength={2}
+                value={coverage.healthCardVersion}
+                onChange={(e) => setCov("healthCardVersion", e.target.value.toUpperCase())}
+                placeholder="2 letters, e.g. AB"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm uppercase focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <p className="mt-1 text-xs text-gray-500">
+                The two letters printed after your health card number.
+              </p>
             </div>
           )}
 
