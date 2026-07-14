@@ -14,6 +14,7 @@ interface Organization {
   phone: string | null;
   fax: string | null;
   isActive: boolean;
+  slug: string | null;
 }
 
 interface Provider {
@@ -50,6 +51,7 @@ export default function OrgDashboard() {
   const [syncSummary, setSyncSummary] = useState<SyncSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [openingProviderId, setOpeningProviderId] = useState<string | null>(null);
 
   useEffect(() => {
     fetchData();
@@ -107,6 +109,29 @@ export default function OrgDashboard() {
       router.refresh();
     } catch (err) {
       console.error("Logout error:", err);
+    }
+  };
+
+  const handleOpenPhysicianDashboard = async (providerId: string) => {
+    setOpeningProviderId(providerId);
+    try {
+      const response = await fetch("/api/org/act-as-provider", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ providerId }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        alert(data.error || "Unable to open the Physician Dashboard");
+        setOpeningProviderId(null);
+        return;
+      }
+      // The provider session cookie is now set; go to the Physician Dashboard.
+      window.location.href = data.redirectTo || "/physician/dashboard";
+    } catch (err) {
+      console.error("Error opening physician dashboard:", err);
+      alert("Unable to open the Physician Dashboard");
+      setOpeningProviderId(null);
     }
   };
 
@@ -198,7 +223,7 @@ export default function OrgDashboard() {
           </Link>
         )}
 
-        <div className="grid grid-cols-1 gap-4 mb-6 sm:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 mb-6 sm:grid-cols-2 lg:grid-cols-4">
           <Link
             href="/org/booking-settings"
             className="flex items-center gap-3 bg-white border border-slate-200 rounded-lg px-5 py-4 hover:border-blue-400 hover:shadow-sm transition"
@@ -229,6 +254,20 @@ export default function OrgDashboard() {
               <p className="text-xs text-slate-500">View booked appointments</p>
             </div>
           </Link>
+          {organization?.slug && (
+            <a
+              href={`/booking/${organization.slug}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-3 bg-white border border-slate-200 rounded-lg px-5 py-4 hover:border-blue-400 hover:shadow-sm transition"
+            >
+              <span className="text-2xl">🔗</span>
+              <div>
+                <p className="text-sm font-semibold text-slate-900">Patient Booking Page</p>
+                <p className="text-xs text-slate-500">Open your public /booking/{organization.slug} page</p>
+              </div>
+            </a>
+          )}
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -362,6 +401,15 @@ export default function OrgDashboard() {
                           </div>
                         </div>
                         <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => handleOpenPhysicianDashboard(provider.id)}
+                            disabled={openingProviderId === provider.id}
+                            title="Open this provider's Physician Dashboard (guided interviews & transcription) without logging in again"
+                            className="text-sm font-medium text-blue-600 hover:text-blue-800 disabled:opacity-50"
+                          >
+                            {openingProviderId === provider.id ? "Opening…" : "Physician Dashboard"}
+                          </button>
+                          <span className="text-slate-300">|</span>
                           <Link
                             href={`/org/providers/${provider.id}/edit`}
                             className="text-sm text-slate-600 hover:text-slate-900"

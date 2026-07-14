@@ -25,6 +25,10 @@ export async function GET(request: NextRequest) {
     }
 
     const organization = await getOrganizationById(session.organizationId);
+    const slugRow = await query<{ slug: string | null }>(
+      "SELECT slug FROM organizations WHERE id = $1",
+      [session.organizationId]
+    );
     if (!organization) {
       status = 404;
       const res = NextResponse.json(
@@ -44,6 +48,7 @@ export async function GET(request: NextRequest) {
         phone: organization.phone,
         fax: organization.fax,
         isActive: organization.is_active,
+        slug: slugRow.rows[0]?.slug ?? null,
       },
     });
     logRequestMeta("/api/org/organization", requestId, status, Date.now() - started);

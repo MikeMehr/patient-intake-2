@@ -51,6 +51,10 @@ export interface UserSession {
   clinicAddress?: string | null;
   expiresAt: number;
   linkedPhysicianId?: string | null; // Set for assistant accounts; absent for real providers
+  // When an org admin "opens" one of their providers' Physician Dashboard, the minted
+  // provider session records the originating org-admin user id here so we can switch back
+  // to the Booking Dashboard without re-authenticating.
+  impersonatorOrgAdminId?: string | null;
 }
 
 // Legacy interface for backward compatibility
@@ -159,7 +163,8 @@ export async function createSession(
   organizationId?: string | null,
   clinicName?: string,
   clinicAddress?: string | null,
-  linkedPhysicianId?: string | null
+  linkedPhysicianId?: string | null,
+  impersonatorOrgAdminId?: string | null
 ): Promise<string> {
   const token = generateSessionToken();
   const expiresAt = Date.now() + IDLE_TIMEOUT_MS;
@@ -175,6 +180,7 @@ export async function createSession(
     clinicAddress: clinicAddress ?? null,
     expiresAt,
     ...(linkedPhysicianId ? { linkedPhysicianId } : {}),
+    ...(impersonatorOrgAdminId ? { impersonatorOrgAdminId } : {}),
   };
 
   // Store session in database FIRST

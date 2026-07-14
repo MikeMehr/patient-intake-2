@@ -170,6 +170,8 @@ function PhysicianDashboard() {
     slug: string | null;
   } | null>(null);
   const [isAssistantSession, setIsAssistantSession] = useState(false);
+  const [canReturnToBooking, setCanReturnToBooking] = useState(false);
+  const [returningToBooking, setReturningToBooking] = useState(false);
   const [assistantInfo, setAssistantInfo] = useState<{ id: string; firstName: string; lastName: string } | null>(null);
   const [showAssistantsPanel, setShowAssistantsPanel] = useState(false);
   const [showPasskeysPanel, setShowPasskeysPanel] = useState(false);
@@ -306,6 +308,7 @@ function PhysicianDashboard() {
           setIsAssistantSession(true);
           setAssistantInfo(data.assistant);
         }
+        setCanReturnToBooking(Boolean(data.canReturnToBookingDashboard));
       })
       .catch(() => {
         // Ignore errors
@@ -382,6 +385,24 @@ function PhysicianDashboard() {
     setMobileMenuOpen(false);
     await fetch("/api/auth/logout", { method: "POST" });
     router.push("/auth/login");
+  };
+
+  const handleReturnToBooking = async () => {
+    setReturningToBooking(true);
+    try {
+      const res = await fetch("/api/org/return-to-admin", { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        alert(data.error || "Unable to return to the Booking Dashboard");
+        setReturningToBooking(false);
+        return;
+      }
+      window.location.href = data.redirectTo || "/org/dashboard";
+    } catch (err) {
+      console.error("Error returning to booking dashboard:", err);
+      alert("Unable to return to the Booking Dashboard");
+      setReturningToBooking(false);
+    }
   };
 
   const loadAssistants = async () => {
@@ -942,6 +963,20 @@ function PhysicianDashboard() {
       <SessionKeepAlive redirectTo="/auth/login" />
       <div className="min-h-screen bg-slate-100">
         <div className="max-w-7xl mx-auto px-4 py-8">
+        {canReturnToBooking && (
+          <div className="mb-4 flex items-center justify-between gap-3 rounded-lg bg-blue-50 border border-blue-200 px-4 py-3">
+            <p className="text-sm text-blue-900">
+              You opened this Physician Dashboard from your Online Booking Dashboard.
+            </p>
+            <button
+              onClick={handleReturnToBooking}
+              disabled={returningToBooking}
+              className="shrink-0 px-3 py-1.5 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition disabled:opacity-50"
+            >
+              {returningToBooking ? "Returning…" : "← Back to Booking Dashboard"}
+            </button>
+          </div>
+        )}
         {/* Header */}
         <div className="relative bg-white rounded-lg shadow-sm border border-slate-200 p-6 mb-6">
           <Image

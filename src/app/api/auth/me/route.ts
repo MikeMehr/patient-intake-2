@@ -48,6 +48,9 @@ export async function GET(request: NextRequest) {
 
     const isAssistant = isAssistantSession(session);
     const responseBody: Record<string, unknown> = {
+      // True when this provider session was opened by an org admin via "act as provider";
+      // the client uses it to offer a one-click switch back to the Booking Dashboard.
+      canReturnToBookingDashboard: Boolean(session.impersonatorOrgAdminId),
       physician: {
         id: isAssistant ? session.linkedPhysicianId : session.userId,
         username: session.username,
