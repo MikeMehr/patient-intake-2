@@ -245,3 +245,91 @@ describe("auth session lifecycle", () => {
     expect(session?.userType).toBe("provider");
   });
 });
+
+describe("getSessionForRender", () => {
+  beforeEach(() => {
+    // resetAllMocks, not clearAllMocks: clearAllMocks leaves queued
+    // mockResolvedValueOnce values in place, so unconsumed queue entries from
+    // earlier tests in this file would be returned here instead of our own.
+    vi.resetAllMocks();
+    process.env.SESSION_SECRET = "test-session-secret";
+    cookiesMock.mockResolvedValue({
+      get: (...args: unknown[]) => cookieGetMock(...args),
+      set: (...args: unknown[]) => cookieSetMock(...args),
+    });
+  });
+
+  it("returns null when there is no session cookie", async () => {
+    cookieGetMock.mockReturnValue(undefined);
+
+    const { getSessionForRender } = await import("./auth");
+
+    expect(await getSessionForRender()).toBeNull();
+    expect(queryMock).not.toHaveBeenCalled();
+  });
+
+  it("returns the session for a live token", async () => {
+    cookieGetMock.mockReturnValue({ value: "live-token" });
+    queryMock.mockResolvedValueOnce({
+      rows: [{
+        user_id: "provider-1",
+        user_type: "provider",
+        organization_id: "org-1",
+        physician_id: "provider-1",
+        expires_at: new Date(Date.now() + 5 * 60 * 1000),
+        created_at: new Date(Date.now() - 5 * 60 * 1000),
+        session_data: {
+          userId: "provider-1",
+          userType: "provider",
+          username: "doctor1",
+          firstName: "Doc",
+          lastName: "Tor",
+          expiresAt: Date.now() + 5 * 60 * 1000,
+        },
+      }],
+    });
+
+    const { getSessionForRender } = await import("./auth");
+    const session = await getSessionForRender();
+
+    expect(session?.userId).toBe("provider-1");
+    expect(session?.userType).toBe("provider");
+  });
+
+  // The reason this function exists. cookies() is read-only during render, so
+  // any cookie write throws ReadonlyRequestCookiesError; getCurrentSession
+  // clears the cookie here and re-throws, which would 500 the physician layout.
+  // A well-formed cookie with no row is routine — createSession evicts beyond
+  // MAX_CONCURRENT_SESSIONS, and every dashboard switch mints a new one.
+  it("returns null without writing cookies when the session row is gone", async () => {
+    cookieGetMock.mockReturnValue({ value: "dead-token" });
+    queryMock.mockResolvedValueOnce({ rows: [] });
+
+    const { getSessionForRender } = await import("./auth");
+
+    await expect(getSessionForRender()).resolves.toBeNull();
+    expect(cookieSetMock).not.toHaveBeenCalled();
+  });
+
+  it("returns null without writing cookies when the session is expired", async () => {
+    cookieGetMock.mockReturnValue({ value: "expired-token" });
+    queryMock
+      .mockResolvedValueOnce({
+        rows: [{
+          user_id: "provider-1",
+          user_type: "provider",
+          organization_id: "org-1",
+          physician_id: "provider-1",
+          expires_at: new Date(Date.now() - 60 * 1000),
+          created_at: new Date(Date.now() - 60 * 60 * 1000),
+          session_data: { userId: "provider-1", userType: "provider" },
+        }],
+      })
+      .mockResolvedValueOnce({ rows: [], rowCount: 1 });
+
+    const { getSessionForRender } = await import("./auth");
+
+    await expect(getSessionForRender()).resolves.toBeNull();
+    expect(cookieSetMock).not.toHaveBeenCalled();
+  });
+});

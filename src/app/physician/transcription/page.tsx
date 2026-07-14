@@ -4,9 +4,17 @@ import Image from "next/image";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import SessionKeepAlive from "@/components/auth/SessionKeepAlive";
+import ProviderSwitchInterstitial from "@/components/auth/ProviderSwitchInterstitial";
+import { usePhysicianSession } from "@/components/auth/PhysicianSessionContext";
 import { languageOptions } from "@/lib/speech-language";
 import QuickAskAiModal from "@/components/QuickAskAiModal";
 import { convertToWav, getMicrophoneErrorMessage, MAX_STT_AUDIO_BYTES } from "@/lib/audio-utils";
+import { classifyAuthFailure, type AuthFailure } from "@/lib/client/auth-response";
+import {
+  clearStoredTranscript,
+  loadTranscript,
+  saveTranscript,
+} from "@/lib/client/transcript-draft";
 
 type PatientSearchResult = {
   id: string;
@@ -192,10 +200,42 @@ function formatDateTime(value: string | null): string {
 
 export default function PhysicianTranscriptionPage() {
   const router = useRouter();
+  const physicianSession = usePhysicianSession();
+  const [authFailure, setAuthFailure] = useState<AuthFailure | null>(null);
   const handleLogout = async () => {
+    clearStoredTranscript(physicianSession?.userId);
     await fetch("/api/auth/logout", { method: "POST" });
     router.push("/auth/login");
   };
+
+  /**
+   * Handles 401/403 from a provider-only endpoint. Returns true when the caller
+   * should stop — the response has already been dealt with.
+   *
+   * A 403 is not fatal here: the session is a Booking admin, so we show an
+   * in-place switcher rather than throwing a dead-end error and losing the
+   * transcript to a re-login.
+   */
+  function handleAuthFailure(res: Response): boolean {
+    const failure = classifyAuthFailure(res);
+    if (!failure) return false;
+    if (failure === "unauthenticated") {
+      router.push("/auth/login");
+      return true;
+    }
+    setAuthFailure(failure);
+    return true;
+  }
+
+  /** Transcript from a generate attempt that hit a 403, replayed after switching. */
+  const pendingGenerateTranscriptRef = useRef<string | null>(null);
+
+  function handleSwitchedAccount() {
+    setAuthFailure(null);
+    const pending = pendingGenerateTranscriptRef.current;
+    pendingGenerateTranscriptRef.current = null;
+    if (pending) void generateSoap(pending);
+  }
   const [patientSearchLoading, setPatientSearchLoading] = useState(false);
   const [patientSearchError, setPatientSearchError] = useState<string | null>(null);
   const [patientIdentityMessage, setPatientIdentityMessage] = useState<string | null>(null);
@@ -280,6 +320,26 @@ export default function PhysicianTranscriptionPage() {
     const saved = localStorage.getItem("defaultTranscriptionLanguage");
     if (saved) setLanguage(saved);
   }, []);
+
+  // Offer to restore a transcript left behind by a reload or crash. Never
+  // restore silently: the recovered text may belong to a different encounter
+  // than the one the physician is about to start.
+  const [recoverableTranscript, setRecoverableTranscript] = useState<{
+    text: string;
+    savedAt: number;
+  } | null>(null);
+  useEffect(() => {
+    const stored = loadTranscript(physicianSession?.userId);
+    if (stored) setRecoverableTranscript(stored);
+  }, [physicianSession?.userId]);
+
+  // Debounced autosave of the in-progress transcript (sessionStorage, per-tab).
+  useEffect(() => {
+    const userId = physicianSession?.userId;
+    if (!userId) return;
+    const timer = window.setTimeout(() => saveTranscript(userId, transcript), 750);
+    return () => window.clearTimeout(timer);
+  }, [transcript, physicianSession?.userId]);
 
   // Wound care org feature flag
   const [orgWoundCare, setOrgWoundCare] = useState(false);
@@ -399,10 +459,7 @@ export default function PhysicianTranscriptionPage() {
     setHistoryLoading(true);
     try {
       const res = await fetch("/api/physician/transcription/list");
-      if (res.status === 401) {
-        router.push("/auth/login");
-        return;
-      }
+      if (handleAuthFailure(res)) return;
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || "Failed to load transcription history");
       setHistoryItems(Array.isArray(data?.items) ? data.items : []);
@@ -440,10 +497,7 @@ export default function PhysicianTranscriptionPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: fullName, dob, limit: 10 }),
       });
-      if (res.status === 401) {
-        router.push("/auth/login");
-        return;
-      }
+      if (handleAuthFailure(res)) return;
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || "Search failed");
       const matches = Array.isArray(data?.patients) ? (data.patients as PatientSearchResult[]) : [];
@@ -729,8 +783,10 @@ export default function PhysicianTranscriptionPage() {
           encounterId: encounterId || undefined,
         }),
       });
-      if (res.status === 401) {
-        router.push("/auth/login");
+      if (handleAuthFailure(res)) {
+        // Keep the transcript that was in flight so switching account can retry
+        // it verbatim — this is the work the 403 used to throw away.
+        pendingGenerateTranscriptRef.current = effectiveTranscript;
         return;
       }
       const data = await res.json().catch(() => ({}));
@@ -784,6 +840,10 @@ export default function PhysicianTranscriptionPage() {
       setReviewText(cases[0].reviewText);
       setActiveWorkflowTab("review");
       setActionSuccess(cases.length > 1 ? `${cases.length} SOAP drafts generated.` : "SOAP draft generated.");
+      // The transcript is now persisted server-side (soap_versions.draft_transcript),
+      // so the local copy has done its job.
+      clearStoredTranscript(physicianSession?.userId);
+      setRecoverableTranscript(null);
 
       // Upload the full session audio so re-transcription is possible if the wrong language was used
       const fullBlob = pendingFullAudioRef.current;
@@ -1087,6 +1147,8 @@ export default function PhysicianTranscriptionPage() {
   }
 
   function clearEditorState() {
+    clearStoredTranscript(physicianSession?.userId);
+    setRecoverableTranscript(null);
     setSoapVersionId(null);
     setEncounterId(null);
     setLifecycleState(null);
@@ -1476,6 +1538,9 @@ export default function PhysicianTranscriptionPage() {
       <SessionKeepAlive redirectTo="/auth/login" />
       <div className="min-h-screen bg-slate-100">
         <div className="max-w-7xl mx-auto px-4 py-8 space-y-6">
+          {authFailure === "wrong_account" && (
+            <ProviderSwitchInterstitial mode="inline" onSwitched={handleSwitchedAccount} />
+          )}
           <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6">
             <Image
               src="/LogoFinal.png"
@@ -1764,6 +1829,36 @@ export default function PhysicianTranscriptionPage() {
                       {transcriptLoading && <span className="text-sm text-slate-600">Transcribing...</span>}
                     </div>
                     {recordingError && <p className="text-sm text-red-700">{recordingError}</p>}
+                    {recoverableTranscript && !transcript.trim() && (
+                      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-amber-50 border border-amber-200 px-4 py-3">
+                        <p className="text-sm text-amber-900">
+                          An unsaved transcript from{" "}
+                          {new Date(recoverableTranscript.savedAt).toLocaleTimeString()} was found.
+                        </p>
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setTranscript(recoverableTranscript.text);
+                              setRecoverableTranscript(null);
+                            }}
+                            className="px-3 py-1.5 text-sm font-medium text-white bg-slate-900 rounded-lg hover:bg-slate-800"
+                          >
+                            Restore
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              clearStoredTranscript(physicianSession?.userId);
+                              setRecoverableTranscript(null);
+                            }}
+                            className="px-3 py-1.5 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50"
+                          >
+                            Discard
+                          </button>
+                        </div>
+                      </div>
+                    )}
                     <textarea
                       value={transcript}
                       onChange={(e) => setTranscript(e.target.value)}

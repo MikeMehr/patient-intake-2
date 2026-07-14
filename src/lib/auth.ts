@@ -289,6 +289,22 @@ export async function verifySession(
 }
 
 /**
+ * Read-only session lookup for Server Components (layouts/pages).
+ *
+ * getCurrentSession() cannot be used during render: it clears the cookie on its
+ * dead-token and expired paths, and `cookies()` is read-only in a Server
+ * Component, so those writes throw ReadonlyRequestCookiesError. This reads the
+ * cookie but never writes it. A dead token's cookie is left for the next route
+ * handler to clear — harmless, since every caller treats "no session" the same.
+ */
+export async function getSessionForRender(): Promise<UserSession | null> {
+  const cookieStore = await cookies();
+  const token = cookieStore.get(SESSION_COOKIE_NAME)?.value;
+  if (!token) return null;
+  return verifySession(token);
+}
+
+/**
  * Get current session from cookie
  */
 export async function getCurrentSession(options?: { refresh?: boolean }): Promise<UserSession | null> {
