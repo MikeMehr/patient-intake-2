@@ -80,7 +80,16 @@ async function handleConfirm(
   // absent: a patient who loaded the form before a deploy would submit without
   // it, and by this point their OSCAR chart may already have been created.
   // Fall back to the old label instead. Capped to OSCAR's varchar(80).
-  const reasonText = String(reason ?? "").trim().replace(/\s+/g, " ").slice(0, MAX_REASON_LEN);
+  //
+  // Angle brackets are stripped because this text is anonymous public input that
+  // OSCAR renders into its day sheet HTML. Escaping there is the real defence;
+  // this is belt-and-braces that survives an OSCAR redeploy.
+  const reasonText = String(reason ?? "")
+    .replace(/[\x00-\x1F\x7F]/g, " ")
+    .replace(/[<>]/g, "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .slice(0, MAX_REASON_LEN);
   const oscarReason = reasonText || "Online booking";
 
   // Validate required fields
