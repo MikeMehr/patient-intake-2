@@ -14,6 +14,7 @@ type Appointment = {
   coverageType: string;
   province: string | null;
   billingNote: string | null;
+  reason: string | null;
   cancelledAt: string | null;
   createdAt: string;
   oscarSyncStatus: string | null;
@@ -196,6 +197,7 @@ export default function AppointmentsPage() {
                     <th className="text-left px-4 py-3 text-gray-600 font-medium">Date & time</th>
                     <th className="text-left px-4 py-3 text-gray-600 font-medium">Patient</th>
                     <th className="text-left px-4 py-3 text-gray-600 font-medium">Physician</th>
+                    <th className="text-left px-4 py-3 text-gray-600 font-medium">Reason</th>
                     <th className="text-left px-4 py-3 text-gray-600 font-medium">Coverage</th>
                     <th className="text-left px-4 py-3 text-gray-600 font-medium">Status</th>
                     <th className="text-left px-4 py-3 text-gray-600 font-medium">OSCAR</th>
@@ -215,6 +217,9 @@ export default function AppointmentsPage() {
                       </td>
                       <td className="px-4 py-3 text-gray-700 whitespace-nowrap">
                         Dr. {appt.physicianFirstName} {appt.physicianLastName}
+                      </td>
+                      <td className="px-4 py-3 text-gray-700">
+                        {appt.reason ?? <span className="text-gray-300">—</span>}
                       </td>
                       <td className="px-4 py-3 text-gray-600">
                         {COVERAGE_LABELS[appt.coverageType] ?? appt.coverageType}

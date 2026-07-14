@@ -3,7 +3,7 @@
  * Validates the hold, creates the appointment, sends confirmation email.
  *
  * Body: {
- *   slotId, firstName, lastName, dateOfBirth, email, coverageType,
+ *   slotId, firstName, lastName, dateOfBirth, email, reason?, coverageType,
  *   province?, healthCardNumber?, billingNote?, consentGiven
  * }
  */
@@ -29,6 +29,8 @@ const COVERAGE_TYPES = [
   "EXISTING_OSCAR_PATIENT",
 ] as const;
 const DOB_RE = /^\d{4}-\d{2}-\d{2}$/;
+// OSCAR's appointment.reason column is varchar(80).
+const MAX_REASON_LEN = 80;
 
 export async function POST(
   req: NextRequest,
@@ -65,6 +67,7 @@ async function handleConfirm(
     lastName,
     dateOfBirth,
     email,
+    reason,
     coverageType,
     province,
     healthCardNumber,
@@ -72,6 +75,13 @@ async function handleConfirm(
     consentGiven,
     oscarDemographicNo,
   } = body as Record<string, string | boolean | undefined>;
+
+  // Reason for visit. The form marks this required, but don't 400 when it's
+  // absent: a patient who loaded the form before a deploy would submit without
+  // it, and by this point their OSCAR chart may already have been created.
+  // Fall back to the old label instead. Capped to OSCAR's varchar(80).
+  const reasonText = String(reason ?? "").trim().replace(/\s+/g, " ").slice(0, MAX_REASON_LEN);
+  const oscarReason = reasonText || "Online booking";
 
   // Validate required fields
   if (!slotId || !firstName || !lastName || !dateOfBirth || !email || !coverageType) {
@@ -122,6 +132,7 @@ async function handleConfirm(
     province: province ? String(province) : undefined,
     healthCardNumber: healthCardNumber ? String(healthCardNumber) : undefined,
     billingNote: billingNote ? String(billingNote) : undefined,
+    reason: reasonText || undefined,
     manageTokenHash,
     manageTokenExpiresAt,
     oscarDemographicNo: oscarDemographicNo ? String(oscarDemographicNo) : undefined,
@@ -159,6 +170,7 @@ async function handleConfirm(
     demographicNo: oscarDemographicNo ? String(oscarDemographicNo) : undefined,
     patientFirstName: String(firstName),
     patientLastName: String(lastName),
+    reason: oscarReason,
   });
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://mymd.health-assist.org";
@@ -235,6 +247,7 @@ async function syncAppointmentToOscar(args: {
   demographicNo?: string;
   patientFirstName: string;
   patientLastName: string;
+  reason: string;
 }): Promise<void> {
   const setSync = async (status: "SYNCED" | "FAILED" | "SKIPPED", apptNo: string | null, err: string | null) => {
     try {
@@ -311,7 +324,7 @@ async function syncAppointmentToOscar(args: {
       startTime: time,
       durationMinutes,
       name: `${args.patientLastName}, ${args.patientFirstName}`,
-      reason: "Online booking",
+      reason: args.reason,
       notes: "Booked via online scheduling",
     });
 

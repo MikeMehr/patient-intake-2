@@ -73,6 +73,7 @@ export type AppointmentRow = {
   province: string | null;
   healthCardNumber: string | null; // decrypted
   billingNote: string | null;
+  reason: string | null; // patient-entered reason for visit
   manageTokenExpiresAt: string;
   cancelledAt: string | null;
   createdAt: string;
@@ -508,6 +509,7 @@ export type ConfirmAppointmentData = {
   province?: string;
   healthCardNumber?: string;
   billingNote?: string;
+  reason?: string;
   manageTokenHash: string;
   manageTokenExpiresAt: Date;
   oscarDemographicNo?: string;
@@ -546,11 +548,11 @@ export async function confirmAppointment(
      appt_insert AS (
        INSERT INTO appointments
          (organization_id, physician_id, slot_id, first_name, last_name, date_of_birth,
-          email, coverage_type, province, health_card_number_enc, billing_note,
+          email, coverage_type, province, health_card_number_enc, billing_note, reason,
           manage_token_hash, manage_token_expires_at, oscar_demographic_no)
        SELECT
          hc.organization_id, su.physician_id, hc.id, $4, $5, $6::DATE,
-         $7, $8, $9, $10, $11, $12, $13::TIMESTAMPTZ, $14
+         $7, $8, $9, $10, $11, $12, $13, $14::TIMESTAMPTZ, $15
        FROM hold_check hc
        JOIN slot_update su ON TRUE
        RETURNING id AS appointment_id, physician_id
@@ -568,6 +570,7 @@ export async function confirmAppointment(
         data.province ?? null,
         healthCardEnc,
         data.billingNote ?? null,
+        data.reason ?? null,
         data.manageTokenHash,
         data.manageTokenExpiresAt.toISOString(),
         data.oscarDemographicNo ?? null,
@@ -609,6 +612,7 @@ export async function getAppointmentByToken(tokenHash: string): Promise<Appointm
     province: string | null;
     health_card_number_enc: string | null;
     billing_note: string | null;
+    reason: string | null;
     manage_token_expires_at: Date;
     cancelled_at: Date | null;
     created_at: Date;
@@ -622,7 +626,7 @@ export async function getAppointmentByToken(tokenHash: string): Promise<Appointm
        a.slot_id,
        s.start_time, s.end_time,
        a.first_name, a.last_name, a.date_of_birth::TEXT, a.email,
-       a.coverage_type, a.province, a.health_card_number_enc, a.billing_note,
+       a.coverage_type, a.province, a.health_card_number_enc, a.billing_note, a.reason,
        a.manage_token_expires_at, a.cancelled_at, a.created_at, a.oscar_sync_status, a.oscar_appointment_no
      FROM appointments a
      JOIN appointment_slots s ON s.id = a.slot_id
@@ -661,6 +665,7 @@ export async function getAppointmentByToken(tokenHash: string): Promise<Appointm
     province: row.province,
     healthCardNumber,
     billingNote: row.billing_note,
+    reason: row.reason,
     manageTokenExpiresAt: row.manage_token_expires_at instanceof Date
       ? row.manage_token_expires_at.toISOString()
       : String(row.manage_token_expires_at),
@@ -734,6 +739,7 @@ export async function getAppointmentsForOrg(
     created_at: Date;
     oscar_sync_status: string | null;
     oscar_appointment_no: string | null;
+    reason: string | null;
   }>(
     `SELECT
        a.id, a.organization_id, a.physician_id,
@@ -741,7 +747,7 @@ export async function getAppointmentsForOrg(
        ph.online_booking_enabled AS p_online_booking_enabled,
        a.slot_id, s.start_time, s.end_time,
        a.first_name, a.last_name, a.date_of_birth::TEXT, a.email,
-       a.coverage_type, a.province, a.health_card_number_enc, a.billing_note,
+       a.coverage_type, a.province, a.health_card_number_enc, a.billing_note, a.reason,
        a.manage_token_expires_at, a.cancelled_at, a.created_at, a.oscar_sync_status, a.oscar_appointment_no
      FROM appointments a
      JOIN appointment_slots s ON s.id = a.slot_id
@@ -769,6 +775,7 @@ export async function getAppointmentsForOrg(
     province: row.province,
     healthCardNumber: null, // not decrypted in list view
     billingNote: row.billing_note,
+    reason: row.reason,
     manageTokenExpiresAt: row.manage_token_expires_at instanceof Date
       ? row.manage_token_expires_at.toISOString()
       : String(row.manage_token_expires_at),

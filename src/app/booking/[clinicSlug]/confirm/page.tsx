@@ -14,6 +14,10 @@ const COVERAGE_OPTIONS = [
   { value: "UNINSURED",            label: "Uninsured / other" },
 ] as const;
 
+// OSCAR's appointment.reason column is varchar(80). Cap here so what the patient
+// types is exactly what the physician sees on the day sheet — no truncation.
+const MAX_REASON_LEN = 80;
+
 const PROVINCES = [
   "Alberta", "British Columbia", "Manitoba", "New Brunswick",
   "Newfoundland and Labrador", "Northwest Territories", "Nova Scotia",
@@ -64,6 +68,9 @@ export default function BookingConfirmPage({
   const [identity, setIdentity] = useState({
     firstName: "", lastName: "", dateOfBirth: "", email: "",
   });
+
+  // Reason for visit — written to OSCAR's appointment.reason (varchar(80)).
+  const [reason, setReason] = useState("");
 
   // Oscar result
   const [oscarDemographicNo, setOscarDemographicNo] = useState<string | null>(null);
@@ -266,6 +273,7 @@ export default function BookingConfirmPage({
         lastName:         identity.lastName.trim(),
         dateOfBirth:      identity.dateOfBirth,
         email:            emailToSubmit,
+        reason:           reason.trim(),
         coverageType,
         province:         !isExistingOscar && coverage.coverageType === "CANADIAN_HEALTH_CARD"
                             ? coverage.province
@@ -352,6 +360,24 @@ export default function BookingConfirmPage({
       )}
       <p className="text-xs text-blue-500 mt-2">
         Your selected time is held for 5 minutes. Please complete this form promptly.
+      </p>
+    </div>
+  );
+
+  const reasonField = (
+    <div>
+      <label className="block text-sm font-medium text-gray-700 mb-1">Reason for visit *</label>
+      <input
+        required
+        type="text"
+        maxLength={MAX_REASON_LEN}
+        value={reason}
+        onChange={(e) => setReason(e.target.value)}
+        placeholder="e.g. sore throat and fever, 3 days"
+        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+      />
+      <p className="text-xs text-gray-400 mt-1">
+        Briefly tell the physician why you&apos;re booking — e.g. sore throat, medication refill.
       </p>
     </div>
   );
@@ -521,6 +547,8 @@ export default function BookingConfirmPage({
           )}
 
           <form onSubmit={handleSubmit} className="space-y-5">
+            {reasonField}
+
             <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 text-sm text-gray-600 space-y-2">
               <p>
                 Your personal and health information will be collected by the clinic for the purpose of
@@ -588,6 +616,8 @@ export default function BookingConfirmPage({
         )}
 
         <form onSubmit={handleSubmit} className="space-y-5">
+          {reasonField}
+
           {/* Extra info for new Oscar patients */}
           {isNewOscarPatient && (
             <>
