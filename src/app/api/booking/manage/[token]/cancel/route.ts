@@ -60,12 +60,17 @@ export async function POST(
     clinicEmail = clinic?.email ?? null;
   }
 
+  const physicianFullName = [appointment.physicianFirstName, appointment.physicianLastName]
+    .map((part) => (part ?? "").trim())
+    .filter(Boolean)
+    .join(" ");
+
   try {
     await sendCancellationConfirmation({
       email: appointment.email,
       patientFirstName: appointment.firstName,
       clinicName,
-      physicianName: `Dr. ${appointment.physicianFirstName} ${appointment.physicianLastName}`,
+      physicianName: physicianFullName ? `Dr. ${physicianFullName}` : "",
       slotStartTime: appointment.slotStartTime,
       timezone,
       emailFooter,
