@@ -191,7 +191,7 @@ async function handleConfirm(
       email: String(email),
       patientFirstName: String(firstName),
       clinicName: clinic.name,
-      physicianName: physician?.displayName ?? "Your physician",
+      physicianName: physician?.displayName ?? "",
       slotStartTime,
       slotEndTime: "",
       timezone: clinic.settings.timezone,

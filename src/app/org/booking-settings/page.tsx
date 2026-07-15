@@ -335,7 +335,7 @@ export default function BookingSettingsPage() {
                 value={settings.emailFooter ?? ""}
                 onChange={(e) => set("emailFooter", e.target.value)}
                 placeholder={
-                  "MyMD Medical Clinic\n\nOffice line: 778-839-3651\nFax: 604-628-3830\n\nThis e-mail and any files transmitted with it are confidential and intended only for the addressee. If you received it in error, please notify the sender and delete it."
+                  "MyMD Medical Clinic\n\nOffice line: 604-880-7919\nFax: 604-628-3830\n\nThis e-mail and any files transmitted with it are confidential and intended only for the addressee. If you received it in error, please notify the sender and delete it."
                 }
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
