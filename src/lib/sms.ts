@@ -258,6 +258,82 @@ export async function sendInterviewCompleteSMS(
 }
 
 /**
+ * Text a caller the online booking link after they phone the clinic.
+ * Best-effort — the call is already being handled when this is invoked.
+ *
+ * The message deliberately carries no PHI: clinic name, booking link, opt-out.
+ * @param callerPhone - The caller's number as reported by Twilio (E.164 already, but normalized defensively)
+ * @param details - Clinic name and the public booking URL to send
+ * @returns Result object with success status and message SID or error
+ */
+export async function sendBookingLinkSMS(
+  callerPhone: string,
+  details: {
+    clinicName: string;
+    bookingUrl: string;
+  }
+): Promise<SendSmsResult> {
+  // Respect HIPAA mode - the whole call-deflection flow routes calls through
+  // Twilio, so if external SMS is off this feature is off too.
+  if (process.env.HIPAA_MODE === "true") {
+    logDebug("[sms] HIPAA_MODE enabled - booking link SMS disabled", {
+      callerPhone: "***",
+    });
+    return {
+      success: true,
+      error: "SMS disabled in HIPAA mode",
+    };
+  }
+
+  try {
+    const fromNumber = process.env.TWILIO_PHONE_NUMBER;
+    if (!fromNumber) {
+      throw new Error(
+        "TWILIO_PHONE_NUMBER environment variable not configured"
+      );
+    }
+
+    const client = getTwilioClient();
+
+    const message =
+      `${details.clinicName}: book your appointment online here — ${details.bookingUrl}` +
+      ` It's the fastest way to see all open times. Reply STOP to opt out.`;
+
+    logDebug("[sms] Sending booking link SMS", {
+      to: "***",
+      messageLength: message.length,
+    });
+
+    const toNumber = toE164(callerPhone);
+    const result = await client.messages.create({
+      body: message,
+      from: fromNumber,
+      to: toNumber,
+    });
+
+    logDebug("[sms] Booking link SMS sent successfully", {
+      messageSid: result.sid,
+      status: result.status,
+    });
+
+    return {
+      success: true,
+      messageSid: result.sid,
+    };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logDebug("[sms] Failed to send booking link SMS", {
+      error: errorMessage,
+    });
+
+    return {
+      success: false,
+      error: errorMessage,
+    };
+  }
+}
+
+/**
  * Send a one-time verification code (2FA) to a patient via SMS.
  * Used by the guided-interview invitation flow in place of email OTP.
  * @param patientPhone - The patient's phone number (any North American format; normalized to E.164)
