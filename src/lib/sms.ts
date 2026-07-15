@@ -334,20 +334,33 @@ export async function sendBookingLinkSMS(
 }
 
 /**
+ * Why a caller did or didn't get the booking link. These need telling apart:
+ * a landline caller is waiting on a call back, while one who already has the
+ * link needs nothing at all. Collapsing them misleads the clinic.
+ */
+export type MissedCallOutcome =
+  /** They were texted the link just now. */
+  | "link-sent"
+  /** Already texted within the dedupe window — they have it, don't re-send. */
+  | "already-texted"
+  /** Landline, withheld number, or the send failed — they need a call back. */
+  | "needs-callback";
+
+/**
  * Tell the clinic they missed a call, so they can ring the patient back.
  * Best-effort — the caller has already been handled when this is invoked.
  *
  * Deflection routes unanswered calls to Twilio, which displaces the carrier
  * voicemail, so this is the clinic's only record that the call happened.
  * @param clinicPhone - Where to send the alert (usually the clinic's own number)
- * @param details - Who called, and whether they were sent the booking link
+ * @param details - Who called, and what became of their booking link
  * @returns Result object with success status and message SID or error
  */
 export async function sendMissedCallSMS(
   clinicPhone: string,
   details: {
     callerNumber: string;
-    linkTexted: boolean;
+    outcome: MissedCallOutcome;
   }
 ): Promise<SendSmsResult> {
   // Respect HIPAA mode - don't send external SMS if disabled
@@ -371,13 +384,18 @@ export async function sendMissedCallSMS(
 
     const client = getTwilioClient();
 
-    const message = details.linkTexted
-      ? `Missed call from ${details.callerNumber}. They were texted your online booking link.`
-      : `Missed call from ${details.callerNumber}. No booking link sent — they may be on a landline.`;
+    const outcomeText: Record<MissedCallOutcome, string> = {
+      "link-sent": "They were texted your online booking link.",
+      "already-texted":
+        "No link sent — they were already texted one in the last few hours.",
+      "needs-callback":
+        "No link sent — landline or withheld number, so they need a call back.",
+    };
+    const message = `Missed call from ${details.callerNumber}. ${outcomeText[details.outcome]}`;
 
     logDebug("[sms] Sending missed call SMS", {
       to: "***",
-      linkTexted: details.linkTexted,
+      outcome: details.outcome,
     });
 
     const result = await client.messages.create({

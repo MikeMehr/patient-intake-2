@@ -19,7 +19,12 @@ import { NextRequest } from "next/server";
 import { validateRequest } from "twilio";
 import { getClinicBySlug } from "@/lib/booking-store";
 import { consumeDbRateLimit } from "@/lib/rate-limit";
-import { sendBookingLinkSMS, sendMissedCallSMS, toE164 } from "@/lib/sms";
+import {
+  sendBookingLinkSMS,
+  sendMissedCallSMS,
+  toE164,
+  type MissedCallOutcome,
+} from "@/lib/sms";
 import { logDebug } from "@/lib/secure-logger";
 
 /** Don't re-text a caller who rings back within this window. */
@@ -102,20 +107,21 @@ function publicUrl(req: NextRequest): string {
   return `${proto}://${host}/api/voice/incoming`;
 }
 
-/** What the caller hears. `linkTexted` is false for landlines and withheld numbers. */
+/** What the caller hears — it must match what we actually did for them. */
 function buildResponse(opts: {
   forwardTo?: string;
   clinicName?: string;
-  linkTexted: boolean;
+  outcome: MissedCallOutcome;
 }): Response {
   const greeting = opts.clinicName
     ? `Thank you for calling ${opts.clinicName}.`
     : "Thank you for calling.";
 
   if (opts.forwardTo) {
-    const spoken = opts.linkTexted
-      ? `${greeting} We've just texted you a link to book online, which is the fastest way to see all open appointment times. Stay on the line to speak with us.`
-      : `${greeting} Please stay on the line.`;
+    const spoken =
+      opts.outcome === "link-sent"
+        ? `${greeting} We've just texted you a link to book online. Stay on the line to speak with us.`
+        : `${greeting} Please stay on the line.`;
     return twiml(
       say(spoken) +
         `<Dial timeout="25" callerId="${escapeXml(process.env.TWILIO_PHONE_NUMBER ?? "")}">` +
@@ -123,16 +129,23 @@ function buildResponse(opts: {
     );
   }
 
-  // Keep this short. It is synthetic speech and the caller wants their time back;
-  // the detail belongs in the text message, which they can read at their own pace.
-  // No link reached this caller (landline, withheld number, or they rang back
-  // inside the dedupe window), so give them a channel they can actually use
-  // rather than promising a call back.
-  const spoken = opts.linkTexted
-    ? `${greeting} Sorry we missed you. We've just texted you a link to book online. Goodbye.`
-    : `${greeting} Sorry we missed you. Please email your questions to ${SPOKEN_EMAIL}. Thank you.`;
+  // Keep this short — it is synthetic speech and the caller wants their time
+  // back. Detail belongs in the text, which they can read at their own pace.
+  const outcomeLine: Record<MissedCallOutcome, string> = {
+    "link-sent": "We've just texted you a link to book online. Goodbye.",
+    // They already have a link from earlier; don't claim we sent another.
+    "already-texted":
+      "We've already texted you a link to book online. Please check your messages. Goodbye.",
+    // Nothing can reach them by text, so give them a channel they can use
+    // rather than promising a call back.
+    "needs-callback": `Please email your questions to ${SPOKEN_EMAIL}. Thank you.`,
+  };
 
-  return twiml(say(EMERGENCY_NOTICE) + say(spoken) + `<Hangup/>`);
+  return twiml(
+    say(EMERGENCY_NOTICE) +
+      say(`${greeting} Sorry we missed you. ${outcomeLine[opts.outcome]}`) +
+      `<Hangup/>`,
+  );
 }
 
 export async function POST(req: NextRequest) {
@@ -165,14 +178,16 @@ export async function POST(req: NextRequest) {
 
     if (!clinic) {
       logFailure("No clinic resolved - answering without SMS", { clinicSlug });
-      return buildResponse({ forwardTo, linkTexted: false });
+      return buildResponse({ forwardTo, outcome: "needs-callback" });
     }
 
     // Only E.164 numbers can be texted back. Withheld caller ID arrives as
     // "anonymous"/"unknown", which this also excludes.
     const textable = Boolean(from) && from!.startsWith("+");
 
-    let linkTexted = false;
+    // "needs-callback" is the safe default: if we can't reach them by text, the
+    // clinic must know to ring back.
+    let outcome: MissedCallOutcome = "needs-callback";
     if (textable && clinic.settings?.onlineBookingEnabled) {
       const dedupe = await consumeDbRateLimit({
         bucketKey: `voice-deflect:${from}`,
@@ -186,11 +201,12 @@ export async function POST(req: NextRequest) {
           clinicName: clinic.name,
           bookingUrl: `${appUrl}/booking/${clinic.slug}`,
         });
-        linkTexted = result.success;
+        outcome = result.success ? "link-sent" : "needs-callback";
         if (!result.success) {
           logFailure("Booking link SMS failed", { error: result.error });
         }
       } else {
+        outcome = "already-texted";
         logDebug("[voice] Caller already texted recently - skipping booking link");
       }
     }
@@ -201,7 +217,7 @@ export async function POST(req: NextRequest) {
     if (!forwardTo && notifyNumber) {
       const notified = await sendMissedCallSMS(notifyNumber, {
         callerNumber: from || "a withheld number",
-        linkTexted,
+        outcome,
       });
       if (!notified.success) {
         logFailure("Missed call notification failed", { error: notified.error });
@@ -211,13 +227,13 @@ export async function POST(req: NextRequest) {
     return buildResponse({
       forwardTo,
       clinicName: spokenClinicName(clinic.name),
-      linkTexted,
+      outcome,
     });
   } catch (error) {
     // Never let an internal error drop a patient's call.
     logFailure("Unexpected error - answering anyway", {
       error: error instanceof Error ? error.message : String(error),
     });
-    return buildResponse({ forwardTo, linkTexted: false });
+    return buildResponse({ forwardTo, outcome: "needs-callback" });
   }
 }

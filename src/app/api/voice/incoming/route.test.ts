@@ -79,7 +79,7 @@ describe("POST /api/voice/incoming", () => {
     });
     expect(sendMissedCallSMSMock).toHaveBeenCalledWith("604-880-7919", {
       callerNumber: "+16045551234",
-      linkTexted: true,
+      outcome: "link-sent",
     });
     expect(xml).toContain("texted you a link");
     expect(xml).toContain("<Hangup/>");
@@ -164,11 +164,14 @@ describe("POST /api/voice/incoming", () => {
 
     expect(sendBookingLinkSMSMock).not.toHaveBeenCalled();
     // The dedupe covers the caller's text only — every missed call must surface.
+    // "already-texted", NOT a landline: the clinic must not be told to call back.
     expect(sendMissedCallSMSMock).toHaveBeenCalledWith("604-880-7919", {
       callerNumber: "+16045551234",
-      linkTexted: false,
+      outcome: "already-texted",
     });
-    expect(xml).not.toContain("texted you a link");
+    // Points them at the link they already have, without claiming a fresh send.
+    expect(xml).toContain("already texted you a link");
+    expect(xml).not.toContain("just texted you a link");
   });
 
   it("notifies the clinic of a withheld-caller-ID call without texting", async () => {
@@ -178,12 +181,12 @@ describe("POST /api/voice/incoming", () => {
     expect(sendBookingLinkSMSMock).not.toHaveBeenCalled();
     expect(sendMissedCallSMSMock).toHaveBeenCalledWith("604-880-7919", {
       callerNumber: "anonymous",
-      linkTexted: false,
+      outcome: "needs-callback",
     });
     expect(xml).toContain("<Hangup/>");
   });
 
-  it("reports linkTexted false to the clinic when the caller's text fails", async () => {
+  it("tells the clinic to call back when the caller's text fails", async () => {
     sendBookingLinkSMSMock.mockResolvedValue({ success: false, error: "landline" });
 
     const res = await callWebhook();
@@ -191,7 +194,7 @@ describe("POST /api/voice/incoming", () => {
     expect(res.status).toBe(200);
     expect(sendMissedCallSMSMock).toHaveBeenCalledWith("604-880-7919", {
       callerNumber: "+16045551234",
-      linkTexted: false,
+      outcome: "needs-callback",
     });
   });
 
