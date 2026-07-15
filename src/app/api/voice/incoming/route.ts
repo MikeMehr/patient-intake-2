@@ -26,6 +26,18 @@ import { logDebug } from "@/lib/secure-logger";
 const DEDUPE_WINDOW_SECONDS = 6 * 60 * 60;
 
 /**
+ * Operational failures have to be visible in production, where logDebug is
+ * gated off to protect PHI. This feature's whole job is to not silently lose a
+ * patient's call, so a silent failure is the worst outcome.
+ *
+ * Never pass the caller's number or any patient data — error text and Twilio
+ * status codes only.
+ */
+function logFailure(message: string, meta?: Record<string, unknown>): void {
+  console.error(`[voice] ${message}`, meta ?? "");
+}
+
+/**
  * Twilio's legacy "alice" voice sounds robotic. Neural Polly is far more
  * natural. Overridable without a deploy — see Twilio's <Say> voice list.
  */
@@ -128,7 +140,7 @@ export async function POST(req: NextRequest) {
   const signature = req.headers.get("x-twilio-signature");
 
   if (!authToken) {
-    logDebug("[voice] TWILIO_AUTH_TOKEN not configured - rejecting webhook");
+    logFailure("TWILIO_AUTH_TOKEN not configured - rejecting webhook");
     return new Response("Not configured", { status: 503 });
   }
 
@@ -139,7 +151,7 @@ export async function POST(req: NextRequest) {
   });
 
   if (!signature || !validateRequest(authToken, signature, publicUrl(req), params)) {
-    logDebug("[voice] Rejected webhook with invalid Twilio signature");
+    logFailure("Rejected webhook with invalid Twilio signature");
     return new Response("Forbidden", { status: 403 });
   }
 
@@ -152,7 +164,7 @@ export async function POST(req: NextRequest) {
     const clinic = clinicSlug ? await getClinicBySlug(clinicSlug) : null;
 
     if (!clinic) {
-      logDebug("[voice] No clinic resolved - answering without SMS", { clinicSlug });
+      logFailure("No clinic resolved - answering without SMS", { clinicSlug });
       return buildResponse({ forwardTo, linkTexted: false });
     }
 
@@ -176,7 +188,7 @@ export async function POST(req: NextRequest) {
         });
         linkTexted = result.success;
         if (!result.success) {
-          logDebug("[voice] Booking link SMS failed", { error: result.error });
+          logFailure("Booking link SMS failed", { error: result.error });
         }
       } else {
         logDebug("[voice] Caller already texted recently - skipping booking link");
@@ -192,7 +204,7 @@ export async function POST(req: NextRequest) {
         linkTexted,
       });
       if (!notified.success) {
-        logDebug("[voice] Missed call notification failed", { error: notified.error });
+        logFailure("Missed call notification failed", { error: notified.error });
       }
     }
 
@@ -203,7 +215,7 @@ export async function POST(req: NextRequest) {
     });
   } catch (error) {
     // Never let an internal error drop a patient's call.
-    logDebug("[voice] Unexpected error - answering anyway", {
+    logFailure("Unexpected error - answering anyway", {
       error: error instanceof Error ? error.message : String(error),
     });
     return buildResponse({ forwardTo, linkTexted: false });
