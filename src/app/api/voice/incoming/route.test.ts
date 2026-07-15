@@ -145,6 +145,17 @@ describe("POST /api/voice/incoming", () => {
     expect(sendMissedCallSMSMock).not.toHaveBeenCalled();
   });
 
+  it("points callers who got no link at email, and never promises a call back", async () => {
+    // A landline caller: no text can reach them, so the voice is all they get.
+    sendBookingLinkSMSMock.mockResolvedValue({ success: false, error: "landline" });
+
+    const res = await callWebhook();
+    const xml = await res.text();
+
+    expect(xml).toContain("info at my M D online dot C A");
+    expect(xml).not.toMatch(/call you back/i);
+  });
+
   it("still notifies the clinic when a repeat caller is not re-texted", async () => {
     consumeDbRateLimitMock.mockResolvedValue({ allowed: false, retryAfterSeconds: 900 });
 

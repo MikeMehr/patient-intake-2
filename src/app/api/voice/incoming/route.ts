@@ -48,6 +48,14 @@ function spokenClinicName(nameOnRecord: string): string {
   return process.env.CALL_DEFLECT_SPOKEN_CLINIC_NAME ?? nameOnRecord;
 }
 
+/**
+ * The contact address as it should be *said*, letters spaced so the voice reads
+ * "info at my em dee online dot see ay" instead of mangling it into one word.
+ * The domain is .ca — mymdonline.com has no MX record and mail to it bounces.
+ */
+const SPOKEN_EMAIL =
+  process.env.CALL_DEFLECT_SPOKEN_EMAIL ?? "info at my M D online dot C A";
+
 function escapeXml(value: string): string {
   return value
     .replace(/&/g, "&amp;")
@@ -105,9 +113,12 @@ function buildResponse(opts: {
 
   // Keep this short. It is synthetic speech and the caller wants their time back;
   // the detail belongs in the text message, which they can read at their own pace.
+  // No link reached this caller (landline, withheld number, or they rang back
+  // inside the dedupe window), so give them a channel they can actually use
+  // rather than promising a call back.
   const spoken = opts.linkTexted
     ? `${greeting} Sorry we missed you. We've just texted you a link to book online. Goodbye.`
-    : `${greeting} Sorry we missed you. We'll call you back as soon as we can. Goodbye.`;
+    : `${greeting} Sorry we missed you. Please email your questions to ${SPOKEN_EMAIL}. Thank you.`;
 
   return twiml(say(EMERGENCY_NOTICE) + say(spoken) + `<Hangup/>`);
 }
