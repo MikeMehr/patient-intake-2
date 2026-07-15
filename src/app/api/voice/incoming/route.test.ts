@@ -53,6 +53,7 @@ describe("POST /api/voice/incoming", () => {
     // Missed-call mode: the published number IS the handset, so we never dial back.
     delete process.env.CLINIC_FORWARD_TO_NUMBER;
     delete process.env.CALL_DEFLECT_NOTIFY_NUMBER;
+    delete process.env.CALL_DEFLECT_SPOKEN_CLINIC_NAME;
     delete process.env.HIPAA_MODE;
 
     validateRequestMock.mockReturnValue(true);
@@ -91,6 +92,28 @@ describe("POST /api/voice/incoming", () => {
     const xml = await res.text();
 
     expect(xml).toContain("9 1 1");
+  });
+
+  it("speaks the clinic name as it should sound, not as it is spelled", async () => {
+    process.env.CALL_DEFLECT_SPOKEN_CLINIC_NAME = "My MD Telehealth";
+
+    const res = await callWebhook();
+    const xml = await res.text();
+
+    expect(xml).toContain("My MD Telehealth");
+    expect(xml).not.toContain("MyMD");
+    // The text message keeps the real brand spelling.
+    expect(sendBookingLinkSMSMock).toHaveBeenCalledWith(
+      "+16045551234",
+      expect.objectContaining({ clinicName: "MyMD Telehealth" }),
+    );
+  });
+
+  it("falls back to the name on record when no spoken name is configured", async () => {
+    const res = await callWebhook();
+    const xml = await res.text();
+
+    expect(xml).toContain("MyMD Telehealth");
   });
 
   it("speaks with a neural voice, not Twilio's robotic legacy one", async () => {

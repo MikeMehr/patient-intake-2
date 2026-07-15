@@ -38,6 +38,16 @@ const VOICE = process.env.CALL_DEFLECT_VOICE ?? "Polly.Joanna-Neural";
  */
 const EMERGENCY_NOTICE = "If this is a medical emergency, hang up and dial 9 1 1.";
 
+/**
+ * How the clinic's name should be *pronounced*, which is not always how it is
+ * spelled: text-to-speech reads "MyMD" as one mangled word, so the spoken name
+ * is "My MD Telehealth". Falls back to the name on record. Speech only — SMS
+ * keeps the real spelling.
+ */
+function spokenClinicName(nameOnRecord: string): string {
+  return process.env.CALL_DEFLECT_SPOKEN_CLINIC_NAME ?? nameOnRecord;
+}
+
 function escapeXml(value: string): string {
   return value
     .replace(/&/g, "&amp;")
@@ -175,7 +185,11 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    return buildResponse({ forwardTo, clinicName: clinic.name, linkTexted });
+    return buildResponse({
+      forwardTo,
+      clinicName: spokenClinicName(clinic.name),
+      linkTexted,
+    });
   } catch (error) {
     // Never let an internal error drop a patient's call.
     logDebug("[voice] Unexpected error - answering anyway", {
