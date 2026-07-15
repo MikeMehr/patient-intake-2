@@ -334,6 +334,81 @@ export async function sendBookingLinkSMS(
 }
 
 /**
+ * Tell the clinic they missed a call, so they can ring the patient back.
+ * Best-effort — the caller has already been handled when this is invoked.
+ *
+ * Deflection routes unanswered calls to Twilio, which displaces the carrier
+ * voicemail, so this is the clinic's only record that the call happened.
+ * @param clinicPhone - Where to send the alert (usually the clinic's own number)
+ * @param details - Who called, and whether they were sent the booking link
+ * @returns Result object with success status and message SID or error
+ */
+export async function sendMissedCallSMS(
+  clinicPhone: string,
+  details: {
+    callerNumber: string;
+    linkTexted: boolean;
+  }
+): Promise<SendSmsResult> {
+  // Respect HIPAA mode - don't send external SMS if disabled
+  if (process.env.HIPAA_MODE === "true") {
+    logDebug("[sms] HIPAA_MODE enabled - missed call SMS disabled", {
+      clinicPhone: "***",
+    });
+    return {
+      success: true,
+      error: "SMS disabled in HIPAA mode",
+    };
+  }
+
+  try {
+    const fromNumber = process.env.TWILIO_PHONE_NUMBER;
+    if (!fromNumber) {
+      throw new Error(
+        "TWILIO_PHONE_NUMBER environment variable not configured"
+      );
+    }
+
+    const client = getTwilioClient();
+
+    const message = details.linkTexted
+      ? `Missed call from ${details.callerNumber}. They were texted your online booking link.`
+      : `Missed call from ${details.callerNumber}. No booking link sent — they may be on a landline.`;
+
+    logDebug("[sms] Sending missed call SMS", {
+      to: "***",
+      linkTexted: details.linkTexted,
+    });
+
+    const result = await client.messages.create({
+      body: message,
+      from: fromNumber,
+      to: toE164(clinicPhone),
+    });
+
+    logDebug("[sms] Missed call SMS sent successfully", {
+      messageSid: result.sid,
+      status: result.status,
+    });
+
+    return {
+      success: true,
+      messageSid: result.sid,
+    };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logDebug("[sms] Failed to send missed call SMS", {
+      error: errorMessage,
+    });
+
+    return {
+      success: false,
+      error: errorMessage,
+    };
+  }
+}
+
+/**
  * Send a one-time verification code (2FA) to a patient via SMS.
  * Used by the guided-interview invitation flow in place of email OTP.
  * @param patientPhone - The patient's phone number (any North American format; normalized to E.164)
