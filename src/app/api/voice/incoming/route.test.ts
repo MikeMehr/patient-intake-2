@@ -93,6 +93,25 @@ describe("POST /api/voice/incoming", () => {
     expect(xml).toContain("9 1 1");
   });
 
+  it("speaks with a neural voice, not Twilio's robotic legacy one", async () => {
+    const res = await callWebhook();
+    const xml = await res.text();
+
+    expect(xml).toContain('voice="Polly.Joanna-Neural"');
+    expect(xml).not.toContain('voice="alice"');
+  });
+
+  it("keeps the spoken message short — the detail belongs in the text", async () => {
+    const res = await callWebhook();
+    const xml = await res.text();
+
+    const spoken = [...xml.matchAll(/<Say[^>]*>([^<]*)<\/Say>/g)]
+      .map((m) => m[1])
+      .join(" ");
+    // ~15 words/10s of synthetic speech; the old script ran to ~50.
+    expect(spoken.split(/\s+/).length).toBeLessThan(35);
+  });
+
   it("rejects a request with an invalid Twilio signature and sends no SMS", async () => {
     validateRequestMock.mockReturnValue(false);
 

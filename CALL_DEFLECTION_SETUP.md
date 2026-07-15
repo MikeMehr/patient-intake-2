@@ -44,6 +44,7 @@ Twilio +1778xxxxxxx
 | `CALL_DEFLECT_CLINIC_SLUG` | `mymd` | Turns the feature on. Until set, the webhook does nothing. |
 | `CALL_DEFLECT_NOTIFY_NUMBER` | *(optional)* | Where missed-call alerts go. Defaults to the clinic's own number on record (604-880-7919). |
 | `CLINIC_FORWARD_TO_NUMBER` | **leave unset** | Setting this makes Twilio dial onward. Only correct if the published number ever stops being the handset. See below. |
+| `CALL_DEFLECT_VOICE` | *(optional)* | Defaults to `Polly.Joanna-Neural`. Any voice from Twilio's `<Say>` list, e.g. `Polly.Matthew-Neural`, `Google.en-US-Neural2-F`. Avoid `alice` — it is the old robotic engine. |
 | `TWILIO_WEBHOOK_BASE_URL` | *(optional)* | `https://mymd.health-assist.org`. Only needed if signature validation fails because Azure rewrites the host. |
 
 `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_PHONE_NUMBER` and

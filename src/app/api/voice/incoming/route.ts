@@ -25,9 +25,18 @@ import { logDebug } from "@/lib/secure-logger";
 /** Don't re-text a caller who rings back within this window. */
 const DEDUPE_WINDOW_SECONDS = 6 * 60 * 60;
 
-/** Callers reach a recording rather than a person, so point emergencies at 911. */
-const EMERGENCY_NOTICE =
-  "If this is a medical emergency, please hang up and dial 9 1 1.";
+/**
+ * Twilio's legacy "alice" voice sounds robotic. Neural Polly is far more
+ * natural. Overridable without a deploy — see Twilio's <Say> voice list.
+ */
+const VOICE = process.env.CALL_DEFLECT_VOICE ?? "Polly.Joanna-Neural";
+
+/**
+ * Callers reach a recording rather than a person, so point emergencies at 911
+ * first — someone in distress may hang up before the rest plays.
+ * Spaced digits stop the voice reading "nine hundred eleven".
+ */
+const EMERGENCY_NOTICE = "If this is a medical emergency, hang up and dial 9 1 1.";
 
 function escapeXml(value: string): string {
   return value
@@ -39,7 +48,7 @@ function escapeXml(value: string): string {
 }
 
 function say(text: string): string {
-  return `<Say voice="alice">${escapeXml(text)}</Say>`;
+  return `<Say voice="${escapeXml(VOICE)}">${escapeXml(text)}</Say>`;
 }
 
 function twiml(body: string): Response {
@@ -84,13 +93,13 @@ function buildResponse(opts: {
     );
   }
 
-  // Lead with the clinic name: the published number is a mobile, so callers need
-  // to hear they reached the right place before anything else.
+  // Keep this short. It is synthetic speech and the caller wants their time back;
+  // the detail belongs in the text message, which they can read at their own pace.
   const spoken = opts.linkTexted
-    ? `${greeting} Sorry we missed your call. We've just texted you a link to book online, which is the fastest way to see all open appointment times. We've also let the clinic know you called.`
-    : `${greeting} Sorry we missed your call. We've let the clinic know you called, and we'll get back to you.`;
+    ? `${greeting} Sorry we missed you. We've just texted you a link to book online. Goodbye.`
+    : `${greeting} Sorry we missed you. We'll call you back as soon as we can. Goodbye.`;
 
-  return twiml(say(EMERGENCY_NOTICE) + say(spoken) + say("Goodbye.") + `<Hangup/>`);
+  return twiml(say(EMERGENCY_NOTICE) + say(spoken) + `<Hangup/>`);
 }
 
 export async function POST(req: NextRequest) {
