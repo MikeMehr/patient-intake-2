@@ -479,6 +479,11 @@ export async function createOscarDemographic(
     phone,
     address: { address, city, province, postal },
     patientStatus: "AC",
+    // Always send a ver, even though BC PHNs have no version code. An omitted ver
+    // is stored as NULL, and OSCAR's BillingReProcessBillAction does an unguarded
+    // demo.getVer().trim() — so any later attempt to reprocess or delete a bill for
+    // this patient 500s. "" is what OSCAR's own demographic form writes.
+    ver: "",
   };
   if (email) demographicPayload.email = email;
   if (hin) {
