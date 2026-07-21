@@ -72,9 +72,12 @@
         return sb.toString();
     }
 
-    /** Footer appended to every outgoing message. */
-    private String footer(String clinicPhone) {
-        return "\n\n--\nMyMD Telehealth\n" + clinicPhone + "\n"
+    /**
+     * Footer appended to every outgoing message. Deliberately no phone number - patients are
+     * pointed at the website and the info@ mailbox so they book online rather than call.
+     */
+    private String footer() {
+        return "\n\n--\nMyMD Telehealth\nMyMDonline.ca\ninfo@mymdonline.ca\n\n"
              + "This mailbox is not monitored for urgent matters. If this is an emergency, call 911.\n"
              + "Please do not reply with personal health information - email is not a secure channel.";
     }
@@ -174,11 +177,10 @@
                 final String pass = mp.getProperty("mail.password");
                 String from = mp.getProperty("mail.from", user);
                 String fromName = mp.getProperty("mail.fromName", "MyMD Telehealth");
-                String clinicPhone = mp.getProperty("mail.clinicPhone", "");
 
                 // NOTE: the recipient comes from the database row loaded above, never from the
                 // posted form, so a tampered form cannot redirect the message elsewhere.
-                String fullBody = postedBody + footer(clinicPhone);
+                String fullBody = postedBody + footer();
 
                 String status;
                 String errorMsg = null;
@@ -245,20 +247,10 @@
             }
         }
 
-        // ---- signature + appointment prefill -------------------------------------------
-        String signature = "";
-        PreparedStatement sps = conn.prepareStatement(
-            "SELECT first_name, last_name, provider_type FROM provider WHERE provider_no = ?");
-        sps.setString(1, providerNo);
-        ResultSet srs = sps.executeQuery();
-        if (srs.next()) {
-            String sname = tidyName((srs.getString("first_name") == null ? "" : srs.getString("first_name"))
-                                  + " " + (srs.getString("last_name") == null ? "" : srs.getString("last_name")));
-            if (sname.length() > 0) {
-                signature = ("doctor".equalsIgnoreCase(srs.getString("provider_type")) ? "Dr. " : "") + sname;
-            }
-        }
-        srs.close(); sps.close();
+        // ---- appointment prefill --------------------------------------------------------
+        // Messages are signed by the clinic, not the individual clinician - office staff send
+        // these on a doctor's behalf, and the sender is recorded in mymd_patient_email_log anyway.
+        String signature = "MyMD Telehealth";
 
         String greetName = tidyName(patientFirst);
         String greeting = "Hello " + (greetName.length() > 0 ? greetName : "there") + ",";
@@ -377,8 +369,8 @@
             <label for="body">Message</label>
             <textarea id="body" name="body"><%= esc(postedBody.length() > 0 ? postedBody : defaultBody) %></textarea>
             <div class="foot-note">
-                A standard footer (clinic name, phone, emergency notice, and a "do not reply with personal
-                health information" warning) is added automatically.
+                A standard footer (clinic name, website, info@ address, emergency notice, and a
+                "do not reply with personal health information" warning) is added automatically.
             </div>
 
             <p style="margin-top:14px;">
