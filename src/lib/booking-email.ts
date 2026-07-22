@@ -146,6 +146,56 @@ export async function sendBookingConfirmation(opts: {
   });
 }
 
+export async function sendDocumentRequestEmail(opts: {
+  email: string;
+  patientName: string;
+  clinicName: string;
+  uploadUrl: string;
+  expiresAt: Date;
+  emailFooter?: string | null;
+  clinicEmail?: string | null;
+}): Promise<{ sent: boolean; error?: string }> {
+  if (!resend || process.env.HIPAA_MODE === "true") {
+    return { sent: false, error: "email_suppressed" };
+  }
+
+  const sender = resolveSender(opts.clinicName, opts.clinicEmail);
+  const firstName = (opts.patientName || "").trim().split(/\s+/)[0] || "there";
+  const expiryLabel = formatDateTime(opts.expiresAt.toISOString());
+
+  const result = await resend.emails.send({
+    from: sender.from,
+    ...(sender.replyTo ? { replyTo: sender.replyTo } : {}),
+    to: opts.email,
+    subject: `Document upload request — ${opts.clinicName}`,
+    html: `
+      <div style="font-family:sans-serif;max-width:560px;margin:0 auto">
+        <h2 style="color:#1a1a2e">Please upload your documents</h2>
+        <p>Hi ${firstName},</p>
+        <p>${opts.clinicName} has requested that you securely upload one or more
+           documents (for example a photo of your ID, or images and PDFs of your
+           records). Your files are sent directly to the clinic and are not stored
+           on your device.</p>
+        <p style="margin-top:24px">
+          <a href="${opts.uploadUrl}"
+             style="background:#2563eb;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;font-weight:600">
+            Upload documents
+          </a>
+        </p>
+        <p style="margin-top:24px;font-size:13px;color:#888">
+          This secure link expires on ${expiryLabel}. If it has expired, please
+          contact the clinic for a new one. Do not share this link with anyone.
+        </p>${renderFooter(opts.emailFooter)}
+      </div>`,
+  });
+
+  if (result.error) {
+    console.error("[booking-email] sendDocumentRequestEmail Resend error:", result.error);
+    return { sent: false, error: "send_failed" };
+  }
+  return { sent: true };
+}
+
 export async function sendCancellationConfirmation(opts: {
   email: string;
   patientFirstName: string;
