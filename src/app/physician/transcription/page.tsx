@@ -282,6 +282,27 @@ export default function PhysicianTranscriptionPage() {
   const [copyFeedbackState, setCopyFeedbackState] = useState<"idle" | "copied">("idle");
   const copyFeedbackTimeoutRef = useRef<number | null>(null);
 
+  // Mid-visit HPI popup — generated from the in-progress transcript, not persisted.
+  const [showHpi, setShowHpi] = useState(false);
+  const [hpiText, setHpiText] = useState("");
+  const [hpiLoading, setHpiLoading] = useState(false);
+  const [hpiError, setHpiError] = useState<string | null>(null);
+
+  // Pre-computed encounter recommendations, revealed on demand in Review & export.
+  const [recommendations, setRecommendations] = useState<{ labs: string; referrals: string; imaging: string } | null>(null);
+  const [recommendationsLoading, setRecommendationsLoading] = useState(false);
+  const [showLabs, setShowLabs] = useState(false);
+  const [showReferrals, setShowReferrals] = useState(false);
+  const [showImaging, setShowImaging] = useState(false);
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!showHpi) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setShowHpi(false); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [showHpi]);
+
   const [aiPrompt, setAiPrompt] = useState("");
   const [aiResponse, setAiResponse] = useState("");
   const [aiLoading, setAiLoading] = useState(false);
@@ -755,6 +776,46 @@ export default function PhysicianTranscriptionPage() {
     return segmentTextsRef.current.filter(Boolean).map(s => s.trim()).join("\n\n").trim();
   }
 
+  async function copyText(text: string, key: string) {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedKey(key);
+      window.setTimeout(() => setCopiedKey((k) => (k === key ? null : k)), 1500);
+    } catch {
+      // Clipboard unavailable — silently ignore.
+    }
+  }
+
+  // Generate a quick working HPI from the transcript so far and show it in a
+  // throwaway popup. Nothing is saved.
+  async function generateHpiMidVisit() {
+    if (hpiLoading) return;
+    const current = transcript.trim();
+    setShowHpi(true);
+    setHpiText("");
+    setHpiError(null);
+    if (current.split(/\s+/).filter(Boolean).length < 15) {
+      setHpiError("Not enough transcript yet — keep going and try again.");
+      return;
+    }
+    setHpiLoading(true);
+    try {
+      const res = await fetch("/api/physician/transcription/generate-hpi", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ transcript: current }),
+      });
+      if (handleAuthFailure(res)) return;
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || "Failed to generate HPI");
+      setHpiText(typeof data?.result === "string" ? data.result : "");
+    } catch (err) {
+      setHpiError(err instanceof Error ? err.message : "Failed to generate HPI");
+    } finally {
+      setHpiLoading(false);
+    }
+  }
+
   async function generateSoap(transcriptOverride?: string) {
     const effectiveTranscript = (transcriptOverride ?? transcript).trim();
     if (actionLoading) return;
@@ -765,6 +826,10 @@ export default function PhysicianTranscriptionPage() {
     setActionLoading(true);
     setActionError(null);
     setActionSuccess(null);
+    setRecommendations(null);
+    setShowLabs(false);
+    setShowReferrals(false);
+    setShowImaging(false);
     try {
       const res = await fetch("/api/physician/transcription/generate", {
         method: "POST",
@@ -844,6 +909,37 @@ export default function PhysicianTranscriptionPage() {
       // so the local copy has done its job.
       clearStoredTranscript(physicianSession?.userId);
       setRecoverableTranscript(null);
+
+      // Pre-compute labs / referrals / imaging in the background so the physician
+      // can reveal them instantly in Review & export. Never awaited — must not
+      // delay or risk the SOAP path. Standard SOAP path only (not wound care).
+      if (!orgWoundCare) {
+        setRecommendationsLoading(true);
+        void (async () => {
+          try {
+            const recRes = await fetch("/api/physician/transcription/recommendations", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                transcript: effectiveTranscript,
+                assessment: cases[0].draft.assessment || undefined,
+              }),
+            });
+            const recData = await recRes.json().catch(() => ({}));
+            if (recRes.ok) {
+              setRecommendations({
+                labs: typeof recData?.labs === "string" ? recData.labs : "",
+                referrals: typeof recData?.referrals === "string" ? recData.referrals : "",
+                imaging: typeof recData?.imaging === "string" ? recData.imaging : "",
+              });
+            }
+          } catch {
+            // Non-blocking enhancement — leave recommendations unset on failure.
+          } finally {
+            setRecommendationsLoading(false);
+          }
+        })();
+      }
 
       // Upload the full session audio so re-transcription is possible if the wrong language was used
       const fullBlob = pendingFullAudioRef.current;
@@ -1171,6 +1267,15 @@ export default function PhysicianTranscriptionPage() {
     setWoundCareNoteError(null);
     setBgFile(null);
     setBgFileText("");
+    // Reset HPI + recommendations state
+    setShowHpi(false);
+    setHpiText("");
+    setHpiError(null);
+    setRecommendations(null);
+    setRecommendationsLoading(false);
+    setShowLabs(false);
+    setShowReferrals(false);
+    setShowImaging(false);
   }
 
   async function handleRetranscribe() {
@@ -1826,6 +1931,17 @@ export default function PhysicianTranscriptionPage() {
                           )}
                         </>
                       )}
+                      {transcript.trim().length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => void generateHpiMidVisit()}
+                          disabled={hpiLoading}
+                          title="Generate a quick working HPI from the transcript so far"
+                          className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 disabled:opacity-60"
+                        >
+                          {hpiLoading ? "Generating HPI..." : "Generate HPI"}
+                        </button>
+                      )}
                       {transcriptLoading && <span className="text-sm text-slate-600">Transcribing...</span>}
                     </div>
                     {recordingError && <p className="text-sm text-red-700">{recordingError}</p>}
@@ -2011,6 +2127,76 @@ export default function PhysicianTranscriptionPage() {
                         Start New
                       </button>
                     </div>
+                    {!orgWoundCare && soapVersionId && (
+                      <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3">
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className="text-xs font-semibold text-slate-700">Recommendations from this encounter</span>
+                          {recommendationsLoading && <span className="text-xs text-slate-500">Analysing encounter…</span>}
+                        </div>
+                        {!recommendationsLoading && recommendations
+                          && !recommendations.labs && !recommendations.referrals && !recommendations.imaging && (
+                          <p className="text-xs text-slate-500">No lab, referral, or imaging recommendations for this encounter.</p>
+                        )}
+                        {recommendations && (recommendations.labs || recommendations.referrals || recommendations.imaging) && (
+                          <div className="flex flex-wrap gap-2">
+                            {recommendations.labs && (
+                              <button
+                                type="button"
+                                onClick={() => setShowLabs((v) => !v)}
+                                className="px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50"
+                              >
+                                {showLabs ? "Hide recommended labs" : "Recommended labs"}
+                              </button>
+                            )}
+                            {recommendations.referrals && (
+                              <button
+                                type="button"
+                                onClick={() => setShowReferrals((v) => !v)}
+                                className="px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50"
+                              >
+                                {showReferrals ? "Hide referral letters" : "Referral letters"}
+                              </button>
+                            )}
+                            {recommendations.imaging && (
+                              <button
+                                type="button"
+                                onClick={() => setShowImaging((v) => !v)}
+                                className="px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50"
+                              >
+                                {showImaging ? "Hide imaging requisitions" : "Imaging requisitions"}
+                              </button>
+                            )}
+                          </div>
+                        )}
+                        {showLabs && recommendations?.labs && (
+                          <div className="mt-2 rounded-md border border-slate-200 bg-white px-3 py-2">
+                            <div className="flex items-center justify-between mb-1">
+                              <span className="text-xs font-semibold text-slate-700">Recommended labs</span>
+                              <button type="button" onClick={() => void copyText(recommendations.labs, "labs")} className="text-xs text-slate-500 hover:text-slate-700">{copiedKey === "labs" ? "Copied!" : "Copy"}</button>
+                            </div>
+                            <pre className="whitespace-pre-wrap font-sans text-sm text-slate-800">{recommendations.labs}</pre>
+                          </div>
+                        )}
+                        {showReferrals && recommendations?.referrals && (
+                          <div className="mt-2 rounded-md border border-slate-200 bg-white px-3 py-2">
+                            <div className="flex items-center justify-between mb-1">
+                              <span className="text-xs font-semibold text-slate-700">Referral letters</span>
+                              <button type="button" onClick={() => void copyText(recommendations.referrals, "referrals")} className="text-xs text-slate-500 hover:text-slate-700">{copiedKey === "referrals" ? "Copied!" : "Copy"}</button>
+                            </div>
+                            <pre className="whitespace-pre-wrap font-sans text-sm text-slate-800">{recommendations.referrals}</pre>
+                          </div>
+                        )}
+                        {showImaging && recommendations?.imaging && (
+                          <div className="mt-2 rounded-md border border-slate-200 bg-white px-3 py-2">
+                            <div className="flex items-center justify-between mb-1">
+                              <span className="text-xs font-semibold text-slate-700">Imaging requisitions</span>
+                              <button type="button" onClick={() => void copyText(recommendations.imaging, "imaging")} className="text-xs text-slate-500 hover:text-slate-700">{copiedKey === "imaging" ? "Copied!" : "Copy"}</button>
+                            </div>
+                            <pre className="whitespace-pre-wrap font-sans text-sm text-slate-800">{recommendations.imaging}</pre>
+                          </div>
+                        )}
+                      </div>
+                    )}
                     {!soapHasPatient && !hasPatientIdentity && soapVersionId && (
                       <p className="text-xs text-amber-600">Patient name required to finalize and save to EMR.</p>
                     )}
@@ -2509,6 +2695,59 @@ export default function PhysicianTranscriptionPage() {
         </div>
       </div>
       <QuickAskAiModal isOpen={showQuickAskAi} onClose={() => setShowQuickAskAi(false)} />
+      {showHpi && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          onClick={() => setShowHpi(false)}
+        >
+          <div
+            className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[85vh] flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-slate-200 px-5 py-3">
+              <h3 className="text-sm font-semibold text-slate-900">Working HPI (preliminary)</h3>
+              <button
+                type="button"
+                onClick={() => setShowHpi(false)}
+                className="text-slate-400 hover:text-slate-600"
+                aria-label="Close"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto px-5 py-4">
+              {hpiLoading ? (
+                <p className="text-sm text-slate-500">Generating from the transcript so far…</p>
+              ) : hpiError ? (
+                <p className="text-sm text-red-700">{hpiError}</p>
+              ) : (
+                <pre className="whitespace-pre-wrap font-sans text-sm text-slate-800">{hpiText}</pre>
+              )}
+            </div>
+            <div className="flex items-center justify-end gap-2 border-t border-slate-200 px-5 py-3">
+              {!hpiLoading && !hpiError && hpiText && (
+                <button
+                  type="button"
+                  onClick={() => void copyText(hpiText, "hpi")}
+                  className="px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50"
+                >
+                  {copiedKey === "hpi" ? "Copied!" : "Copy"}
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setShowHpi(false)}
+                className="px-3 py-1.5 text-xs font-medium text-white bg-slate-900 rounded-lg hover:bg-slate-800"
+              >
+                Close
+              </button>
+            </div>
+            <p className="px-5 pb-3 text-[11px] text-slate-400">
+              Preliminary aid from a partial conversation — not saved anywhere.
+            </p>
+          </div>
+        </div>
+      )}
       {showInsufficientContentDialog && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
           <div className="bg-white rounded-lg shadow-xl p-6 max-w-sm w-full mx-4">

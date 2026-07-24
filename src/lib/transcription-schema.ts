@@ -20,6 +20,15 @@ export const generateSoapFromTranscriptRequestSchema = z.object({
   encounterId: z.string().uuid().optional(),
 });
 
+export const generateHpiFromTranscriptRequestSchema = z.object({
+  transcript: z.string().trim().min(10).max(80000),
+});
+
+export const transcriptionRecommendationsRequestSchema = z.object({
+  transcript: z.string().trim().min(10).max(80000),
+  assessment: z.string().trim().max(6000).optional(),
+});
+
 export const saveSoapDraftRequestSchema = z.object({
   soapVersionId: z.string().uuid(),
   draft: soapDraftSchema,
