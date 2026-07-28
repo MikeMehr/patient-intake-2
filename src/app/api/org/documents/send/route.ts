@@ -11,35 +11,9 @@ import { consumeRateLimit } from "@/lib/invitation-security";
 import { generateDocumentToken } from "@/lib/document-token";
 import { sendDocumentRequestEmail } from "@/lib/booking-email";
 import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
+import { resolveAppUrl } from "@/lib/app-url";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-function resolveAppUrl(request: NextRequest): string {
-  const envUrl = (process.env.NEXT_PUBLIC_APP_URL || "").trim();
-  const requestOrigin = request.nextUrl.origin;
-
-  if (!envUrl) {
-    return requestOrigin || "http://localhost:3000";
-  }
-
-  if (process.env.NODE_ENV !== "production") {
-    try {
-      const env = new URL(envUrl);
-      const req = new URL(requestOrigin);
-      if (
-        env.hostname === "localhost" &&
-        req.hostname === "localhost" &&
-        env.port !== req.port
-      ) {
-        return requestOrigin;
-      }
-    } catch {
-      return requestOrigin || "http://localhost:3000";
-    }
-  }
-
-  return envUrl;
-}
 
 export async function POST(request: NextRequest) {
   const requestId = getRequestId(request.headers);

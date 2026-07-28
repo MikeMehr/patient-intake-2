@@ -196,6 +196,58 @@ export async function sendDocumentRequestEmail(opts: {
   return { sent: true };
 }
 
+export async function sendDocumentShareEmail(opts: {
+  email: string;
+  recipientName?: string | null;
+  clinicName: string;
+  downloadUrl: string;
+  expiresAt: Date;
+  emailFooter?: string | null;
+  clinicEmail?: string | null;
+}): Promise<{ sent: boolean; error?: string }> {
+  if (!resend || process.env.HIPAA_MODE === "true") {
+    return { sent: false, error: "email_suppressed" };
+  }
+
+  const sender = resolveSender(opts.clinicName, opts.clinicEmail);
+  const firstName = (opts.recipientName || "").trim().split(/\s+/)[0] || "there";
+  const expiryLabel = formatDateTime(opts.expiresAt.toISOString());
+
+  const result = await resend.emails.send({
+    from: sender.from,
+    ...(sender.replyTo ? { replyTo: sender.replyTo } : {}),
+    to: opts.email,
+    subject: `Secure files from ${opts.clinicName}`,
+    html: `
+      <div style="font-family:sans-serif;max-width:560px;margin:0 auto">
+        <h2 style="color:#1a1a2e">You have secure files to download</h2>
+        <p>Hi ${firstName},</p>
+        <p>${opts.clinicName} has sent you one or more files through a secure,
+           password-protected link.</p>
+        <p style="margin-top:24px">
+          <a href="${opts.downloadUrl}"
+             style="background:#2563eb;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;font-weight:600">
+            Open secure files
+          </a>
+        </p>
+        <p style="margin-top:24px;font-size:13px;color:#555">
+          You will need the <strong>passphrase</strong> to open these files. For your
+          security it is <strong>not</strong> included in this email — ${opts.clinicName}
+          will share it with you separately (for example by phone).
+        </p>
+        <p style="margin-top:12px;font-size:13px;color:#888">
+          This secure link expires on ${expiryLabel}. Please do not forward it.
+        </p>${renderFooter(opts.emailFooter)}
+      </div>`,
+  });
+
+  if (result.error) {
+    console.error("[booking-email] sendDocumentShareEmail Resend error:", result.error);
+    return { sent: false, error: "send_failed" };
+  }
+  return { sent: true };
+}
+
 export async function sendCancellationConfirmation(opts: {
   email: string;
   patientFirstName: string;

@@ -77,6 +77,47 @@ export async function generateDocumentSasUrl(
   return `https://${accountName}.blob.core.windows.net/${containerName}/${blobPath}?${sasToken}`;
 }
 
+/**
+ * Write-only, time-limited SAS URL for a single blob path, so the browser can upload
+ * a large file (up to ~200 MB) directly to Azure Blob — bypassing the Next.js / Azure
+ * Web App request-size limit. Scoped to one blob, create+write permissions only.
+ *
+ * NOTE: direct browser→Azure PUT requires a CORS rule on the storage account allowing
+ * PUT/OPTIONS/HEAD from the app origin (see azure-cors setup docs).
+ */
+export async function generateDocumentWriteSasUrl(
+  blobPath: string,
+  ttlMinutes = 30,
+): Promise<string> {
+  const { accountName, accountKey, containerName } = getAzureBlobConfig();
+  const credential = new StorageSharedKeyCredential(accountName, accountKey);
+
+  const expiresOn = new Date(Date.now() + ttlMinutes * 60 * 1000);
+  const sasToken = generateBlobSASQueryParameters(
+    {
+      containerName,
+      blobName: blobPath,
+      permissions: BlobSASPermissions.parse("cw"),
+      expiresOn,
+    },
+    credential,
+  ).toString();
+
+  return `https://${accountName}.blob.core.windows.net/${containerName}/${blobPath}?${sasToken}`;
+}
+
+/** True if a blob exists — used to confirm a browser direct-upload actually landed. */
+export async function documentBlobExists(blobPath: string): Promise<boolean> {
+  const { accountName, accountKey, containerName } = getAzureBlobConfig();
+  const credential = new StorageSharedKeyCredential(accountName, accountKey);
+  const blobServiceClient = new BlobServiceClient(
+    `https://${accountName}.blob.core.windows.net`,
+    credential,
+  );
+  const containerClient = blobServiceClient.getContainerClient(containerName);
+  return containerClient.getBlockBlobClient(blobPath).exists();
+}
+
 export async function deleteDocumentBlob(blobPath: string): Promise<void> {
   try {
     const { accountName, accountKey, containerName } = getAzureBlobConfig();
