@@ -13,6 +13,13 @@ function buildCspHeader(pathname: string, nonce: string) {
   const scriptSrc = isDevelopment || isLegacyEformPath
     ? "script-src 'self' 'unsafe-inline' 'unsafe-eval'"
     : `script-src 'self' 'nonce-${nonce}'`;
+  // The secure file-share feature uploads large files directly from the browser
+  // to Azure Blob Storage via a write-SAS (bypassing the server request-size
+  // limit), so connect-src must allow that account host. Scope to the specific
+  // account when known, else any Azure Blob host.
+  const blobHost = process.env.AZURE_STORAGE_ACCOUNT_NAME
+    ? `https://${process.env.AZURE_STORAGE_ACCOUNT_NAME}.blob.core.windows.net`
+    : "https://*.blob.core.windows.net";
   return [
     "default-src 'self'",
     "base-uri 'self'",
@@ -25,9 +32,10 @@ function buildCspHeader(pathname: string, nonce: string) {
     "media-src 'self' blob: data:",
     "style-src 'self' 'unsafe-inline'",
     scriptSrc,
-    // All external API calls (Azure OpenAI, Speech, Document Intelligence, Resend)
-    // are made server-side. The browser only connects back to this origin.
-    "connect-src 'self'",
+    // Most external API calls (Azure OpenAI, Speech, Document Intelligence,
+    // Resend) are made server-side. The one browser→external call is the direct
+    // upload to Azure Blob Storage for secure file sharing.
+    `connect-src 'self' ${blobHost}`,
   ].join("; ");
 }
 
