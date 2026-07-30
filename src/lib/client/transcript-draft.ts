@@ -25,7 +25,7 @@
 const KEY_PREFIX = "ha:tx-draft:v1:";
 
 /** Matches the session idle timeout (IDLE_TIMEOUT_MS in src/lib/auth.ts). */
-const MAX_AGE_MS = 30 * 60 * 1000;
+const MAX_AGE_MS = 60 * 60 * 1000;
 
 interface StoredTranscript {
   text: string;
