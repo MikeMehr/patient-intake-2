@@ -1688,7 +1688,15 @@ export default function PhysicianTranscriptionPage() {
                 <h1 className="text-[1.1rem] font-semibold text-slate-900">Transcription</h1>
                 {postLoginHint && greetingName && (
                   <span className="text-sm font-medium text-slate-500 transition-opacity duration-500">
+                    <style>{`@keyframes handWave{0%{transform:rotate(0deg)}10%{transform:rotate(14deg)}20%{transform:rotate(-8deg)}30%{transform:rotate(14deg)}40%{transform:rotate(-4deg)}50%{transform:rotate(10deg)}60%,100%{transform:rotate(0deg)}}`}</style>
                     Hello, Dr. {greetingName}
+                    <span
+                      className="ml-1 inline-block"
+                      style={{ transformOrigin: "70% 70%", animation: "handWave 1.8s ease-in-out infinite" }}
+                      aria-hidden="true"
+                    >
+                      👋
+                    </span>
                   </span>
                 )}
               </div>
@@ -1955,7 +1963,7 @@ export default function PhysicianTranscriptionPage() {
                             onClick={() => { setPostLoginHint(false); setRecordingElapsed(0); setIsStartingRecording(true); startRecording(); }}
                             disabled={transcriptLoading || isStartingRecording || !language}
                             title={!language ? "Please select a transcription language first" : undefined}
-                            className={`px-4 py-2 text-sm font-medium text-white rounded-lg disabled:bg-slate-400 disabled:cursor-not-allowed ${isStartingRecording ? "bg-orange-500" : "bg-slate-900 hover:bg-slate-800"} ${postLoginHint ? "animate-pulse ring-2 ring-orange-400 ring-offset-2" : ""}`}
+                            className={`px-4 py-2 text-sm font-medium text-white rounded-lg disabled:bg-slate-400 disabled:cursor-not-allowed ${isStartingRecording ? "bg-orange-500" : "bg-slate-900 hover:bg-slate-800"} ${postLoginHint ? "animate-pulse ring-2 ring-blue-500 ring-offset-2" : ""}`}
                           >
                             {isStartingRecording ? "Starting..." : "Start transcription"}
                           </button>
