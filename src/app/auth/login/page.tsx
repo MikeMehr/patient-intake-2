@@ -12,6 +12,7 @@ export default function LoginPage() {
   const [backupCode, setBackupCode] = useState("");
   const [challengeToken, setChallengeToken] = useState("");
   const [mfaRequired, setMfaRequired] = useState(false);
+  const [trustDevice, setTrustDevice] = useState(false);
   const [useBackupCode, setUseBackupCode] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -30,6 +31,11 @@ export default function LoginPage() {
     } else if (userType === "org_admin") {
       router.push("/org/dashboard");
     } else {
+      // Mark this as a fresh login so the dashboard can optionally redirect to
+      // the transcription page (and only on the first load after login).
+      try {
+        sessionStorage.setItem("physician.justLoggedIn", "1");
+      } catch {}
       router.push("/physician/dashboard");
     }
     router.refresh();
@@ -83,7 +89,7 @@ export default function LoginPage() {
         setUseBackupCode(false);
         setOtpCode("");
         setBackupCode("");
-        setMessage(data.message || "Enter the verification code sent to your email.");
+        setMessage(data.message || "Enter the verification code sent by text.");
         setLoading(false);
         return;
       }
@@ -136,6 +142,7 @@ export default function LoginPage() {
         body: JSON.stringify({
           challengeToken,
           otpCode,
+          trustDevice,
         }),
       });
       const data = await response.json().catch(() => ({}));
@@ -257,6 +264,18 @@ export default function LoginPage() {
                 placeholder={useBackupCode ? "Enter backup code" : "Enter 6-digit code"}
               />
             </div>
+            {!useBackupCode && (
+              <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={trustDevice}
+                  onChange={(e) => setTrustDevice(e.target.checked)}
+                  disabled={loading}
+                  className="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-400"
+                />
+                Trust this device for 30 days (skip codes next time)
+              </label>
+            )}
             <button
               type="submit"
               disabled={loading}

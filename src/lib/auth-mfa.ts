@@ -1,7 +1,9 @@
 import { createHmac, randomBytes, timingSafeEqual } from "crypto";
+import { cookies } from "next/headers";
 import { Resend } from "resend";
 import { query } from "@/lib/db";
 import type { UserType } from "@/lib/auth";
+import { sendVerificationSMS } from "@/lib/sms";
 import { getExpectedTokenClaims, hasExpectedTokenClaims } from "@/lib/token-claims";
 
 const OTP_TTL_MINUTES = 10;
@@ -9,6 +11,10 @@ const OTP_COOLDOWN_MINUTES = 5;
 const OTP_MAX_ATTEMPTS = 5;
 const OTP_DIGITS = 6;
 const BACKUP_CODE_COUNT = 10;
+
+// Trusted-device ("remember this device") — skips SMS 2FA on the same browser.
+const TRUSTED_DEVICE_COOKIE_NAME = "physician_trusted_device";
+const TRUSTED_DEVICE_TTL_DAYS = 30;
 
 const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
 
@@ -18,6 +24,7 @@ export type MfaUser = {
   userType: UserType;
   userId: string;
   email: string | null;
+  phone?: string | null;
 };
 
 type WorkforceRecoveryState = {
@@ -184,13 +191,20 @@ export async function issueMfaChallenge(params: {
     ],
   );
 
-  const emailDeliveryEnabled = Boolean(params.user.email);
-  if (params.user.email) {
-    await sendOtpEmail({
-      to: params.user.email,
-      otpCode,
-      purpose: params.purpose,
-    });
+  // Deliver the code by SMS when a phone is on file; fall back to email otherwise.
+  let channel: "sms" | "email" | "none" = "none";
+  if (params.user.phone) {
+    const sms = await sendVerificationSMS(params.user.phone, otpCode, "Health Assist");
+    if (sms.success) {
+      channel = "sms";
+    } else if (params.user.email) {
+      // SMS failed to send — fall back to email so the user isn't stuck.
+      await sendOtpEmail({ to: params.user.email, otpCode, purpose: params.purpose });
+      channel = "email";
+    }
+  } else if (params.user.email) {
+    await sendOtpEmail({ to: params.user.email, otpCode, purpose: params.purpose });
+    channel = "email";
   }
 
   auditMfaEvent({
@@ -199,14 +213,85 @@ export async function issueMfaChallenge(params: {
     outcome: "success",
     userType: params.user.userType,
     userId: params.user.userId,
-    metadata: { emailDeliveryEnabled },
+    metadata: { channel },
   });
 
   return {
     challengeToken,
     expiresInSeconds: OTP_TTL_MINUTES * 60,
-    emailDeliveryEnabled,
+    emailDeliveryEnabled: channel === "email",
   };
+}
+
+/**
+ * Return true when the current request carries a valid, unexpired trusted-device
+ * cookie bound to this exact user — meaning 2FA can be skipped for this login.
+ * The raw token lives only in the browser cookie; the DB stores only its HMAC.
+ */
+export async function hasValidTrustedDevice(params: {
+  userType: UserType;
+  userId: string;
+}): Promise<boolean> {
+  const cookieStore = await cookies();
+  const rawToken = cookieStore.get(TRUSTED_DEVICE_COOKIE_NAME)?.value;
+  if (!rawToken) return false;
+
+  const tokenHash = hashValue(rawToken);
+  try {
+    const result = await query(
+      `UPDATE auth_trusted_devices
+         SET last_used_at = NOW()
+       WHERE device_token_hash = $1
+         AND user_type = $2
+         AND user_id = $3
+         AND expires_at > NOW()
+       RETURNING id`,
+      [tokenHash, params.userType, params.userId],
+    );
+    return result.rows.length > 0;
+  } catch {
+    // Table missing (migration not yet applied) or transient error — fail closed to 2FA.
+    return false;
+  }
+}
+
+/**
+ * Persist a trusted device for this user and set the browser cookie. After this,
+ * hasValidTrustedDevice() returns true on the same browser for TRUSTED_DEVICE_TTL_DAYS.
+ */
+export async function issueTrustedDevice(params: {
+  userType: UserType;
+  userId: string;
+  userAgent?: string | null;
+  ip?: string | null;
+}): Promise<void> {
+  const rawToken = randomBytes(32).toString("hex");
+  const tokenHash = hashValue(rawToken);
+  const maxAgeSeconds = TRUSTED_DEVICE_TTL_DAYS * 24 * 60 * 60;
+
+  await query(
+    `INSERT INTO auth_trusted_devices (
+       user_type, user_id, device_token_hash, expires_at, last_used_at, user_agent, ip_address
+     )
+     VALUES ($1, $2, $3, NOW() + ($4 * INTERVAL '1 day'), NOW(), $5, $6)`,
+    [
+      params.userType,
+      params.userId,
+      tokenHash,
+      TRUSTED_DEVICE_TTL_DAYS,
+      params.userAgent || null,
+      params.ip || null,
+    ],
+  );
+
+  const cookieStore = await cookies();
+  cookieStore.set(TRUSTED_DEVICE_COOKIE_NAME, rawToken, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "strict",
+    path: "/",
+    maxAge: maxAgeSeconds,
+  });
 }
 
 export async function verifyMfaChallenge(params: {

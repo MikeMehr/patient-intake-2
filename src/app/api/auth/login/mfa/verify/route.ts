@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSession } from "@/lib/auth";
 import { getAuthUserByTypeAndId } from "@/lib/auth-helpers";
-import { consumeVerifiedMfaChallenge, verifyMfaChallenge } from "@/lib/auth-mfa";
+import { consumeVerifiedMfaChallenge, issueTrustedDevice, verifyMfaChallenge } from "@/lib/auth-mfa";
 import { consumeDbRateLimit } from "@/lib/rate-limit";
 import { getRequestIp } from "@/lib/invitation-security";
 
@@ -13,9 +13,11 @@ export async function POST(request: NextRequest) {
     const body = (await request.json()) as {
       challengeToken?: string;
       otpCode?: string;
+      trustDevice?: boolean;
     };
     const challengeToken = (body.challengeToken || "").trim();
     const otpCode = (body.otpCode || "").trim();
+    const trustDevice = body.trustDevice === true;
     if (!challengeToken || !otpCode) {
       return NextResponse.json(
         { error: "Challenge token and code are required" },
@@ -95,6 +97,21 @@ export async function POST(request: NextRequest) {
         (user as any).clinic_name,
         (user as any).clinic_address ?? null,
       );
+    }
+
+    // If the user opted in, remember this browser so it can skip 2FA next time.
+    // Best-effort: never let a trusted-device failure break a successful login.
+    if (trustDevice) {
+      try {
+        await issueTrustedDevice({
+          userType: consumed.user.userType,
+          userId: consumed.user.userId,
+          userAgent: request.headers.get("user-agent"),
+          ip,
+        });
+      } catch (err) {
+        console.error("[auth/login/mfa/verify] issueTrustedDevice failed", err);
+      }
     }
 
     const response: any = {

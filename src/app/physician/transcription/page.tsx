@@ -251,6 +251,10 @@ export default function PhysicianTranscriptionPage() {
   const [isRecording, setIsRecording] = useState(false);
   const [isStartingRecording, setIsStartingRecording] = useState(false);
   const [recordingError, setRecordingError] = useState<string | null>(null);
+  // Post-login greeting + Start-button nudge (only when arriving via the
+  // dashboard's "Go to Transcription" auto-redirect).
+  const [postLoginHint, setPostLoginHint] = useState(false);
+  const [greetingName, setGreetingName] = useState("");
   const [transcriptLoading, setTranscriptLoading] = useState(false);
   const [transcript, setTranscript] = useState("");
   const [recordingElapsed, setRecordingElapsed] = useState(0);
@@ -302,6 +306,30 @@ export default function PhysicianTranscriptionPage() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [showHpi]);
+
+  // Post-login greeting + Start-button nudge, shown only when the dashboard
+  // auto-redirected here after login. Fades away after 20 seconds.
+  useEffect(() => {
+    let arrived = false;
+    try {
+      arrived = sessionStorage.getItem("physician.autoTranscription") === "1";
+      if (arrived) sessionStorage.removeItem("physician.autoTranscription");
+    } catch {}
+    if (!arrived) return;
+    let timer: number | undefined;
+    fetch("/api/auth/me")
+      .then((res) => res.json())
+      .then((data) => {
+        const name = data?.physician?.lastName || data?.physician?.firstName;
+        if (name) {
+          setGreetingName(name);
+          setPostLoginHint(true);
+          timer = window.setTimeout(() => setPostLoginHint(false), 20000);
+        }
+      })
+      .catch(() => {});
+    return () => { if (timer) window.clearTimeout(timer); };
+  }, []);
 
   const [aiPrompt, setAiPrompt] = useState("");
   const [aiResponse, setAiResponse] = useState("");
@@ -1656,8 +1684,13 @@ export default function PhysicianTranscriptionPage() {
               priority
             />
             <div className="flex items-center justify-between">
-              <div>
+              <div className="flex items-baseline gap-3">
                 <h1 className="text-[1.1rem] font-semibold text-slate-900">Transcription</h1>
+                {postLoginHint && greetingName && (
+                  <span className="text-sm font-medium text-slate-500 transition-opacity duration-500">
+                    Hello, Dr. {greetingName}
+                  </span>
+                )}
               </div>
               <div className="flex items-center gap-2">
                 <button
@@ -1919,10 +1952,10 @@ export default function PhysicianTranscriptionPage() {
                         <>
                           <button
                             type="button"
-                            onClick={() => { setRecordingElapsed(0); setIsStartingRecording(true); startRecording(); }}
+                            onClick={() => { setPostLoginHint(false); setRecordingElapsed(0); setIsStartingRecording(true); startRecording(); }}
                             disabled={transcriptLoading || isStartingRecording || !language}
                             title={!language ? "Please select a transcription language first" : undefined}
-                            className={`px-4 py-2 text-sm font-medium text-white rounded-lg disabled:bg-slate-400 disabled:cursor-not-allowed ${isStartingRecording ? "bg-orange-500" : "bg-slate-900 hover:bg-slate-800"}`}
+                            className={`px-4 py-2 text-sm font-medium text-white rounded-lg disabled:bg-slate-400 disabled:cursor-not-allowed ${isStartingRecording ? "bg-orange-500" : "bg-slate-900 hover:bg-slate-800"} ${postLoginHint ? "animate-pulse ring-2 ring-orange-400 ring-offset-2" : ""}`}
                           >
                             {isStartingRecording ? "Starting..." : "Start transcription"}
                           </button>
@@ -1931,7 +1964,7 @@ export default function PhysicianTranscriptionPage() {
                           )}
                         </>
                       )}
-                      {transcript.trim().length > 0 && (
+                      {(isRecording || transcript.trim().length > 0) && (
                         <button
                           type="button"
                           onClick={() => void generateHpiMidVisit()}

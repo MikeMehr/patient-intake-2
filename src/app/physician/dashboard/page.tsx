@@ -250,18 +250,40 @@ function PhysicianDashboard() {
   const LS_SESSIONS = "physicianDashboard.sessionsDefaultOpen";
   const LS_INVITATIONS = "physicianDashboard.invitationsDefaultOpen";
   const LS_PATIENT_LOOKUP = "physicianDashboard.patientLookupDefaultOpen";
+  const LS_LAND_ON_TRANSCRIPTION = "physicianDashboard.landOnTranscription";
   const [settingsMenuOpen, setSettingsMenuOpen] = useState(false);
   const settingsMenuRef = useRef<HTMLDivElement>(null);
   const [sessionsDefaultOpen, setSessionsDefaultOpen] = useState<boolean>(false);
   const [invitationsDefaultOpen, setInvitationsDefaultOpen] = useState<boolean>(false);
   const [patientLookupDefaultOpen, setPatientLookupDefaultOpen] = useState<boolean>(false);
+  const [landOnTranscription, setLandOnTranscription] = useState<boolean>(false);
+  const [prefsHydrated, setPrefsHydrated] = useState<boolean>(false);
 
   // Read localStorage after hydration to avoid SSR/client mismatch
   useEffect(() => {
     setSessionsDefaultOpen(localStorage.getItem("physicianDashboard.sessionsDefaultOpen") === "true");
     setInvitationsDefaultOpen(localStorage.getItem("physicianDashboard.invitationsDefaultOpen") === "true");
     setPatientLookupDefaultOpen(localStorage.getItem("physicianDashboard.patientLookupDefaultOpen") === "true");
+    setLandOnTranscription(localStorage.getItem(LS_LAND_ON_TRANSCRIPTION) === "true");
+    setPrefsHydrated(true);
   }, []);
+
+  // On the first load after login, optionally redirect to the transcription page
+  // (same tab). Runs once — later manual visits to the dashboard don't bounce.
+  useEffect(() => {
+    if (!prefsHydrated) return;
+    let justLoggedIn = false;
+    try {
+      justLoggedIn = sessionStorage.getItem("physician.justLoggedIn") === "1";
+      if (justLoggedIn) sessionStorage.removeItem("physician.justLoggedIn");
+    } catch {}
+    if (justLoggedIn && landOnTranscription) {
+      try {
+        sessionStorage.setItem("physician.autoTranscription", "1");
+      } catch {}
+      router.push("/physician/transcription");
+    }
+  }, [prefsHydrated, landOnTranscription, router]);
 
   useEffect(() => {
     // Fetch sessions
@@ -379,6 +401,12 @@ function PhysicianDashboard() {
     const next = !patientLookupDefaultOpen;
     setPatientLookupDefaultOpen(next);
     localStorage.setItem(LS_PATIENT_LOOKUP, String(next));
+  }
+
+  function toggleLandOnTranscription() {
+    const next = !landOnTranscription;
+    setLandOnTranscription(next);
+    localStorage.setItem(LS_LAND_ON_TRANSCRIPTION, String(next));
   }
 
   const handleLogout = async () => {
@@ -1134,6 +1162,20 @@ function PhysicianDashboard() {
                       >
                         <span
                           className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow transition-transform ${patientLookupDefaultOpen ? "translate-x-4" : "translate-x-0"}`}
+                        />
+                      </button>
+                    </label>
+                    <label className="flex items-center justify-between gap-3 rounded-md px-2 py-2 hover:bg-slate-50 cursor-pointer">
+                      <span className="text-sm text-slate-700">Go to Transcription</span>
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={landOnTranscription}
+                        onClick={toggleLandOnTranscription}
+                        className={`relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors focus:outline-none ${landOnTranscription ? "bg-slate-800" : "bg-slate-200"}`}
+                      >
+                        <span
+                          className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow transition-transform ${landOnTranscription ? "translate-x-4" : "translate-x-0"}`}
                         />
                       </button>
                     </label>

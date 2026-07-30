@@ -13,7 +13,7 @@ import {
   getAssistantByUsername,
   getProviderById,
 } from "@/lib/auth-helpers";
-import { issueMfaChallenge } from "@/lib/auth-mfa";
+import { issueMfaChallenge, hasValidTrustedDevice } from "@/lib/auth-mfa";
 import { AUTH_MFA_POLICY } from "@/lib/auth-policy";
 import { logDebug } from "@/lib/secure-logger";
 import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
@@ -164,13 +164,18 @@ export async function POST(request: NextRequest) {
       return res;
     }
 
-    // Create session based on user type
-    if ((user as any).mfa_enabled) {
+    // Create session based on user type.
+    // Skip the second factor entirely when this browser is a trusted device.
+    const trustedDevice =
+      (user as any).mfa_enabled &&
+      (await hasValidTrustedDevice({ userType, userId: user.id }));
+    if ((user as any).mfa_enabled && !trustedDevice) {
       const challenge = await issueMfaChallenge({
         user: {
           userType,
           userId: user.id,
           email: (user as any).email ?? null,
+          phone: (user as any).phone ?? null,
         },
         purpose: "login",
         ipAddress: ip,

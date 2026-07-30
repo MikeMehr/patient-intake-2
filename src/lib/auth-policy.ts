@@ -1,7 +1,9 @@
 export const AUTH_MFA_POLICY = {
-  // ASVS V6.6.1 posture: PSTN OTP (SMS/voice) is not offered.
-  allowPstnOtp: false,
-  primaryOtpChannels: ["email"] as const,
+  // SMS (PSTN OTP) is the primary sign-in second factor, with email as a
+  // fallback when no phone is on file. (Departs from ASVS V6.6.1's
+  // no-PSTN-OTP posture by product decision.)
+  allowPstnOtp: true,
+  primaryOtpChannels: ["sms", "email"] as const,
   recoveryChannels: ["backup_code"] as const,
   webauthn: {
     enabled: true,
