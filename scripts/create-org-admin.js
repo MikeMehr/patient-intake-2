@@ -100,7 +100,7 @@ async function createOrgAdmin() {
     console.log(`  Password     : ${password}`);
     console.log(`  Email        : ${email}`);
     console.log(`  ID           : ${result.rows[0].id}`);
-    console.log(`\nLogin at: https://mymd.health-assist.org/org/login`);
+    console.log(`\nLogin at: https://physician.health-assist.org/org/login`);
   } finally {
     client.release();
     await pool.end();

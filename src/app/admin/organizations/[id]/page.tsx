@@ -683,7 +683,7 @@ export default function OrganizationDetailPage() {
                     disabled={oscarLoading}
                   />
                   <p className="text-xs text-slate-500 mt-1">
-                    Callback URL: {(appOrigin || "https://mymd.health-assist.org")}/api/admin/emr/oscar/callback
+                    Callback URL: {(appOrigin || "https://physician.health-assist.org")}/api/admin/emr/oscar/callback
                   </p>
                 </div>
 
@@ -753,7 +753,7 @@ export default function OrganizationDetailPage() {
                             {provider.phone && ` • ${provider.phone}`}
                           </div>
                           <div className="text-xs text-slate-400 mt-1">
-                            Intake Link: {(appOrigin || "https://mymd.health-assist.org")}/intake/{provider.uniqueSlug}
+                            Intake Link: {(appOrigin || "https://physician.health-assist.org")}/intake/{provider.uniqueSlug}
                           </div>
                         </div>
                         <div className="flex items-center gap-2">

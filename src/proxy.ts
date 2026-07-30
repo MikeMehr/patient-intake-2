@@ -127,7 +127,20 @@ function requiresPhysicianSession(pathname: string): boolean {
 
 // Generate or propagate a request ID, attach to request and response headers.
 export function proxy(req: NextRequest) {
-  const { pathname } = req.nextUrl;
+  const { pathname, search } = req.nextUrl;
+
+  // ── Legacy host redirect ───────────────────────────────────────────────
+  // The physician dashboard moved to physician.health-assist.org. The old
+  // mymd.health-assist.org host stays bound in Azure so existing bookmarks,
+  // OSCAR eform links, and patient-record emails keep working — but every
+  // request is permanently redirected to the new host, preserving path+query.
+  // Only fires for the exact old host, so there is no redirect loop.
+  if (req.headers.get("host") === "mymd.health-assist.org") {
+    return NextResponse.redirect(
+      new URL(pathname + search, "https://physician.health-assist.org"),
+      301,
+    );
+  }
 
   const incomingId =
     req.headers.get("x-request-id") ||

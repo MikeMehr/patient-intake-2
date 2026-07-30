@@ -182,7 +182,7 @@ async function handleConfirm(
     reason: oscarReason,
   });
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://mymd.health-assist.org";
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://physician.health-assist.org";
   const manageUrl = `${appUrl}/booking/manage/${manageTokenRaw}`;
 
   // Send confirmation email (best-effort, don't fail booking if email fails)

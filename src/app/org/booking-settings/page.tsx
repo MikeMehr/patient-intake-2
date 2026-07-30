@@ -138,7 +138,7 @@ export default function BookingSettingsPage() {
     );
   }
 
-  const bookingUrl = orgSlug ? `${process.env.NEXT_PUBLIC_APP_URL ?? "https://mymd.health-assist.org"}/booking/${orgSlug}` : null;
+  const bookingUrl = orgSlug ? `${process.env.NEXT_PUBLIC_APP_URL ?? "https://physician.health-assist.org"}/booking/${orgSlug}` : null;
 
   return (
     <main className="min-h-screen bg-gray-50 py-10 px-4">
@@ -423,11 +423,11 @@ export default function BookingSettingsPage() {
               <p className="text-xs text-gray-400">
                 Public URL:{" "}
                 <a
-                  href={`${process.env.NEXT_PUBLIC_APP_URL ?? "https://mymd.health-assist.org"}/interview/${orgSlug}`}
+                  href={`${process.env.NEXT_PUBLIC_APP_URL ?? "https://physician.health-assist.org"}/interview/${orgSlug}`}
                   target="_blank"
                   className="text-blue-600 underline"
                 >
-                  {`${process.env.NEXT_PUBLIC_APP_URL ?? "https://mymd.health-assist.org"}/interview/${orgSlug}`}
+                  {`${process.env.NEXT_PUBLIC_APP_URL ?? "https://physician.health-assist.org"}/interview/${orgSlug}`}
                 </a>
               </p>
             )}

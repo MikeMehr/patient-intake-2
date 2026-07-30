@@ -410,7 +410,7 @@ These fields are never shown to the patient.`;
 
           // Construct patient dashboard URL
           const patientName = invitationContext.patientName || "Patient";
-          const patientRecordUrl = `https://mymd.health-assist.org/auth/login`;
+          const patientRecordUrl = `https://physician.health-assist.org/auth/login`;
 
           console.error(`[SMS-DEBUG] Sending SMS to physician for patient=${patientName}`);
 

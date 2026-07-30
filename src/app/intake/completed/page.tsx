@@ -17,6 +17,7 @@ const DEFAULT_REDIRECT_URL = "https://www.health-assist.org/";
 const ALLOWED_REDIRECT_HOSTS = new Set([
   "health-assist.org",
   "www.health-assist.org",
+  "physician.health-assist.org",
   "mymd.health-assist.org",
 ]);
 

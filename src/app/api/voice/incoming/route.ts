@@ -196,7 +196,7 @@ export async function POST(req: NextRequest) {
       });
 
       if (dedupe.allowed) {
-        const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://mymd.health-assist.org";
+        const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://physician.health-assist.org";
         const result = await sendBookingLinkSMS(from!, {
           clinicName: clinic.name,
           bookingUrl: `${appUrl}/booking/${clinic.slug}`,
