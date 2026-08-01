@@ -47,6 +47,21 @@ type Settings = {
   selfServeInterviewPhysicianId: string | null;
 };
 
+type PharmacyDirectoryState = {
+  count: number;
+  lastSuccessAt: string | null;
+  lastStatus: string | null;
+  lastError: string | null;
+};
+
+function describeSyncAge(iso: string | null): string {
+  if (!iso) return "never synced";
+  const days = Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000);
+  if (days <= 0) return "synced today";
+  if (days === 1) return "synced yesterday";
+  return `synced ${days} days ago`;
+}
+
 export default function BookingSettingsPage() {
   const router = useRouter();
   const [orgName, setOrgName] = useState("");
@@ -73,6 +88,9 @@ export default function BookingSettingsPage() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pharmacyState, setPharmacyState] = useState<PharmacyDirectoryState | null>(null);
+  const [syncingPharmacies, setSyncingPharmacies] = useState(false);
+  const [pharmacySyncError, setPharmacySyncError] = useState<string | null>(null);
 
   useEffect(() => {
     Promise.all([
@@ -97,7 +115,39 @@ export default function BookingSettingsPage() {
       .catch(() => {
         router.push("/org/login");
       });
+
+    // Separate from the Promise.all above on purpose: an unconfigured pharmacy bridge must not
+    // bounce the admin to the login page along with a genuine auth failure.
+    fetch("/api/org/pharmacy-directory/sync")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data) setPharmacyState(data);
+      })
+      .catch(() => {});
   }, [router]);
+
+  async function handleSyncPharmacies() {
+    setSyncingPharmacies(true);
+    setPharmacySyncError(null);
+    try {
+      const res = await fetch("/api/org/pharmacy-directory/sync", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) {
+        setPharmacySyncError(data.error ?? "Sync failed");
+      } else {
+        setPharmacyState({
+          count: data.count,
+          lastSuccessAt: data.lastSuccessAt,
+          lastStatus: "OK",
+          lastError: null,
+        });
+      }
+    } catch {
+      setPharmacySyncError("Sync failed. Please try again.");
+    } finally {
+      setSyncingPharmacies(false);
+    }
+  }
 
   function set<K extends keyof Settings>(key: K, value: Settings[K]) {
     setSettings((prev) => ({ ...prev, [key]: value }));
@@ -454,6 +504,54 @@ export default function BookingSettingsPage() {
                 >
                   {`${process.env.NEXT_PUBLIC_APP_URL ?? "https://physician.health-assist.org"}/interview/${orgSlug}`}
                 </a>
+              </p>
+            )}
+          </section>
+
+          {/* Pharmacy directory mirror */}
+          <section className="bg-white border border-gray-200 rounded-xl p-5 space-y-4">
+            <h2 className="font-semibold text-gray-800">Pharmacy directory</h2>
+            <p className="text-sm text-gray-500">
+              New patients booking online can choose their preferred pharmacy, and it is set on
+              their chart in OSCAR. The list they search is a copy of your OSCAR pharmacy
+              directory — sync it here after adding pharmacies in OSCAR. It also refreshes
+              automatically each week.
+            </p>
+
+            <div className="flex items-center justify-between gap-4 flex-wrap">
+              <p className="text-sm text-gray-700">
+                {pharmacyState && pharmacyState.count > 0 ? (
+                  <>
+                    <span className="font-medium">
+                      {pharmacyState.count.toLocaleString()} pharmacies
+                    </span>{" "}
+                    <span className="text-gray-500">
+                      — {describeSyncAge(pharmacyState.lastSuccessAt)}
+                    </span>
+                  </>
+                ) : (
+                  <span className="text-gray-500">
+                    Not synced yet. Patients can still type a pharmacy name by hand.
+                  </span>
+                )}
+              </p>
+              {/* type="button" — this sits inside the settings form and must not submit it. */}
+              <button
+                type="button"
+                onClick={handleSyncPharmacies}
+                disabled={syncingPharmacies}
+                className="bg-gray-800 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-gray-900 disabled:opacity-50 transition"
+              >
+                {syncingPharmacies ? "Syncing…" : "Sync from OSCAR"}
+              </button>
+            </div>
+
+            {pharmacySyncError && (
+              <p className="text-sm text-red-600">{pharmacySyncError}</p>
+            )}
+            {!pharmacySyncError && pharmacyState?.lastStatus === "FAILED" && pharmacyState.lastError && (
+              <p className="text-sm text-amber-700">
+                Last sync failed: {pharmacyState.lastError}
               </p>
             )}
           </section>

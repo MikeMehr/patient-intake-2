@@ -9,6 +9,75 @@ editing any JSP, delete its compiled copy under
 `/opt/tomcat9/work/Catalina/localhost/oscar/org/apache/jsp/...` to force a recompile — no Tomcat
 restart is needed.
 
+## Pharmacy bridge (added 2026-08-01)
+
+Lets the booking app read OSCAR's pharmacy directory and set a patient's preferred pharmacy, so a
+pharmacy chosen during online booking lands in the Rx module instead of being re-asked at the visit.
+
+### Why this one is a service, not a JSP
+
+OSCAR publishes no pharmacy REST endpoint. `PharmacyService` and `RxWebService` are listed in
+`WEB-INF/classes/applicationContextREST.xml`, but neither appears in the live WADL
+(`curl 'http://127.0.0.1:8080/oscar/ws/services?_wadl'` — only demographics, schedule, provider and
+status are published), and `RxWebService` would only ever expose a *read*. The only writer is the
+Struts action `RxManagePharmacyAction.setPreferred`, which needs a logged-in OSCAR session.
+
+A JSP was the obvious next choice, but every webapp path is gated by `CRFilter`
+(`cr.filter.ignore` in `WEB-INF/web.xml`), which bounces a session-less request to `logout.jsp`
+before the JSP runs — so it would mean editing OSCAR's own auth config, restarting Tomcat, and
+redoing both after every WAR redeploy. This follows `drugref2_service.py` instead: a separate
+process on its own port, untouched by webapp redeploys.
+
+### Files
+
+| Path | What |
+| --- | --- |
+| `pharmacy_bridge_service.py` → `/home/manucher/pharmacy_bridge_service.py` | The service. Python + `mysql.connector`, listens on `127.0.0.1:8086`. |
+| `pharmacy-bridge.service` → `/etc/systemd/system/pharmacy-bridge.service` | systemd unit, runs as `manucher`, `Restart=always`. |
+| `/etc/nginx/sites-available/oscar` | Patched — adds `location = /mymd/pharmacy-bridge`. Backup: `oscar.bak.pre-pharmacybridge`. |
+
+### Operations
+
+`POST https://oscar.mymdonline.ca/mymd/pharmacy-bridge`, form-encoded, JSON back. Every request
+needs the `X-MyMD-Pharmacy-Secret` header.
+
+- `op=list` — every active `pharmacyInfo` row (1516 today). Feeds the app's directory mirror.
+- `op=link` + `demographicNo` + `pharmacyId` — deactivates the patient's existing
+  `demographicPharmacy` rows, then activates the chosen one (`status='1'`, `preferredOrder=1`),
+  reusing a prior row for the same pharmacy rather than accumulating duplicates.
+- `op=upsert` — adds a `pharmacyInfo` row, returns its `recordID`. Implemented but the app leaves it
+  off (`PHARMACY_BRIDGE_ALLOW_UPSERT`): it would let anonymous booking input write into the table
+  that routes prescription faxes.
+
+### Server-side prerequisites (already done, not in this repo)
+
+- `/var/lib/OscarDocument/oscar/mymd_pharmacy_bridge.properties` — `root:manucher`, mode `640`,
+  outside the web root. One line, `bridge.secret=<64 hex chars>`. The same value goes in the app's
+  `OSCAR_PHARMACY_BRIDGE_SECRET`. Group is `manucher`, not `tomcat`, because the service — not
+  Tomcat — reads it.
+
+### The nginx exemption
+
+`location = /mymd/pharmacy-bridge` is an **exact** match proxying to `127.0.0.1:8086`, so nothing
+else under `/mymd/` is exposed and the device-cert gate on `location /` is untouched. Verified after
+the change: the bridge answers 401 without the secret and 200 with it, while `/oscar/`,
+`/oscar/oscarRx/managePharmacy.do`, `/mymd/emailPatient.jsp` and `/mymd/` all still return 403
+without a device cert, and `/oscar/ws/services/demographics` still returns 401 (booking OAuth
+unaffected).
+
+Rollback: `sudo cp /etc/nginx/sites-available/oscar.bak.pre-pharmacybridge \
+/etc/nginx/sites-available/oscar && sudo systemctl reload nginx`, then
+`sudo systemctl disable --now pharmacy-bridge`.
+
+### Gotchas worth remembering
+
+- The secret file is read on **every** request, so rotating it takes effect without a restart — but
+  an unreadable file fails every request closed rather than open.
+- `pharmacyInfo.phone1`/`fax` are `varchar(20)` and hold unformatted strings like `604957-0711`.
+  Format for display in the app, not here.
+- `demographicPharmacy` has no unique constraint, so the reuse-then-activate logic in `op_link` is
+  what keeps a patient from collecting a row per re-link.
+
 ## Email a patient from OSCAR (added 2026-07-21)
 
 Lets a clinician email a patient from inside the chart, and email an appointment reminder from the

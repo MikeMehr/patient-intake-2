@@ -13,7 +13,16 @@ const _oscarTlsAgent = new https.Agent({ rejectUnauthorized: false });
 
 const OSCAR_FETCH_TIMEOUT_MS = 20_000; // 20 s — avoids infinite hangs when Oscar is unreachable
 
-export async function oscarFetch(url: string, options: RequestInit = {}): Promise<Response> {
+/**
+ * `timeoutMs` overrides the default for a single call. Callers that run inside a request the
+ * patient is waiting on (the pharmacy link during booking confirm) use a shorter budget; bulk
+ * reads like the pharmacy directory pull use a longer one.
+ */
+export async function oscarFetch(
+  url: string,
+  options: RequestInit & { timeoutMs?: number } = {},
+): Promise<Response> {
+  const timeoutMs = options.timeoutMs ?? OSCAR_FETCH_TIMEOUT_MS;
   return new Promise<Response>((resolve, reject) => {
     const u = new URL(url);
 
@@ -41,10 +50,10 @@ export async function oscarFetch(url: string, options: RequestInit = {}): Promis
       method: (options.method || "GET").toUpperCase(),
       headers: outHeaders,
       agent: _oscarTlsAgent,
-      timeout: OSCAR_FETCH_TIMEOUT_MS,
+      timeout: timeoutMs,
     };
 
-    console.log(`[oscarFetch] ${reqOptions.method} ${url} (timeout ${OSCAR_FETCH_TIMEOUT_MS}ms)`);
+    console.log(`[oscarFetch] ${reqOptions.method} ${url} (timeout ${timeoutMs}ms)`);
 
     const req = https.request(reqOptions, (res) => {
       const chunks: Buffer[] = [];
@@ -74,8 +83,8 @@ export async function oscarFetch(url: string, options: RequestInit = {}): Promis
 
     // timeout event fires when the socket is idle for too long — destroy to trigger "error"
     req.on("timeout", () => {
-      console.error(`[oscarFetch] TIMEOUT after ${OSCAR_FETCH_TIMEOUT_MS}ms: ${url}`);
-      req.destroy(new Error(`Oscar request timed out after ${OSCAR_FETCH_TIMEOUT_MS}ms: ${url}`));
+      console.error(`[oscarFetch] TIMEOUT after ${timeoutMs}ms: ${url}`);
+      req.destroy(new Error(`Oscar request timed out after ${timeoutMs}ms: ${url}`));
     });
 
     req.on("error", (err) => {

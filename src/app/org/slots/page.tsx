@@ -131,7 +131,6 @@ export default function SlotsPage() {
           lastName: p.lastName,
         }));
         setPhysicians(list);
-        if (list.length > 0) setNewSlot((prev) => ({ ...prev, physicianId: list[0].id }));
       })
       .catch(() => router.push("/org/login"));
   }, [router]);
@@ -163,8 +162,9 @@ export default function SlotsPage() {
     setNewSlot((prev) => ({
       ...prev,
       // Default to the physician currently being filtered, so "Add Slot" matches
-      // who you're viewing. Falls back to the existing default when viewing "All".
-      physicianId: filterPhysicianId !== "all" ? filterPhysicianId : prev.physicianId,
+      // who you're viewing. When viewing "All", leave it blank so the user has to
+      // pick a doctor deliberately rather than inheriting an arbitrary default.
+      physicianId: filterPhysicianId !== "all" ? filterPhysicianId : "",
       startTime: `${day}T09:00`,
       endTime: `${day}T09:30`,
     }));
@@ -432,6 +432,7 @@ export default function SlotsPage() {
                   onChange={(e) => setNewSlot((prev) => ({ ...prev, physicianId: e.target.value }))}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
                 >
+                  <option value="">— Select a physician —</option>
                   {physicians.map((p) => (
                     <option key={p.id} value={p.id}>
                       Dr. {p.firstName} {p.lastName}

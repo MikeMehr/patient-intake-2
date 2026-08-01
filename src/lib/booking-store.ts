@@ -81,6 +81,9 @@ export type AppointmentRow = {
   createdAt: string;
   oscarSyncStatus: string | null; // 'SYNCED' | 'FAILED' | 'SKIPPED' | 'CANCELLED' | null
   oscarAppointmentNo: string | null; // OSCAR appointment id, when synced
+  pharmacyName: string | null; // patient's preferred pharmacy, when they chose one
+  pharmacyCity: string | null;
+  pharmacyLinkStatus: string | null; // 'LINKED' | 'FAILED' | 'SKIPPED' | null (none chosen)
 };
 
 // ---------------------------------------------------------------------------
@@ -523,6 +526,20 @@ export type ConfirmAppointmentData = {
   manageTokenHash: string;
   manageTokenExpiresAt: Date;
   oscarDemographicNo?: string;
+  /**
+   * Preferred pharmacy, already resolved server-side. For a directory pick these fields come from
+   * pharmacy_directory by id, not from the client — see the confirm route. Stored here so the
+   * choice survives even if the later link into OSCAR fails.
+   */
+  pharmacy?: {
+    oscarPharmacyId?: string;
+    name: string;
+    address?: string;
+    city?: string;
+    phone?: string;
+    fax?: string;
+    source: "DIRECTORY" | "FREE_TEXT";
+  };
 };
 
 export async function confirmAppointment(
@@ -559,10 +576,13 @@ export async function confirmAppointment(
        INSERT INTO appointments
          (organization_id, physician_id, slot_id, first_name, last_name, date_of_birth,
           email, coverage_type, province, health_card_number_enc, billing_note, reason,
-          manage_token_hash, manage_token_expires_at, oscar_demographic_no)
+          manage_token_hash, manage_token_expires_at, oscar_demographic_no,
+          pharmacy_oscar_id, pharmacy_name, pharmacy_address, pharmacy_city,
+          pharmacy_phone, pharmacy_fax, pharmacy_source)
        SELECT
          hc.organization_id, su.physician_id, hc.id, $4, $5, $6::DATE,
-         $7, $8, $9, $10, $11, $12, $13, $14::TIMESTAMPTZ, $15
+         $7, $8, $9, $10, $11, $12, $13, $14::TIMESTAMPTZ, $15,
+         $16, $17, $18, $19, $20, $21, $22
        FROM hold_check hc
        JOIN slot_update su ON TRUE
        RETURNING id AS appointment_id, physician_id
@@ -584,6 +604,13 @@ export async function confirmAppointment(
         data.manageTokenHash,
         data.manageTokenExpiresAt.toISOString(),
         data.oscarDemographicNo ?? null,
+        data.pharmacy?.oscarPharmacyId ?? null,
+        data.pharmacy?.name ?? null,
+        data.pharmacy?.address ?? null,
+        data.pharmacy?.city ?? null,
+        data.pharmacy?.phone ?? null,
+        data.pharmacy?.fax ?? null,
+        data.pharmacy?.source ?? null,
       ],
     );
   } catch (err) {
@@ -628,6 +655,9 @@ export async function getAppointmentByToken(tokenHash: string): Promise<Appointm
     created_at: Date;
     oscar_sync_status: string | null;
     oscar_appointment_no: string | null;
+    pharmacy_name: string | null;
+    pharmacy_city: string | null;
+    pharmacy_link_status: string | null;
   }>(
     `SELECT
        a.id, a.organization_id, a.physician_id,
@@ -637,7 +667,8 @@ export async function getAppointmentByToken(tokenHash: string): Promise<Appointm
        s.start_time, s.end_time,
        a.first_name, a.last_name, a.date_of_birth::TEXT, a.email,
        a.coverage_type, a.province, a.health_card_number_enc, a.billing_note, a.reason,
-       a.manage_token_expires_at, a.cancelled_at, a.created_at, a.oscar_sync_status, a.oscar_appointment_no
+       a.manage_token_expires_at, a.cancelled_at, a.created_at, a.oscar_sync_status, a.oscar_appointment_no,
+       a.pharmacy_name, a.pharmacy_city, a.pharmacy_link_status
      FROM appointments a
      JOIN appointment_slots s ON s.id = a.slot_id
      JOIN physicians ph ON ph.id = a.physician_id
@@ -685,6 +716,9 @@ export async function getAppointmentByToken(tokenHash: string): Promise<Appointm
     createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at),
     oscarSyncStatus: row.oscar_sync_status,
     oscarAppointmentNo: row.oscar_appointment_no,
+    pharmacyName: row.pharmacy_name,
+    pharmacyCity: row.pharmacy_city,
+    pharmacyLinkStatus: row.pharmacy_link_status,
   };
 }
 
@@ -749,6 +783,9 @@ export async function getAppointmentsForOrg(
     created_at: Date;
     oscar_sync_status: string | null;
     oscar_appointment_no: string | null;
+    pharmacy_name: string | null;
+    pharmacy_city: string | null;
+    pharmacy_link_status: string | null;
     reason: string | null;
   }>(
     `SELECT
@@ -758,7 +795,8 @@ export async function getAppointmentsForOrg(
        a.slot_id, s.start_time, s.end_time,
        a.first_name, a.last_name, a.date_of_birth::TEXT, a.email,
        a.coverage_type, a.province, a.health_card_number_enc, a.billing_note, a.reason,
-       a.manage_token_expires_at, a.cancelled_at, a.created_at, a.oscar_sync_status, a.oscar_appointment_no
+       a.manage_token_expires_at, a.cancelled_at, a.created_at, a.oscar_sync_status, a.oscar_appointment_no,
+       a.pharmacy_name, a.pharmacy_city, a.pharmacy_link_status
      FROM appointments a
      JOIN appointment_slots s ON s.id = a.slot_id
      JOIN physicians ph ON ph.id = a.physician_id
@@ -795,6 +833,9 @@ export async function getAppointmentsForOrg(
     createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at),
     oscarSyncStatus: row.oscar_sync_status,
     oscarAppointmentNo: row.oscar_appointment_no,
+    pharmacyName: row.pharmacy_name,
+    pharmacyCity: row.pharmacy_city,
+    pharmacyLinkStatus: row.pharmacy_link_status,
   }));
 }
 

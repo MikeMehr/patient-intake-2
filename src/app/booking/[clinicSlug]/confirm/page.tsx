@@ -2,6 +2,7 @@
 
 import { use, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import PharmacyPicker from "@/components/PharmacyPicker";
 import {
   MODALITY_ICON,
   MODALITY_LABEL,
@@ -9,6 +10,7 @@ import {
   normalizeModality,
   type AppointmentModality,
 } from "@/lib/appointment-modality";
+import type { PharmacySelection } from "@/lib/pharmacy-selection";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -92,6 +94,10 @@ export default function BookingConfirmPage({
     phone: "", email: "", address: "", city: "", province: "British Columbia", postal: "",
     gender: "", // OSCAR sex code: M | F | O | U
   });
+
+  // Preferred pharmacy — new Oscar patients only. Existing patients may already have one set by
+  // the clinic, and a public form must not silently replace it.
+  const [pharmacy, setPharmacy] = useState<PharmacySelection | null>(null);
 
   // Coverage form (shown for not-found and no-oscar paths)
   const [coverage, setCoverage] = useState({
@@ -294,6 +300,11 @@ export default function BookingConfirmPage({
                             : undefined,
         consentGiven:     true,
         oscarDemographicNo: demographicNo ?? undefined,
+        // Sent here rather than to create-oscar-patient: that route's body maps 1:1 onto OSCAR's
+        // demographics payload, and chart creation must not depend on the pharmacy bridge being
+        // up. Confirm persists the choice in the same statement that creates the booking, so even
+        // a total bridge outage leaves staff a row to reconcile.
+        pharmacy:         step === "not-found" ? pharmacy ?? undefined : undefined,
       }),
     });
 
@@ -735,6 +746,12 @@ export default function BookingConfirmPage({
                   {PROVINCES.map((p) => <option key={p} value={p}>{p}</option>)}
                 </select>
               </div>
+
+              <PharmacyPicker
+                clinicSlug={clinicSlug}
+                value={pharmacy}
+                onChange={setPharmacy}
+              />
             </>
           )}
 

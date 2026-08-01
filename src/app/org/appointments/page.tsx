@@ -18,6 +18,9 @@ type Appointment = {
   cancelledAt: string | null;
   createdAt: string;
   oscarSyncStatus: string | null;
+  pharmacyName: string | null;
+  pharmacyCity: string | null;
+  pharmacyLinkStatus: string | null;
 };
 
 type Physician = { id: string; firstName: string; lastName: string };
@@ -42,6 +45,53 @@ function formatDT(iso: string): string {
   } catch {
     return iso;
   }
+}
+
+/**
+ * The patient's preferred pharmacy and whether it made it onto their OSCAR chart.
+ *
+ * SKIPPED is the expected outcome for a pharmacy the patient typed by hand — the app deliberately
+ * does not create rows in OSCAR's shared pharmacy directory from public booking input — so it reads
+ * as an action for staff, not as an error.
+ */
+function PharmacyCell({
+  name,
+  city,
+  linkStatus,
+}: {
+  name: string | null;
+  city: string | null;
+  linkStatus: string | null;
+}) {
+  if (!name) return <span className="text-gray-300">—</span>;
+
+  return (
+    <div>
+      <p className="text-gray-800">{name}</p>
+      {city && <p className="text-gray-400 text-xs">{city}</p>}
+      {linkStatus === "LINKED" && (
+        <span className="inline-block mt-0.5 px-2 py-0.5 rounded-full bg-green-100 text-green-700 text-xs font-medium">
+          Set in OSCAR
+        </span>
+      )}
+      {linkStatus === "SKIPPED" && (
+        <span
+          className="inline-block mt-0.5 px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 text-xs font-medium"
+          title="Not in the OSCAR pharmacy list. Add it in OSCAR and set it on the chart."
+        >
+          Add manually
+        </span>
+      )}
+      {linkStatus === "FAILED" && (
+        <span
+          className="inline-block mt-0.5 px-2 py-0.5 rounded-full bg-red-100 text-red-600 text-xs font-medium"
+          title="The pharmacy could not be set on the OSCAR chart. Set it manually."
+        >
+          Not set
+        </span>
+      )}
+    </div>
+  );
 }
 
 function OscarBadge({ status }: { status: string | null }) {
@@ -199,6 +249,7 @@ export default function AppointmentsPage() {
                     <th className="text-left px-4 py-3 text-gray-600 font-medium">Physician</th>
                     <th className="text-left px-4 py-3 text-gray-600 font-medium">Reason</th>
                     <th className="text-left px-4 py-3 text-gray-600 font-medium">Coverage</th>
+                    <th className="text-left px-4 py-3 text-gray-600 font-medium">Pharmacy</th>
                     <th className="text-left px-4 py-3 text-gray-600 font-medium">Status</th>
                     <th className="text-left px-4 py-3 text-gray-600 font-medium">OSCAR</th>
                   </tr>
@@ -229,6 +280,13 @@ export default function AppointmentsPage() {
                         {appt.billingNote && (
                           <span className="text-gray-400 text-xs block">{appt.billingNote}</span>
                         )}
+                      </td>
+                      <td className="px-4 py-3">
+                        <PharmacyCell
+                          name={appt.pharmacyName}
+                          city={appt.pharmacyCity}
+                          linkStatus={appt.pharmacyLinkStatus}
+                        />
                       </td>
                       <td className="px-4 py-3">
                         {appt.cancelledAt ? (

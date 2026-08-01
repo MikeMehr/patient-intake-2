@@ -1,0 +1,13 @@
+[Unit]
+Description=MyMD Pharmacy Bridge for Oscar EMR
+After=network.target mysql.service
+
+[Service]
+Type=simple
+User=manucher
+ExecStart=/usr/bin/python3 /home/manucher/pharmacy_bridge_service.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

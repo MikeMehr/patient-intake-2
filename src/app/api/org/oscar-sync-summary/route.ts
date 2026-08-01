@@ -27,10 +27,17 @@ export async function GET(request: NextRequest) {
     }
 
     const row = (
-      await query<{ failed: string; skipped: string }>(
+      await query<{
+        failed: string;
+        skipped: string;
+        pharmacy_failed: string;
+        pharmacy_pending: string;
+      }>(
         `SELECT
            COUNT(*) FILTER (WHERE a.oscar_sync_status = 'FAILED')  AS failed,
-           COUNT(*) FILTER (WHERE a.oscar_sync_status = 'SKIPPED') AS skipped
+           COUNT(*) FILTER (WHERE a.oscar_sync_status = 'SKIPPED') AS skipped,
+           COUNT(*) FILTER (WHERE a.pharmacy_link_status = 'FAILED')  AS pharmacy_failed,
+           COUNT(*) FILTER (WHERE a.pharmacy_link_status = 'SKIPPED') AS pharmacy_pending
          FROM appointments a
          JOIN appointment_slots s ON s.id = a.slot_id
          WHERE a.organization_id = $1
@@ -42,8 +49,20 @@ export async function GET(request: NextRequest) {
 
     const failed = Number(row?.failed ?? 0);
     const skipped = Number(row?.skipped ?? 0);
+    // Reported separately from the appointment sync: a pharmacy that needs adding by hand is a
+    // different job from an appointment missing off the day sheet, and rolling them into one
+    // total would make each look worse than it is.
+    const pharmacyFailed = Number(row?.pharmacy_failed ?? 0);
+    const pharmacyPending = Number(row?.pharmacy_pending ?? 0);
 
-    const res = NextResponse.json({ failed, skipped, total: failed + skipped });
+    const res = NextResponse.json({
+      failed,
+      skipped,
+      total: failed + skipped,
+      pharmacyFailed,
+      pharmacyPending,
+      pharmacyTotal: pharmacyFailed + pharmacyPending,
+    });
     logRequestMeta("/api/org/oscar-sync-summary", requestId, status, Date.now() - started);
     return res;
   } catch (err) {

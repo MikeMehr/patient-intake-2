@@ -17,6 +17,9 @@ import { getPhysicianPhone } from "@/lib/physician-lookup";
 import { query } from "@/lib/db";
 import { decryptString } from "@/lib/encrypted-field";
 import { createOscarAppointment, toClinicLocalParts } from "@/lib/oscar/appointments";
+import { isPharmacyUpsertEnabled, linkOscarPharmacy, upsertOscarPharmacy } from "@/lib/oscar/pharmacy";
+import { findPharmacyByNameCity, getPharmacyFromDirectory } from "@/lib/pharmacy-directory";
+import { normalizePharmacySelection, type PharmacySelection } from "@/lib/pharmacy-selection";
 
 export const runtime = "nodejs";
 
@@ -76,6 +79,10 @@ async function handleConfirm(
     oscarDemographicNo,
   } = body as Record<string, string | boolean | undefined>;
 
+  // Preferred pharmacy is optional and must never be able to fail a booking, so an unusable value
+  // normalizes to null rather than 400.
+  const pharmacySelection = normalizePharmacySelection(body.pharmacy);
+
   // Reason for visit. The form marks this required, but don't 400 when it's
   // absent: a patient who loaded the form before a deploy would submit without
   // it, and by this point their OSCAR chart may already have been created.
@@ -132,6 +139,12 @@ async function handleConfirm(
   const { raw: manageTokenRaw, hash: manageTokenHash, expiresAt: manageTokenExpiresAt } =
     generateManageToken();
 
+  // Resolve the pharmacy BEFORE the insert so the snapshot is committed with the booking. A
+  // directory pick is re-read from our own table by id and the client's other fields are
+  // discarded — otherwise this public form would be a way to write an arbitrary fax number
+  // (where prescriptions get sent) onto a chart.
+  const pharmacyRecord = await resolvePharmacyForBooking(clinic.id, pharmacySelection);
+
   const result = await confirmAppointment(String(slotId), clinic.id, sessionKey, {
     firstName: String(firstName),
     lastName: String(lastName),
@@ -145,6 +158,7 @@ async function handleConfirm(
     manageTokenHash,
     manageTokenExpiresAt,
     oscarDemographicNo: oscarDemographicNo ? String(oscarDemographicNo) : undefined,
+    pharmacy: pharmacyRecord ?? undefined,
   });
 
   if (!result) {
@@ -180,6 +194,15 @@ async function handleConfirm(
     patientFirstName: String(firstName),
     patientLastName: String(lastName),
     reason: oscarReason,
+  });
+
+  // Best-effort: set the chosen pharmacy as preferred on the OSCAR chart. Like the sync above,
+  // this runs after the booking is committed and can only annotate it.
+  await linkPharmacyToOscar({
+    appointmentId: result.appointmentId,
+    organizationId: clinic.id,
+    demographicNo: oscarDemographicNo ? String(oscarDemographicNo) : undefined,
+    pharmacy: pharmacyRecord,
   });
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://physician.health-assist.org";
@@ -347,5 +370,148 @@ async function syncAppointmentToOscar(args: {
   } catch (err) {
     console.error("[confirm] OSCAR sync unexpected error:", err);
     await setSync("FAILED", null, "Unexpected error during OSCAR sync");
+  }
+}
+
+type ResolvedPharmacy = NonNullable<Parameters<typeof confirmAppointment>[3]["pharmacy"]>;
+
+/**
+ * Turn the patient's selection into the record stored on the appointment.
+ *
+ * A DIRECTORY pick is re-read from pharmacy_directory by id: the client is trusted for the id
+ * alone, never for the name, address or fax. If that id isn't in our mirror (a stale tab after a
+ * sync deactivated the row), it degrades to FREE_TEXT rather than being dropped, so staff still
+ * see what the patient asked for.
+ *
+ * FREE_TEXT gets one chance to become a real link — an exact name+city match against the mirror —
+ * because "Shoppers Drug Mart / Burnaby" typed by hand is the same pharmacy as the directory row.
+ */
+async function resolvePharmacyForBooking(
+  orgId: string,
+  selection: PharmacySelection | null,
+): Promise<ResolvedPharmacy | null> {
+  if (!selection) return null;
+
+  if (selection.source === "DIRECTORY") {
+    const row = await getPharmacyFromDirectory(orgId, selection.pharmacyId);
+    if (row) {
+      return {
+        oscarPharmacyId: row.oscarPharmacyId,
+        name: row.name,
+        address: row.address ?? undefined,
+        city: row.city ?? undefined,
+        phone: row.phone ?? undefined,
+        fax: row.fax ?? undefined,
+        source: "DIRECTORY",
+      };
+    }
+    console.error(
+      `[confirm] pharmacy ${selection.pharmacyId} not in directory for org ${orgId} — storing as free text`,
+    );
+    return { name: selection.name, city: selection.city, source: "FREE_TEXT" };
+  }
+
+  const matched = await findPharmacyByNameCity(orgId, selection.name, selection.city);
+  if (matched) {
+    return {
+      oscarPharmacyId: matched.oscarPharmacyId,
+      name: matched.name,
+      address: matched.address ?? undefined,
+      city: matched.city ?? undefined,
+      phone: matched.phone ?? undefined,
+      fax: matched.fax ?? undefined,
+      source: "DIRECTORY",
+    };
+  }
+
+  return {
+    name: selection.name,
+    address: selection.address,
+    city: selection.city,
+    phone: selection.phone,
+    fax: selection.fax,
+    source: "FREE_TEXT",
+  };
+}
+
+/**
+ * Best-effort: make the chosen pharmacy the patient's preferred one in OSCAR, recording the
+ * outcome on the appointments row (pharmacy_link_status). Never throws — the booking is already
+ * committed, and a failure here only flags the row for staff.
+ *
+ * A free-text pharmacy is deliberately left SKIPPED unless PHARMACY_BRIDGE_ALLOW_UPSERT is on:
+ * creating rows in OSCAR's shared pharmacy table from anonymous public input would put a
+ * patient-supplied fax number in front of every clinician's Rx picker.
+ */
+async function linkPharmacyToOscar(args: {
+  appointmentId: string;
+  organizationId: string;
+  demographicNo?: string;
+  pharmacy: ResolvedPharmacy | null;
+}): Promise<void> {
+  if (!args.pharmacy) return; // No pharmacy chosen — leave the status NULL, make no call.
+
+  const setPharmacyLink = async (
+    status: "LINKED" | "FAILED" | "SKIPPED",
+    pharmacyId: string | null,
+    err: string | null,
+  ) => {
+    try {
+      await query(
+        `UPDATE appointments
+         SET pharmacy_link_status = $1,
+             pharmacy_oscar_id = COALESCE($2, pharmacy_oscar_id),
+             pharmacy_link_error = $3
+         WHERE id = $4`,
+        [status, pharmacyId, err, args.appointmentId],
+      );
+    } catch {
+      // Flag write is itself best-effort.
+    }
+  };
+
+  try {
+    if (!args.demographicNo || !/^\d+$/.test(args.demographicNo)) {
+      await setPharmacyLink("SKIPPED", null, "No OSCAR patient (demographic) number");
+      return;
+    }
+
+    let pharmacyId = args.pharmacy.oscarPharmacyId ?? null;
+
+    if (!pharmacyId) {
+      if (!isPharmacyUpsertEnabled()) {
+        await setPharmacyLink("SKIPPED", null, "Free-text pharmacy — staff must link manually");
+        return;
+      }
+      const created = await upsertOscarPharmacy(args.organizationId, {
+        name: args.pharmacy.name,
+        address: args.pharmacy.address,
+        city: args.pharmacy.city,
+        phone: args.pharmacy.phone,
+        fax: args.pharmacy.fax,
+      });
+      if ("error" in created) {
+        await setPharmacyLink("FAILED", null, `Create pharmacy: ${created.error.slice(0, 200)}`);
+        return;
+      }
+      pharmacyId = created.pharmacyId;
+    }
+
+    const linked = await linkOscarPharmacy(args.organizationId, {
+      demographicNo: args.demographicNo,
+      pharmacyId,
+    });
+    if ("error" in linked) {
+      console.error(
+        `[confirm] pharmacy link failed for appointment ${args.appointmentId}: ${linked.error}`,
+      );
+      await setPharmacyLink("FAILED", pharmacyId, `Bridge ${linked.status}: ${linked.error.slice(0, 200)}`);
+      return;
+    }
+
+    await setPharmacyLink("LINKED", pharmacyId, null);
+  } catch (err) {
+    console.error("[confirm] pharmacy link unexpected error:", err);
+    await setPharmacyLink("FAILED", null, "Unexpected error during pharmacy link");
   }
 }

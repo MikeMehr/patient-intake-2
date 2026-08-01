@@ -21,6 +21,7 @@ const forbiddenKeys = [
   "DATABASE_URL",
   "RESEND_API_KEY",
   "SESSION_SECRET",
+  "OSCAR_PHARMACY_BRIDGE_SECRET",
 ];
 
 let hasError = false;

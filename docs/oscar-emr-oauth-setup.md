@@ -129,3 +129,77 @@ UPDATE ServiceAccessToken SET providerNo = '100' WHERE clientId = <id>;
 | 401 "Not authorized" after successful handshake | `ServiceAccessToken.providerNo` is NULL (step 4). |
 | 500 "No message body writer has been found for response class ..." | `JacksonJsonProvider` missing from `/services` providers (step 1, last bean). |
 | 401 on `/oscar/ws/rs/...` | That endpoint uses OSCAR session auth, not OAuth. Call `/ws/services/` instead. |
+
+## Pharmacy bridge
+
+Lets a patient pick their preferred pharmacy during online booking and have it set on their OSCAR
+chart, so it shows up in the Rx module instead of being re-asked at the visit.
+
+### Why this doesn't use OAuth REST
+
+OSCAR publishes no pharmacy endpoint. `PharmacyService` and `RxWebService` are both listed in
+`WEB-INF/classes/applicationContextREST.xml`, but neither appears in the live WADL:
+
+```bash
+curl -s 'http://127.0.0.1:8080/oscar/ws/services?_wadl' | grep -o 'resource path="[^"]*"' | sort -u
+```
+
+Only `demographics`, `schedule`, `provider` and `status` are actually published, and even if
+`RxWebService` were reachable it exposes a *read* (`/rx/pharmacy/{demographicNo}`) and no write. The
+only writer of the patient↔pharmacy link is the Struts action `RxManagePharmacyAction.setPreferred`,
+which requires a logged-in OSCAR session.
+
+A JSP wasn't viable either: every webapp path is gated by `CRFilter` (`cr.filter.ignore` in
+`WEB-INF/web.xml`), which redirects a session-less request to `logout.jsp` before the JSP runs.
+Opening a hole there means editing OSCAR's own auth config, restarting Tomcat, and redoing both
+after every WAR redeploy.
+
+So the clinic runs a small standalone service beside OSCAR. Full server-side install notes,
+including the nginx `location =` exemption and its rollback, are in
+`infrastructure/oscar-patches/README.md`.
+
+### App-side environment
+
+| Variable | Required | Purpose |
+|---|---|---|
+| `OSCAR_PHARMACY_BRIDGE_SECRET` | yes | Shared secret sent as `X-MyMD-Pharmacy-Secret`. Must equal `bridge.secret` in `/var/lib/OscarDocument/oscar/mymd_pharmacy_bridge.properties` on the OSCAR box. Never `NEXT_PUBLIC_`-prefixed; it is in `check-env-no-secrets.js`'s forbidden list. |
+| `OSCAR_PHARMACY_BRIDGE_URL` | no | Full URL override. Default is the origin of `emr_connections.base_url` + `/mymd/pharmacy-bridge`. |
+| `PHARMACY_DIRECTORY_MAX_AGE_DAYS` | no | How stale the local directory mirror may get before a lazy refresh, default 30. |
+| `PHARMACY_BRIDGE_ALLOW_UPSERT` | no | Default off. See below. |
+| `CRON_SECRET` | existing | Reused by `POST /api/cron/pharmacy-directory-sync` (weekly). |
+
+Without `OSCAR_PHARMACY_BRIDGE_SECRET` the feature degrades quietly: the picker offers free-text
+entry, bookings record the pharmacy locally, and the link is marked `SKIPPED`. Nothing errors.
+
+### How it hangs together
+
+1. **Mirror.** `POST /api/org/pharmacy-directory/sync` (org admin, also on the Booking Settings page)
+   pulls `op=list` and mirrors ~1516 pharmacies into `pharmacy_directory`, org-scoped. Refreshed
+   weekly by cron and lazily by the search route when the mirror is missing or stale.
+2. **Pick.** `PharmacyPicker` searches the mirror through
+   `GET /api/booking/[clinicSlug]/pharmacy-search` (gated by the booking hold cookie). Anything not
+   in the list falls back to free text.
+3. **Store.** The choice goes to `POST .../confirm`, which re-reads a directory pick from
+   `pharmacy_directory` **by id** and discards the client's name/address/fax — that fax is where
+   prescriptions get sent. It is persisted in the same CTE that creates the booking.
+4. **Link.** After the booking is committed, `linkPharmacyToOscar` calls `op=link` and records
+   `pharmacy_link_status` on the appointment. It can never throw, so a bridge outage costs at most
+   the 8 s call timeout and the patient still gets a normal confirmation.
+
+### Free text is not written back to OSCAR
+
+`op=upsert` exists but the app leaves it off. Creating rows in OSCAR's shared `pharmacyInfo` table
+from anonymous public booking input would let a stranger add a pharmacy — including the fax number
+prescriptions are sent to — that OSCAR then offers to every clinician. A free-text pharmacy is stored
+on the booking, marked `SKIPPED`, and surfaced on the Appointments page as "Add manually". Set
+`PHARMACY_BRIDGE_ALLOW_UPSERT=true` only after reviewing how much free text actually arrives.
+
+### Error → cause quick reference
+
+| Symptom | Likely cause |
+|---|---|
+| `Pharmacy bridge is not configured for this clinic` | `OSCAR_PHARMACY_BRIDGE_SECRET` unset, or the org has no `emr_connections` row. |
+| Sync returns 401 | Secret mismatch between the app and `mymd_pharmacy_bridge.properties`. |
+| Sync returns 503 | `pharmacy-bridge.service` down, or the nginx `location =` exemption missing. |
+| "Refusing to deactivate" in the logs | The bridge answered 200 with an empty list. Deliberate guard — one bad response must not empty the picker. |
+| Every booking shows "Add manually" | The directory has never synced. Run it from Booking Settings. |
