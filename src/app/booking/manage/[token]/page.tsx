@@ -2,6 +2,13 @@
 
 import { use, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import {
+  MODALITY_ICON,
+  MODALITY_LABEL,
+  MODALITY_NOTE,
+  normalizeModality,
+  type AppointmentModality,
+} from "@/lib/appointment-modality";
 
 type Appointment = {
   id: string;
@@ -15,6 +22,7 @@ type Appointment = {
   email: string;
   coverageType: string;
   cancelledAt: string | null;
+  appointmentModality: AppointmentModality;
 };
 
 export default function ManageAppointmentPage({
@@ -102,6 +110,7 @@ export default function ManageAppointmentPage({
   }
 
   const isCancelled = !!appointment.cancelledAt || cancelled;
+  const modality = normalizeModality(appointment.appointmentModality);
 
   return (
     <main className="min-h-screen bg-gray-50 flex items-center justify-center px-4 py-12">
@@ -127,13 +136,19 @@ export default function ManageAppointmentPage({
             <h2 className="text-2xl font-bold text-gray-900 mb-1">Your Appointment</h2>
             <p className="text-gray-500 text-sm mb-6">Manage or cancel your booking below.</p>
 
-            <div className="space-y-3 mb-8">
+            <div className="space-y-3 mb-4">
               <Row label="Patient" value={`${appointment.firstName} ${appointment.lastName}`} />
               {appointment.physicianOnlineBookingEnabled && (
                 <Row label="Physician" value={`Dr. ${appointment.physicianFirstName} ${appointment.physicianLastName}`} />
               )}
               <Row label="Date & time" value={formatDateTime(appointment.slotStartTime)} />
+              <Row label="Format" value={MODALITY_LABEL[modality]} />
               <Row label="Coverage" value={appointment.coverageType.replace(/_/g, " ")} />
+            </div>
+
+            <div className="flex items-start gap-2 bg-blue-50 border border-blue-100 rounded-lg p-3 mb-8">
+              <span aria-hidden className="text-base leading-none mt-0.5">{MODALITY_ICON[modality]}</span>
+              <p className="text-xs text-blue-800">{MODALITY_NOTE[modality]}</p>
             </div>
 
             {error && (

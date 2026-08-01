@@ -4,6 +4,7 @@
 
 import { query } from "@/lib/db";
 import { encryptString, decryptString } from "@/lib/encrypted-field";
+import { type AppointmentModality, normalizeModality } from "@/lib/appointment-modality";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -19,6 +20,7 @@ export type BookingSettings = {
   slotIntervalMinutes: number;
   healthCardRequired: boolean;
   showBlockedSlots: boolean;
+  appointmentModality: AppointmentModality;
   cancellationPolicy: string | null;
   bookingInstructions: string | null;
   emailFooter: string | null;
@@ -102,6 +104,7 @@ export async function getClinicBySlug(slug: string): Promise<ClinicInfo | null> 
     slot_interval_minutes: number | null;
     health_card_required: boolean | null;
     show_blocked_slots: boolean | null;
+    appointment_modality: string | null;
     cancellation_policy: string | null;
     booking_instructions: string | null;
     email_footer: string | null;
@@ -119,6 +122,7 @@ export async function getClinicBySlug(slug: string): Promise<ClinicInfo | null> 
        bs.slot_interval_minutes,
        bs.health_card_required,
        bs.show_blocked_slots,
+       bs.appointment_modality,
        bs.cancellation_policy,
        bs.booking_instructions,
        bs.email_footer,
@@ -153,6 +157,7 @@ export async function getClinicBySlug(slug: string): Promise<ClinicInfo | null> 
           slotIntervalMinutes: row.slot_interval_minutes ?? 15,
           healthCardRequired: row.health_card_required ?? false,
           showBlockedSlots: row.show_blocked_slots ?? false,
+          appointmentModality: normalizeModality(row.appointment_modality),
           cancellationPolicy: row.cancellation_policy,
           bookingInstructions: row.booking_instructions,
           emailFooter: row.email_footer,
@@ -214,6 +219,7 @@ export async function getBookingSettingsByOrgId(orgId: string): Promise<BookingS
     slot_interval_minutes: number;
     health_card_required: boolean;
     show_blocked_slots: boolean;
+    appointment_modality: string | null;
     cancellation_policy: string | null;
     booking_instructions: string | null;
     email_footer: string | null;
@@ -224,7 +230,7 @@ export async function getBookingSettingsByOrgId(orgId: string): Promise<BookingS
     `SELECT id, online_booking_enabled,
             public_booking_start::TEXT, public_booking_end::TEXT,
             enforce_booking_window, slot_interval_minutes,
-            health_card_required, show_blocked_slots,
+            health_card_required, show_blocked_slots, appointment_modality,
             cancellation_policy, booking_instructions, email_footer, timezone,
             self_serve_interview_enabled, self_serve_interview_physician_id
      FROM booking_settings WHERE organization_id = $1`,
@@ -244,6 +250,7 @@ export async function getBookingSettingsByOrgId(orgId: string): Promise<BookingS
     slotIntervalMinutes: row.slot_interval_minutes,
     healthCardRequired: row.health_card_required,
     showBlockedSlots: row.show_blocked_slots,
+    appointmentModality: normalizeModality(row.appointment_modality),
     cancellationPolicy: row.cancellation_policy,
     bookingInstructions: row.booking_instructions,
     emailFooter: row.email_footer,
@@ -262,12 +269,13 @@ export async function upsertBookingSettings(
        public_booking_end, enforce_booking_window, slot_interval_minutes,
        health_card_required, show_blocked_slots, cancellation_policy,
        booking_instructions, timezone, email_footer,
-       self_serve_interview_enabled, self_serve_interview_physician_id, updated_at)
+       self_serve_interview_enabled, self_serve_interview_physician_id,
+       appointment_modality, updated_at)
      VALUES ($1,
        COALESCE($2, FALSE), COALESCE($3, '07:00')::TIME, COALESCE($4, '22:00')::TIME,
        COALESCE($5, TRUE), COALESCE($6, 15), COALESCE($7, FALSE), COALESCE($8, FALSE),
        $9, $10, COALESCE($11, 'America/Vancouver'), $12,
-       COALESCE($13, FALSE), $14, NOW())
+       COALESCE($13, FALSE), $14, COALESCE($15, 'PHONE'), NOW())
      ON CONFLICT (organization_id) DO UPDATE SET
        online_booking_enabled  = COALESCE($2, booking_settings.online_booking_enabled),
        public_booking_start    = COALESCE($3::TIME, booking_settings.public_booking_start),
@@ -282,6 +290,7 @@ export async function upsertBookingSettings(
        email_footer            = COALESCE($12, booking_settings.email_footer),
        self_serve_interview_enabled       = COALESCE($13, booking_settings.self_serve_interview_enabled),
        self_serve_interview_physician_id  = COALESCE($14, booking_settings.self_serve_interview_physician_id),
+       appointment_modality    = COALESCE($15, booking_settings.appointment_modality),
        updated_at              = NOW()`,
     [
       orgId,
@@ -298,6 +307,7 @@ export async function upsertBookingSettings(
       updates.emailFooter ?? null,
       updates.selfServeInterviewEnabled ?? null,
       updates.selfServeInterviewPhysicianId ?? null,
+      updates.appointmentModality ?? null,
     ],
   );
 }

@@ -1,4 +1,10 @@
 import { Resend } from "resend";
+import {
+  MODALITY_LABEL,
+  MODALITY_NOTE,
+  normalizeModality,
+  type AppointmentModality,
+} from "@/lib/appointment-modality";
 
 const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
 
@@ -90,6 +96,16 @@ function renderPhysicianRow(physicianName?: string | null): string {
               <td style="padding:8px 0;font-weight:600">${name}</td></tr>`;
 }
 
+/**
+ * Renders the appointment format (phone / video / in-person) as a table row, so
+ * the patient knows from the confirmation alone what to expect at that time.
+ */
+function renderModalityRow(modality: AppointmentModality): string {
+  return `
+          <tr><td style="padding:8px 0;color:#555">Format</td>
+              <td style="padding:8px 0;font-weight:600">${MODALITY_LABEL[modality]}</td></tr>`;
+}
+
 function formatDateTime(isoString: string, timezone = "America/Vancouver"): string {
   try {
     return new Intl.DateTimeFormat("en-CA", {
@@ -118,11 +134,13 @@ export async function sendBookingConfirmation(opts: {
   manageUrl: string;
   emailFooter?: string | null;
   clinicEmail?: string | null;
+  appointmentModality?: AppointmentModality | null;
 }): Promise<void> {
   if (!resend || process.env.HIPAA_MODE === "true") return;
 
   const dateLabel = formatDateTime(opts.slotStartTime, opts.timezone);
   const sender = resolveSender(opts.clinicName, opts.clinicEmail);
+  const modality = normalizeModality(opts.appointmentModality);
 
   await resend.emails.send({
     from: sender.from,
@@ -131,15 +149,19 @@ export async function sendBookingConfirmation(opts: {
     subject: `Appointment Confirmed — ${opts.clinicName}`,
     html: `
       <div style="font-family:sans-serif;max-width:560px;margin:0 auto">
-        <h2 style="color:#1a1a2e">Your appointment is confirmed</h2>
+        <h2 style="color:#1a1a2e">Your ${MODALITY_LABEL[modality].toLowerCase()} is confirmed</h2>
         <p>Hi ${opts.patientFirstName},</p>
         <p>Your appointment has been booked successfully.</p>
         <table style="border-collapse:collapse;width:100%;margin:16px 0">
           <tr><td style="padding:8px 0;color:#555;width:140px">Clinic</td>
               <td style="padding:8px 0;font-weight:600">${opts.clinicName}</td></tr>${renderPhysicianRow(opts.physicianName)}
           <tr><td style="padding:8px 0;color:#555">Date &amp; time</td>
-              <td style="padding:8px 0;font-weight:600">${dateLabel}</td></tr>
+              <td style="padding:8px 0;font-weight:600">${dateLabel}</td></tr>${renderModalityRow(modality)}
         </table>
+        <div style="background:#eff6ff;border-left:4px solid #2563eb;border-radius:6px;padding:12px 16px">
+          <p style="margin:0 0 4px;font-size:13px;font-weight:600;color:#1e40af">${MODALITY_LABEL[modality]}</p>
+          <p style="margin:0;color:#1e3a5f;line-height:1.5">${MODALITY_NOTE[modality]}</p>
+        </div>
         <p style="margin-top:24px">
           <a href="${opts.manageUrl}"
              style="background:#2563eb;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;font-weight:600">

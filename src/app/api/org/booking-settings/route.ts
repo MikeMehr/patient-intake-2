@@ -6,6 +6,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentSession } from "@/lib/auth";
 import { getBookingSettingsByOrgId, upsertBookingSettings } from "@/lib/booking-store";
+import { normalizeModality } from "@/lib/appointment-modality";
 import { query } from "@/lib/db";
 import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
 
@@ -154,6 +155,10 @@ export async function PATCH(request: NextRequest) {
       slotIntervalMinutes: body.slotIntervalMinutes,
       healthCardRequired: body.healthCardRequired,
       showBlockedSlots: body.showBlockedSlots,
+      appointmentModality:
+        body.appointmentModality === undefined
+          ? undefined
+          : normalizeModality(body.appointmentModality),
       cancellationPolicy: body.cancellationPolicy,
       bookingInstructions: body.bookingInstructions,
       emailFooter: body.emailFooter,

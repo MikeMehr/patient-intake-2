@@ -2,6 +2,13 @@
 
 import { use, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import {
+  MODALITY_ICON,
+  MODALITY_LABEL,
+  MODALITY_NOTE,
+  normalizeModality,
+  type AppointmentModality,
+} from "@/lib/appointment-modality";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -33,6 +40,7 @@ type ClinicSettings = {
   healthCardRequired: boolean;
   timezone: string;
   cancellationPolicy: string | null;
+  appointmentModality: AppointmentModality;
 };
 
 type Step =
@@ -301,8 +309,21 @@ export default function BookingConfirmPage({
   }
 
   // ---------------------------------------------------------------------------
-  // Render: success
+  // Render
   // ---------------------------------------------------------------------------
+
+  const modality = normalizeModality(settings?.appointmentModality);
+
+  /** Format banner — patients must never be unsure whether to expect a call. */
+  const modalityBanner = (
+    <div className="flex items-start gap-2 bg-blue-50 border border-blue-100 rounded-lg p-3 text-left">
+      <span aria-hidden className="text-base leading-none mt-0.5">{MODALITY_ICON[modality]}</span>
+      <div>
+        <p className="text-sm font-semibold text-blue-900">{MODALITY_LABEL[modality]}</p>
+        <p className="text-xs text-blue-800 mt-0.5">{MODALITY_NOTE[modality]}</p>
+      </div>
+    </div>
+  );
 
   if (success) {
     return (
@@ -312,7 +333,8 @@ export default function BookingConfirmPage({
           <h2 className="text-2xl font-bold text-gray-900 mb-2">Appointment Confirmed</h2>
           <p className="text-gray-600 mb-1">{clinicName}</p>
           <p className="text-gray-600 mb-1">{physicianName}</p>
-          <p className="font-semibold text-gray-800 mb-6">{formatDateTime(startTime)}</p>
+          <p className="font-semibold text-gray-800 mb-4">{formatDateTime(startTime)}</p>
+          <div className="mb-6">{modalityBanner}</div>
           <p className="text-sm text-gray-500 mb-6">
             A confirmation email has been sent. Use the link below to view or cancel your appointment.
           </p>
@@ -358,6 +380,10 @@ export default function BookingConfirmPage({
       {startTime && (
         <p className="text-blue-800 font-medium text-sm mt-1">{formatDateTime(startTime)}</p>
       )}
+      <p className="text-blue-800 text-sm mt-1">
+        <span aria-hidden>{MODALITY_ICON[modality]}</span> {MODALITY_LABEL[modality]} —{" "}
+        <span className="text-blue-700">{MODALITY_NOTE[modality]}</span>
+      </p>
       <p className="text-xs text-blue-500 mt-2">
         Your selected time is held for 5 minutes. Please complete this form promptly.
       </p>

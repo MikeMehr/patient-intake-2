@@ -2,6 +2,13 @@
 
 import { useEffect, useState, use } from "react";
 import { useRouter } from "next/navigation";
+import {
+  MODALITY_ICON,
+  MODALITY_LABEL,
+  MODALITY_NOTE,
+  normalizeModality,
+  type AppointmentModality,
+} from "@/lib/appointment-modality";
 
 type Physician = {
   id: string;
@@ -26,6 +33,7 @@ type ClinicSettings = {
   cancellationPolicy: string | null;
   bookingInstructions: string | null;
   healthCardRequired: boolean;
+  appointmentModality: AppointmentModality;
 };
 
 type ClinicInfo = {
@@ -201,6 +209,7 @@ export default function ClinicBookingPage({
   }
 
   const tz = settings?.timezone ?? "America/Vancouver";
+  const modality = normalizeModality(settings?.appointmentModality);
   const grouped = groupByDate(slots.filter((s) => s.status === "OPEN" || (settings?.showBlockedSlots && s.status === "BLOCKED")), tz);
   const dates = Object.keys(grouped).sort();
 
@@ -219,6 +228,13 @@ export default function ClinicBookingPage({
               <h1 className="text-2xl font-bold text-gray-900">{clinic?.name}</h1>
             );
           })()}
+          <div className="mt-2 flex items-start gap-2 bg-blue-50 border border-blue-100 rounded-lg p-3">
+            <span aria-hidden className="text-base leading-none mt-0.5">{MODALITY_ICON[modality]}</span>
+            <div>
+              <p className="text-sm font-semibold text-blue-900">{MODALITY_LABEL[modality]}</p>
+              <p className="text-xs text-blue-800 mt-0.5">{MODALITY_NOTE[modality]}</p>
+            </div>
+          </div>
           {settings?.bookingInstructions && (
             <p className="text-gray-600 text-sm mt-2 bg-blue-50 border border-blue-100 rounded-lg p-3">
               {settings.bookingInstructions}

@@ -198,6 +198,7 @@ async function handleConfirm(
       manageUrl,
       emailFooter: clinic.settings.emailFooter,
       clinicEmail: clinic.email,
+      appointmentModality: clinic.settings.appointmentModality,
     });
   } catch {
     // Email failure is non-fatal — appointment is already committed
