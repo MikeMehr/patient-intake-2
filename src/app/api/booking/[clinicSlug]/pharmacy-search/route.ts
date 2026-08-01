@@ -12,8 +12,7 @@
  * showing the patient an empty dropdown or an error about a sync they know nothing about.
  */
 
-import { NextRequest, NextResponse } from "next/server";
-import { after } from "next/server";
+import { after, NextRequest, NextResponse } from "next/server";
 import { getClinicBySlug } from "@/lib/booking-store";
 import { query } from "@/lib/db";
 import {
