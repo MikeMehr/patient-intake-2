@@ -115,6 +115,52 @@ export default function PharmacyPicker({ clinicSlug, value, onChange }: Props) {
     setManualCity("");
   }
 
+  // Checked before the selected view on purpose: typing in manual mode sets `value` on every
+  // keystroke, and the selected view would otherwise unmount these inputs mid-word.
+  if (manual) {
+    return (
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">
+          Preferred pharmacy (optional)
+        </label>
+        {/* Committed on change, not on blur: submitting with Enter from inside the input doesn't
+            reliably fire blur first, and the patient's answer would be silently dropped. */}
+        <input
+          type="text"
+          placeholder="Pharmacy name"
+          value={manualName}
+          onChange={(e) => {
+            setManualName(e.target.value);
+            commitManual(e.target.value, manualCity);
+          }}
+          className={INPUT_CLASS}
+        />
+        <input
+          type="text"
+          placeholder="City"
+          value={manualCity}
+          onChange={(e) => {
+            setManualCity(e.target.value);
+            commitManual(manualName, e.target.value);
+          }}
+          className={`${INPUT_CLASS} mt-2`}
+        />
+        <button
+          type="button"
+          onClick={() => {
+            setManual(false);
+            setManualName("");
+            setManualCity("");
+            onChange(null);
+          }}
+          className="text-xs text-blue-600 underline mt-1"
+        >
+          Search the pharmacy list instead
+        </button>
+      </div>
+    );
+  }
+
   if (value) {
     return (
       <div>
@@ -144,44 +190,6 @@ export default function PharmacyPicker({ clinicSlug, value, onChange }: Props) {
             Change
           </button>
         </div>
-      </div>
-    );
-  }
-
-  if (manual) {
-    return (
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">
-          Preferred pharmacy (optional)
-        </label>
-        <input
-          type="text"
-          placeholder="Pharmacy name"
-          value={manualName}
-          onChange={(e) => setManualName(e.target.value)}
-          onBlur={() => commitManual(manualName, manualCity)}
-          className={INPUT_CLASS}
-        />
-        <input
-          type="text"
-          placeholder="City"
-          value={manualCity}
-          onChange={(e) => setManualCity(e.target.value)}
-          onBlur={() => commitManual(manualName, manualCity)}
-          className={`${INPUT_CLASS} mt-2`}
-        />
-        <button
-          type="button"
-          onClick={() => {
-            setManual(false);
-            setManualName("");
-            setManualCity("");
-            onChange(null);
-          }}
-          className="text-xs text-blue-600 underline mt-1"
-        >
-          Search the pharmacy list instead
-        </button>
       </div>
     );
   }
