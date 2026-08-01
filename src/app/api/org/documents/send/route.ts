@@ -14,6 +14,7 @@ import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
 import { resolveAppUrl } from "@/lib/app-url";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const MAX_NOTE_LENGTH = 500;
 
 export async function POST(request: NextRequest) {
   const requestId = getRequestId(request.headers);
@@ -43,6 +44,8 @@ export async function POST(request: NextRequest) {
     const body = await request.json().catch(() => ({}));
     const patientName = (body?.patientName as string | undefined)?.trim();
     const patientEmail = (body?.patientEmail as string | undefined)?.trim();
+    // Optional: what the clinic is asking for, e.g. "photo of the eyelid swelling".
+    const requestNote = (body?.requestNote as string | undefined)?.trim() || null;
 
     if (!patientName || !patientEmail) {
       status = 400;
@@ -57,6 +60,16 @@ export async function POST(request: NextRequest) {
     if (!EMAIL_REGEX.test(patientEmail)) {
       status = 400;
       const res = NextResponse.json({ error: "Invalid patient email address." }, { status });
+      logRequestMeta("/api/org/documents/send", requestId, status, Date.now() - started);
+      return res;
+    }
+
+    if (requestNote && requestNote.length > MAX_NOTE_LENGTH) {
+      status = 400;
+      const res = NextResponse.json(
+        { error: `Please keep the request under ${MAX_NOTE_LENGTH} characters.` },
+        { status },
+      );
       logRequestMeta("/api/org/documents/send", requestId, status, Date.now() - started);
       return res;
     }
@@ -86,10 +99,19 @@ export async function POST(request: NextRequest) {
 
     const inserted = await query<{ id: string }>(
       `INSERT INTO patient_document_requests
-         (organization_id, created_by_user_id, patient_name, patient_email, token_hash, expires_at)
-       VALUES ($1, $2, $3, $4, $5, $6)
+         (organization_id, created_by_user_id, patient_name, patient_email, token_hash, expires_at,
+          request_note)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
        RETURNING id`,
-      [session.organizationId, session.userId, patientName, patientEmail, hash, expiresAt],
+      [
+        session.organizationId,
+        session.userId,
+        patientName,
+        patientEmail,
+        hash,
+        expiresAt,
+        requestNote,
+      ],
     );
 
     const uploadUrl = `${resolveAppUrl(request)}/upload/${raw}`;
@@ -100,6 +122,7 @@ export async function POST(request: NextRequest) {
       clinicName: org.name,
       uploadUrl,
       expiresAt,
+      requestNote,
       emailFooter: org.email_footer,
       clinicEmail: org.email,
     });

@@ -23,6 +23,7 @@ interface RequestRow {
   id: string;
   patient_name: string;
   patient_email: string;
+  request_note: string | null;
   expires_at: string;
   revoked_at: string | null;
   completed_at: string | null;
@@ -44,7 +45,8 @@ export async function GET(request: NextRequest) {
     }
 
     const requestsResult = await query<RequestRow>(
-      `SELECT id, patient_name, patient_email, expires_at, revoked_at, completed_at, created_at
+      `SELECT id, patient_name, patient_email, request_note, expires_at, revoked_at,
+              completed_at, created_at
        FROM patient_document_requests
        WHERE organization_id = $1
        ORDER BY created_at DESC
@@ -83,6 +85,7 @@ export async function GET(request: NextRequest) {
         id: r.id,
         patientName: r.patient_name,
         patientEmail: r.patient_email,
+        requestNote: r.request_note,
         status: statusLabel,
         expiresAt: r.expires_at,
         completedAt: r.completed_at,

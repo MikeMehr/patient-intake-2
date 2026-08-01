@@ -9,6 +9,7 @@ interface Validity {
   valid: boolean;
   state?: "valid" | "revoked" | "expired" | "completed";
   patientName?: string;
+  requestNote?: string | null;
   clinicName?: string;
 }
 
@@ -143,10 +144,26 @@ export default function UploadPage({ params }: { params: Promise<{ token: string
 
   return shell(
     <>
-      <h1 className="text-xl font-semibold text-slate-900">Upload your documents</h1>
+      <h1 className="text-xl font-semibold text-slate-900">
+        Upload your documents <span className="font-normal text-slate-500">(optional)</span>
+      </h1>
       <p className="text-sm text-slate-600 mt-1">
         {validity.clinicName} has asked you to securely upload one or more documents
         (photo ID, images, or PDFs).
+      </p>
+
+      {validity.requestNote?.trim() && (
+        <div className="mt-4 rounded-lg bg-blue-50 border border-blue-200 px-4 py-3">
+          <p className="text-xs font-semibold text-blue-800">What the clinic needs</p>
+          <p className="mt-1 text-sm text-blue-900 whitespace-pre-line">
+            {validity.requestNote.trim()}
+          </p>
+        </div>
+      )}
+
+      <p className="mt-3 text-xs text-slate-500">
+        This is optional — if you don&apos;t have these on hand right now, you can come back
+        to this link any time before it expires.
       </p>
 
       <div

@@ -23,6 +23,7 @@ interface RequestRow {
   id: string;
   organization_id: string;
   patient_name: string;
+  request_note: string | null;
   expires_at: string;
   revoked_at: string | null;
   completed_at: string | null;
@@ -31,7 +32,7 @@ interface RequestRow {
 async function loadRequest(rawToken: string): Promise<RequestRow | null> {
   const hash = hashDocumentToken(rawToken);
   const result = await query<RequestRow>(
-    `SELECT id, organization_id, patient_name, expires_at, revoked_at, completed_at
+    `SELECT id, organization_id, patient_name, request_note, expires_at, revoked_at, completed_at
      FROM patient_document_requests
      WHERE token_hash = $1`,
     [hash],
@@ -84,6 +85,7 @@ export async function GET(
       valid: state === "valid",
       state,
       patientName: req.patient_name,
+      requestNote: req.request_note,
       clinicName: orgResult.rows[0]?.name ?? "the clinic",
     });
   } catch (error) {

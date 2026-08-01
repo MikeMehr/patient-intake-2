@@ -16,6 +16,7 @@ interface DocRequest {
   id: string;
   patientName: string;
   patientEmail: string;
+  requestNote: string | null;
   status: "completed" | "revoked" | "expired" | "pending";
   expiresAt: string;
   completedAt: string | null;
@@ -142,6 +143,7 @@ export default function OrgDocumentsPage() {
   // Request documents (inbound)
   const [patientName, setPatientName] = useState("");
   const [patientEmail, setPatientEmail] = useState("");
+  const [requestNote, setRequestNote] = useState("");
   const [sending, setSending] = useState(false);
 
   // Send files (outbound)
@@ -191,7 +193,7 @@ export default function OrgDocumentsPage() {
       const res = await fetch("/api/org/documents/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ patientName, patientEmail }),
+        body: JSON.stringify({ patientName, patientEmail, requestNote: requestNote || undefined }),
       });
       const data = await res.json().catch(() => ({}));
       if (res.status === 401) {
@@ -210,6 +212,7 @@ export default function OrgDocumentsPage() {
       );
       setPatientName("");
       setPatientEmail("");
+      setRequestNote("");
       await load();
     } catch {
       setError("Could not send the request.");
@@ -417,11 +420,25 @@ export default function OrgDocumentsPage() {
                 placeholder="jane@example.com"
               />
             </div>
-            <div className="sm:col-span-1 flex items-end">
+            <div className="sm:col-span-3">
+              <label className="block text-sm font-medium text-slate-600 mb-1">
+                What are you requesting?{" "}
+                <span className="font-normal text-slate-400">(optional)</span>
+              </label>
+              <textarea
+                rows={2}
+                maxLength={500}
+                value={requestNote}
+                onChange={(e) => setRequestNote(e.target.value)}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-400 focus:outline-none resize-y"
+                placeholder="Photo of the eyelid swelling, or a PDF of your last lab results"
+              />
+            </div>
+            <div className="sm:col-span-3 flex sm:justify-end">
               <button
                 type="submit"
                 disabled={sending}
-                className="w-full bg-slate-900 text-white text-sm font-medium rounded-lg px-4 py-2 hover:bg-slate-800 disabled:opacity-50 transition"
+                className="w-full sm:w-auto bg-slate-900 text-white text-sm font-medium rounded-lg px-6 py-2 hover:bg-slate-800 disabled:opacity-50 transition"
               >
                 {sending ? "Sending…" : "Send secure link"}
               </button>
@@ -429,6 +446,7 @@ export default function OrgDocumentsPage() {
           </form>
           <p className="text-xs text-slate-400 mt-3">
             The patient gets a one-time link (expires in 7 days) to upload images or PDFs.
+            Anything you write above is shown in the email and on the upload page.
           </p>
         </div>
 
@@ -693,6 +711,14 @@ export default function OrgDocumentsPage() {
                         <RequestBadge status={r.status} />
                       </div>
                       <p className="text-xs text-slate-500 mt-0.5">{r.patientEmail}</p>
+                      {r.requestNote?.trim() && (
+                        <p
+                          className="text-xs text-slate-600 mt-1 line-clamp-2"
+                          title={r.requestNote}
+                        >
+                          Asked for: {r.requestNote}
+                        </p>
+                      )}
                       <p className="text-xs text-slate-400 mt-0.5">
                         Sent {formatDT(r.createdAt)}
                         {r.status === "pending" && ` · expires ${formatDT(r.expiresAt)}`}

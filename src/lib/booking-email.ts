@@ -53,6 +53,18 @@ function resolveSender(
 }
 
 /**
+ * Escapes author-supplied text for safe interpolation into an HTML email, and
+ * preserves the author's line breaks.
+ */
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\n/g, "<br>");
+}
+
+/**
  * Renders the clinic's configured plain-text email footer as a safe HTML block.
  * Escapes HTML and preserves the author's line breaks. Returns "" when no footer
  * is configured so callers can concatenate unconditionally.
@@ -60,11 +72,7 @@ function resolveSender(
 function renderFooter(footer?: string | null): string {
   const text = (footer ?? "").trim();
   if (!text) return "";
-  const escaped = text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/\n/g, "<br>");
+  const escaped = escapeHtml(text);
   return `
         <hr style="border:none;border-top:1px solid #e5e7eb;margin:24px 0" />
         <div style="font-size:12px;color:#888;line-height:1.5">${escaped}</div>`;
@@ -152,6 +160,7 @@ export async function sendDocumentRequestEmail(opts: {
   clinicName: string;
   uploadUrl: string;
   expiresAt: Date;
+  requestNote?: string | null;
   emailFooter?: string | null;
   clinicEmail?: string | null;
 }): Promise<{ sent: boolean; error?: string }> {
@@ -163,6 +172,17 @@ export async function sendDocumentRequestEmail(opts: {
   const firstName = (opts.patientName || "").trim().split(/\s+/)[0] || "there";
   const expiryLabel = formatDateTime(opts.expiresAt.toISOString());
 
+  // What the clinic actually asked for, when they specified it. Author-supplied
+  // free text, so escape it — the rest of this template interpolates raw.
+  const note = (opts.requestNote ?? "").trim();
+  const noteBlock = note
+    ? `
+        <div style="margin-top:20px;background:#eff6ff;border-left:4px solid #2563eb;border-radius:6px;padding:12px 16px">
+          <p style="margin:0 0 4px;font-size:13px;font-weight:600;color:#1e40af">What we need</p>
+          <p style="margin:0;color:#1e3a5f;line-height:1.5">${escapeHtml(note)}</p>
+        </div>`
+    : "";
+
   const result = await resend.emails.send({
     from: sender.from,
     ...(sender.replyTo ? { replyTo: sender.replyTo } : {}),
@@ -170,12 +190,16 @@ export async function sendDocumentRequestEmail(opts: {
     subject: `Document upload request — ${opts.clinicName}`,
     html: `
       <div style="font-family:sans-serif;max-width:560px;margin:0 auto">
-        <h2 style="color:#1a1a2e">Please upload your documents</h2>
+        <h2 style="color:#1a1a2e">Please upload your documents (optional)</h2>
         <p>Hi ${firstName},</p>
         <p>${opts.clinicName} has requested that you securely upload one or more
            documents (for example a photo of your ID, or images and PDFs of your
            records). Your files are sent directly to the clinic and are not stored
-           on your device.</p>
+           on your device.</p>${noteBlock}
+        <p style="margin-top:20px;font-size:13px;color:#666;line-height:1.5">
+          This is optional — if you don't have these on hand right now, you can
+          upload them later using the link below, any time before it expires.
+        </p>
         <p style="margin-top:24px">
           <a href="${opts.uploadUrl}"
              style="background:#2563eb;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;font-weight:600">
