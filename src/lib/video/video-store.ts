@@ -9,6 +9,7 @@
  */
 
 import { query } from "@/lib/db";
+import { decryptString, encryptString } from "@/lib/encrypted-field";
 import { createDailyRoom, deleteDailyRoom } from "./daily";
 import { roomExpiryFor } from "./join-window";
 import { generateVisitToken, hashVisitToken } from "./visit-token";
@@ -226,9 +227,9 @@ async function insertVisit(args: {
       `INSERT INTO video_visits (
          organization_id, appointment_id, oscar_appointment_no, physician_id,
          daily_room_name, daily_room_url, room_expires_at,
-         patient_join_token_hash, patient_join_expires_at,
+         patient_join_token_hash, patient_join_token_enc, patient_join_expires_at,
          scheduled_start_at, scheduled_end_at, patient_display_name, oscar_demographic_no
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
        RETURNING id, organization_id, appointment_id, oscar_appointment_no, physician_id,
                  daily_room_name, daily_room_url, room_expires_at, patient_join_expires_at,
                  scheduled_start_at, scheduled_end_at, patient_display_name,
@@ -242,6 +243,9 @@ async function insertVisit(args: {
         room.value.url,
         roomExpiresAt,
         token.hash,
+        // Encrypted, not hashed — see migration 068. Read only to rebuild the join URL for an
+        // outbound message; never returned to a client and never logged.
+        encryptString(token.raw),
         token.expiresAt,
         args.scheduledStartAt,
         args.scheduledEndAt,
@@ -328,6 +332,51 @@ export const PRESENCE_STALE_MS = 30_000;
 export function isPresent(lastSeenAt: Date | null, now: Date = new Date()): boolean {
   if (!lastSeenAt) return false;
   return now.getTime() - lastSeenAt.getTime() < PRESENCE_STALE_MS;
+}
+
+/**
+ * Rebuild the patient's join URL so it can be sent again.
+ *
+ * The single reader of `patient_join_token_enc`. Kept in the store rather than inlined in the
+ * route so there is exactly one place that decrypts, and so the surrounding code never has to
+ * hold the raw token in a variable it might log.
+ *
+ * Returns null for a visit created before migration 068 — the patient's existing link still
+ * works, it just cannot be regenerated, and the caller tells the provider that.
+ */
+export async function getJoinUrlForResend(
+  visitId: string,
+  organizationId: string,
+  appUrl: string,
+): Promise<string | null> {
+  const res = await query<{ patient_join_token_enc: string | null }>(
+    `SELECT patient_join_token_enc FROM video_visits WHERE id = $1 AND organization_id = $2`,
+    [visitId, organizationId],
+  );
+  const enc = res.rows[0]?.patient_join_token_enc;
+  if (!enc) return null;
+  try {
+    return `${appUrl}/visit/${decryptString(enc)}`;
+  } catch (err) {
+    // A key rotation or a corrupt payload. Log that it happened, never what it contained.
+    console.error(`[video] could not decrypt join token for visit ${visitId}:`, (err as Error).message);
+    return null;
+  }
+}
+
+/** Record that the link went out. The destination is deliberately not stored. */
+export async function recordLinkSend(
+  visitId: string,
+  channel: "sms" | "email",
+): Promise<void> {
+  await query(
+    `UPDATE video_visits
+        SET link_send_count = link_send_count + 1,
+            link_last_sent_at = NOW(),
+            link_last_channel = $2
+      WHERE id = $1`,
+    [visitId, channel],
+  );
 }
 
 /** Cancel a visit and release its Daily room. Best-effort on the Daily side. */

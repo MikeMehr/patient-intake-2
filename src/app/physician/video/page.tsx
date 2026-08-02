@@ -194,30 +194,147 @@ function ProviderVideoConsole() {
           Start video visit
         </button>
 
-        {/* The raw join token is only ever returned on the request that created the visit, so
-            this appears the first time a provider opens a room and not on later visits to the
-            same page. Phase 2 adds a send-link action that works either way. */}
-        {session.patientJoinUrl && (
-          <div className="mt-6 border-t border-slate-200 pt-5">
-            <p className="text-sm font-medium text-slate-700">Patient join link</p>
-            <p className="mt-1 break-all rounded bg-slate-50 px-3 py-2 font-mono text-xs text-slate-600">
-              {session.patientJoinUrl}
-            </p>
-            <button
-              onClick={copyLink}
-              className="mt-2 text-sm font-medium text-blue-600 hover:underline"
-            >
-              {copied ? "Copied" : "Copy link"}
-            </button>
-            {(session.suggestedEmail || session.suggestedPhone) && (
-              <p className="mt-2 text-xs text-slate-500">
-                On file: {[session.suggestedEmail, session.suggestedPhone].filter(Boolean).join(" · ")}
-              </p>
-            )}
-          </div>
+        {session.patientJoinUrl ? (
+          <SendLinkPanel
+            visitId={session.visitId}
+            joinUrl={session.patientJoinUrl}
+            suggestedEmail={session.suggestedEmail}
+            suggestedPhone={session.suggestedPhone}
+            onCopy={copyLink}
+            copied={copied}
+          />
+        ) : (
+          <p className="mt-6 border-t border-slate-200 pt-5 text-sm text-slate-500">
+            This visit predates re-sendable links, so a new one can&apos;t be generated. The
+            patient&apos;s original link still works.
+          </p>
         )}
       </div>
     </main>
+  );
+}
+
+/**
+ * Send the patient their link.
+ *
+ * The destination is prefilled from the chart but always editable and always confirmed — a
+ * mistyped address here mails a live join credential to a stranger, so nothing is sent on a
+ * value the provider hasn't looked at.
+ */
+function SendLinkPanel({
+  visitId,
+  joinUrl,
+  suggestedEmail,
+  suggestedPhone,
+  onCopy,
+  copied,
+}: {
+  visitId: string;
+  joinUrl: string;
+  suggestedEmail: string | null;
+  suggestedPhone: string | null;
+  onCopy: () => void;
+  copied: boolean;
+}) {
+  const [channel, setChannel] = useState<"sms" | "email">(
+    suggestedPhone ? "sms" : "email",
+  );
+  const [destination, setDestination] = useState(suggestedPhone ?? suggestedEmail ?? "");
+  const [sending, setSending] = useState(false);
+  const [result, setResult] = useState<
+    { kind: "sent" } | { kind: "suppressed"; message: string } | { kind: "error"; message: string } | null
+  >(null);
+
+  function pickChannel(next: "sms" | "email") {
+    setChannel(next);
+    setResult(null);
+    setDestination(next === "sms" ? (suggestedPhone ?? "") : (suggestedEmail ?? ""));
+  }
+
+  async function send() {
+    setSending(true);
+    setResult(null);
+    try {
+      const res = await fetch(`/api/physician/video/${visitId}/send-link`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ channel, destination }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (body.sent) {
+        setResult({ kind: "sent" });
+      } else if (body.reason === "suppressed") {
+        setResult({ kind: "suppressed", message: body.message });
+      } else {
+        setResult({ kind: "error", message: body.error ?? "The message could not be sent." });
+      }
+    } catch {
+      setResult({ kind: "error", message: "The message could not be sent." });
+    } finally {
+      setSending(false);
+    }
+  }
+
+  return (
+    <div className="mt-6 border-t border-slate-200 pt-5">
+      <p className="text-sm font-medium text-slate-700">Send the patient their link</p>
+
+      <div className="mt-3 flex gap-2">
+        {(["sms", "email"] as const).map((c) => (
+          <button
+            key={c}
+            onClick={() => pickChannel(c)}
+            className={`rounded-lg px-3 py-1.5 text-sm font-medium ${
+              channel === c
+                ? "bg-blue-600 text-white"
+                : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+            }`}
+          >
+            {c === "sms" ? "Text" : "Email"}
+          </button>
+        ))}
+      </div>
+
+      <input
+        value={destination}
+        onChange={(e) => {
+          setDestination(e.target.value);
+          setResult(null);
+        }}
+        placeholder={channel === "sms" ? "604 555 0123" : "patient@example.com"}
+        inputMode={channel === "sms" ? "tel" : "email"}
+        className="mt-3 w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900"
+      />
+
+      <button
+        onClick={send}
+        disabled={sending || !destination.trim()}
+        className="mt-3 w-full rounded-lg bg-slate-800 px-4 py-2.5 font-medium text-white hover:bg-slate-900 disabled:opacity-50"
+      >
+        {sending ? "Sending…" : channel === "sms" ? "Text the link" : "Email the link"}
+      </button>
+
+      {result?.kind === "sent" && (
+        <p className="mt-2 text-sm text-green-700">✓ Sent.</p>
+      )}
+      {result?.kind === "error" && (
+        <p className="mt-2 text-sm text-red-600">{result.message}</p>
+      )}
+      {/* The case that would otherwise fail silently: messaging is off, so the provider has to
+          read the link out. Showing it is the whole point of distinguishing this outcome. */}
+      {result?.kind === "suppressed" && (
+        <div className="mt-2 rounded-lg bg-amber-50 px-3 py-2">
+          <p className="text-sm text-amber-800">{result.message}</p>
+          <p className="mt-1 break-all font-mono text-xs text-amber-900">{joinUrl}</p>
+        </div>
+      )}
+
+      <div className="mt-4">
+        <button onClick={onCopy} className="text-sm font-medium text-blue-600 hover:underline">
+          {copied ? "Copied" : "Copy link instead"}
+        </button>
+      </div>
+    </div>
   );
 }
 

@@ -495,3 +495,57 @@ export async function sendVerificationSMS(
     };
   }
 }
+
+/**
+ * Text a patient the link to their video visit.
+ *
+ * Note the return type. Every other sender in this file returns `{success: true}` when
+ * HIPAA_MODE suppresses the send — reasonable for a fire-and-forget alert nobody is waiting on,
+ * but wrong here: a provider presses "send the link" and watches for confirmation, and a green
+ * tick over a message that was never sent leaves a patient waiting for a link that isn't coming.
+ * So suppression is its own outcome, and the caller surfaces the URL to read out instead.
+ *
+ * The message carries no PHI — clinic name and an opaque link, no patient name, no reason for
+ * the visit, nothing about it being medical beyond the clinic's own name.
+ */
+export type SendVideoLinkResult =
+  | { outcome: "sent"; messageSid?: string }
+  | { outcome: "suppressed"; reason: string }
+  | { outcome: "failed"; error: string };
+
+export async function sendVideoLinkSMS(
+  patientPhone: string,
+  details: { clinicName: string; joinUrl: string },
+): Promise<SendVideoLinkResult> {
+  if (process.env.HIPAA_MODE === "true") {
+    logDebug("[sms] HIPAA_MODE enabled - video link SMS disabled", { patientPhone: "***" });
+    return { outcome: "suppressed", reason: "hipaa_mode" };
+  }
+
+  const fromNumber = process.env.TWILIO_PHONE_NUMBER;
+  if (!fromNumber) {
+    return { outcome: "suppressed", reason: "sms_not_configured" };
+  }
+
+  const to = toE164(patientPhone);
+  if (!/^\+\d{10,15}$/.test(to)) {
+    return { outcome: "failed", error: "invalid_phone" };
+  }
+
+  try {
+    const client = getTwilioClient();
+    const result = await client.messages.create({
+      body:
+        `${details.clinicName}: join your appointment here — ${details.joinUrl}` +
+        ` The link opens 15 minutes before your scheduled time. Reply STOP to opt out.`,
+      from: fromNumber,
+      to,
+    });
+    logDebug("[sms] Video link SMS sent", { messageSid: result.sid });
+    return { outcome: "sent", messageSid: result.sid };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logDebug("[sms] Failed to send video link SMS", { error: errorMessage });
+    return { outcome: "failed", error: errorMessage };
+  }
+}

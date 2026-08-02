@@ -331,3 +331,71 @@ export async function sendCancellationConfirmation(opts: {
       </div>`,
   });
 }
+
+/**
+ * Email a patient the link to their video visit, on demand from the provider console.
+ *
+ * Distinguishes "suppressed" from "sent" for the same reason the SMS twin does: a provider is
+ * standing there watching for confirmation, so a silent no-op under HIPAA_MODE would leave them
+ * believing a patient had been contacted who hadn't.
+ *
+ * Deliberately thin on content — clinic name, time, and the link. No reason for visit, no
+ * physician note, nothing that turns a mail server into a place PHI accumulates.
+ */
+export async function sendVideoVisitLinkEmail(opts: {
+  email: string;
+  patientFirstName?: string | null;
+  clinicName: string;
+  physicianName?: string | null;
+  joinUrl: string;
+  slotStartTime?: string | null;
+  timezone?: string;
+  emailFooter?: string | null;
+  clinicEmail?: string | null;
+}): Promise<{ sent: boolean; suppressed?: boolean; error?: string }> {
+  if (!resend || process.env.HIPAA_MODE === "true") {
+    return { sent: false, suppressed: true, error: "email_suppressed" };
+  }
+
+  const sender = resolveSender(opts.clinicName, opts.clinicEmail);
+  const greeting = (opts.patientFirstName || "").trim() || "there";
+  const dateLabel = opts.slotStartTime
+    ? formatDateTime(opts.slotStartTime, opts.timezone ?? "America/Vancouver")
+    : null;
+
+  const result = await resend.emails.send({
+    from: sender.from,
+    ...(sender.replyTo ? { replyTo: sender.replyTo } : {}),
+    to: opts.email,
+    subject: `Your video appointment — ${opts.clinicName}`,
+    html: `
+      <div style="font-family:sans-serif;max-width:560px;margin:0 auto">
+        <h2 style="color:#1a1a2e">Your video appointment</h2>
+        <p>Hi ${greeting},</p>
+        <p>
+          ${opts.physicianName ? `${escapeHtml(opts.physicianName)} at ` : ""}${escapeHtml(opts.clinicName)}
+          has sent you a link to join your appointment by video${dateLabel ? ` on ${dateLabel}` : ""}.
+        </p>
+        <p style="margin:28px 0">
+          <a href="${opts.joinUrl}"
+             style="background:#2563eb;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600">
+            Join video appointment
+          </a>
+        </p>
+        <p style="color:#475569;font-size:14px">
+          The link becomes active 15 minutes before your scheduled time. You'll need a device
+          with a camera and microphone — if the video doesn't start, open the link in Safari or
+          Chrome rather than inside another app.
+        </p>
+        <p style="color:#94a3b8;font-size:12px">
+          This link is personal to you. Please don't forward it.
+        </p>${renderFooter(opts.emailFooter)}
+      </div>`,
+  });
+
+  if (result.error) {
+    console.error("[booking-email] sendVideoVisitLinkEmail Resend error:", result.error);
+    return { sent: false, error: "send_failed" };
+  }
+  return { sent: true };
+}

@@ -1,0 +1,26 @@
+-- Migration 068: make a video visit's join link re-sendable.
+--
+-- Migration 067 stored only the SHA-256 hash of the patient's join token, following the manage
+-- and document tokens. That is the right default — but those tokens are only ever emailed once,
+-- at the moment they are created, and a video visit is not like that. The day-sheet button opens
+-- rooms for appointments that were typed straight into OSCAR and so never had a confirmation
+-- email at all, and a patient who can't find their link needs it sent again. With a hash alone
+-- the server cannot reproduce the URL, so "send the link" would be impossible for exactly the
+-- appointments that need it most.
+--
+-- The alternatives were worse. Minting a fresh token on each send would silently break the link
+-- already sitting in the patient's inbox — the commonest case being a patient who is looking at
+-- the old link while the provider re-sends. Handing the raw token to the browser at creation and
+-- having the client keep it would put the credential somewhere far less controlled than a
+-- database column.
+--
+-- So: encrypted at rest (AES-256-GCM, the same encryptString used for the OSCAR OAuth
+-- credentials in emr_connections) rather than hashed. Lookup still runs on the hash, which stays
+-- the unique index; this column is read *only* to build an outbound message, never returned to
+-- any client, and never logged. An attacker with database read alone cannot use it — they would
+-- need EMR_ENCRYPTION_KEY as well, which is the same bar already protecting the EMR credentials
+-- that can read every chart in the clinic.
+--
+-- NULL for any visit created before this migration. Those keep working for the patient who
+-- already holds the link; they simply cannot have it re-sent, and the provider is told so.
+ALTER TABLE video_visits ADD COLUMN IF NOT EXISTS patient_join_token_enc TEXT;

@@ -17,6 +17,7 @@ import { getEffectivePhysicianId } from "@/lib/auth-helpers";
 import { resolveAppUrl } from "@/lib/app-url";
 import { isDailyConfigured, mintDailyMeetingToken } from "@/lib/video/daily";
 import {
+  getJoinUrlForResend,
   getOrCreateVisitForAppointment,
   getOrCreateVisitForOscarAppointment,
   isPresent,
@@ -114,9 +115,13 @@ export async function POST(request: NextRequest) {
     visitId: visit.id,
     roomUrl: visit.dailyRoomUrl,
     meetingToken: token.value,
-    // Non-null only on the request that created the visit — the raw token is unrecoverable
-    // afterwards, which is why the client stores it and why re-sends use the stored URL.
-    patientJoinUrl: result.joinTokenRaw ? `${appUrl}/visit/${result.joinTokenRaw}` : null,
+    // Since migration 068 the token is recoverable, so this is populated on every open — the
+    // provider can copy or re-send the link whether or not this request created the room. Null
+    // only for visits created before that migration.
+    patientJoinUrl:
+      result.joinTokenRaw
+        ? `${appUrl}/visit/${result.joinTokenRaw}`
+        : await getJoinUrlForResend(visit.id, organizationId, appUrl),
     patientName: visit.patientDisplayName,
     scheduledStartAt: visit.scheduledStartAt?.toISOString() ?? null,
     patientPresent: isPresent(visit.patientLastSeenAt),
