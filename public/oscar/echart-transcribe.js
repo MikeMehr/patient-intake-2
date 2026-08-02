@@ -116,17 +116,22 @@
   }
 
   // ── Button ────────────────────────────────────────────────────────────
+  // The eChart header (newEncounterHeader.jsp) renders a "Next Appt:" link
+  // with an inline font-size of 14.3px. The button sits right beside it, and
+  // both are drawn ~20% smaller than the header default per Dr. Mehraein's
+  // preference (button ≈10px, Next Appt 14.3px → 11.4px).
+  function findNextApptLink() {
+    var header = document.getElementById("header");
+    if (!header) return null;
+    var links = header.getElementsByTagName("a");
+    for (var i = 0; i < links.length; i++) {
+      if (/next\s*appt/i.test(links[i].textContent || "")) return links[i];
+    }
+    return null;
+  }
+
   function addButton() {
     if (document.getElementById("haTranscribeBtn")) return;
-
-    // #header is the eChart page header on oscar.mymdonline.ca
-    // (newEncounterLayout.jsp). Older layouts get the other hosts; with no
-    // recognisable host the button floats top-right so it is always reachable.
-    var host =
-      document.getElementById("header") ||
-      document.getElementById("encounterToolbar") ||
-      document.querySelector(".EncounterTitleBar") ||
-      document.getElementById("topBar");
 
     var btn = document.createElement("button");
     btn.id = "haTranscribeBtn";
@@ -134,15 +139,32 @@
     btn.textContent = "Transcribe";
     btn.title = "Dictate this encounter with Health Assist AI";
     btn.style.cssText =
-      "margin:2px 6px;padding:3px 10px;cursor:pointer;font:12px sans-serif;" +
-      "border:1px solid #047857;background:#047857;color:#fff;border-radius:4px";
+      "margin:0 6px;padding:2px 8px;cursor:pointer;font:10px sans-serif;" +
+      "border:1px solid #047857;background:#047857;color:#fff;border-radius:4px;" +
+      "vertical-align:middle";
     btn.onclick = openTranscribe;
 
+    var nextAppt = findNextApptLink();
+    if (nextAppt) {
+      // Shrink the Next Appt link by ~20% (inline 14.3px → 11.4px), then put
+      // the button immediately after it on the same line.
+      nextAppt.style.fontSize = "11.4px";
+      var span = nextAppt.querySelector("span");
+      if (span) span.style.fontSize = "11.4px";
+      nextAppt.parentNode.insertBefore(btn, nextAppt.nextSibling);
+      return;
+    }
+
+    // Fallbacks for layouts without the Next Appt header link.
+    var host =
+      document.getElementById("header") ||
+      document.getElementById("encounterToolbar") ||
+      document.querySelector(".EncounterTitleBar") ||
+      document.getElementById("topBar");
     if (host) {
       host.appendChild(btn);
     } else {
-      btn.style.cssText +=
-        ";position:fixed;top:6px;right:8px;z-index:99999";
+      btn.style.cssText += ";position:fixed;top:6px;right:8px;z-index:99999";
       document.body.appendChild(btn);
     }
   }
