@@ -127,10 +127,24 @@ function ProviderVideoConsole() {
         callRef.current?.destroy();
         callRef.current = null;
       });
+      // Account- and room-level problems arrive here, not as a rejected join().
+      frame.on("error", (ev) => {
+        console.error("[physician/video] Daily error:", ev);
+        setError(ev?.errorMsg || "The video service reported an error.");
+        setInCall(false);
+      });
       await frame.join({ url: session.roomUrl, token: session.meetingToken });
       setInCall(true);
-    } catch {
-      setError("Could not start the video call.");
+    } catch (err) {
+      // Deliberately unsoftened, unlike the patient page. A clinician is the one who can act on
+      // "Missing payment method" or "room expired"; paraphrasing it into "could not start the
+      // video call" just hides the fix from the only person able to apply it.
+      console.error("[physician/video] could not start the video call:", err);
+      setError(
+        err instanceof Error && err.message
+          ? `Could not start the video call — ${err.message}`
+          : "Could not start the video call.",
+      );
     }
   }, [session]);
 

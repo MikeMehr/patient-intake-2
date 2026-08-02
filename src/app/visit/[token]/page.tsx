@@ -150,10 +150,22 @@ export default function VideoVisitPage({
         callRef.current?.destroy();
         callRef.current = null;
       });
+      // Daily reports account- and room-level problems here rather than by rejecting join()
+      // — an expired room, a rejected token, an account that can't host calls. Without this
+      // listener those surface as nothing at all.
+      frame.on("error", (ev) => {
+        console.error("[visit] Daily error:", ev);
+        setJoinError(describeJoinFailure(ev?.errorMsg));
+        setInCall(false);
+      });
       await frame.join({ url: roomUrl, token: meetingToken, userName });
       setInCall(true);
-    } catch {
-      setJoinError("We couldn't start the video call. Please try again.");
+    } catch (err) {
+      // Always log the real thing. The generic message this used to show cost a debugging
+      // session: Daily was saying "Missing payment method" and the patient was being told to
+      // try again, which could never have worked.
+      console.error("[visit] could not start the video call:", err);
+      setJoinError(describeJoinFailure(err instanceof Error ? err.message : String(err)));
     } finally {
       setJoining(false);
     }
@@ -270,6 +282,32 @@ export default function VideoVisitPage({
       </p>
     </Shell>
   );
+}
+
+/**
+ * Turn a Daily failure into something a patient can act on.
+ *
+ * The distinction that matters is "wait and retry" versus "nothing you do will help". Telling
+ * someone to try again when the account can't host calls at all just leaves them tapping a
+ * button in a waiting room. Where we can't tell, we say to contact the clinic — which is at
+ * least a step that leads somewhere.
+ */
+function describeJoinFailure(raw?: string | null): string {
+  const msg = (raw || "").toLowerCase();
+
+  if (msg.includes("payment") || msg.includes("subscription") || msg.includes("billing")) {
+    return "Video calling isn't active for this clinic right now. Please contact the clinic — they can call you instead.";
+  }
+  if (msg.includes("expired") || msg.includes("not-found") || msg.includes("nbf")) {
+    return "This video room is no longer available. Please contact the clinic.";
+  }
+  if (msg.includes("permission") || msg.includes("notallowed")) {
+    return "Your browser blocked the camera or microphone. Allow access in the address bar, then try again.";
+  }
+  if (msg.includes("network") || msg.includes("connection")) {
+    return "We couldn't reach the video service. Check your connection and try again.";
+  }
+  return "We couldn't start the video call. Please try again, or contact the clinic if it keeps happening.";
 }
 
 function Shell({ children }: { children: React.ReactNode }) {
