@@ -96,6 +96,150 @@ export async function upsertPatientFromQuickEntry(params: {
   return { patientId: insert.rows[0].id, patientName: insert.rows[0].full_name };
 }
 
+export type OscarPatientMatch = "oscar_demographic_no" | "name_dob" | "created";
+
+/**
+ * Find-or-create the local patient chart for an OSCAR demographic number.
+ *
+ * Used by the OSCAR eChart launch flow, where we know the demographic number
+ * up front and want the transcription bound to the right chart before the
+ * doctor starts dictating.
+ *
+ * Resolution order mirrors `findPatientId` in src/lib/patient-store.ts:
+ *   1. oscar_demographic_no — the strongest key.
+ *   2. name + DOB, and if that hits we STAMP the demographic number onto the
+ *      row. This heals patients created by `upsertPatientFromQuickEntry`, which
+ *      never records a demographic number, so without this step every
+ *      transcription-created patient would miss step 1 forever.
+ *   3. Insert, with the demographic number set.
+ *
+ * `upsertPatientFromSession` (patient-store.ts) also stamps the number but
+ * requires a full PatientProfile and email, which the launch flow does not have.
+ */
+export async function upsertPatientFromOscarDemographic(params: {
+  physicianId: string;
+  scope: Scope;
+  oscarDemographicNo: string;
+  fullName: string;
+  firstName?: string | null;
+  lastName?: string | null;
+  dateOfBirth?: string | null;
+  email?: string | null;
+  primaryPhone?: string | null;
+}): Promise<{ patientId: string; patientName: string; matchedBy: OscarPatientMatch }> {
+  // Same normalization as upsertPatientFromQuickEntry, so the name+DOB step
+  // below actually matches rows that path created.
+  const normalizedFullName = params.fullName.trim().replace(/\s+/g, " ");
+  const demographicNo = params.oscarDemographicNo.trim();
+  const dob = (params.dateOfBirth ?? "").trim();
+  const hasDob = /^\d{4}-\d{2}-\d{2}$/.test(dob);
+  if (!demographicNo) throw new Error("Missing OSCAR demographic number.");
+  if (!normalizedFullName) throw new Error("Missing patient name.");
+
+  const findByDemographic = async () => {
+    const { sql, params: scopeParams } = scopeWhere(params.scope, 2);
+    const res = await query<{ id: string; full_name: string }>(
+      `SELECT p.id, p.full_name
+       FROM patients p
+       WHERE p.oscar_demographic_no = $1
+         AND ${sql}
+       LIMIT 1`,
+      [demographicNo, ...scopeParams],
+    );
+    return res.rows[0] ?? null;
+  };
+
+  const byDemographic = await findByDemographic();
+  if (byDemographic) {
+    return {
+      patientId: byDemographic.id,
+      patientName: byDemographic.full_name,
+      matchedBy: "oscar_demographic_no",
+    };
+  }
+
+  const organizationId = "organizationId" in params.scope ? params.scope.organizationId : null;
+  const email = params.email?.trim() || null;
+  const phone = params.primaryPhone?.trim() || null;
+  const firstName = params.firstName?.trim() || null;
+  const lastName = params.lastName?.trim() || null;
+
+  const client = await getClient();
+  try {
+    await client.query("BEGIN");
+
+    if (hasDob) {
+      const { sql, params: scopeParams } = scopeWhere(params.scope, 3);
+      const byNameDob = await client.query<{ id: string; full_name: string }>(
+        `SELECT p.id, p.full_name
+         FROM patients p
+         WHERE lower(p.full_name) = lower($1)
+           AND p.date_of_birth = $2::date
+           AND ${sql}
+         LIMIT 1`,
+        [normalizedFullName, dob, ...scopeParams],
+      );
+      const row = byNameDob.rows[0];
+      if (row) {
+        await client.query(
+          `UPDATE patients
+              SET oscar_demographic_no = COALESCE(oscar_demographic_no, $2),
+                  email = COALESCE(email, $3),
+                  primary_phone = COALESCE(primary_phone, $4),
+                  updated_at = NOW()
+            WHERE id = $1`,
+          [row.id, demographicNo, email, phone],
+        );
+        await client.query("COMMIT");
+        return { patientId: row.id, patientName: row.full_name, matchedBy: "name_dob" };
+      }
+    }
+
+    const insert = await client.query<{ id: string; full_name: string }>(
+      `INSERT INTO patients (
+         organization_id, primary_physician_id, oscar_demographic_no,
+         full_name, first_name, last_name, date_of_birth, email, primary_phone
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7::date,$8,$9)
+       RETURNING id, full_name`,
+      [
+        organizationId,
+        params.physicianId,
+        demographicNo,
+        normalizedFullName,
+        firstName,
+        lastName,
+        hasDob ? dob : null,
+        email,
+        phone,
+      ],
+    );
+    await client.query("COMMIT");
+    return {
+      patientId: insert.rows[0].id,
+      patientName: insert.rows[0].full_name,
+      matchedBy: "created",
+    };
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => {});
+    // uq_patients_org_oscar_demographic_no — another request (or another
+    // patient row in the same org) already claimed this demographic number.
+    // Re-read rather than failing the launch.
+    if ((err as { code?: string })?.code === "23505") {
+      const raced = await findByDemographic();
+      if (raced) {
+        return {
+          patientId: raced.id,
+          patientName: raced.full_name,
+          matchedBy: "oscar_demographic_no",
+        };
+      }
+    }
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
 export async function createTranscriptionEncounter(params: {
   physicianId: string;
   patientId: string | null;

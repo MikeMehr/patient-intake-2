@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
+import { readReturnToFromLocation } from "@/lib/client/return-to";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -18,6 +19,9 @@ export default function LoginPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [passkeySupported, setPasskeySupported] = useState(false);
+  // Deep link captured by the middleware when an unauthenticated request hit a
+  // protected page (src/proxy.ts). Validated — never navigated to raw.
+  const [returnTo, setReturnTo] = useState<string | null>(null);
 
   useEffect(() => {
     import("@simplewebauthn/browser").then(({ browserSupportsWebAuthn }) => {
@@ -25,11 +29,21 @@ export default function LoginPage() {
     });
   }, []);
 
+  useEffect(() => {
+    setReturnTo(readReturnToFromLocation(window.location.search));
+  }, []);
+
   const redirectByUserType = (userType: string) => {
     if (userType === "super_admin") {
       router.push("/admin/dashboard");
     } else if (userType === "org_admin") {
       router.push("/org/dashboard");
+    } else if (returnTo) {
+      // Honour the deep link (e.g. an OSCAR launch carrying ?demographicNo=).
+      // Deliberately NOT setting physician.justLoggedIn here: that flag makes
+      // the dashboard auto-redirect to /physician/transcription, which would
+      // throw away the query string we are trying to preserve.
+      router.push(returnTo);
     } else {
       // Mark this as a fresh login so the dashboard can optionally redirect to
       // the transcription page (and only on the first load after login).

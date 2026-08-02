@@ -157,10 +157,21 @@ export function proxy(req: NextRequest) {
 
   // ── Physician page routes ──────────────────────────────────────────────
   // Redirect to login so unauthenticated users never see even the page shell.
+  //
+  // NOTE: /launch/* is deliberately NOT guarded here (and needs no
+  // PUBLIC_EXCEPTIONS entry — that set is only consulted for API paths, see
+  // requiresPhysicianSession above). /launch/oscar is the SameSite=Strict
+  // bounce entry point: OSCAR opens it cross-site, so it must be reachable
+  // with no session cookie. It carries no PHI and only client-side redirects
+  // to a hard-coded same-origin path, which re-attaches the Strict cookie.
   if (pathname.startsWith("/physician")) {
     if (!hasValidSessionCookie(req)) {
       const loginUrl = new URL("/auth/login", req.url);
-      loginUrl.searchParams.set("returnTo", encodeURIComponent(pathname));
+      // pathname + search, NOT encodeURIComponent(pathname): searchParams.set
+      // already percent-encodes, so wrapping it double-encodes the value, and
+      // dropping `search` loses deep-link params (e.g. ?launch=oscar).
+      const returnTo = pathname + search;
+      if (returnTo.length <= 512) loginUrl.searchParams.set("returnTo", returnTo);
       const res = NextResponse.redirect(loginUrl);
       applySecurityHeaders(res, pathname, nonce);
       return res;

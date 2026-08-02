@@ -10,6 +10,8 @@ import { languageOptions } from "@/lib/speech-language";
 import QuickAskAiModal from "@/components/QuickAskAiModal";
 import { convertToWav, getMicrophoneErrorMessage, MAX_STT_AUDIO_BYTES } from "@/lib/audio-utils";
 import { classifyAuthFailure, type AuthFailure } from "@/lib/client/auth-response";
+import { useOscarLaunch, describeSendFailure } from "@/components/physician/useOscarLaunch";
+import { OscarLaunchBanner } from "@/components/physician/OscarLaunchBanner";
 import {
   clearStoredTranscript,
   loadTranscript,
@@ -245,6 +247,10 @@ export default function PhysicianTranscriptionPage() {
   const [selectedPatient, setSelectedPatient] = useState<PatientSearchResult | null>(null);
   const [newPatientFullName, setNewPatientFullName] = useState("");
   const [newPatientDob, setNewPatientDob] = useState("");
+
+  // Launched from the "Transcribe" button in the OSCAR eChart? See
+  // src/components/physician/useOscarLaunch.ts.
+  const oscarLaunch = useOscarLaunch({ onAuthFailure: (res) => handleAuthFailure(res) });
   const chiefComplaint = "";
   const [activeWorkflowTab, setActiveWorkflowTab] = useState<"capture" | "review" | "ask_ai" | "wound_images" | "merge">("capture");
 
@@ -349,6 +355,35 @@ export default function PhysicianTranscriptionPage() {
   const [showQuickAskAi, setShowQuickAskAi] = useState(false);
   const [patientSectionOpen, setPatientSectionOpen] = useState(false);
   const [snapshotSectionOpen, setSnapshotSectionOpen] = useState(false);
+
+  /**
+   * OSCAR launch: bind the transcription to the chart the button was clicked
+   * from. Setting `selectedPatient` before Generate is enough — generateSoap()
+   * sends `patientId`, and the encounter row is created with the patient
+   * already attached, so no associate-patient call is needed.
+   */
+  useEffect(() => {
+    if (oscarLaunch.status === "resolved" && oscarLaunch.patient) {
+      setSelectedPatient({
+        id: oscarLaunch.patient.id,
+        fullName: oscarLaunch.patient.fullName,
+        dateOfBirth: oscarLaunch.patient.dateOfBirth ?? "",
+        email: oscarLaunch.patient.email ?? "",
+        primaryPhone: oscarLaunch.patient.primaryPhone ?? "",
+      });
+      setPatientIdentityResolution("existing");
+      setPatientIdentityMessage("Patient loaded from the OSCAR eChart.");
+      setPatientSearchError(null);
+    } else if (
+      oscarLaunch.status === "not_found_in_oscar" ||
+      oscarLaunch.status === "oscar_not_connected" ||
+      oscarLaunch.status === "error"
+    ) {
+      // Degrade to manual entry rather than blocking: the doctor still wants
+      // to dictate even when we couldn't identify the patient.
+      setPatientSectionOpen(true);
+    }
+  }, [oscarLaunch.status, oscarLaunch.patient]);
   const [snapshotFilterDate, setSnapshotFilterDate] = useState<string>(
     () => {
       const d = new Date();
@@ -1094,80 +1129,142 @@ export default function PhysicianTranscriptionPage() {
     }
   }
 
+  /**
+   * Associate the patient (if needed), finalize the SOAP version, and record
+   * the EMR export. Shared by "Finalize & Save to EMR" and "Send to OSCAR
+   * note" so the two paths cannot drift apart.
+   *
+   * `destinationSystem` distinguishes the channels in `emr_exports` — the
+   * column HIPAA reporting queries — so a clipboard hand-off is never
+   * indistinguishable from an automated one.
+   */
+  async function finalizeAndRecordExport(destinationSystem: string) {
+    if (!soapVersionId) return;
+    // If patient was selected after SOAP generation, associate them now
+    if (!soapHasPatient && selectedPatient?.id && encounterId) {
+      const assocRes = await fetch("/api/physician/transcription/associate-patient", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ encounterId, patientId: selectedPatient.id }),
+      });
+      const assocData = await assocRes.json().catch(() => ({}));
+      if (!assocRes.ok) {
+        throw new Error(assocData?.error || "Failed to associate patient with SOAP");
+      }
+      setSoapHasPatient(true);
+      const updatedCases = [...soapCases];
+      if (updatedCases[activeCaseIndex]) {
+        updatedCases[activeCaseIndex] = { ...updatedCases[activeCaseIndex], hasPatient: true };
+        setSoapCases(updatedCases);
+      }
+    }
+
+    if (lifecycleState !== "FINALIZED_FOR_EXPORT") {
+      const finalizeRes = await fetch("/api/physician/transcription/finalize", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ soapVersionId }),
+      });
+      const finalizeData = await finalizeRes.json().catch(() => ({}));
+      if (!finalizeRes.ok) {
+        throw new Error(finalizeData?.error || "Failed to finalize SOAP before EMR save");
+      }
+      setLifecycleState("FINALIZED_FOR_EXPORT");
+      if (typeof finalizeData?.snapshotLabel === "string") setSnapshotLabel(finalizeData.snapshotLabel);
+      setTranscript("");
+      const updatedCases = [...soapCases];
+      if (updatedCases[activeCaseIndex]) {
+        updatedCases[activeCaseIndex] = { ...updatedCases[activeCaseIndex], lifecycleState: "FINALIZED_FOR_EXPORT" };
+        setSoapCases(updatedCases);
+      }
+    }
+
+    const idempotencyKey =
+      typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random()}`;
+    const exportRes = await fetch("/api/physician/transcription/mark-exported", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        soapVersionId,
+        idempotencyKey,
+        destinationSystem,
+      }),
+    });
+    const exportData = await exportRes.json().catch(() => ({}));
+    if (!exportRes.ok) {
+      throw new Error(exportData?.error || "Finalized, but failed to record EMR save");
+    }
+    return exportData as { message?: string };
+  }
+
+  /** Reset back to a clean capture state after a note leaves for the EMR. */
+  async function resetAfterExport() {
+    await loadHistory();
+    setActiveWorkflowTab("capture");
+    setSelectedPatient(null);
+    setPatientIdentityResolution(null);
+    setPatientIdentityMessage(null);
+    setNewPatientFullName("");
+    setNewPatientDob("");
+    setPatientSearchError(null);
+    clearEditorState();
+  }
+
   async function finalizeAndSaveToEmr() {
     if (!soapVersionId) return;
     setActionLoading(true);
     setActionError(null);
     setActionSuccess(null);
     try {
-      // If patient was selected after SOAP generation, associate them now
-      if (!soapHasPatient && selectedPatient?.id && encounterId) {
-        const assocRes = await fetch("/api/physician/transcription/associate-patient", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ encounterId, patientId: selectedPatient.id }),
-        });
-        const assocData = await assocRes.json().catch(() => ({}));
-        if (!assocRes.ok) {
-          throw new Error(assocData?.error || "Failed to associate patient with SOAP");
-        }
-        setSoapHasPatient(true);
-        const updatedCases = [...soapCases];
-        if (updatedCases[activeCaseIndex]) {
-          updatedCases[activeCaseIndex] = { ...updatedCases[activeCaseIndex], hasPatient: true };
-          setSoapCases(updatedCases);
-        }
-      }
-
-      if (lifecycleState !== "FINALIZED_FOR_EXPORT") {
-        const finalizeRes = await fetch("/api/physician/transcription/finalize", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ soapVersionId }),
-        });
-        const finalizeData = await finalizeRes.json().catch(() => ({}));
-        if (!finalizeRes.ok) {
-          throw new Error(finalizeData?.error || "Failed to finalize SOAP before EMR save");
-        }
-        setLifecycleState("FINALIZED_FOR_EXPORT");
-        if (typeof finalizeData?.snapshotLabel === "string") setSnapshotLabel(finalizeData.snapshotLabel);
-        setTranscript("");
-        const updatedCases = [...soapCases];
-        if (updatedCases[activeCaseIndex]) {
-          updatedCases[activeCaseIndex] = { ...updatedCases[activeCaseIndex], lifecycleState: "FINALIZED_FOR_EXPORT" };
-          setSoapCases(updatedCases);
-        }
-      }
-
-      const idempotencyKey =
-        typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
-          ? crypto.randomUUID()
-          : `${Date.now()}-${Math.random()}`;
-      const exportRes = await fetch("/api/physician/transcription/mark-exported", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          soapVersionId,
-          idempotencyKey,
-          destinationSystem: "manual_copy_paste",
-        }),
-      });
-      const exportData = await exportRes.json().catch(() => ({}));
-      if (!exportRes.ok) {
-        throw new Error(exportData?.error || "Finalized, but failed to record EMR save");
-      }
+      const exportData = await finalizeAndRecordExport("manual_copy_paste");
       setActionSuccess(exportData?.message || "Finalized and saved to EMR.");
-      await loadHistory();
-      setActiveWorkflowTab("capture");
-      setSelectedPatient(null);
-      setPatientIdentityResolution(null);
-      setPatientIdentityMessage(null);
-      setNewPatientFullName("");
-      setNewPatientDob("");
-      setPatientSearchError(null);
-      clearEditorState();
+      await resetAfterExport();
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "Failed to finalize and save to EMR");
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
+  /**
+   * Hand the finished note to the OSCAR encounter window that launched us.
+   *
+   * ORDER MATTERS: postMessage first, and only record the export once OSCAR
+   * acknowledges the insert. If the OSCAR window is gone or has no listener,
+   * nothing is finalized and nothing is marked exported — the note stays
+   * editable and Copy SOAP still works.
+   */
+  async function sendSoapToOscarNote() {
+    if (!soapVersionId) return;
+    setActionLoading(true);
+    setActionError(null);
+    setActionSuccess(null);
+    try {
+      const sent = await oscarLaunch.sendSoapToOscar(reviewText);
+      if (!sent.ok) {
+        setActionError(describeSendFailure(sent.reason));
+        return;
+      }
+      await finalizeAndRecordExport("oscar_echart_popup");
+      setActionSuccess("Sent to the OSCAR encounter note. Review and Save in OSCAR.");
+      await resetAfterExport();
+      // The window was script-opened, so close() is permitted. If a browser
+      // refuses, the success banner already tells the doctor they can close it.
+      window.setTimeout(() => {
+        try {
+          window.close();
+        } catch {
+          /* non-fatal */
+        }
+      }, 1800);
+    } catch (err) {
+      setActionError(
+        err instanceof Error
+          ? `Note was inserted in OSCAR, but: ${err.message}`
+          : "Note was inserted in OSCAR, but recording the export failed.",
+      );
     } finally {
       setActionLoading(false);
     }
@@ -1770,6 +1867,21 @@ export default function PhysicianTranscriptionPage() {
 
           <div className="space-y-6">
               <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6 space-y-4">
+                {oscarLaunch.launchMode && (
+                  <OscarLaunchBanner
+                    status={oscarLaunch.status}
+                    patientName={oscarLaunch.patient?.fullName ?? null}
+                    demographicNo={oscarLaunch.demographicNo}
+                    openerAlive={oscarLaunch.openerAlive}
+                    onNotThisPatient={() => {
+                      oscarLaunch.clearLaunchPatient();
+                      setSelectedPatient(null);
+                      setPatientIdentityResolution(null);
+                      setPatientIdentityMessage(null);
+                      setPatientSectionOpen(true);
+                    }}
+                  />
+                )}
                 <div className="flex items-center justify-start">
                   <div className="inline-flex flex-wrap gap-0.5 rounded-lg border border-slate-200 bg-slate-50 p-1">
                     <button
@@ -2151,12 +2263,33 @@ export default function PhysicianTranscriptionPage() {
                           Save changes
                         </button>
                       )}
+                      {oscarLaunch.launchMode && (
+                        <button
+                          type="button"
+                          onClick={sendSoapToOscarNote}
+                          disabled={!soapVersionId || !oscarLaunch.openerAlive || actionLoading}
+                          title={
+                            !soapVersionId
+                              ? "Generate the note first."
+                              : !oscarLaunch.openerAlive
+                                ? "The OSCAR window is closed — use Copy SOAP instead."
+                                : undefined
+                          }
+                          className="px-4 py-2 text-sm font-medium text-white bg-emerald-700 rounded-lg hover:bg-emerald-800 disabled:bg-slate-400"
+                        >
+                          Send to OSCAR note
+                        </button>
+                      )}
                       <button
                         type="button"
                         onClick={finalizeAndSaveToEmr}
                         disabled={!soapVersionId || (!soapHasPatient && !hasPatientIdentity) || actionLoading}
                         title={(!soapHasPatient && !hasPatientIdentity) ? "Add patient name and DOB to finalize and save to EMR." : undefined}
-                        className="px-4 py-2 text-sm font-medium text-white bg-emerald-700 rounded-lg hover:bg-emerald-800 disabled:bg-slate-400"
+                        className={`px-4 py-2 text-sm font-medium rounded-lg disabled:bg-slate-400 ${
+                          oscarLaunch.launchMode
+                            ? "text-slate-700 bg-slate-100 border border-slate-300 hover:bg-slate-200"
+                            : "text-white bg-emerald-700 hover:bg-emerald-800"
+                        }`}
                       >
                         Finalize &amp; Save to EMR
                       </button>

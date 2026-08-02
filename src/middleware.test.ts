@@ -36,6 +36,48 @@ describe("middleware", () => {
     expect(location).toContain("returnTo=");
   });
 
+  it("encodes returnTo exactly once", () => {
+    // Regression: the value used to be wrapped in encodeURIComponent before
+    // being handed to searchParams.set, which encodes again — so consumers
+    // read back "%2Fphysician%2F…" instead of a usable path.
+    const res = proxy(makeRequest("/physician/patients/123"));
+    const location = new URL(res.headers.get("location") ?? "", BASE);
+    expect(location.searchParams.get("returnTo")).toBe("/physician/patients/123");
+  });
+
+  it("preserves the query string in returnTo", () => {
+    // The OSCAR launch deep link carries ?launch=oscar&demographicNo=… and is
+    // useless if login drops it.
+    const res = proxy(makeRequest("/physician/transcription?launch=oscar&demographicNo=46"));
+    const location = new URL(res.headers.get("location") ?? "", BASE);
+    expect(location.searchParams.get("returnTo")).toBe(
+      "/physician/transcription?launch=oscar&demographicNo=46",
+    );
+  });
+
+  it("omits an over-long returnTo rather than building a huge redirect", () => {
+    const res = proxy(makeRequest(`/physician/x?q=${"a".repeat(600)}`));
+    const location = new URL(res.headers.get("location") ?? "", BASE);
+    expect(location.searchParams.get("returnTo")).toBeNull();
+  });
+
+  // ── OSCAR launch bounce ──────────────────────────────────────────────────
+
+  it("lets /launch/oscar through without a session cookie", () => {
+    // This is the SameSite=Strict bounce entry point: OSCAR opens it
+    // cross-site, so it MUST be reachable with no cookie or the whole
+    // Transcribe flow dead-ends at the login page.
+    const res = proxy(makeRequest("/launch/oscar?demographicNo=46"));
+    expect(res.status).toBe(200);
+    expect(res.headers.get("location")).toBeNull();
+  });
+
+  it("still applies security headers to /launch/oscar", () => {
+    const res = proxy(makeRequest("/launch/oscar"));
+    expect(res.headers.get("Content-Security-Policy")).toContain("default-src 'self'");
+    expect(res.headers.get("X-Content-Type-Options")).toBe("nosniff");
+  });
+
   it("passes /physician/* through when valid cookie is present", () => {
     const res = proxy(makeRequest("/physician/dashboard", VALID_TOKEN));
     expect(res.status).toBe(200);
