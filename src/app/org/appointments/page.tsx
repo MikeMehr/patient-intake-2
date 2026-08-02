@@ -142,8 +142,13 @@ export default function AppointmentsPage() {
   const [dateTo, setDateTo] = useState(
     new Date(Date.now() + 30 * 86400000).toISOString().substring(0, 10),
   );
+  const [bookedOnly, setBookedOnly] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const visibleAppointments = bookedOnly
+    ? appointments.filter((a) => !a.cancelledAt)
+    : appointments;
 
   useEffect(() => {
     fetch("/api/org/providers")
@@ -224,6 +229,17 @@ export default function AppointmentsPage() {
               className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
             />
           </div>
+          <button
+            onClick={() => setBookedOnly((v) => !v)}
+            className={
+              bookedOnly
+                ? "rounded-lg border border-green-600 bg-green-600 px-3 py-2 text-sm font-medium text-white"
+                : "rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 hover:border-gray-400"
+            }
+            title="Hide cancelled appointments"
+          >
+            Booked only
+          </button>
         </div>
 
         {error && (
@@ -235,8 +251,12 @@ export default function AppointmentsPage() {
         <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
           {loading ? (
             <p className="text-gray-400 text-sm p-6 text-center">Loading…</p>
-          ) : appointments.length === 0 ? (
-            <p className="text-gray-400 text-sm p-6 text-center">No appointments in this date range.</p>
+          ) : visibleAppointments.length === 0 ? (
+            <p className="text-gray-400 text-sm p-6 text-center">
+              {bookedOnly && appointments.length > 0
+                ? "No booked appointments in this date range (only cancelled ones)."
+                : "No appointments in this date range."}
+            </p>
           ) : (
             <div className="overflow-x-auto">
               {/* text-xs rather than text-sm: eight columns of clinical data need the room more
@@ -255,7 +275,7 @@ export default function AppointmentsPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {appointments.map((appt) => (
+                  {visibleAppointments.map((appt) => (
                     <tr key={appt.id} className="border-b border-gray-100 last:border-0 hover:bg-gray-50">
                       <td className="px-2 py-2 text-gray-800 whitespace-nowrap">
                         {formatDT(appt.slotStartTime)}
