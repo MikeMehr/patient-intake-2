@@ -43,7 +43,8 @@ export default function VideoVisitPage({
   const [loading, setLoading] = useState(true);
   const [joining, setJoining] = useState(false);
   const [joinError, setJoinError] = useState<string | null>(null);
-  const [inCall, setInCall] = useState(false);
+  /** "connecting" is its own phase because the frame host must be on screen before Daily gets it. */
+  const [phase, setPhase] = useState<"idle" | "connecting" | "in-call">("idle");
   const [deviceCheck, setDeviceCheck] = useState<DeviceCheck>("idle");
 
   const frameRef = useRef<HTMLDivElement | null>(null);
@@ -140,13 +141,30 @@ export default function VideoVisitPage({
       const { roomUrl, meetingToken, userName } = await res.json();
 
       const { default: Daily } = await import("@daily-co/daily-js");
+
+      // Daily permits one DailyIframe per page, and a failed attempt leaves an orphan that makes
+      // every retry fail with "Duplicate DailyIframe instances are not allowed" until the page is
+      // reloaded — which for a patient means a dead "try again" button.
+      try {
+        (Daily as unknown as { getCallInstance?: () => { destroy: () => void } | null })
+          .getCallInstance?.()
+          ?.destroy();
+      } catch {
+        // Older daily-js has no getCallInstance; nothing to clean up on those.
+      }
+
+      // Let the container paint before handing it over. Daily's prebuilt never completes its
+      // handshake inside a display:none element — and fails silently rather than throwing, which
+      // is exactly what left this screen on "Connecting…" forever on iOS Safari.
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+
       const frame = Daily.createFrame(frameRef.current!, {
         showLeaveButton: true,
         iframeStyle: { width: "100%", height: "100%", border: "0" },
       });
       callRef.current = frame;
       frame.on("left-meeting", () => {
-        setInCall(false);
+        setPhase("idle");
         callRef.current?.destroy();
         callRef.current = null;
       });
@@ -156,11 +174,20 @@ export default function VideoVisitPage({
       frame.on("error", (ev) => {
         console.error("[visit] Daily error:", ev);
         setJoinError(describeJoinFailure(ev?.errorMsg));
-        setInCall(false);
+        setPhase("idle");
+        callRef.current?.destroy();
+        callRef.current = null;
       });
       await frame.join({ url: roomUrl, token: meetingToken, userName });
-      setInCall(true);
+      setPhase("in-call");
     } catch (err) {
+      try {
+        callRef.current?.destroy();
+      } catch {
+        // Already gone.
+      }
+      callRef.current = null;
+      setPhase("idle");
       // Always log the real thing. The generic message this used to show cost a debugging
       // session: Daily was saying "Missing payment method" and the patient was being told to
       // try again, which could never have worked.
@@ -211,19 +238,32 @@ export default function VideoVisitPage({
     );
   }
 
-  // In-call: the Daily frame owns the viewport.
-  if (inCall) {
-    return (
-      <div className="flex h-dvh w-full flex-col bg-slate-900">
-        <div ref={frameRef} className="flex-1" />
-      </div>
-    );
-  }
+  /**
+   * The Daily frame host — rendered in exactly one place and never unmounted.
+   *
+   * It used to appear twice: hidden in the pre-call tree and again in the in-call tree. React
+   * treats those as different elements, so the moment the call connected it tore down the
+   * container holding the live iframe. Being hidden also stopped Daily finishing its handshake
+   * at all, which is why this page sat on "Connecting…" instead of failing.
+   */
+  const frameHost = (
+    <div
+      className={
+        phase === "idle" ? "hidden" : "fixed inset-0 z-50 flex flex-col bg-slate-900"
+      }
+    >
+      {phase === "connecting" && (
+        <p className="absolute inset-x-0 top-1/2 text-center text-sm text-slate-400">
+          Connecting…
+        </p>
+      )}
+      <div ref={frameRef} className="relative flex-1" />
+    </div>
+  );
 
   return (
     <Shell>
-      {/* Mounted but hidden so the ref exists the moment join() resolves. */}
-      <div ref={frameRef} className="hidden" />
+      {frameHost}
 
       <h1 className="text-xl font-semibold text-slate-900">
         {info.patientFirstName ? `Hello ${info.patientFirstName} — ` : ""}
@@ -266,7 +306,7 @@ export default function VideoVisitPage({
             disabled={joining}
             className="mt-4 w-full rounded-lg bg-blue-600 px-6 py-3 font-medium text-white hover:bg-blue-700 disabled:opacity-60"
           >
-            {joining ? "Connecting…" : "Join video call"}
+            {joining || phase === "connecting" ? "Connecting…" : "Join video call"}
           </button>
           {joinError && <p className="mt-3 text-sm text-red-600">{joinError}</p>}
         </div>

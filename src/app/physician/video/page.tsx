@@ -48,7 +48,11 @@ function ProviderVideoConsole() {
   const [session, setSession] = useState<SessionInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [patientPresent, setPatientPresent] = useState(false);
-  const [inCall, setInCall] = useState(false);
+  /**
+   * "connecting" exists as its own phase because the frame host must be ON SCREEN before Daily
+   * is handed it — see the render below.
+   */
+  const [phase, setPhase] = useState<"idle" | "connecting" | "in-call">("idle");
   const [copied, setCopied] = useState(false);
 
   const frameRef = useRef<HTMLDivElement | null>(null);
@@ -115,15 +119,37 @@ function ProviderVideoConsole() {
 
   const join = useCallback(async () => {
     if (!session) return;
+    // Daily permits exactly one DailyIframe per page. Without this guard a second click while
+    // the first is still connecting throws "Duplicate DailyIframe instances are not allowed".
+    if (callRef.current) return;
+
+    setError(null);
+    setPhase("connecting");
     try {
       const { default: Daily } = await import("@daily-co/daily-js");
+
+      // A previous failed attempt can leave an orphaned instance behind, and every later attempt
+      // then fails with the duplicate error — permanently, until the page is reloaded. Clearing
+      // any stray instance makes a retry actually retry.
+      try {
+        (Daily as unknown as { getCallInstance?: () => { destroy: () => void } | null })
+          .getCallInstance?.()
+          ?.destroy();
+      } catch {
+        // Older daily-js has no getCallInstance; nothing to clean up on those.
+      }
+
+      // Let the container paint first. Daily's prebuilt never completes its handshake inside a
+      // display:none element, which is what left the patient's phone on "Connecting…" forever.
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+
       const frame = Daily.createFrame(frameRef.current!, {
         showLeaveButton: true,
         iframeStyle: { width: "100%", height: "100%", border: "0" },
       });
       callRef.current = frame;
       frame.on("left-meeting", () => {
-        setInCall(false);
+        setPhase("idle");
         callRef.current?.destroy();
         callRef.current = null;
       });
@@ -131,11 +157,22 @@ function ProviderVideoConsole() {
       frame.on("error", (ev) => {
         console.error("[physician/video] Daily error:", ev);
         setError(ev?.errorMsg || "The video service reported an error.");
-        setInCall(false);
+        setPhase("idle");
+        callRef.current?.destroy();
+        callRef.current = null;
       });
       await frame.join({ url: session.roomUrl, token: session.meetingToken });
-      setInCall(true);
+      setPhase("in-call");
     } catch (err) {
+      // Tear the instance down, or every retry hits the duplicate error and the provider has to
+      // reload the page to get anywhere.
+      try {
+        callRef.current?.destroy();
+      } catch {
+        // Already gone.
+      }
+      callRef.current = null;
+      setPhase("idle");
       // Deliberately unsoftened, unlike the patient page. A clinician is the one who can act on
       // "Missing payment method" or "room expired"; paraphrasing it into "could not start the
       // video call" just hides the fix from the only person able to apply it.
@@ -155,28 +192,56 @@ function ProviderVideoConsole() {
     setTimeout(() => setCopied(false), 2000);
   }, [session]);
 
+  /**
+   * The Daily frame host.
+   *
+   * Rendered in exactly ONE place, always, and never inside a conditional branch. It used to be
+   * mounted separately in the pre-call and in-call trees, which meant React unmounted the
+   * container — and with it the iframe — at the exact moment the call connected.
+   *
+   * It also has to be on screen before createFrame runs. Daily's prebuilt never finishes its
+   * handshake inside a display:none element, and it fails silently rather than throwing, which
+   * is what left the patient's phone showing "Connecting…" indefinitely.
+   */
+  const frameHost = (
+    <div
+      className={
+        phase === "idle" ? "hidden" : "fixed inset-0 z-50 flex flex-col bg-slate-900"
+      }
+    >
+      {phase === "connecting" && (
+        <p className="absolute inset-x-0 top-1/2 text-center text-sm text-slate-400">
+          Connecting…
+        </p>
+      )}
+      <div ref={frameRef} className="relative flex-1" />
+    </div>
+  );
+
   if (error) {
     return (
-      <Centered>
-        <h1 className="text-lg font-semibold text-slate-900">Can&apos;t open this visit</h1>
-        <p className="mt-2 text-slate-600">{error}</p>
-      </Centered>
+      <>
+        {frameHost}
+        <Centered>
+          <h1 className="text-lg font-semibold text-slate-900">Can&apos;t open this visit</h1>
+          <p className="mt-2 text-slate-600">{error}</p>
+        </Centered>
+      </>
     );
   }
 
-  if (!session) return <Centered>Opening the video room…</Centered>;
-
-  if (inCall) {
+  if (!session) {
     return (
-      <div className="flex h-dvh w-full flex-col bg-slate-900">
-        <div ref={frameRef} className="flex-1" />
-      </div>
+      <>
+        {frameHost}
+        <Centered>Opening the video room…</Centered>
+      </>
     );
   }
 
   return (
     <main className="mx-auto max-w-xl px-5 py-10">
-      <div ref={frameRef} className="hidden" />
+      {frameHost}
       <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <h1 className="text-xl font-semibold text-slate-900">
           {session.patientName ?? "Video visit"}
@@ -203,9 +268,10 @@ function ProviderVideoConsole() {
 
         <button
           onClick={join}
-          className="mt-5 w-full rounded-lg bg-blue-600 px-6 py-3 font-medium text-white hover:bg-blue-700"
+          disabled={phase !== "idle"}
+          className="mt-5 w-full rounded-lg bg-blue-600 px-6 py-3 font-medium text-white hover:bg-blue-700 disabled:opacity-60"
         >
-          Start video visit
+          {phase === "idle" ? "Start video visit" : "Connecting…"}
         </button>
 
         {session.patientJoinUrl ? (
