@@ -199,14 +199,17 @@ export default function PharmacyPicker({ clinicSlug, value, onChange }: Props) {
       <label className="block text-sm font-medium text-gray-700 mb-1">
         Preferred pharmacy (optional)
       </label>
+      {/* The search matches each word separately, so name and city together works — say so, or
+          patients type only a chain name and wade through every location in the province. */}
       <input
         type="text"
-        placeholder="Start typing a pharmacy name or address"
+        placeholder="e.g. Shoppers Drug Mart, Burnaby"
         value={term}
         onChange={(e) => setTerm(e.target.value)}
         className={INPUT_CLASS}
         autoComplete="off"
       />
+      <p className="text-xs text-gray-400 mt-1">Enter the pharmacy name and city.</p>
 
       {results.length > 0 && (
         <ul className="mt-1 border border-gray-200 rounded-lg divide-y divide-gray-100 max-h-56 overflow-y-auto">
@@ -230,7 +233,9 @@ export default function PharmacyPicker({ clinicSlug, value, onChange }: Props) {
       )}
 
       {term.trim().length >= MIN_QUERY_LEN && !searching && results.length === 0 && (
-        <p className="text-xs text-gray-500 mt-1">No matches.</p>
+        <p className="text-xs text-gray-500 mt-1">
+          No matches — try fewer words, or enter it manually below.
+        </p>
       )}
 
       <button

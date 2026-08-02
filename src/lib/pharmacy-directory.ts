@@ -32,6 +32,9 @@ export type PharmacyDirectoryState = {
 
 const DEFAULT_SEARCH_LIMIT = 10;
 const MIN_QUERY_LEN = 2;
+// Bounds the number of ANDed LIKEs a single query can build. Six words is far more than a real
+// "name + city" search needs.
+const MAX_QUERY_TOKENS = 6;
 
 function maxAgeDays(): number {
   const raw = Number(process.env.PHARMACY_DIRECTORY_MAX_AGE_DAYS);
@@ -185,24 +188,46 @@ export async function syncPharmacyDirectoryForOrg(
   }
 }
 
-/** Search the mirror. Returns [] for anything shorter than two characters, without hitting the DB. */
+/**
+ * Break a query into words to match independently.
+ *
+ * Patients type "shoppers drug mart, burnaby" — name and city together. Those never appear as one
+ * contiguous string in search_text (the city may even live in the address column, e.g.
+ * "30 - 4429 Kingsway, Burnaby"), so a single LIKE '%…%' can't match. Each word is matched
+ * separately and ANDed instead.
+ *
+ * Punctuation is dropped rather than escaped so "#2127", "shoppers, burnaby" and "st." all behave.
+ * Single characters are dropped — they match nearly everything and only cost a scan.
+ */
+export function tokenizeQuery(q: string): string[] {
+  return q
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((t) => t.length >= MIN_QUERY_LEN)
+    .slice(0, MAX_QUERY_TOKENS);
+}
+
+/** Search the mirror. Returns [] when the query has no usable words, without hitting the DB. */
 export async function searchPharmacyDirectory(
   orgId: string,
   q: string,
   limit: number = DEFAULT_SEARCH_LIMIT,
 ): Promise<PharmacyDirectoryRow[]> {
-  const term = q.trim().toLowerCase();
-  if (term.length < MIN_QUERY_LEN) return [];
+  const tokens = tokenizeQuery(q);
+  if (tokens.length === 0) return [];
 
-  // Without escaping, a patient typing "%" matches every row in the directory.
-  const pattern = `%${term.replace(/[\\%_]/g, "\\$&")}%`;
+  // Escaping still matters: a token can't reach here with % or _ after tokenizing, but the
+  // ESCAPE clause keeps that true if the tokenizer is ever loosened.
+  const conditions = tokens.map((_, i) => `search_text LIKE $${i + 2} ESCAPE '\\'`).join(" AND ");
+  const params: unknown[] = [orgId, ...tokens.map((t) => `%${t.replace(/[\\%_]/g, "\\$&")}%`)];
+  params.push(limit);
 
   const res = await query<DirectoryDbRow>(
     `SELECT ${SELECT_COLUMNS} FROM pharmacy_directory
-     WHERE organization_id = $1 AND active = TRUE AND search_text LIKE $2 ESCAPE '\\'
+     WHERE organization_id = $1 AND active = TRUE AND ${conditions}
      ORDER BY name
-     LIMIT $3`,
-    [orgId, pattern, limit],
+     LIMIT $${params.length}`,
+    params,
   );
   return res.rows.map(mapRow);
 }

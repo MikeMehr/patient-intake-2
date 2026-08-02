@@ -19,6 +19,7 @@ import {
   searchPharmacyDirectory,
   shouldRefreshDirectory,
   syncPharmacyDirectoryForOrg,
+  tokenizeQuery,
 } from "@/lib/pharmacy-directory";
 
 const ORG = "11111111-1111-1111-1111-111111111111";
@@ -42,28 +43,84 @@ afterEach(() => {
   errorSpy.mockRestore();
 });
 
+describe("tokenizeQuery", () => {
+  it("splits a name-plus-city query into independent words", () => {
+    // The reported bug: this returned nothing as a single contiguous LIKE, because the name and
+    // the city are never adjacent in search_text.
+    expect(tokenizeQuery("shoppers drug mart, burnaby")).toEqual([
+      "shoppers",
+      "drug",
+      "mart",
+      "burnaby",
+    ]);
+  });
+
+  it("drops punctuation and keeps store numbers", () => {
+    expect(tokenizeQuery("Shoppers Drug Mart #2127")).toEqual([
+      "shoppers",
+      "drug",
+      "mart",
+      "2127",
+    ]);
+    expect(tokenizeQuery("St. Paul's Pharmacy")).toEqual(["st", "paul", "pharmacy"]);
+  });
+
+  it("drops single characters, which match almost everything", () => {
+    expect(tokenizeQuery("a b shoppers")).toEqual(["shoppers"]);
+  });
+
+  it("caps the number of words so one query cannot build unbounded SQL", () => {
+    expect(tokenizeQuery("aa bb cc dd ee ff gg hh ii")).toHaveLength(6);
+  });
+
+  it("returns nothing usable for empty or punctuation-only input", () => {
+    expect(tokenizeQuery("   ")).toEqual([]);
+    expect(tokenizeQuery(",,, ###")).toEqual([]);
+    expect(tokenizeQuery("s")).toEqual([]);
+  });
+});
+
 describe("searchPharmacyDirectory", () => {
-  it("short-circuits below two characters without touching the database", async () => {
+  it("short-circuits when no usable word remains, without touching the database", async () => {
     expect(await searchPharmacyDirectory(ORG, "s")).toEqual([]);
     expect(await searchPharmacyDirectory(ORG, "  ")).toEqual([]);
     expect(queryMock).not.toHaveBeenCalled();
   });
 
-  it("escapes LIKE wildcards so a lone % cannot return the whole directory", async () => {
-    await searchPharmacyDirectory(ORG, "%%");
-    const [, params] = queryMock.mock.calls[0]!;
-    expect(params[1]).toBe("%\\%\\%%");
+  it("ANDs one LIKE per word so name and city both have to match", async () => {
+    await searchPharmacyDirectory(ORG, "shoppers drug mart, burnaby");
+    const [sql, params] = queryMock.mock.calls[0]!;
 
-    queryMock.mockClear();
-    await searchPharmacyDirectory(ORG, "a_b%c\\d");
-    const [, params2] = queryMock.mock.calls[0]!;
-    expect(params2[1]).toBe("%a\\_b\\%c\\\\d%");
+    expect(sql).toContain(
+      "search_text LIKE $2 ESCAPE '\\' AND search_text LIKE $3 ESCAPE '\\' " +
+        "AND search_text LIKE $4 ESCAPE '\\' AND search_text LIKE $5 ESCAPE '\\'",
+    );
+    expect(params.slice(0, 5)).toEqual([
+      ORG,
+      "%shoppers%",
+      "%drug%",
+      "%mart%",
+      "%burnaby%",
+    ]);
+    // The limit is always the last placeholder, whatever the word count.
+    expect(params[params.length - 1]).toBe(10);
+    expect(sql).toContain(`LIMIT $${params.length}`);
   });
 
-  it("lower-cases the term to match the stored search_text", async () => {
+  it("lower-cases words to match the stored search_text", async () => {
     await searchPharmacyDirectory(ORG, "SHOPPERS");
     const [, params] = queryMock.mock.calls[0]!;
     expect(params[1]).toBe("%shoppers%");
+  });
+
+  it("cannot be turned into a match-everything query by wildcards", async () => {
+    // Tokenizing strips % and _ entirely; the ESCAPE clause is belt-and-braces.
+    expect(await searchPharmacyDirectory(ORG, "%%")).toEqual([]);
+    expect(queryMock).not.toHaveBeenCalled();
+
+    await searchPharmacyDirectory(ORG, "a_b%cd");
+    const [, params] = queryMock.mock.calls[0]!;
+    expect(params.slice(1, -1)).toEqual(["%cd%"]);
   });
 
   it("maps snake_case rows to the camelCase shape", async () => {
