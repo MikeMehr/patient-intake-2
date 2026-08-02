@@ -141,17 +141,25 @@ export default function SlotsPage() {
   }, [dateFrom, dateTo, filterPhysicianId]);
 
   async function handleToggleStatus(slot: Slot) {
+    setError(null);
     const newStatus = slot.status === "OPEN" ? "BLOCKED" : "OPEN";
-    await fetch(`/api/org/slots/${slot.id}`, {
+    const res = await fetch(`/api/org/slots/${slot.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ slotStatus: newStatus }),
     });
+    if (!res.ok) {
+      setError(`Failed to ${newStatus === "BLOCKED" ? "block" : "unblock"} the slot. Please try again.`);
+    }
     loadSlots();
   }
 
   async function handleDelete(slot: Slot) {
-    await fetch(`/api/org/slots/${slot.id}`, { method: "DELETE" });
+    setError(null);
+    const res = await fetch(`/api/org/slots/${slot.id}`, { method: "DELETE" });
+    if (!res.ok) {
+      setError("Failed to delete the slot. Please try again.");
+    }
     loadSlots();
   }
 

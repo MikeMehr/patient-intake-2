@@ -455,6 +455,7 @@ export async function findOverlappingSlots(
     `SELECT start_time, end_time, status
      FROM appointment_slots
      WHERE organization_id = $1 AND physician_id = $2
+       AND status <> 'DELETED'
        AND start_time < $4::TIMESTAMPTZ AND end_time > $3::TIMESTAMPTZ
      ORDER BY start_time`,
     [orgId, physicianId, minStart.toISOString(), maxEnd.toISOString()],
@@ -497,19 +498,34 @@ export async function updateSlotStatus(
   const result = await query(
     `UPDATE appointment_slots
      SET status = $1, updated_at = NOW()
-     WHERE id = $2 AND organization_id = $3 AND status NOT IN ('BOOKED', 'HELD')`,
+     WHERE id = $2 AND organization_id = $3 AND status NOT IN ('BOOKED', 'HELD', 'DELETED')`,
     [status, slotId, orgId],
   );
   return (result.rowCount ?? 0) > 0;
 }
 
 export async function deleteSlot(slotId: string, orgId: string): Promise<boolean> {
-  const result = await query(
-    `DELETE FROM appointment_slots
-     WHERE id = $1 AND organization_id = $2 AND status IN ('OPEN', 'BLOCKED')`,
-    [slotId, orgId],
-  );
-  return (result.rowCount ?? 0) > 0;
+  try {
+    const result = await query(
+      `DELETE FROM appointment_slots
+       WHERE id = $1 AND organization_id = $2 AND status IN ('OPEN', 'BLOCKED')`,
+      [slotId, orgId],
+    );
+    return (result.rowCount ?? 0) > 0;
+  } catch (err) {
+    // A slot that was ever booked is still referenced by its (cancelled)
+    // appointment row, so the FK blocks the hard delete. Soft-delete instead —
+    // DELETED slots are excluded from every listing, and the appointment
+    // history keeps its start/end times.
+    if ((err as { code?: string })?.code !== "23503") throw err;
+    const result = await query(
+      `UPDATE appointment_slots
+       SET status = 'DELETED', updated_at = NOW()
+       WHERE id = $1 AND organization_id = $2 AND status IN ('OPEN', 'BLOCKED')`,
+      [slotId, orgId],
+    );
+    return (result.rowCount ?? 0) > 0;
+  }
 }
 
 // ---------------------------------------------------------------------------
