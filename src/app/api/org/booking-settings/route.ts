@@ -159,6 +159,8 @@ export async function PATCH(request: NextRequest) {
         body.appointmentModality === undefined
           ? undefined
           : normalizeModality(body.appointmentModality),
+      videoVisitsEnabled: body.videoVisitsEnabled,
+      patientMayChooseModality: body.patientMayChooseModality,
       cancellationPolicy: body.cancellationPolicy,
       bookingInstructions: body.bookingInstructions,
       emailFooter: body.emailFooter,

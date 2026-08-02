@@ -100,6 +100,33 @@ function renderPhysicianRow(physicianName?: string | null): string {
  * Renders the appointment format (phone / video / in-person) as a table row, so
  * the patient knows from the confirmation alone what to expect at that time.
  */
+/**
+ * The join button for a video visit.
+ *
+ * Absent whenever the room could not be created at booking time — a Daily outage, or video not
+ * configured. That is deliberately not an error: the booking still stands, and the patient gets
+ * their link from the manage page or from the provider. Better a confirmation with no button
+ * than no confirmation at all.
+ *
+ * The wording about the link opening 15 minutes early matters: the URL is live from the moment
+ * it is sent, but the room is not, and a patient who clicks the day before should understand
+ * they haven't done anything wrong.
+ */
+function renderVideoJoinBlock(joinUrl?: string | null): string {
+  if (!joinUrl) return "";
+  return `
+        <p style="margin-top:20px">
+          <a href="${joinUrl}"
+             style="background:#047857;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;font-weight:600">
+            Join your video appointment
+          </a>
+        </p>
+        <p style="margin-top:8px;font-size:13px;color:#555">
+          The link becomes active 15 minutes before your scheduled time. You'll need a device with
+          a camera and microphone. This link is personal to you — please don't forward it.
+        </p>`;
+}
+
 function renderModalityRow(modality: AppointmentModality): string {
   return `
           <tr><td style="padding:8px 0;color:#555">Format</td>
@@ -135,6 +162,8 @@ export async function sendBookingConfirmation(opts: {
   emailFooter?: string | null;
   clinicEmail?: string | null;
   appointmentModality?: AppointmentModality | null;
+  /** Present only for a video visit whose room was created at booking time. */
+  videoJoinUrl?: string | null;
 }): Promise<void> {
   if (!resend || process.env.HIPAA_MODE === "true") return;
 
@@ -161,7 +190,7 @@ export async function sendBookingConfirmation(opts: {
         <div style="background:#eff6ff;border-left:4px solid #2563eb;border-radius:6px;padding:12px 16px">
           <p style="margin:0 0 4px;font-size:13px;font-weight:600;color:#1e40af">${MODALITY_LABEL[modality]}</p>
           <p style="margin:0;color:#1e3a5f;line-height:1.5">${MODALITY_NOTE[modality]}</p>
-        </div>
+        </div>${renderVideoJoinBlock(opts.videoJoinUrl)}
         <p style="margin-top:24px">
           <a href="${opts.manageUrl}"
              style="background:#2563eb;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;font-weight:600">

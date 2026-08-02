@@ -39,6 +39,8 @@ type Settings = {
   healthCardRequired: boolean;
   showBlockedSlots: boolean;
   appointmentModality: AppointmentModality;
+  videoVisitsEnabled: boolean;
+  patientMayChooseModality: boolean;
   cancellationPolicy: string | null;
   bookingInstructions: string | null;
   emailFooter: string | null;
@@ -77,6 +79,8 @@ export default function BookingSettingsPage() {
     healthCardRequired: false,
     showBlockedSlots: false,
     appointmentModality: DEFAULT_APPOINTMENT_MODALITY,
+    videoVisitsEnabled: false,
+    patientMayChooseModality: false,
     cancellationPolicy: "",
     bookingInstructions: "",
     emailFooter: "",
@@ -335,7 +339,7 @@ export default function BookingSettingsPage() {
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Appointment format</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Default appointment format</label>
               <select
                 value={settings.appointmentModality}
                 onChange={(e) => set("appointmentModality", normalizeModality(e.target.value))}
@@ -349,6 +353,37 @@ export default function BookingSettingsPage() {
                 {MODALITY_NOTE[settings.appointmentModality]}
               </p>
             </div>
+            <label className="flex items-start gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={settings.videoVisitsEnabled}
+                onChange={(e) => set("videoVisitsEnabled", e.target.checked)}
+                className="mt-0.5 w-4 h-4 text-blue-600 border-gray-300 rounded"
+              />
+              <span>
+                <span className="text-sm text-gray-700">Enable video visits</span>
+                <span className="block text-xs text-gray-500">
+                  Patients get a link to join by video, and providers get a video button beside
+                  each patient on the OSCAR day sheet.
+                </span>
+              </span>
+            </label>
+            <label className="flex items-start gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={settings.patientMayChooseModality}
+                disabled={!settings.videoVisitsEnabled}
+                onChange={(e) => set("patientMayChooseModality", e.target.checked)}
+                className="mt-0.5 w-4 h-4 text-blue-600 border-gray-300 rounded disabled:opacity-40"
+              />
+              <span>
+                <span className="text-sm text-gray-700">Let patients choose phone or video</span>
+                <span className="block text-xs text-gray-500">
+                  When off, every booking uses the default format above. Requires video visits to
+                  be enabled.
+                </span>
+              </span>
+            </label>
             <label className="flex items-center gap-3 cursor-pointer">
               <input
                 type="checkbox"

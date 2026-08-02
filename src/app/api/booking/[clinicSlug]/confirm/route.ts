@@ -12,7 +12,17 @@ import { NextRequest, NextResponse } from "next/server";
 import { getClinicBySlug, getPhysiciansForBooking, confirmAppointment } from "@/lib/booking-store";
 import { generateManageToken } from "@/lib/booking-token";
 import { sendBookingConfirmation } from "@/lib/booking-email";
-import { sendBookingAlertSMS } from "@/lib/sms";
+import { sendBookingAlertSMS, toE164 } from "@/lib/sms";
+import {
+  normalizeModality,
+  type AppointmentModality,
+} from "@/lib/appointment-modality";
+import { isDailyConfigured } from "@/lib/video/daily";
+import { getOrCreateVisitForAppointment } from "@/lib/video/video-store";
+import {
+  buildOscarAppointmentNotes,
+  buildVideoLaunchUrl,
+} from "@/lib/oscar/appointment-notes";
 import { getPhysicianPhone } from "@/lib/physician-lookup";
 import { query } from "@/lib/db";
 import { decryptString } from "@/lib/encrypted-field";
@@ -77,6 +87,8 @@ async function handleConfirm(
     billingNote,
     consentGiven,
     oscarDemographicNo,
+    appointmentModality,
+    phone,
   } = body as Record<string, string | boolean | undefined>;
 
   // Preferred pharmacy is optional and must never be able to fail a booking, so an unusable value
@@ -127,6 +139,23 @@ async function handleConfirm(
     return NextResponse.json({ error: "Clinic not found or booking not enabled" }, { status: 404 });
   }
 
+  // How this appointment happens. The clinic setting is the default; the patient may only move
+  // off it when the clinic has actually turned that on. Clamped server-side rather than trusted:
+  // this is an anonymous public form, and without the clamp anyone could book a video visit at a
+  // clinic that doesn't do them, or that has video switched off pending a Daily account.
+  const requestedModality = normalizeModality(appointmentModality);
+  const effectiveModality: AppointmentModality =
+    clinic.settings.patientMayChooseModality &&
+    (requestedModality !== "VIDEO" || clinic.settings.videoVisitsEnabled)
+      ? requestedModality
+      : clinic.settings.appointmentModality;
+
+  // The patient's phone was previously collected only on the "not found in OSCAR" branch and
+  // forwarded to demographic creation without ever being kept. A video visit needs it to text a
+  // join link, and a phone visit is nothing but it.
+  const patientPhone = phone ? toE164(String(phone)) : null;
+  const storedPhone = patientPhone && /^\+\d{10,15}$/.test(patientPhone) ? patientPhone : null;
+
   // Enforce health card requirement (not applicable to existing Oscar patients)
   if (
     clinic.settings.healthCardRequired &&
@@ -159,6 +188,8 @@ async function handleConfirm(
     manageTokenExpiresAt,
     oscarDemographicNo: oscarDemographicNo ? String(oscarDemographicNo) : undefined,
     pharmacy: pharmacyRecord ?? undefined,
+    appointmentModality: effectiveModality,
+    patientPhone: storedPhone,
   });
 
   if (!result) {
@@ -181,6 +212,29 @@ async function handleConfirm(
   const slotEnd = slotRow.rows[0]?.end_time ?? null;
   const slotStartTime = slotStart?.toISOString() ?? "";
 
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://physician.health-assist.org";
+
+  // For a video visit, create the room now so the confirmation email can carry a join link.
+  // Deliberately fail-soft: a Daily outage must not fail a booking that is already committed,
+  // and the provider's day-sheet button creates the room on demand anyway. The patient then
+  // gets their link from the manage page or from the provider.
+  let videoJoinUrl: string | null = null;
+  if (effectiveModality === "VIDEO" && isDailyConfigured()) {
+    try {
+      const visit = await getOrCreateVisitForAppointment({
+        organizationId: clinic.id,
+        appointmentId: result.appointmentId,
+      });
+      if (visit.ok && visit.joinTokenRaw) {
+        videoJoinUrl = `${appUrl}/visit/${visit.joinTokenRaw}`;
+      } else if (!visit.ok) {
+        console.error(`[confirm] video room creation failed for ${result.appointmentId}: ${visit.detail}`);
+      }
+    } catch (err) {
+      console.error("[confirm] video room creation threw:", err);
+    }
+  }
+
   // Best-effort: push the booked appointment into OSCAR so it appears on the
   // provider's day sheet. Never block the booking — it's already committed.
   await syncAppointmentToOscar({
@@ -194,6 +248,14 @@ async function handleConfirm(
     patientFirstName: String(firstName),
     patientLastName: String(lastName),
     reason: oscarReason,
+    modality: effectiveModality,
+    // Keyed on our appointment id, not the OSCAR appointment number: the note is written as
+    // part of creating that appointment, so its number doesn't exist yet, and OSCAR publishes
+    // no way to amend a note afterwards (verified against the live WADL 2026-08-01).
+    videoLaunchUrl:
+      effectiveModality === "VIDEO"
+        ? buildVideoLaunchUrl(appUrl, result.appointmentId)
+        : null,
   });
 
   // Best-effort: set the chosen pharmacy as preferred on the OSCAR chart. Like the sync above,
@@ -205,7 +267,6 @@ async function handleConfirm(
     pharmacy: pharmacyRecord,
   });
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://physician.health-assist.org";
   const manageUrl = `${appUrl}/booking/manage/${manageTokenRaw}`;
 
   // Send confirmation email (best-effort, don't fail booking if email fails)
@@ -221,7 +282,8 @@ async function handleConfirm(
       manageUrl,
       emailFooter: clinic.settings.emailFooter,
       clinicEmail: clinic.email,
-      appointmentModality: clinic.settings.appointmentModality,
+      appointmentModality: effectiveModality,
+      videoJoinUrl,
     });
   } catch {
     // Email failure is non-fatal — appointment is already committed
@@ -281,6 +343,8 @@ async function syncAppointmentToOscar(args: {
   patientFirstName: string;
   patientLastName: string;
   reason: string;
+  modality: AppointmentModality;
+  videoLaunchUrl: string | null;
 }): Promise<void> {
   const setSync = async (status: "SYNCED" | "FAILED" | "SKIPPED", apptNo: string | null, err: string | null) => {
     try {
@@ -358,7 +422,10 @@ async function syncAppointmentToOscar(args: {
       durationMinutes,
       name: `${args.patientLastName}, ${args.patientFirstName}`,
       reason: args.reason,
-      notes: "Booked via online scheduling",
+      notes: buildOscarAppointmentNotes({
+        modality: args.modality,
+        videoLaunchUrl: args.videoLaunchUrl,
+      }),
     });
 
     if (res.ok) {

@@ -23,6 +23,8 @@ type Appointment = {
   coverageType: string;
   cancelledAt: string | null;
   appointmentModality: AppointmentModality;
+  /** Present only for a video visit whose room exists and hasn't ended. */
+  videoJoinUrl: string | null;
 };
 
 export default function ManageAppointmentPage({
@@ -146,10 +148,29 @@ export default function ManageAppointmentPage({
               <Row label="Coverage" value={appointment.coverageType.replace(/_/g, " ")} />
             </div>
 
-            <div className="flex items-start gap-2 bg-blue-50 border border-blue-100 rounded-lg p-3 mb-8">
+            <div className="flex items-start gap-2 bg-blue-50 border border-blue-100 rounded-lg p-3 mb-4">
               <span aria-hidden className="text-base leading-none mt-0.5">{MODALITY_ICON[modality]}</span>
               <p className="text-xs text-blue-800">{MODALITY_NOTE[modality]}</p>
             </div>
+
+            {/* The reliable way in. Email can bounce, be filtered, or be lost in a thread — this
+                page is the one place a patient can always come back to for their link. The button
+                is shown outside the join window too; the visit page itself handles being early,
+                which keeps the two from disagreeing about the time. */}
+            {appointment.videoJoinUrl && (
+              <a
+                href={appointment.videoJoinUrl}
+                className="block w-full bg-green-700 text-white text-center px-6 py-3 rounded-lg font-semibold hover:bg-green-800 transition mb-2"
+              >
+                Join your video appointment
+              </a>
+            )}
+            {appointment.videoJoinUrl && (
+              <p className="text-xs text-gray-500 mb-8">
+                The link becomes active 15 minutes before your scheduled time.
+              </p>
+            )}
+            {!appointment.videoJoinUrl && <div className="mb-4" />}
 
             {error && (
               <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-red-700 text-sm mb-4">

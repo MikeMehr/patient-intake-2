@@ -43,6 +43,8 @@ type ClinicSettings = {
   timezone: string;
   cancellationPolicy: string | null;
   appointmentModality: AppointmentModality;
+  videoVisitsEnabled: boolean;
+  patientMayChooseModality: boolean;
 };
 
 type Step =
@@ -95,6 +97,10 @@ export default function BookingConfirmPage({
     gender: "", // OSCAR sex code: M | F | O | U
   });
 
+  // How the patient wants to be seen. Only offered when the clinic allows a choice AND has
+  // video enabled; otherwise the clinic default applies and this state is unused.
+  const [chosenModality, setChosenModality] = useState<AppointmentModality>("PHONE");
+
   // Preferred pharmacy — new Oscar patients only. Existing patients may already have one set by
   // the clinic, and a public form must not silently replace it.
   const [pharmacy, setPharmacy] = useState<PharmacySelection | null>(null);
@@ -124,6 +130,9 @@ export default function BookingConfirmPage({
       .then((r) => r.json())
       .then((data) => {
         setSettings(data.settings);
+        // Preselect the clinic's own default so a patient who never touches the picker books the
+        // format the clinic expects.
+        setChosenModality(normalizeModality(data.settings?.appointmentModality));
         setClinicName(data.clinic?.name ?? "");
       })
       .catch(() => {});
@@ -299,6 +308,11 @@ export default function BookingConfirmPage({
                             ? coverage.billingNote.trim()
                             : undefined,
         consentGiven:     true,
+        appointmentModality: modality,
+        // Previously collected only on the "new to this clinic" branch and forwarded to OSCAR
+        // without ever being kept. A video visit needs it to text a join link, and a phone visit
+        // is nothing else.
+        phone:            extra.phone.trim() || undefined,
         oscarDemographicNo: demographicNo ?? undefined,
         // Sent here rather than to create-oscar-patient: that route's body maps 1:1 onto OSCAR's
         // demographics payload, and chart creation must not depend on the pharmacy bridge being
@@ -323,7 +337,43 @@ export default function BookingConfirmPage({
   // Render
   // ---------------------------------------------------------------------------
 
-  const modality = normalizeModality(settings?.appointmentModality);
+  // The clinic setting is the default; the patient may move off it only when the clinic has
+  // switched that on. The server clamps this again — a public form's choice is a request, not a
+  // decision.
+  const clinicDefault = normalizeModality(settings?.appointmentModality);
+  const mayChoose = Boolean(settings?.patientMayChooseModality && settings?.videoVisitsEnabled);
+  const modality = mayChoose ? chosenModality : clinicDefault;
+
+  /**
+   * Format picker. Only rendered when the clinic both allows a choice and has video switched on,
+   * so a clinic that hasn't set up video never shows an option that would fail. The banner below
+   * reacts to the selection, which is the point — the patient sees what they've just chosen means.
+   */
+  const modalityPicker = mayChoose ? (
+    <fieldset className="text-left">
+      <legend className="text-sm font-medium text-gray-700 mb-2">
+        How would you like to be seen?
+      </legend>
+      <div className="grid grid-cols-2 gap-2">
+        {(["PHONE", "VIDEO"] as const).map((m) => (
+          <button
+            key={m}
+            type="button"
+            onClick={() => setChosenModality(m)}
+            aria-pressed={modality === m}
+            className={`flex items-center gap-2 rounded-lg border px-3 py-2.5 text-sm font-medium transition ${
+              modality === m
+                ? "border-blue-500 bg-blue-50 text-blue-900"
+                : "border-gray-200 bg-white text-gray-700 hover:border-gray-300"
+            }`}
+          >
+            <span aria-hidden>{MODALITY_ICON[m]}</span>
+            {m === "PHONE" ? "Phone call" : "Video call"}
+          </button>
+        ))}
+      </div>
+    </fieldset>
+  ) : null;
 
   /** Format banner — patients must never be unsure whether to expect a call. */
   const modalityBanner = (
@@ -585,6 +635,8 @@ export default function BookingConfirmPage({
 
           <form onSubmit={handleSubmit} className="space-y-5">
             {reasonField}
+            {modalityPicker}
+            {modalityBanner}
 
             <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 text-sm text-gray-600 space-y-2">
               <p>
@@ -654,6 +706,8 @@ export default function BookingConfirmPage({
 
         <form onSubmit={handleSubmit} className="space-y-5">
           {reasonField}
+          {modalityPicker}
+          {modalityBanner}
 
           {/* Extra info for new Oscar patients */}
           {isNewOscarPatient && (

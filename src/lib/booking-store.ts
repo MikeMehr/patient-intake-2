@@ -20,7 +20,10 @@ export type BookingSettings = {
   slotIntervalMinutes: number;
   healthCardRequired: boolean;
   showBlockedSlots: boolean;
+  /** The clinic default. Since migration 067 an appointment may carry its own. */
   appointmentModality: AppointmentModality;
+  videoVisitsEnabled: boolean;
+  patientMayChooseModality: boolean;
   cancellationPolicy: string | null;
   bookingInstructions: string | null;
   emailFooter: string | null;
@@ -76,6 +79,8 @@ export type AppointmentRow = {
   healthCardNumber: string | null; // decrypted
   billingNote: string | null;
   reason: string | null; // patient-entered reason for visit
+  appointmentModality: string | null; // null = inherit the clinic setting
+  patientPhone: string | null;
   manageTokenExpiresAt: string;
   cancelledAt: string | null;
   createdAt: string;
@@ -108,6 +113,8 @@ export async function getClinicBySlug(slug: string): Promise<ClinicInfo | null> 
     health_card_required: boolean | null;
     show_blocked_slots: boolean | null;
     appointment_modality: string | null;
+    video_visits_enabled: boolean | null;
+    patient_may_choose_modality: boolean | null;
     cancellation_policy: string | null;
     booking_instructions: string | null;
     email_footer: string | null;
@@ -126,6 +133,8 @@ export async function getClinicBySlug(slug: string): Promise<ClinicInfo | null> 
        bs.health_card_required,
        bs.show_blocked_slots,
        bs.appointment_modality,
+       bs.video_visits_enabled,
+       bs.patient_may_choose_modality,
        bs.cancellation_policy,
        bs.booking_instructions,
        bs.email_footer,
@@ -161,6 +170,8 @@ export async function getClinicBySlug(slug: string): Promise<ClinicInfo | null> 
           healthCardRequired: row.health_card_required ?? false,
           showBlockedSlots: row.show_blocked_slots ?? false,
           appointmentModality: normalizeModality(row.appointment_modality),
+          videoVisitsEnabled: row.video_visits_enabled ?? false,
+          patientMayChooseModality: row.patient_may_choose_modality ?? false,
           cancellationPolicy: row.cancellation_policy,
           bookingInstructions: row.booking_instructions,
           emailFooter: row.email_footer,
@@ -223,6 +234,8 @@ export async function getBookingSettingsByOrgId(orgId: string): Promise<BookingS
     health_card_required: boolean;
     show_blocked_slots: boolean;
     appointment_modality: string | null;
+    video_visits_enabled: boolean | null;
+    patient_may_choose_modality: boolean | null;
     cancellation_policy: string | null;
     booking_instructions: string | null;
     email_footer: string | null;
@@ -234,6 +247,7 @@ export async function getBookingSettingsByOrgId(orgId: string): Promise<BookingS
             public_booking_start::TEXT, public_booking_end::TEXT,
             enforce_booking_window, slot_interval_minutes,
             health_card_required, show_blocked_slots, appointment_modality,
+            video_visits_enabled, patient_may_choose_modality,
             cancellation_policy, booking_instructions, email_footer, timezone,
             self_serve_interview_enabled, self_serve_interview_physician_id
      FROM booking_settings WHERE organization_id = $1`,
@@ -254,6 +268,8 @@ export async function getBookingSettingsByOrgId(orgId: string): Promise<BookingS
     healthCardRequired: row.health_card_required,
     showBlockedSlots: row.show_blocked_slots,
     appointmentModality: normalizeModality(row.appointment_modality),
+    videoVisitsEnabled: row.video_visits_enabled ?? false,
+    patientMayChooseModality: row.patient_may_choose_modality ?? false,
     cancellationPolicy: row.cancellation_policy,
     bookingInstructions: row.booking_instructions,
     emailFooter: row.email_footer,
@@ -273,12 +289,13 @@ export async function upsertBookingSettings(
        health_card_required, show_blocked_slots, cancellation_policy,
        booking_instructions, timezone, email_footer,
        self_serve_interview_enabled, self_serve_interview_physician_id,
-       appointment_modality, updated_at)
+       appointment_modality, video_visits_enabled, patient_may_choose_modality, updated_at)
      VALUES ($1,
        COALESCE($2, FALSE), COALESCE($3, '07:00')::TIME, COALESCE($4, '22:00')::TIME,
        COALESCE($5, TRUE), COALESCE($6, 15), COALESCE($7, FALSE), COALESCE($8, FALSE),
        $9, $10, COALESCE($11, 'America/Vancouver'), $12,
-       COALESCE($13, FALSE), $14, COALESCE($15, 'PHONE'), NOW())
+       COALESCE($13, FALSE), $14, COALESCE($15, 'PHONE'),
+       COALESCE($16, FALSE), COALESCE($17, FALSE), NOW())
      ON CONFLICT (organization_id) DO UPDATE SET
        online_booking_enabled  = COALESCE($2, booking_settings.online_booking_enabled),
        public_booking_start    = COALESCE($3::TIME, booking_settings.public_booking_start),
@@ -294,6 +311,8 @@ export async function upsertBookingSettings(
        self_serve_interview_enabled       = COALESCE($13, booking_settings.self_serve_interview_enabled),
        self_serve_interview_physician_id  = COALESCE($14, booking_settings.self_serve_interview_physician_id),
        appointment_modality    = COALESCE($15, booking_settings.appointment_modality),
+       video_visits_enabled       = COALESCE($16, booking_settings.video_visits_enabled),
+       patient_may_choose_modality = COALESCE($17, booking_settings.patient_may_choose_modality),
        updated_at              = NOW()`,
     [
       orgId,
@@ -311,6 +330,8 @@ export async function upsertBookingSettings(
       updates.selfServeInterviewEnabled ?? null,
       updates.selfServeInterviewPhysicianId ?? null,
       updates.appointmentModality ?? null,
+      updates.videoVisitsEnabled ?? null,
+      updates.patientMayChooseModality ?? null,
     ],
   );
 }
@@ -523,6 +544,10 @@ export type ConfirmAppointmentData = {
   healthCardNumber?: string;
   billingNote?: string;
   reason?: string;
+  /** How this specific appointment happens. Null/undefined means "inherit the clinic setting". */
+  appointmentModality?: string | null;
+  /** Normalized to E.164 by the caller. Needed to text a video join link, and it *is* a phone visit. */
+  patientPhone?: string | null;
   manageTokenHash: string;
   manageTokenExpiresAt: Date;
   oscarDemographicNo?: string;
@@ -578,11 +603,13 @@ export async function confirmAppointment(
           email, coverage_type, province, health_card_number_enc, billing_note, reason,
           manage_token_hash, manage_token_expires_at, oscar_demographic_no,
           pharmacy_oscar_id, pharmacy_name, pharmacy_address, pharmacy_city,
-          pharmacy_phone, pharmacy_fax, pharmacy_source)
+          pharmacy_phone, pharmacy_fax, pharmacy_source,
+          appointment_modality, patient_phone)
        SELECT
          hc.organization_id, su.physician_id, hc.id, $4, $5, $6::DATE,
          $7, $8, $9, $10, $11, $12, $13, $14::TIMESTAMPTZ, $15,
-         $16, $17, $18, $19, $20, $21, $22
+         $16, $17, $18, $19, $20, $21, $22,
+         $23, $24
        FROM hold_check hc
        JOIN slot_update su ON TRUE
        RETURNING id AS appointment_id, physician_id
@@ -611,6 +638,8 @@ export async function confirmAppointment(
         data.pharmacy?.phone ?? null,
         data.pharmacy?.fax ?? null,
         data.pharmacy?.source ?? null,
+        data.appointmentModality ?? null,
+        data.patientPhone ?? null,
       ],
     );
   } catch (err) {
@@ -658,6 +687,8 @@ export async function getAppointmentByToken(tokenHash: string): Promise<Appointm
     pharmacy_name: string | null;
     pharmacy_city: string | null;
     pharmacy_link_status: string | null;
+    appointment_modality: string | null;
+    patient_phone: string | null;
   }>(
     `SELECT
        a.id, a.organization_id, a.physician_id,
@@ -668,7 +699,8 @@ export async function getAppointmentByToken(tokenHash: string): Promise<Appointm
        a.first_name, a.last_name, a.date_of_birth::TEXT, a.email,
        a.coverage_type, a.province, a.health_card_number_enc, a.billing_note, a.reason,
        a.manage_token_expires_at, a.cancelled_at, a.created_at, a.oscar_sync_status, a.oscar_appointment_no,
-       a.pharmacy_name, a.pharmacy_city, a.pharmacy_link_status
+       a.pharmacy_name, a.pharmacy_city, a.pharmacy_link_status,
+       a.appointment_modality, a.patient_phone
      FROM appointments a
      JOIN appointment_slots s ON s.id = a.slot_id
      JOIN physicians ph ON ph.id = a.physician_id
@@ -707,6 +739,8 @@ export async function getAppointmentByToken(tokenHash: string): Promise<Appointm
     healthCardNumber,
     billingNote: row.billing_note,
     reason: row.reason,
+    appointmentModality: row.appointment_modality,
+    patientPhone: row.patient_phone,
     manageTokenExpiresAt: row.manage_token_expires_at instanceof Date
       ? row.manage_token_expires_at.toISOString()
       : String(row.manage_token_expires_at),
@@ -787,6 +821,8 @@ export async function getAppointmentsForOrg(
     pharmacy_city: string | null;
     pharmacy_link_status: string | null;
     reason: string | null;
+    appointment_modality: string | null;
+    patient_phone: string | null;
   }>(
     `SELECT
        a.id, a.organization_id, a.physician_id,
@@ -796,7 +832,8 @@ export async function getAppointmentsForOrg(
        a.first_name, a.last_name, a.date_of_birth::TEXT, a.email,
        a.coverage_type, a.province, a.health_card_number_enc, a.billing_note, a.reason,
        a.manage_token_expires_at, a.cancelled_at, a.created_at, a.oscar_sync_status, a.oscar_appointment_no,
-       a.pharmacy_name, a.pharmacy_city, a.pharmacy_link_status
+       a.pharmacy_name, a.pharmacy_city, a.pharmacy_link_status,
+       a.appointment_modality, a.patient_phone
      FROM appointments a
      JOIN appointment_slots s ON s.id = a.slot_id
      JOIN physicians ph ON ph.id = a.physician_id
@@ -824,6 +861,8 @@ export async function getAppointmentsForOrg(
     healthCardNumber: null, // not decrypted in list view
     billingNote: row.billing_note,
     reason: row.reason,
+    appointmentModality: row.appointment_modality,
+    patientPhone: row.patient_phone,
     manageTokenExpiresAt: row.manage_token_expires_at instanceof Date
       ? row.manage_token_expires_at.toISOString()
       : String(row.manage_token_expires_at),

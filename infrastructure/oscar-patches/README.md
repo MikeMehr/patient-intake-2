@@ -9,6 +9,40 @@ editing any JSP, delete its compiled copy under
 `/opt/tomcat9/work/Catalina/localhost/oscar/org/apache/jsp/...` to force a recompile — no Tomcat
 restart is needed.
 
+## Video visit button on the day sheet (added 2026-08-01)
+
+Puts a 🎥 beside every patient on the day sheet, opening the Health Assist video console for
+that appointment. Rooms are created on demand, so it covers appointments typed straight into
+OSCAR and not only ones booked online.
+
+Full install steps, verified selectors and the post-redeploy checklist live in
+`docs/oscar/daysheet-video-install.md`. Summary of what changes on the box:
+
+| Path | What |
+| --- | --- |
+| `provider/appointmentprovideradminday.jsp` | Patched — one `<script src>` line before `</body>` (line 2935). |
+| `appointment/editappointment.jsp` | Optional belt-and-braces "Video Visit" button beside Email Reminder. |
+
+Like `echart-transcribe.js`, the behaviour lives in a file served by the app
+(`public/oscar/daysheet-video.js`), so a WAR redeploy costs one line to restore rather than a
+re-patch. No nginx change and no new service — this is outbound only, so the device-cert gate on
+`location /` is untouched.
+
+### Gotchas worth remembering
+
+- The day sheet is `provider/appointmentprovideradminday.jsp`, **not**
+  `appointment/appointmentcontrol.jsp` (that is the single-appointment popup). No frameset.
+- Both ids come from one anchor: `a.apptLink`'s `onClick` carries `appointment_no` and
+  `demographic_no`. `href` is literally `#`, so read the attribute, not the href.
+- Empty slots render `demographic_no=0` — the script skips them, which is why free slots get no
+  button without any special-casing.
+- This script passes `noopener` and `echart-transcribe.js` deliberately does not: transcribe
+  needs `window.opener` to post the note back, video sends nothing back. Do not unify them.
+- `appointment.notes` is `varchar(255)` and `reason` is `varchar(80)`. The day-sheet row tooltip
+  renders both, so anything written there is visible to anyone reading the schedule.
+- The live WADL publishes only `updateStatus`, `updateType` and `updateUrgency` for an existing
+  appointment — **there is no notes-update operation**, so notes can only be set at creation.
+
 ## Pharmacy bridge (added 2026-08-01)
 
 Lets the booking app read OSCAR's pharmacy directory and set a patient's preferred pharmacy, so a

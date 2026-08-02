@@ -68,7 +68,9 @@ describe("confirmAppointment parameter ordering", () => {
     );
     expect(sql).toContain("$16, $17, $18, $19, $20, $21, $22");
 
-    expect(params).toHaveLength(22);
+    // 22 through pharmacy, plus $23–$24 for the appointment modality and patient phone
+    // added in migration 067.
+    expect(params).toHaveLength(24);
     // $1–$15 unchanged.
     expect(params.slice(0, 15)).toEqual([
       SLOT,
@@ -88,7 +90,7 @@ describe("confirmAppointment parameter ordering", () => {
       "46",
     ]);
     // $16–$22, positionally.
-    expect(params.slice(15)).toEqual([
+    expect(params.slice(15, 22)).toEqual([
       "1449",
       "WAL-MART PHARMACY #1213",
       "1000 Main St",
@@ -97,13 +99,15 @@ describe("confirmAppointment parameter ordering", () => {
       "6049531700",
       "DIRECTORY",
     ]);
+    // $23–$24: modality and phone, both absent from BASE so both NULL.
+    expect(params.slice(22)).toEqual([null, null]);
   });
 
   it("writes NULLs for every pharmacy column when none was chosen", async () => {
     await confirmAppointment(SLOT, ORG, KEY, BASE);
     const [, params] = queryMock.mock.calls[0]!;
-    expect(params).toHaveLength(22);
-    expect(params.slice(15)).toEqual([null, null, null, null, null, null, null]);
+    expect(params).toHaveLength(24);
+    expect(params.slice(15, 22)).toEqual([null, null, null, null, null, null, null]);
   });
 
   it("writes a NULL pharmacy id for free text, keeping the name and source", async () => {
@@ -112,7 +116,7 @@ describe("confirmAppointment parameter ordering", () => {
       pharmacy: { name: "Corner Pharmacy", city: "Burnaby", source: "FREE_TEXT" },
     });
     const [, params] = queryMock.mock.calls[0]!;
-    expect(params.slice(15)).toEqual([
+    expect(params.slice(15, 22)).toEqual([
       null,
       "Corner Pharmacy",
       null,
@@ -126,5 +130,30 @@ describe("confirmAppointment parameter ordering", () => {
   it("still maps a duplicate-slot violation to null rather than throwing", async () => {
     queryMock.mockRejectedValue(Object.assign(new Error("dup"), { code: "23505" }));
     expect(await confirmAppointment(SLOT, ORG, KEY, BASE)).toBeNull();
+  });
+});
+
+/**
+ * The appointment modality reaches the INSERT verbatim — the clamp that decides what it may be
+ * lives in the confirm route, not here. These pin the wiring so a future reorder of the params
+ * array can't silently write the modality into the phone column, which no type would catch:
+ * both are nullable strings.
+ */
+describe("confirmAppointment modality and phone", () => {
+  it("writes the modality and the phone at $23–$24", async () => {
+    await confirmAppointment(SLOT, ORG, KEY, {
+      ...BASE,
+      appointmentModality: "VIDEO",
+      patientPhone: "+16045550123",
+    });
+    const [sql, params] = queryMock.mock.calls[0]!;
+    expect(sql).toContain("appointment_modality, patient_phone");
+    expect(params.slice(22)).toEqual(["VIDEO", "+16045550123"]);
+  });
+
+  it("writes NULL modality when none was chosen, meaning inherit the clinic setting", async () => {
+    await confirmAppointment(SLOT, ORG, KEY, BASE);
+    const [, params] = queryMock.mock.calls[0]!;
+    expect(params[22]).toBeNull();
   });
 });
