@@ -210,6 +210,7 @@ async function insertVisit(args: {
   scheduledEndAt: Date | null;
   patientDisplayName: string | null;
   oscarDemographicNo: string | null;
+  createdAdhoc?: boolean;
 }): Promise<VisitCreationResult> {
   const now = new Date();
   const roomExpiresAt = roomExpiryFor(args.scheduledEndAt, now);
@@ -228,8 +229,9 @@ async function insertVisit(args: {
          organization_id, appointment_id, oscar_appointment_no, physician_id,
          daily_room_name, daily_room_url, room_expires_at,
          patient_join_token_hash, patient_join_token_enc, patient_join_expires_at,
-         scheduled_start_at, scheduled_end_at, patient_display_name, oscar_demographic_no
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+         scheduled_start_at, scheduled_end_at, patient_display_name, oscar_demographic_no,
+         created_adhoc
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
        RETURNING id, organization_id, appointment_id, oscar_appointment_no, physician_id,
                  daily_room_name, daily_room_url, room_expires_at, patient_join_expires_at,
                  scheduled_start_at, scheduled_end_at, patient_display_name,
@@ -251,6 +253,7 @@ async function insertVisit(args: {
         args.scheduledEndAt,
         args.patientDisplayName,
         args.oscarDemographicNo,
+        args.createdAdhoc ?? false,
       ],
     );
     return { ok: true, visit: mapVisit(res.rows[0]), joinTokenRaw: token.raw, created: true };
@@ -275,6 +278,88 @@ async function insertVisit(args: {
     console.error("[video] visit insert failed:", err);
     return { ok: false, status: 500, detail: "Could not record the video visit" };
   }
+}
+
+/**
+ * Recreate the Daily room behind a visit when it has expired (or is about to).
+ *
+ * Visit rows are reused for as long as the appointment exists, but Daily rooms carry an `exp`
+ * and are deleted by Daily soon after it passes — an ad-hoc day-sheet room lives about two
+ * hours. Without this, reopening yesterday's appointment hands both sides a URL to a room that
+ * no longer exists: the provider's join dies on Daily's room check and the patient sits on
+ * "Connecting…" forever. That is exactly what happened the first time a visit was reopened a
+ * day after it was created.
+ *
+ * The patient's join token is rotated only when it has *already* expired — a live link a
+ * patient may be holding is never invalidated. `joinTokenRaw` is non-null when rotation
+ * happened, so the provider console can hand out the fresh link.
+ */
+const ROOM_REFRESH_MARGIN_MS = 5 * 60 * 1000;
+
+export async function ensureLiveRoom(visit: VideoVisit): Promise<VisitCreationResult> {
+  const now = new Date();
+  if (visit.roomExpiresAt.getTime() > now.getTime() + ROOM_REFRESH_MARGIN_MS) {
+    return { ok: true, visit, joinTokenRaw: null, created: false };
+  }
+
+  const roomExpiresAt = roomExpiryFor(visit.scheduledEndAt, now);
+  const room = await createDailyRoom({ expiresAt: roomExpiresAt });
+  if (!room.ok) {
+    console.error(`[video] room refresh failed (${room.status}): ${room.detail}`);
+    return { ok: false, status: 502, detail: "Could not reopen the video room" };
+  }
+
+  // A scheduled end far in the past would yield a token that is born expired; treat such a
+  // visit like an unscheduled one and give the fresh token the ad-hoc lifetime instead.
+  const rotateToken = visit.patientJoinExpiresAt.getTime() <= now.getTime();
+  const token = rotateToken
+    ? generateVisitToken(
+        visit.scheduledEndAt && visit.scheduledEndAt.getTime() > now.getTime()
+          ? visit.scheduledEndAt
+          : null,
+      )
+    : null;
+
+  // Guarded on the old room name: two sides joining at once both see the dead room, but only
+  // one UPDATE lands. The loser throws its room away and reads the winner's.
+  const updated = await query(
+    token
+      ? `UPDATE video_visits
+            SET daily_room_name = $3, daily_room_url = $4, room_expires_at = $5,
+                patient_join_token_hash = $6, patient_join_token_enc = $7,
+                patient_join_expires_at = $8
+          WHERE id = $1 AND daily_room_name = $2`
+      : `UPDATE video_visits
+            SET daily_room_name = $3, daily_room_url = $4, room_expires_at = $5
+          WHERE id = $1 AND daily_room_name = $2`,
+    token
+      ? [
+          visit.id,
+          visit.dailyRoomName,
+          room.value.name,
+          room.value.url,
+          roomExpiresAt,
+          token.hash,
+          encryptString(token.raw),
+          token.expiresAt,
+        ]
+      : [visit.id, visit.dailyRoomName, room.value.name, room.value.url, roomExpiresAt],
+  );
+
+  if (updated.rowCount === 0) {
+    void deleteDailyRoom(room.value.name);
+  }
+
+  const fresh = await getVisitById(visit.id, visit.organizationId);
+  if (!fresh) {
+    return { ok: false, status: 500, detail: "Could not reload the video visit" };
+  }
+  return {
+    ok: true,
+    visit: fresh,
+    joinTokenRaw: updated.rowCount === 0 ? null : (token?.raw ?? null),
+    created: false,
+  };
 }
 
 /** Look a visit up by the patient's raw join token. Returns null for unknown or malformed. */
@@ -394,4 +479,34 @@ export async function cancelVisitsForAppointment(appointmentId: string): Promise
       console.error(`[video] room delete failed for ${row.daily_room_name}: ${del.detail}`);
     }
   }
+}
+
+/**
+ * A video visit created directly by staff, tied to no appointment.
+ *
+ * For the case the booking flow doesn't cover: someone phones the clinic, or a follow-up needs
+ * five minutes of face time, and there is no booking and no OSCAR appointment to hang a room on.
+ * Migration 069 relaxed the key constraint for exactly this.
+ *
+ * No schedule, so resolveJoinState() treats it as joinable from the moment it exists until the
+ * token expires — which is right for a link someone is about to send and expects to work now.
+ * That also makes the token's short unscheduled lifetime the real bound, so an invite is not a
+ * standing door into the clinic.
+ */
+export async function createAdHocVisit(args: {
+  organizationId: string;
+  physicianId: string | null;
+  patientDisplayName: string | null;
+}): Promise<VisitCreationResult> {
+  return insertVisit({
+    organizationId: args.organizationId,
+    appointmentId: null,
+    oscarAppointmentNo: null,
+    physicianId: args.physicianId,
+    scheduledStartAt: null,
+    scheduledEndAt: null,
+    patientDisplayName: args.patientDisplayName,
+    oscarDemographicNo: null,
+    createdAdhoc: true,
+  });
 }

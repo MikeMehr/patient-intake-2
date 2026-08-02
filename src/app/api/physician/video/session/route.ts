@@ -17,7 +17,9 @@ import { getEffectivePhysicianId } from "@/lib/auth-helpers";
 import { resolveAppUrl } from "@/lib/app-url";
 import { isDailyConfigured, mintDailyMeetingToken } from "@/lib/video/daily";
 import {
+  ensureLiveRoom,
   getJoinUrlForResend,
+  getVisitById,
   getOrCreateVisitForAppointment,
   getOrCreateVisitForOscarAppointment,
   isPresent,
@@ -54,10 +56,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
   }
 
-  const { oscarApptNo, appointmentId, demographicNo } = (body || {}) as {
+  const { oscarApptNo, appointmentId, demographicNo, visitId } = (body || {}) as {
     oscarApptNo?: string;
     appointmentId?: string;
     demographicNo?: string;
+    visitId?: string;
   };
 
   const organizationId = session.organizationId;
@@ -67,7 +70,19 @@ export async function POST(request: NextRequest) {
   const physicianId =
     session.userType === "provider" ? getEffectivePhysicianId(session) : null;
 
-  const result = appointmentId
+  // visitId is how an ad-hoc invite is reopened: it belongs to no appointment and has no OSCAR
+  // number, so its own id is the only handle. Still org-scoped — getVisitById takes the
+  // organization from the session, so an id from another clinic simply isn't found.
+  const result = visitId
+    ? UUID_RE.test(visitId)
+      ? await (async () => {
+          const v = await getVisitById(visitId, organizationId);
+          return v
+            ? ({ ok: true, visit: v, joinTokenRaw: null, created: false } as const)
+            : ({ ok: false, status: 404, detail: "Visit not found" } as const);
+        })()
+      : ({ ok: false, status: 400, detail: "Invalid visit id" } as const)
+    : appointmentId
     ? UUID_RE.test(appointmentId)
       ? await getOrCreateVisitForAppointment({ organizationId, appointmentId })
       : ({ ok: false, status: 400, detail: "Invalid appointment id" } as const)
@@ -87,10 +102,18 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: result.detail }, { status: result.status });
   }
 
-  const visit = result.visit;
-  if (visit.status === "CANCELLED" || visit.cancelledAt) {
+  if (result.visit.status === "CANCELLED" || result.visit.cancelledAt) {
     return NextResponse.json({ error: "This appointment was cancelled." }, { status: 409 });
   }
+
+  // A reused visit may be carrying a room Daily has already deleted — recreate it before
+  // handing anyone a URL to it.
+  const live = await ensureLiveRoom(result.visit);
+  if (!live.ok) {
+    return NextResponse.json({ error: live.detail }, { status: live.status });
+  }
+  const visit = live.visit;
+  const joinTokenRaw = result.joinTokenRaw ?? live.joinTokenRaw;
 
   // The provider is the room owner: they can end the call for everyone. Their token outlives
   // the room slightly so a reconnect near the end doesn't bounce them.
@@ -119,8 +142,8 @@ export async function POST(request: NextRequest) {
     // provider can copy or re-send the link whether or not this request created the room. Null
     // only for visits created before that migration.
     patientJoinUrl:
-      result.joinTokenRaw
-        ? `${appUrl}/visit/${result.joinTokenRaw}`
+      joinTokenRaw
+        ? `${appUrl}/visit/${joinTokenRaw}`
         : await getJoinUrlForResend(visit.id, organizationId, appUrl),
     patientName: visit.patientDisplayName,
     scheduledStartAt: visit.scheduledStartAt?.toISOString() ?? null,

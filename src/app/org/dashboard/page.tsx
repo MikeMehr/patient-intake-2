@@ -255,6 +255,16 @@ export default function OrgDashboard() {
             </div>
           </Link>
           <Link
+            href="/org/video-invite"
+            className="flex items-center gap-3 bg-white border border-slate-200 rounded-lg px-5 py-4 hover:border-blue-400 hover:shadow-sm transition"
+          >
+            <span className="text-2xl">🎥</span>
+            <div>
+              <p className="text-sm font-semibold text-slate-900">Invite to Video Call</p>
+              <p className="text-xs text-slate-500">Send a patient a link, no booking needed</p>
+            </div>
+          </Link>
+          <Link
             href="/org/documents"
             className="flex items-center gap-3 bg-white border border-slate-200 rounded-lg px-5 py-4 hover:border-blue-400 hover:shadow-sm transition"
           >

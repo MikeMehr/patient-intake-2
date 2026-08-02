@@ -44,6 +44,8 @@ function ProviderVideoConsole() {
   const oscarApptNo = searchParams.get("oscarApptNo");
   const appointmentId = searchParams.get("appointmentId");
   const demographicNo = searchParams.get("demographicNo");
+  // How an ad-hoc invite is reopened — it has no appointment and no OSCAR number.
+  const visitId = searchParams.get("visitId");
 
   const [session, setSession] = useState<SessionInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -60,7 +62,7 @@ function ProviderVideoConsole() {
 
   // ── Resolve (or create) the visit ─────────────────────────────────────────
   useEffect(() => {
-    if (!oscarApptNo && !appointmentId) {
+    if (!oscarApptNo && !appointmentId && !visitId) {
       setError("No appointment was specified.");
       return;
     }
@@ -68,7 +70,7 @@ function ProviderVideoConsole() {
     fetch("/api/physician/video/session", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ oscarApptNo, appointmentId, demographicNo }),
+      body: JSON.stringify({ oscarApptNo, appointmentId, demographicNo, visitId }),
     })
       .then(async (r) => {
         const body = await r.json().catch(() => ({}));
@@ -86,7 +88,7 @@ function ProviderVideoConsole() {
     return () => {
       cancelled = true;
     };
-  }, [oscarApptNo, appointmentId, demographicNo]);
+  }, [oscarApptNo, appointmentId, demographicNo, visitId]);
 
   // ── Heartbeat ─────────────────────────────────────────────────────────────
   // Tells the patient's waiting room that the provider is here, and reads back whether the
