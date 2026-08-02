@@ -18,9 +18,8 @@ type Appointment = {
   cancelledAt: string | null;
   createdAt: string;
   oscarSyncStatus: string | null;
-  pharmacyName: string | null;
-  pharmacyCity: string | null;
-  pharmacyLinkStatus: string | null;
+  /** null means "inherit the clinic default" — see resolveEffectiveModality. */
+  appointmentModality: string | null;
 };
 
 type Physician = { id: string; firstName: string; lastName: string };
@@ -48,49 +47,48 @@ function formatDT(iso: string): string {
 }
 
 /**
- * The patient's preferred pharmacy and whether it made it onto their OSCAR chart.
+ * Launch the video console for an appointment.
  *
- * SKIPPED is the expected outcome for a pharmacy the patient typed by hand — the app deliberately
- * does not create rows in OSCAR's shared pharmacy directory from public booking input — so it reads
- * as an action for staff, not as an error.
+ * Offered on every appointment, not only the ones booked as video — the same reasoning as the
+ * OSCAR day-sheet button. A patient who booked a phone visit and then can't be reached, or who
+ * turns out to need to be looked at, is exactly when a clinician wants to start a video call,
+ * and making them rebook to do it would be absurd. Appointments actually booked as video get the
+ * solid button so they stand out in a day of phone calls.
+ *
+ * Opens in a new tab so the list stays put behind the call.
  */
-function PharmacyCell({
-  name,
-  city,
-  linkStatus,
+function VideoCell({
+  appointmentId,
+  modality,
+  cancelled,
 }: {
-  name: string | null;
-  city: string | null;
-  linkStatus: string | null;
+  appointmentId: string;
+  modality: string | null;
+  cancelled: boolean;
 }) {
-  if (!name) return <span className="text-gray-300">—</span>;
+  // Nothing to start, and a live join link for a cancelled appointment is precisely what
+  // cancelVisitsForAppointment exists to prevent.
+  if (cancelled) return <span className="text-gray-300">—</span>;
 
+  const isVideo = modality === "VIDEO";
   return (
-    <div>
-      <p className="text-gray-800">{name}</p>
-      {city && <p className="text-gray-400 text-xs">{city}</p>}
-      {linkStatus === "LINKED" && (
-        <span className="inline-block mt-0.5 px-2 py-0.5 rounded-full bg-green-100 text-green-700 text-xs font-medium">
-          Set in OSCAR
-        </span>
-      )}
-      {linkStatus === "SKIPPED" && (
-        <span
-          className="inline-block mt-0.5 px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 text-xs font-medium"
-          title="Not in the OSCAR pharmacy list. Add it in OSCAR and set it on the chart."
-        >
-          Add manually
-        </span>
-      )}
-      {linkStatus === "FAILED" && (
-        <span
-          className="inline-block mt-0.5 px-2 py-0.5 rounded-full bg-red-100 text-red-600 text-xs font-medium"
-          title="The pharmacy could not be set on the OSCAR chart. Set it manually."
-        >
-          Not set
-        </span>
-      )}
-    </div>
+    <a
+      href={`/physician/video?appointmentId=${appointmentId}`}
+      target="_blank"
+      rel="noopener noreferrer"
+      title={
+        isVideo
+          ? "Start this video visit"
+          : "Start a video call with this patient (booked as a phone or in-person visit)"
+      }
+      className={
+        isVideo
+          ? "inline-block whitespace-nowrap rounded-full bg-blue-600 px-2 py-0.5 text-xs font-medium text-white hover:bg-blue-700"
+          : "inline-block whitespace-nowrap rounded-full border border-gray-200 px-2 py-0.5 text-xs font-medium text-gray-500 hover:border-gray-300 hover:text-gray-700"
+      }
+    >
+      🎥 Start
+    </a>
   );
 }
 
@@ -241,38 +239,41 @@ export default function AppointmentsPage() {
             <p className="text-gray-400 text-sm p-6 text-center">No appointments in this date range.</p>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+              {/* text-xs rather than text-sm: eight columns of clinical data need the room more
+                  than the type needs the size, and this table is scanned, not read. */}
+              <table className="w-full text-xs">
                 <thead className="bg-gray-50 border-b border-gray-200">
                   <tr>
-                    <th className="text-left px-4 py-3 text-gray-600 font-medium">Date & time</th>
-                    <th className="text-left px-4 py-3 text-gray-600 font-medium">Patient</th>
-                    <th className="text-left px-4 py-3 text-gray-600 font-medium">Physician</th>
-                    <th className="text-left px-4 py-3 text-gray-600 font-medium">Reason</th>
-                    <th className="text-left px-4 py-3 text-gray-600 font-medium">Coverage</th>
-                    <th className="text-left px-4 py-3 text-gray-600 font-medium">Pharmacy</th>
-                    <th className="text-left px-4 py-3 text-gray-600 font-medium">Status</th>
-                    <th className="text-left px-4 py-3 text-gray-600 font-medium">OSCAR</th>
+                    <th className="text-left px-2 py-2 text-gray-600 font-medium">Date &amp; time</th>
+                    <th className="text-left px-2 py-2 text-gray-600 font-medium">Patient</th>
+                    <th className="text-left px-2 py-2 text-gray-600 font-medium">Physician</th>
+                    <th className="text-left px-2 py-2 text-gray-600 font-medium">Reason</th>
+                    <th className="text-left px-2 py-2 text-gray-600 font-medium">Coverage</th>
+                    <th className="text-left px-2 py-2 text-gray-600 font-medium">Status</th>
+                    <th className="text-left px-2 py-2 text-gray-600 font-medium">OSCAR</th>
+                    <th className="text-left px-2 py-2 text-gray-600 font-medium">Video</th>
                   </tr>
                 </thead>
                 <tbody>
                   {appointments.map((appt) => (
                     <tr key={appt.id} className="border-b border-gray-100 last:border-0 hover:bg-gray-50">
-                      <td className="px-4 py-3 text-gray-800 whitespace-nowrap">
+                      <td className="px-2 py-2 text-gray-800 whitespace-nowrap">
                         {formatDT(appt.slotStartTime)}
                       </td>
-                      <td className="px-4 py-3">
-                        <p className="font-medium text-gray-900">
+                      <td className="px-2 py-2">
+                        <p className="font-medium text-gray-900 whitespace-nowrap">
                           {appt.firstName} {appt.lastName}
                         </p>
-                        <p className="text-gray-400 text-xs">{appt.email}</p>
+                        <p className="text-gray-400 text-xs break-all">{appt.email}</p>
                       </td>
-                      <td className="px-4 py-3 text-gray-700 whitespace-nowrap">
-                        Dr. {appt.physicianFirstName} {appt.physicianLastName}
+                      <td className="px-2 py-2 text-gray-700 whitespace-nowrap">
+                        {/* "Dr." is redundant in a clinic's own list and cost real width. */}
+                        {appt.physicianLastName}
                       </td>
-                      <td className="px-4 py-3 text-gray-700">
+                      <td className="px-2 py-2 text-gray-700 min-w-[8rem]">
                         {appt.reason ?? <span className="text-gray-300">—</span>}
                       </td>
-                      <td className="px-4 py-3 text-gray-600">
+                      <td className="px-2 py-2 text-gray-600">
                         {COVERAGE_LABELS[appt.coverageType] ?? appt.coverageType}
                         {appt.province && (
                           <span className="text-gray-400 text-xs block">{appt.province}</span>
@@ -281,14 +282,7 @@ export default function AppointmentsPage() {
                           <span className="text-gray-400 text-xs block">{appt.billingNote}</span>
                         )}
                       </td>
-                      <td className="px-4 py-3">
-                        <PharmacyCell
-                          name={appt.pharmacyName}
-                          city={appt.pharmacyCity}
-                          linkStatus={appt.pharmacyLinkStatus}
-                        />
-                      </td>
-                      <td className="px-4 py-3">
+                      <td className="px-2 py-2">
                         {appt.cancelledAt ? (
                           <span className="inline-block px-2 py-0.5 rounded-full bg-red-100 text-red-600 text-xs font-medium">
                             Cancelled
@@ -299,8 +293,15 @@ export default function AppointmentsPage() {
                           </span>
                         )}
                       </td>
-                      <td className="px-4 py-3">
+                      <td className="px-2 py-2">
                         <OscarBadge status={appt.oscarSyncStatus} />
+                      </td>
+                      <td className="px-2 py-2">
+                        <VideoCell
+                          appointmentId={appt.id}
+                          modality={appt.appointmentModality}
+                          cancelled={!!appt.cancelledAt}
+                        />
                       </td>
                     </tr>
                   ))}
