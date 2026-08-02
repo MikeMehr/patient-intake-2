@@ -9,6 +9,9 @@
     ?appointmentNo=57    - from the Edit Appointment window ("Email Reminder" button);
                            the demographic is resolved from the appointment row and the
                            body is pre-filled with the appointment date/time/provider.
+    &documentNo=5        - from the eChart Documents list ("Email to patient" icon);
+                           the stored document is pre-attached after verifying via
+                           ctl_document that it belongs to this demographic.
 
   Sends as info@mymdonline.ca via the GoDaddy SMTP account. Credentials live in
   /var/lib/OscarDocument/oscar/mymd_mail.properties (tomcat:tomcat 600, outside the web
@@ -17,23 +20,39 @@
 <%@ page import="java.io.File" %>
 <%@ page import="java.io.FileInputStream" %>
 <%@ page import="java.io.InputStream" %>
+<%@ page import="java.nio.file.Files" %>
 <%@ page import="java.sql.Connection" %>
 <%@ page import="java.sql.DriverManager" %>
 <%@ page import="java.sql.PreparedStatement" %>
 <%@ page import="java.sql.ResultSet" %>
 <%@ page import="java.sql.Timestamp" %>
 <%@ page import="java.text.SimpleDateFormat" %>
+<%@ page import="java.util.ArrayList" %>
+<%@ page import="java.util.List" %>
 <%@ page import="java.util.Properties" %>
+<%@ page import="javax.activation.DataHandler" %>
 <%@ page import="javax.mail.Authenticator" %>
 <%@ page import="javax.mail.PasswordAuthentication" %>
 <%@ page import="javax.mail.Transport" %>
 <%@ page import="javax.mail.internet.InternetAddress" %>
+<%@ page import="javax.mail.internet.MimeBodyPart" %>
 <%@ page import="javax.mail.internet.MimeMessage" %>
+<%@ page import="javax.mail.internet.MimeMultipart" %>
+<%@ page import="javax.mail.internet.MimeUtility" %>
+<%@ page import="javax.mail.util.ByteArrayDataSource" %>
+<%@ page import="org.apache.commons.fileupload.FileItem" %>
+<%@ page import="org.apache.commons.fileupload.disk.DiskFileItemFactory" %>
+<%@ page import="org.apache.commons.fileupload.servlet.ServletFileUpload" %>
 <%@ page import="org.oscarehr.util.LoggedInInfo" %>
 <%@ page import="org.owasp.encoder.Encode" %>
 <%@ page contentType="text/html;charset=UTF-8" %>
 <%!
     private static final String MAIL_PROPS = "/var/lib/OscarDocument/oscar/mymd_mail.properties";
+    // Matches DOCUMENT_DIR in oscar_mcmaster.properties - where eChart documents live on disk.
+    private static final String DOCUMENT_DIR = "/var/lib/OscarDocument/oscar/document/";
+    // Base64 inflates ~37% and GoDaddy rejects messages around 25-30 MB, so 15 MB of raw
+    // attachment keeps the encoded message comfortably under the ceiling.
+    private static final long MAX_ATTACH_TOTAL = 15L * 1024 * 1024;
     private static final String DB_URL = "jdbc:mysql://127.0.0.1:3306/oscar_db?useSSL=false";
     private static final String DB_USER = "oscar";
     private static final String DB_PASS = "oscar_password_2026";
@@ -81,6 +100,43 @@
              + "This mailbox is not monitored for urgent matters. If this is an emergency, call 911.\n"
              + "Please do not reply with personal health information - email is not a secure channel.";
     }
+
+    /** One uploaded attachment, held in memory just long enough to send. */
+    public static class Attach {
+        public final String name;
+        public final String contentType;
+        public final byte[] data;
+        public Attach(String name, String contentType, byte[] data) {
+            this.name = name; this.contentType = contentType; this.data = data;
+        }
+    }
+
+    /** Strip any path a browser may prepend to an uploaded filename (old IE sends C:\...). */
+    private String baseName(String raw) {
+        if (raw == null) return "";
+        String n = raw;
+        int i = Math.max(n.lastIndexOf('/'), n.lastIndexOf('\\'));
+        if (i >= 0) n = n.substring(i + 1);
+        return n.trim();
+    }
+
+    /** Patient-facing filename for a chart document: the description + the stored file's extension. */
+    private String docAttachName(String desc, String storedFilename) {
+        String name = (desc == null ? "" : desc.trim()).replaceAll("[\\\\/:*?\"<>|]", "_");
+        if (name.length() == 0) name = "document";
+        String ext = "";
+        if (storedFilename != null) {
+            int dot = storedFilename.lastIndexOf('.');
+            if (dot >= 0) ext = storedFilename.substring(dot);
+        }
+        return name.toLowerCase().endsWith(ext.toLowerCase()) ? name : name + ext;
+    }
+
+    private String fmtSize(long b) {
+        if (b < 1024) return b + " B";
+        if (b < 1024L * 1024) return Math.round(b / 1024.0) + " KB";
+        return (Math.round(b * 10.0 / (1024 * 1024)) / 10.0) + " MB";
+    }
 %>
 <%
     LoggedInInfo loggedInInfo = LoggedInInfo.getLoggedInInfoFromSession(request);
@@ -104,6 +160,54 @@
     String resultMsg = null;
     boolean resultOk = false;
     String postedSubject = "", postedBody = "";
+
+    // ---- multipart parsing (attachments) ------------------------------------------------
+    // A multipart POST hides the ordinary fields from request.getParameter(), so the fields
+    // AND the files are both pulled out here with commons-fileupload (already in WEB-INF/lib).
+    String mpSubject = null, mpBody = null, mpDocumentNo = null;
+    List<Attach> attachments = new ArrayList<Attach>();
+    String attachError = null;
+    if (isPost && ServletFileUpload.isMultipartContent(request)) {
+        try {
+            DiskFileItemFactory factory = new DiskFileItemFactory();
+            factory.setSizeThreshold(512 * 1024);
+            ServletFileUpload upload = new ServletFileUpload(factory);
+            // A little headroom over the attachment cap for the text fields + part headers;
+            // the per-attachment running total below is the real limit.
+            upload.setSizeMax(MAX_ATTACH_TOTAL + 1024 * 1024);
+            upload.setHeaderEncoding("UTF-8");
+            List<FileItem> items = upload.parseRequest(request);
+            long total = 0;
+            for (FileItem item : items) {
+                if (item.isFormField()) {
+                    if ("subject".equals(item.getFieldName())) mpSubject = item.getString("UTF-8");
+                    else if ("body".equals(item.getFieldName())) mpBody = item.getString("UTF-8");
+                    else if ("documentNo".equals(item.getFieldName())) mpDocumentNo = item.getString("UTF-8");
+                } else {
+                    String name = baseName(item.getName());
+                    // An untouched <input type=file> still posts one empty part - skip it.
+                    if (name.length() == 0 || item.getSize() == 0) { item.delete(); continue; }
+                    total += item.getSize();
+                    if (total > MAX_ATTACH_TOTAL) {
+                        attachError = "Attachments too large: the total must stay under "
+                                    + fmtSize(MAX_ATTACH_TOTAL) + ". Nothing was sent.";
+                        item.delete();
+                        break;
+                    }
+                    String ct = item.getContentType();
+                    if (ct == null || ct.trim().length() == 0) ct = "application/octet-stream";
+                    attachments.add(new Attach(name, ct, item.get()));
+                    item.delete();
+                }
+            }
+        } catch (org.apache.commons.fileupload.FileUploadBase.SizeLimitExceededException sle) {
+            attachError = "Attachments too large: the total must stay under "
+                        + fmtSize(MAX_ATTACH_TOTAL) + ". Nothing was sent.";
+        } catch (Exception upEx) {
+            attachError = "The form upload could not be read (" + upEx.getMessage()
+                        + ") - nothing was sent.";
+        }
+    }
 
     Class.forName("com.mysql.cj.jdbc.Driver");
     Connection conn = DriverManager.getConnection(DB_URL, DB_USER, DB_PASS);
@@ -158,18 +262,87 @@
             rs.close(); ps.close();
         }
 
+        // ---- resolve a chart document to attach (documentNo mode) -----------------------
+        // The ctl_document join is the security check: a tampered documentNo that belongs to
+        // a different patient simply resolves to nothing.
+        String docRaw = mpDocumentNo != null ? mpDocumentNo : request.getParameter("documentNo");
+        int docNo = 0;
+        String docDesc = null, docStoredFile = null, docContentType = null;
+        String docName = null;
+        long docSize = 0;
+        if (found && docRaw != null && docRaw.trim().length() > 0) {
+            try { docNo = Integer.parseInt(docRaw.trim()); } catch (NumberFormatException nfe) { docNo = 0; }
+            if (docNo > 0) {
+                PreparedStatement dp = conn.prepareStatement(
+                    "SELECT d.docdesc, d.docfilename, d.contenttype "
+                  + "FROM document d JOIN ctl_document c ON c.document_no = d.document_no "
+                  + "WHERE d.document_no = ? AND c.module = 'demographic' AND c.module_id = ? "
+                  + "AND d.status <> 'D'");
+                dp.setInt(1, docNo);
+                dp.setInt(2, demoNo);
+                ResultSet drs = dp.executeQuery();
+                if (drs.next()) {
+                    docDesc = drs.getString("docdesc");
+                    docStoredFile = drs.getString("docfilename");
+                    docContentType = drs.getString("contenttype");
+                }
+                drs.close(); dp.close();
+
+                if (docStoredFile == null) {
+                    docNo = 0;
+                    if (resultMsg == null) resultMsg = "The requested chart document was not found "
+                        + "for this patient, so it will NOT be attached.";
+                } else {
+                    // The stored filename comes from our own DB row, but keep the path strictly
+                    // inside DOCUMENT_DIR anyway.
+                    File df = new File(DOCUMENT_DIR, baseName(docStoredFile));
+                    if (!df.isFile()) {
+                        docNo = 0;
+                        if (resultMsg == null) resultMsg = "The chart document's file is missing on "
+                            + "the server, so it will NOT be attached.";
+                    } else {
+                        docSize = df.length();
+                        docName = docAttachName(docDesc, docStoredFile);
+                        if (docContentType == null || docContentType.trim().length() == 0)
+                            docContentType = "application/octet-stream";
+                    }
+                }
+            }
+        }
+
         // ---- send ----------------------------------------------------------------------
         if (isPost && found && patientEmail.length() > 0) {
-            postedSubject = request.getParameter("subject");
-            postedBody = request.getParameter("body");
+            postedSubject = mpSubject != null ? mpSubject : request.getParameter("subject");
+            postedBody = mpBody != null ? mpBody : request.getParameter("body");
             if (postedSubject == null) postedSubject = "";
             if (postedBody == null) postedBody = "";
             postedSubject = postedSubject.trim();
             postedBody = postedBody.trim();
 
-            if (postedSubject.length() == 0 || postedBody.length() == 0) {
+            if (attachError != null) {
+                resultMsg = attachError;
+            } else if (postedSubject.length() == 0 || postedBody.length() == 0) {
                 resultMsg = "Subject and message are both required - nothing was sent.";
             } else {
+                // Pre-attach the chart document (documentNo mode) ahead of any uploaded files.
+                if (docNo > 0 && docName != null) {
+                    try {
+                        attachments.add(0, new Attach(docName, docContentType,
+                            Files.readAllBytes(new File(DOCUMENT_DIR, baseName(docStoredFile)).toPath())));
+                    } catch (Exception readEx) {
+                        attachError = "The chart document could not be read (" + readEx.getMessage()
+                                    + ") - nothing was sent.";
+                    }
+                    long combined = 0;
+                    for (Attach a : attachments) combined += a.data.length;
+                    if (attachError == null && combined > MAX_ATTACH_TOTAL) {
+                        attachError = "Attachments too large: the chart document plus uploads must "
+                                    + "stay under " + fmtSize(MAX_ATTACH_TOTAL) + ". Nothing was sent.";
+                    }
+                }
+                if (attachError != null) {
+                    resultMsg = attachError;
+                } else {
                 Properties mp = loadMailProps();
                 String host = mp.getProperty("mail.host");
                 String port = mp.getProperty("mail.port", "465");
@@ -181,6 +354,16 @@
                 // NOTE: the recipient comes from the database row loaded above, never from the
                 // posted form, so a tampered form cannot redirect the message elsewhere.
                 String fullBody = postedBody + footer();
+
+                String attachNames = null;
+                if (!attachments.isEmpty()) {
+                    StringBuilder an = new StringBuilder();
+                    for (Attach a : attachments) {
+                        if (an.length() > 0) an.append("; ");
+                        an.append(a.name).append(" (").append(fmtSize(a.data.length)).append(")");
+                    }
+                    attachNames = an.length() > 1000 ? an.substring(0, 1000) : an.toString();
+                }
 
                 String status;
                 String errorMsg = null;
@@ -208,13 +391,29 @@
                     msg.setReplyTo(new InternetAddress[]{ new InternetAddress(from, fromName) });
                     msg.setRecipients(javax.mail.Message.RecipientType.TO, InternetAddress.parse(patientEmail, false));
                     msg.setSubject(postedSubject, "UTF-8");
-                    msg.setText(fullBody, "UTF-8");
+                    if (attachments.isEmpty()) {
+                        msg.setText(fullBody, "UTF-8");
+                    } else {
+                        MimeMultipart mixed = new MimeMultipart("mixed");
+                        MimeBodyPart textPart = new MimeBodyPart();
+                        textPart.setText(fullBody, "UTF-8");
+                        mixed.addBodyPart(textPart);
+                        for (Attach a : attachments) {
+                            MimeBodyPart filePart = new MimeBodyPart();
+                            filePart.setDataHandler(new DataHandler(new ByteArrayDataSource(a.data, a.contentType)));
+                            filePart.setFileName(MimeUtility.encodeText(a.name, "UTF-8", null));
+                            mixed.addBodyPart(filePart);
+                        }
+                        msg.setContent(mixed);
+                    }
                     msg.setSentDate(new java.util.Date());
                     Transport.send(msg);
 
                     status = "SENT";
                     resultOk = true;
-                    resultMsg = "Email sent to " + patientEmail + ".";
+                    resultMsg = "Email sent to " + patientEmail
+                              + (attachments.isEmpty() ? "" : " with " + attachments.size()
+                                 + (attachments.size() == 1 ? " attachment" : " attachments")) + ".";
                 } catch (Exception mailEx) {
                     status = "FAILED";
                     errorMsg = mailEx.toString();
@@ -227,23 +426,25 @@
                 try {
                     PreparedStatement lp = conn.prepareStatement(
                         "INSERT INTO mymd_patient_email_log "
-                      + "(demographic_no, appointment_no, provider_no, to_email, subject, body, status, error_msg, sent_datetime) "
-                      + "VALUES (?,?,?,?,?,?,?,?,?)");
+                      + "(demographic_no, appointment_no, provider_no, to_email, subject, body, attachments, status, error_msg, sent_datetime) "
+                      + "VALUES (?,?,?,?,?,?,?,?,?,?)");
                     lp.setInt(1, demoNo);
                     if (apptNo > 0) lp.setInt(2, apptNo); else lp.setNull(2, java.sql.Types.INTEGER);
                     lp.setString(3, providerNo);
                     lp.setString(4, patientEmail);
                     lp.setString(5, postedSubject);
                     lp.setString(6, fullBody);
-                    lp.setString(7, status);
-                    lp.setString(8, errorMsg);
-                    lp.setTimestamp(9, new Timestamp(System.currentTimeMillis()));
+                    lp.setString(7, attachNames);
+                    lp.setString(8, status);
+                    lp.setString(9, errorMsg);
+                    lp.setTimestamp(10, new Timestamp(System.currentTimeMillis()));
                     lp.executeUpdate();
                     lp.close();
                 } catch (Exception logEx) {
                     resultMsg = resultMsg + " (Warning: the audit log entry could not be written: "
                               + logEx.getMessage() + ")";
                 }
+                } // end attachError-clear branch
             }
         }
 
@@ -266,6 +467,11 @@
                               ? "    Location: " + apptLocation.trim() + "\n" : "")
                         + "\nIf you need to reschedule or cancel, please contact the office in advance.\n\n"
                         + "Thank you,\n" + signature;
+        } else if (docNo > 0 && docName != null) {
+            defaultSubject = "A document from your doctor's office";
+            defaultBody = greeting + "\n\nPlease find attached: "
+                        + (docDesc != null && docDesc.trim().length() > 0 ? docDesc.trim() : "your document")
+                        + ".\n\nThank you,\n" + signature;
         }
 %>
 <html>
@@ -345,7 +551,7 @@
             Keep clinical detail out of the message - ask the patient to call or book a visit instead.
         </div>
 
-        <form method="post" class="card" onsubmit="return confirmSend();">
+        <form method="post" enctype="multipart/form-data" class="card" onsubmit="return confirmSend();">
             <label>To</label>
             <input type="text" class="ro" value="<%= esc(patientEmail) %>" readonly>
             <div class="foot-note">Taken from the patient's record. To change it, edit the Master Demographic record.</div>
@@ -371,6 +577,22 @@
             <div class="foot-note">
                 A standard footer (clinic name, website, info@ address, emergency notice, and a
                 "do not reply with personal health information" warning) is added automatically.
+            </div>
+
+            <% if (docNo > 0 && docName != null) { %>
+                <label>Chart attachment</label>
+                <input type="text" class="ro" value="<%= esc(docName + " (" + fmtSize(docSize) + ")") %>" readonly>
+                <input type="hidden" name="documentNo" value="<%= docNo %>">
+                <div class="foot-note">This document from the chart will be attached automatically.</div>
+            <% } %>
+
+            <label for="attachments"><%= docNo > 0 ? "Additional attachments" : "Attachments" %></label>
+            <input type="file" id="attachments" name="attachments" multiple>
+            <div class="foot-note">
+                Optional. Up to 15&nbsp;MB total. Attachments are sent as-is and are
+                <b>not password-protected</b> - for lab or imaging requisitions prefer the
+                "Email to Patient" button on the eForm, which protects the PDF with the
+                patient's health number.
             </div>
 
             <p style="margin-top:14px;">
@@ -416,7 +638,19 @@
                 var s = document.getElementById('subject').value.replace(/^\s+|\s+$/g, '');
                 var b = document.getElementById('body').value.replace(/^\s+|\s+$/g, '');
                 if (!s || !b) { alert('Please fill in both a subject and a message.'); return false; }
-                return confirm('Send this email to <%= Encode.forJavaScriptBlock(patientEmail) %>?');
+                var fi = document.getElementById('attachments');
+                var n = <%= docNo > 0 && docName != null ? "1" : "0" %>, total = <%= docSize %>;
+                if (fi && fi.files) {
+                    n += fi.files.length;
+                    for (var i = 0; i < fi.files.length; i++) total += fi.files[i].size;
+                }
+                if (total > 15 * 1024 * 1024) {
+                    alert('Attachments are too large - the total must stay under 15 MB.');
+                    return false;
+                }
+                var what = n === 0 ? 'this email'
+                         : 'this email with ' + n + (n === 1 ? ' attachment' : ' attachments');
+                return confirm('Send ' + what + ' to <%= Encode.forJavaScriptBlock(patientEmail) %>?');
             }
         </script>
 
@@ -427,7 +661,7 @@
         <b>Previous emails to this patient</b>
         <%
             PreparedStatement hp = conn.prepareStatement(
-                "SELECT l.sent_datetime, l.subject, l.status, l.to_email, "
+                "SELECT l.sent_datetime, l.subject, l.status, l.to_email, l.attachments, "
               + "       p.first_name AS pfirst, p.last_name AS plast "
               + "FROM mymd_patient_email_log l "
               + "LEFT JOIN provider p ON p.provider_no = l.provider_no "
@@ -449,12 +683,14 @@
                 String by = ((hrs.getString("pfirst") == null ? "" : hrs.getString("pfirst")) + " "
                            + (hrs.getString("plast") == null ? "" : hrs.getString("plast"))).trim();
                 String st = hrs.getString("status");
+                String att = hrs.getString("attachments");
         %>
             <tr>
                 <td><%= ts == null ? "" : new SimpleDateFormat("yyyy-MM-dd HH:mm").format(ts) %></td>
                 <td><%= esc(by) %></td>
                 <td><%= esc(hrs.getString("to_email")) %></td>
-                <td><%= esc(hrs.getString("subject")) %></td>
+                <td><%= esc(hrs.getString("subject")) %><%= att != null && att.trim().length() > 0
+                        ? " <span title=\"" + esc(att) + "\">&#128206;</span>" : "" %></td>
                 <td<%= "FAILED".equals(st) ? " style=\"color:#b3261e;font-weight:bold;\"" : "" %>><%= esc(st) %></td>
             </tr>
         <%

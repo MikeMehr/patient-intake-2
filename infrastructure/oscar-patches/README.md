@@ -122,11 +122,46 @@ every attempt.
 
 | Path | What |
 | --- | --- |
-| `emailPatient.jsp` → `oscar/mymd/emailPatient.jsp` | New. The compose window, serving both entry points. |
+| `emailPatient.jsp` → `oscar/mymd/emailPatient.jsp` | New. The compose window, serving all entry points. |
 | `oscar/casemgmt/newEncounterHeader.jsp` | Patched — adds the eChart header "Email" link. |
 | `oscar/appointment/editappointment.jsp` | Patched — adds the "Email Reminder" button. |
+| `oscar/dms/documentReport.jsp` | Patched — adds a per-document "Email to patient" envelope icon. |
 
-Backups from this change: `.oscarbak.20260721083504`.
+Backups from this change: `.oscarbak.20260721083504`; attachments + documents work (2026-08-02):
+`emailPatient.jsp.oscarbak.20260802163000`, `documentReport.jsp.oscarbak.20260802*`.
+
+### Attachments (added 2026-08-02)
+
+- The compose form is now `multipart/form-data` with a multi-file input, parsed with
+  `commons-fileupload` (already in `WEB-INF/lib`) because a bare JSP cannot use
+  `request.getParts()`. **A multipart POST hides normal fields from `request.getParameter()`**,
+  so subject/body/documentNo are read from the parsed parts.
+- Cap: 15 MB of raw attachment total (base64 inflates ~37%; GoDaddy rejects around 25–30 MB).
+  Checked client-side, in the fileupload `setSizeMax`, and again when a chart document is added.
+- `mymd_patient_email_log` gained an `attachments VARCHAR(1000) NULL` column (names + sizes);
+  the history table shows a 📎 with the list in the tooltip.
+
+### Email a chart document (added 2026-08-02)
+
+`?demographicNo=X&documentNo=Y` pre-attaches a stored eChart document (e.g. an ER note PDF).
+The document is verified against `ctl_document (module='demographic', module_id=demographicNo)`
+on **every** request — a tampered `documentNo` belonging to another patient resolves to nothing.
+Files are read from `DOCUMENT_DIR` (`/var/lib/OscarDocument/oscar/document/`); the patient-facing
+filename is the document description plus the stored file's extension.
+
+Entry point: `dms/documentReport.jsp` renders an envelope icon per row (demographic module only,
+skipping deleted and HTML documents — HTML docs have no file on disk):
+
+```jsp
+<%-- MyMD: email this document to the patient (mymd/emailPatient.jsp pre-attaches it) --%>
+<% if( curdoc.getStatus() != 'D' && curdoc.getStatus() != 'H' ) { %>
+<a href="#" title="Email to patient" class="btn btn-link" onclick="popup(760,720,'${ pageContext.request.contextPath }/mymd/emailPatient.jsp?demographicNo=<%=moduleid%>&documentNo=<%=curdoc.getDocId()%>','emailPatient')">
+  <i class="icon-envelope"></i></a>
+<% } %>
+```
+
+Placed immediately after the Annotation (`icon-quote-right`) link inside the
+`module.equals("demographic")` block (~line 598 of the stock file).
 
 ### Server-side prerequisites (already done, not in this repo)
 
