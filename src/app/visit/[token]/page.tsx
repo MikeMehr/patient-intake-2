@@ -140,6 +140,13 @@ export default function VideoVisitPage({
       }
       const { roomUrl, meetingToken, userName } = await res.json();
 
+      // Show the frame host BEFORE Daily is handed it. Without this the container keeps its
+      // `hidden` class, and Daily's prebuilt never finishes its handshake inside a display:none
+      // element — it does not throw, it simply never resolves, leaving this screen on
+      // "Connecting…" forever. Set only after the API call succeeds, so a failed request leaves
+      // the patient on the waiting room rather than staring at a black screen.
+      setPhase("connecting");
+
       const { default: Daily } = await import("@daily-co/daily-js");
 
       // Daily permits one DailyIframe per page, and a failed attempt leaves an orphan that makes
@@ -202,41 +209,12 @@ export default function VideoVisitPage({
     return <Shell><p className="text-slate-500">Loading your appointment…</p></Shell>;
   }
 
-  if (!info || info.state === "not_found") {
-    return (
-      <Shell>
-        <h1 className="text-xl font-semibold text-slate-900">Link not found</h1>
-        <p className="mt-2 text-slate-600">
-          This video visit link is no longer valid. It may have expired, or the appointment may
-          have been cancelled. Please contact the clinic if you were expecting an appointment.
-        </p>
-      </Shell>
-    );
-  }
-
-  if (info.state === "cancelled") {
-    return (
-      <Shell>
-        <h1 className="text-xl font-semibold text-slate-900">Appointment cancelled</h1>
-        <p className="mt-2 text-slate-600">
-          This appointment was cancelled. Please contact {info.clinicName ?? "the clinic"} if you
-          need to rebook.
-        </p>
-      </Shell>
-    );
-  }
-
-  if (info.state === "ended") {
-    return (
-      <Shell>
-        <h1 className="text-xl font-semibold text-slate-900">This visit has ended</h1>
-        <p className="mt-2 text-slate-600">
-          The video call for this appointment is closed. Please contact{" "}
-          {info.clinicName ?? "the clinic"} if you still need to be seen.
-        </p>
-      </Shell>
-    );
-  }
+  // Once a call is running, the 4-second poll must not be able to change which branch renders.
+  // Every branch below returns a different tree, so a state flip to "ended" (which fires 60
+  // minutes past the scheduled end) would unmount the frame host and kill a consultation that
+  // is still in progress. The call itself is the source of truth while it lasts; Daily ends it
+  // when someone hangs up or the meeting token expires.
+  const inCall = phase === "in-call";
 
   /**
    * The Daily frame host — rendered in exactly one place and never unmounted.
@@ -245,6 +223,9 @@ export default function VideoVisitPage({
    * treats those as different elements, so the moment the call connected it tore down the
    * container holding the live iframe. Being hidden also stopped Daily finishing its handshake
    * at all, which is why this page sat on "Connecting…" instead of failing.
+   *
+   * Declared above every early return so each branch can include it, rather than only the happy
+   * path — otherwise any branch change mid-call unmounts a live iframe.
    */
   const frameHost = (
     <div
@@ -260,6 +241,46 @@ export default function VideoVisitPage({
       <div ref={frameRef} className="relative flex-1" />
     </div>
   );
+
+  if (!inCall && (!info || info.state === "not_found")) {
+    return (
+      <Shell>
+        <h1 className="text-xl font-semibold text-slate-900">Link not found</h1>
+        <p className="mt-2 text-slate-600">
+          This video visit link is no longer valid. It may have expired, or the appointment may
+          have been cancelled. Please contact the clinic if you were expecting an appointment.
+        </p>
+      </Shell>
+    );
+  }
+
+  // `info` can only be null here if the branch above was short-circuited by an active call, in
+  // which case the call owns the screen and there is nothing else to draw.
+  if (!info) return frameHost;
+
+  if (!inCall && info.state === "cancelled") {
+    return (
+      <Shell>
+        <h1 className="text-xl font-semibold text-slate-900">Appointment cancelled</h1>
+        <p className="mt-2 text-slate-600">
+          This appointment was cancelled. Please contact {info.clinicName ?? "the clinic"} if you
+          need to rebook.
+        </p>
+      </Shell>
+    );
+  }
+
+  if (!inCall && info.state === "ended") {
+    return (
+      <Shell>
+        <h1 className="text-xl font-semibold text-slate-900">This visit has ended</h1>
+        <p className="mt-2 text-slate-600">
+          The video call for this appointment is closed. Please contact{" "}
+          {info.clinicName ?? "the clinic"} if you still need to be seen.
+        </p>
+      </Shell>
+    );
+  }
 
   return (
     <Shell>
