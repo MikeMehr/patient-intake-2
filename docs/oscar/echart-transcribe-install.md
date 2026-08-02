@@ -30,25 +30,32 @@ The `/launch/oscar` hop exists because `physician_session` is `SameSite=Strict`:
 a direct cross-site `window.open` arrives with no cookie and bounces to the
 login page. See the comments in `src/app/launch/oscar/page.tsx`.
 
-## Before you install — verify two selectors
+## Selectors — VERIFIED on oscar.mymdonline.ca (2026-08-01)
 
-The script's element names are conventional OSCAR names, **not verified on this
-box**. View source on a live encounter window and confirm:
+Confirmed by inspection of `/opt/tomcat9/webapps/oscar/casemgmt/newEncounterLayout.jsp`
+(the page `forward.jsp?action=view` renders) and `js/newCaseManagementView.js.jsp`:
 
-1. **The demographic number field.** The script tries, in order:
-   `caseManagementEntryForm.demographicNo` → `#demographicNo` →
-   `input[name=demographic_no]` → a `demographicNo=` match in the URL.
-2. **The encounter note field.** It tries `#caseNote_note` →
-   `textarea[name=caseNote_note]` → the first `<textarea>` in
-   `caseManagementEntryForm` → the first `<textarea>` on the page.
+1. **Target JSP:** `casemgmt/newEncounterLayout.jsp` — `</body>` is at the end
+   of the file; the script line goes just before it.
+2. **Demographic number:** the page defines a JS global `demographicNo` and
+   `caseManagementEntryForm` carries a `demographicNo` field. Both are in the
+   script's lookup chain.
+3. **Note field:** the eChart creates ONE editor textarea at a time with a
+   dynamic id `caseNote_note<noteId>`, and stores that id in the JS global
+   `caseNote`. It is a plain `<textarea>` (no rich-text editor), and OSCAR's
+   `ChartNoteAutosave` listens for `change` on it — which the script dispatches
+   after inserting, so autosave picks the text up.
+4. **Button host:** the page header div `#header` exists; the button lands
+   there. If a future build lacks every known host, the button floats top-right.
 
-Also confirm the note is a plain `<textarea>`. If this build wraps it in a
-rich-text editor (some use CKEditor), setting `.value` will not update the
-visible editor — the insert must go through the editor's API instead, and
-`noteTextarea()` needs changing.
+If the doctor has **no note open** when the text comes back, the script alerts
+"No encounter note is open" and inserts nothing; the popup then reports that
+OSCAR didn't confirm and steers to Copy SOAP. Nothing is lost — the note stays
+in the popup.
 
-If a selector is wrong the script degrades (alerts, inserts nothing) rather than
-crashing the page, but it will not work until the selector is right.
+For other OSCAR builds, re-verify these before installing; the fallback chains
+degrade (alert, insert nothing) rather than crash, but the feature won't work
+until the selectors match.
 
 ## Install
 

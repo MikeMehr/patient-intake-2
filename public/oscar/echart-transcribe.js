@@ -29,7 +29,9 @@
   var WINDOW_NAME = "healthassistTranscribe";
 
   // ── Current patient ───────────────────────────────────────────────────
-  // Field names vary between OSCAR builds, so try several before giving up.
+  // Verified on oscar.mymdonline.ca (newEncounterLayout.jsp): the page defines
+  // a JS global `demographicNo`, and `caseManagementEntryForm` carries a
+  // demographicNo field. Other builds vary, so keep the fallback chain.
   function currentDemographicNo() {
     var form = document.forms["caseManagementEntryForm"];
     var el =
@@ -37,6 +39,9 @@
       document.getElementById("demographicNo") ||
       document.querySelector('input[name="demographic_no"],input[name="demographicNo"]');
     if (el && el.value) return String(el.value).trim();
+    if (typeof window.demographicNo === "string" && /^\d+$/.test(window.demographicNo)) {
+      return window.demographicNo;
+    }
     var m =
       /[?&]demographicNo=(\d+)/.exec(window.location.search) ||
       /[?&]demographic_no=(\d+)/.exec(window.location.search);
@@ -44,13 +49,23 @@
   }
 
   // ── The encounter note field ──────────────────────────────────────────
+  // Verified on oscar.mymdonline.ca: the eChart creates ONE note editor at a
+  // time with a dynamic id "caseNote_note<noteId>", and keeps that id in the
+  // JS global `caseNote` (see js/newCaseManagementView.js.jsp). The plain
+  // "caseNote_note" id is the older CaseManagementEntry.jsp form.
   function noteTextarea() {
+    if (typeof window.caseNote === "string" && window.caseNote) {
+      var active = document.getElementById(window.caseNote);
+      if (active && active.tagName === "TEXTAREA") return active;
+    }
+    var dyn = document.querySelector('textarea[id^="caseNote_note"]');
+    if (dyn) return dyn;
     var form = document.forms["caseManagementEntryForm"];
     return (
       document.getElementById("caseNote_note") ||
       document.querySelector('textarea[name="caseNote_note"]') ||
       (form && form.querySelector ? form.querySelector("textarea") : null) ||
-      document.querySelector("textarea")
+      null
     );
   }
 
@@ -104,11 +119,14 @@
   function addButton() {
     if (document.getElementById("haTranscribeBtn")) return;
 
+    // #header is the eChart page header on oscar.mymdonline.ca
+    // (newEncounterLayout.jsp). Older layouts get the other hosts; with no
+    // recognisable host the button floats top-right so it is always reachable.
     var host =
+      document.getElementById("header") ||
       document.getElementById("encounterToolbar") ||
       document.querySelector(".EncounterTitleBar") ||
-      document.getElementById("topBar") ||
-      document.body;
+      document.getElementById("topBar");
 
     var btn = document.createElement("button");
     btn.id = "haTranscribeBtn";
@@ -120,7 +138,13 @@
       "border:1px solid #047857;background:#047857;color:#fff;border-radius:4px";
     btn.onclick = openTranscribe;
 
-    host.insertBefore(btn, host.firstChild);
+    if (host) {
+      host.appendChild(btn);
+    } else {
+      btn.style.cssText +=
+        ";position:fixed;top:6px;right:8px;z-index:99999";
+      document.body.appendChild(btn);
+    }
   }
 
   // ── Receive the finished note ─────────────────────────────────────────
@@ -149,7 +173,11 @@
 
       var ta = noteTextarea();
       if (!ta) {
-        window.alert("Could not find the encounter note field on this page.");
+        window.alert(
+          "No encounter note is open in this chart.\n\n" +
+            "Open (or start) a note in the eChart, then click Send to OSCAR note again — " +
+            "or use Copy SOAP and paste it in.",
+        );
         return;
       }
 
