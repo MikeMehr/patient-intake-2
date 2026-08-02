@@ -15,6 +15,11 @@ const path = require("path");
 const CRITICAL_ROUTES = [
   "src/app/api/sessions/feedback/route.ts",
   "src/app/api/admin/feedback/route.ts",
+  // Video visits: the provider reaches these from the OSCAR day sheet and the patient from an
+  // emailed link, so neither has a fallback path if the route silently disappears.
+  "src/app/api/physician/video/session/route.ts",
+  "src/app/api/visit/[token]/route.ts",
+  "src/app/api/visit/[token]/join/route.ts",
 ];
 
 const root = path.resolve(__dirname, "..");

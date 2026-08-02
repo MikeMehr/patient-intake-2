@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { proxy } from "./proxy";
 import { NextRequest } from "next/server";
 
@@ -157,5 +157,90 @@ describe("middleware", () => {
   ])("does not block public route %s", (path) => {
     const res = proxy(makeRequest(path)); // no cookie
     expect(res.status).toBe(200);
+  });
+
+  // ── Video visits ─────────────────────────────────────────────────────────
+  // The camera is disabled site-wide by default. These tests exist to pin down that the
+  // exception is exactly two path prefixes wide — the failure mode worth catching is not
+  // "video is broken" (obvious in seconds) but "video quietly opened the camera everywhere".
+
+  describe("video-visit headers", () => {
+    const DOMAIN = "clinic.daily.co";
+    beforeEach(() => {
+      process.env.DAILY_DOMAIN = DOMAIN;
+    });
+    afterEach(() => {
+      delete process.env.DAILY_DOMAIN;
+    });
+
+    it("delegates camera and microphone to Daily on the patient join page", () => {
+      const res = proxy(makeRequest("/visit/" + "a".repeat(64)));
+      const policy = res.headers.get("Permissions-Policy") ?? "";
+      expect(policy).toContain(`camera=(self "https://${DOMAIN}")`);
+      expect(policy).toContain(`microphone=(self "https://${DOMAIN}")`);
+    });
+
+    it("delegates camera and microphone on the provider console", () => {
+      const res = proxy(makeRequest("/physician/video?oscarApptNo=1", VALID_TOKEN));
+      expect(res.headers.get("Permissions-Policy") ?? "").toContain(`camera=(self "https://${DOMAIN}")`);
+    });
+
+    it("keeps the camera disabled on every other physician page", () => {
+      const res = proxy(makeRequest("/physician/dashboard", VALID_TOKEN));
+      const policy = res.headers.get("Permissions-Policy") ?? "";
+      expect(policy).toContain("camera=()");
+      // Dictation depends on this and must not be narrowed while widening camera.
+      expect(policy).toContain("microphone=(self)");
+    });
+
+    it("keeps the camera disabled on ordinary public pages", () => {
+      const res = proxy(makeRequest("/booking/some-clinic"));
+      expect(res.headers.get("Permissions-Policy") ?? "").toContain("camera=()");
+    });
+
+    it("allows the Daily iframe and its transport only on video paths", () => {
+      const video = proxy(makeRequest("/visit/" + "a".repeat(64)));
+      const csp = video.headers.get("Content-Security-Policy") ?? "";
+      expect(csp).toContain("frame-src 'self' data: blob: https://*.daily.co");
+      expect(csp).toContain("https://*.daily.co wss://*.daily.co");
+
+      const other = proxy(makeRequest("/booking/some-clinic"));
+      expect(other.headers.get("Content-Security-Policy") ?? "").not.toContain("daily.co");
+    });
+
+    it("never lets anyone frame us, video path or not", () => {
+      // frame-ancestors governs who embeds *us*; Daily is embedded *by* us, so widening this
+      // would be a pure regression.
+      const res = proxy(makeRequest("/visit/" + "a".repeat(64)));
+      expect(res.headers.get("Content-Security-Policy") ?? "").toContain("frame-ancestors 'none'");
+      expect(res.headers.get("X-Frame-Options")).toBe("DENY");
+    });
+
+    it("falls back to the restrictive policy when DAILY_DOMAIN is unset", () => {
+      // A wildcard is not valid in a Permissions-Policy allowlist, so there is no safe generic
+      // value — better to fail visibly on a permissions error than emit a malformed header.
+      delete process.env.DAILY_DOMAIN;
+      const res = proxy(makeRequest("/visit/" + "a".repeat(64)));
+      expect(res.headers.get("Permissions-Policy") ?? "").toContain("camera=()");
+    });
+
+    it("ignores a malformed DAILY_DOMAIN rather than injecting it into the header", () => {
+      process.env.DAILY_DOMAIN = 'evil.com"), camera=*, x=(';
+      const res = proxy(makeRequest("/visit/" + "a".repeat(64)));
+      expect(res.headers.get("Permissions-Policy") ?? "").toContain("camera=()");
+    });
+
+    it("still requires a session for the provider video console", () => {
+      const res = proxy(makeRequest("/physician/video?oscarApptNo=1")); // no cookie
+      expect(res.status).toBe(307);
+      expect(res.headers.get("location")).toContain("/auth/login");
+    });
+
+    it("leaves the OSCAR video launch page public", () => {
+      // Same reasoning as /launch/oscar: OSCAR opens it cross-site, so the SameSite=Strict
+      // cookie cannot be present on that first hop.
+      const res = proxy(makeRequest("/launch/oscar-video?oscarApptNo=123"));
+      expect(res.status).toBe(200);
+    });
   });
 });

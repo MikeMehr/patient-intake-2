@@ -41,3 +41,24 @@ export function normalizeModality(value: unknown): AppointmentModality {
     ? (value as AppointmentModality)
     : DEFAULT_APPOINTMENT_MODALITY;
 }
+
+/**
+ * How a specific appointment happens.
+ *
+ * Since migration 067 the modality is recorded on the appointment itself, so one clinic can run
+ * phone and video side by side. `appointments.appointment_modality` is NULL for every booking
+ * made before that — and for any clinic that doesn't let patients choose — and NULL means
+ * "whatever the clinic setting says", which is exactly how those rows behaved when the setting
+ * was the only source of truth.
+ *
+ * Order matters: the appointment wins, then the clinic, then PHONE.
+ */
+export function resolveEffectiveModality(
+  appointmentModality: unknown,
+  clinicDefault: unknown,
+): AppointmentModality {
+  if (APPOINTMENT_MODALITIES.includes(appointmentModality as AppointmentModality)) {
+    return appointmentModality as AppointmentModality;
+  }
+  return normalizeModality(clinicDefault);
+}

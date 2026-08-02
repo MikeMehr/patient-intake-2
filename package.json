@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@azure/storage-blob": "^12.31.0",
+    "@daily-co/daily-js": "^0.87.0",
     "@google/generative-ai": "^0.24.1",
     "@simplewebauthn/browser": "^13.3.0",
     "@simplewebauthn/server": "^13.3.0",

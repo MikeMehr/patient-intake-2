@@ -22,6 +22,9 @@ const forbiddenKeys = [
   "RESEND_API_KEY",
   "SESSION_SECRET",
   "OSCAR_PHARMACY_BRIDGE_SECRET",
+  // Daily.co account key — mints meeting tokens for every video visit, so it is as good as
+  // access to any consultation room.
+  "DAILY_API_KEY",
 ];
 
 let hasError = false;
