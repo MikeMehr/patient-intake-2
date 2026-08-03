@@ -1,0 +1,16 @@
+-- Migration 070: each provider's Doxy.me waiting-room URL.
+--
+-- Doxy is a different shape from Daily or LiveKit and this column is the whole of the difference.
+-- There is no API, no per-appointment room and no join token: a provider has one permanent room
+-- (doxy.me/drsomebody), the patient goes there and types their name, and the provider admits them
+-- from a waiting room. Access control is the provider recognising who turned up rather than a
+-- token scoped to one visit.
+--
+-- That is a real trade — a shared URL is weaker than a per-visit credential — but at a handful of
+-- video visits a year it buys a signed BAA at no cost, which is the compliance gap that declining
+-- Daily's healthcare tier left open. Recorded in docs/compliance/vendor-baa-register.md.
+--
+-- The video_visits machinery from 067-069 is deliberately left in place and dormant rather than
+-- torn out. It goes quiet on its own when DAILY_API_KEY is unset, because every path that touches
+-- it was written fail-soft, so switching back later costs nothing but an env var.
+ALTER TABLE physicians ADD COLUMN IF NOT EXISTS doxy_room_url TEXT;

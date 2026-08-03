@@ -1,40 +1,31 @@
 /**
- * Invite a patient to a video call that has no appointment behind it.
+ * Send a patient the clinic's Doxy waiting-room link.
  *
- * The booking flow and the OSCAR day-sheet button both start from an appointment. This is for
- * when there isn't one — a patient phones in, or a follow-up needs five minutes of face time and
- * nobody wants to create a fake booking to make a link exist.
+ * For the patient on the phone who needs the link now, with no appointment to hang it on. Since
+ * moving to Doxy there is nothing to create — one permanent room per provider — so this is a
+ * lookup and a send, not a room-minting endpoint.
  *
- * Creates the room and sends the link in a single call, deliberately: two round trips would mean
- * a visit could be created and then stranded with nobody holding its link, which is exactly the
- * orphan the old key constraint was there to prevent.
+ * The provider is chosen explicitly rather than taken from the session, because the person doing
+ * this is usually reception sending on someone else's behalf.
  */
 
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentSession } from "@/lib/auth";
 import { getEffectivePhysicianId } from "@/lib/auth-helpers";
-import { resolveAppUrl } from "@/lib/app-url";
 import { consumeDbRateLimit } from "@/lib/rate-limit";
 import { logPhysicianPhiAudit } from "@/lib/phi-audit";
 import { sendVideoLinkSMS, toE164 } from "@/lib/sms";
 import { sendVideoVisitLinkEmail } from "@/lib/booking-email";
-import { isDailyConfigured } from "@/lib/video/daily";
-import { createAdHocVisit, recordLinkSend } from "@/lib/video/video-store";
 import { query } from "@/lib/db";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MAX_NAME_LEN = 80;
 
 export async function POST(request: NextRequest) {
   const session = await getCurrentSession();
   if (!session?.organizationId) {
     return NextResponse.json({ error: "Authentication required" }, { status: 401 });
-  }
-  if (!isDailyConfigured()) {
-    return NextResponse.json(
-      { error: "Video visits are not configured for this deployment." },
-      { status: 503 },
-    );
   }
 
   let body: unknown;
@@ -43,14 +34,15 @@ export async function POST(request: NextRequest) {
   } catch {
     return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
   }
-  const { patientName, channel, destination } = (body || {}) as {
+  const { patientName, channel, destination, physicianId } = (body || {}) as {
     patientName?: string;
     channel?: string;
     destination?: string;
+    physicianId?: string;
   };
 
-  if (channel !== "sms" && channel !== "email" && channel !== "link") {
-    return NextResponse.json({ error: "Choose text, email, or a copyable link." }, { status: 400 });
+  if (channel !== "sms" && channel !== "email") {
+    return NextResponse.json({ error: "Choose text or email." }, { status: 400 });
   }
 
   const dest = typeof destination === "string" ? destination.trim() : "";
@@ -61,15 +53,41 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "That doesn't look like a phone number." }, { status: 400 });
   }
 
-  // Name is for the provider's own screen and the call tile — never a lookup key, so it is only
-  // length-capped and stripped of the characters that would make a mess of an email subject.
-  const name =
-    typeof patientName === "string"
-      ? patientName.replace(/[\x00-\x1F\x7F<>]/g, " ").replace(/\s+/g, " ").trim().slice(0, MAX_NAME_LEN)
-      : "";
+  // Named provider, else the signed-in one. Org-scoped either way, so an id from another clinic
+  // simply doesn't resolve.
+  const targetPhysicianId =
+    typeof physicianId === "string" && UUID_RE.test(physicianId)
+      ? physicianId
+      : session.userType === "provider"
+        ? getEffectivePhysicianId(session)
+        : null;
 
-  // Per-organization: what is worth bounding is how many invites a clinic can emit, since each
-  // one mints a room and, on the sending paths, a message to a real person.
+  if (!targetPhysicianId) {
+    return NextResponse.json({ error: "Choose which provider to send." }, { status: 400 });
+  }
+
+  const room = await query<{
+    doxy_room_url: string | null;
+    first_name: string;
+    last_name: string;
+  }>(
+    `SELECT doxy_room_url, first_name, last_name
+       FROM physicians WHERE id = $1 AND organization_id = $2`,
+    [targetPhysicianId, session.organizationId],
+  );
+  const physician = room.rows[0];
+  if (!physician) {
+    return NextResponse.json({ error: "Provider not found." }, { status: 404 });
+  }
+  if (!physician.doxy_room_url) {
+    return NextResponse.json(
+      { error: "That provider has no Doxy link set. Add it on their provider record." },
+      { status: 409 },
+    );
+  }
+
+  // Per-organization: what is worth bounding is how many messages a clinic can emit, since each
+  // one reaches a real person.
   const limit = await consumeDbRateLimit({
     bucketKey: `video-invite:${session.organizationId}`,
     maxAttempts: 20,
@@ -82,26 +100,13 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const physicianId =
-    session.userType === "provider" ? getEffectivePhysicianId(session) : null;
+  const name =
+    typeof patientName === "string"
+      ? patientName.replace(/[\x00-\x1F\x7F<>]/g, " ").replace(/\s+/g, " ").trim().slice(0, MAX_NAME_LEN)
+      : "";
 
-  const created = await createAdHocVisit({
-    organizationId: session.organizationId,
-    physicianId,
-    patientDisplayName: name || null,
-  });
-  if (!created.ok) {
-    return NextResponse.json({ error: created.detail }, { status: created.status });
-  }
-  if (!created.joinTokenRaw) {
-    // insertVisit only omits the raw token when it collapsed onto an existing row, which cannot
-    // happen for an ad-hoc visit — it has no key to collide on. Fail loudly rather than hand back
-    // an invite with no link.
-    return NextResponse.json({ error: "Could not create the invite link." }, { status: 500 });
-  }
-
-  const joinUrl = `${resolveAppUrl(request)}/visit/${created.joinTokenRaw}`;
   const clinic = await loadClinic(session.organizationId);
+  const joinUrl = physician.doxy_room_url;
 
   let sent = false;
   let suppressed = false;
@@ -112,11 +117,12 @@ export async function POST(request: NextRequest) {
     sent = res.outcome === "sent";
     suppressed = res.outcome === "suppressed";
     if (res.outcome === "failed") sendError = "The text could not be sent.";
-  } else if (channel === "email") {
+  } else {
     const res = await sendVideoVisitLinkEmail({
       email: dest,
       patientFirstName: name.split(" ")[0] || null,
       clinicName: clinic.name,
+      physicianName: `Dr. ${physician.first_name} ${physician.last_name}`.trim(),
       joinUrl,
       emailFooter: clinic.emailFooter,
       clinicEmail: clinic.email,
@@ -126,27 +132,23 @@ export async function POST(request: NextRequest) {
     if (!res.sent && !res.suppressed) sendError = "The email could not be sent.";
   }
 
-  if (sent) await recordLinkSend(created.visit.id, channel as "sms" | "email");
-
   try {
     await logPhysicianPhiAudit({
-      physicianId,
-      eventType: "video_visit_invite_created",
+      physicianId: targetPhysicianId,
+      eventType: "video_room_link_sent",
       ipAddress: request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
       userAgent: request.headers.get("user-agent"),
-      // Channel and outcome only — never the address the link went to.
-      metadata: { visitId: created.visit.id, channel, sent, suppressed },
+      // Channel and outcome only — never the address it went to.
+      metadata: { channel, sent, suppressed },
     });
   } catch {
-    // An audit failure must not lose an invite that already went out.
+    // An audit failure must not lose a message that already went out.
   }
 
   return NextResponse.json({
-    visitId: created.visit.id,
-    // Always returned. Even on a successful send the clinic may want to read it out, and on a
-    // suppressed or failed send it is the only way the patient gets in.
+    // Returned whatever happened: on a suppressed or failed send it is the only way the patient
+    // gets in, and even on success the clinic may want to read it out.
     joinUrl,
-    providerUrl: `/physician/video?visitId=${created.visit.id}`,
     sent,
     suppressed,
     error: sendError,

@@ -97,10 +97,6 @@ function renderPhysicianRow(physicianName?: string | null): string {
 }
 
 /**
- * Renders the appointment format (phone / video / in-person) as a table row, so
- * the patient knows from the confirmation alone what to expect at that time.
- */
-/**
  * The join button for a video visit.
  *
  * Absent whenever the room could not be created at booking time — a Daily outage, or video not
@@ -112,21 +108,41 @@ function renderPhysicianRow(physicianName?: string | null): string {
  * it is sent, but the room is not, and a patient who clicks the day before should understand
  * they haven't done anything wrong.
  */
-function renderVideoJoinBlock(joinUrl?: string | null): string {
-  if (!joinUrl) return "";
+function renderVideoJoinBlock(joinUrl?: string | null, doxyRoomUrl?: string | null): string {
+  const url = joinUrl || doxyRoomUrl;
+  if (!url) return "";
+
+  // The two are not interchangeable and the instructions must not be. A per-visit link opens
+  // straight into that patient's own room; a Doxy room is shared and permanent, so the patient
+  // types their name and waits to be let in. Telling someone with a waiting-room link that it
+  // "becomes active 15 minutes before" would have them refreshing an already-working page, and
+  // "personal to you — don't forward it" is simply false of a room the whole practice shares.
+  const isWaitingRoom = !joinUrl && !!doxyRoomUrl;
+
   return `
         <p style="margin-top:20px">
-          <a href="${joinUrl}"
+          <a href="${url}"
              style="background:#047857;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;font-weight:600">
-            Join your video appointment
+            ${isWaitingRoom ? "Open the video waiting room" : "Join your video appointment"}
           </a>
         </p>
         <p style="margin-top:8px;font-size:13px;color:#555">
-          The link becomes active 15 minutes before your scheduled time. You'll need a device with
-          a camera and microphone. This link is personal to you — please don't forward it.
+          ${
+            isWaitingRoom
+              ? `Open this link at your appointment time, enter your name, and wait — your
+                 physician will let you in. You'll need a device with a camera and microphone;
+                 no app or account is needed.`
+              : `The link becomes active 15 minutes before your scheduled time. You'll need a
+                 device with a camera and microphone. This link is personal to you — please
+                 don't forward it.`
+          }
         </p>`;
 }
 
+/**
+ * Renders the appointment format (phone / video / in-person) as a table row, so
+ * the patient knows from the confirmation alone what to expect at that time.
+ */
 function renderModalityRow(modality: AppointmentModality): string {
   return `
           <tr><td style="padding:8px 0;color:#555">Format</td>
@@ -164,6 +180,8 @@ export async function sendBookingConfirmation(opts: {
   appointmentModality?: AppointmentModality | null;
   /** Present only for a video visit whose room was created at booking time. */
   videoJoinUrl?: string | null;
+  /** The provider's permanent Doxy waiting room, used when there is no per-visit link. */
+  doxyRoomUrl?: string | null;
 }): Promise<void> {
   if (!resend || process.env.HIPAA_MODE === "true") return;
 
@@ -190,7 +208,7 @@ export async function sendBookingConfirmation(opts: {
         <div style="background:#eff6ff;border-left:4px solid #2563eb;border-radius:6px;padding:12px 16px">
           <p style="margin:0 0 4px;font-size:13px;font-weight:600;color:#1e40af">${MODALITY_LABEL[modality]}</p>
           <p style="margin:0;color:#1e3a5f;line-height:1.5">${MODALITY_NOTE[modality]}</p>
-        </div>${renderVideoJoinBlock(opts.videoJoinUrl)}
+        </div>${renderVideoJoinBlock(opts.videoJoinUrl, opts.doxyRoomUrl)}
         <p style="margin-top:24px">
           <a href="${opts.manageUrl}"
              style="background:#2563eb;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;font-weight:600">

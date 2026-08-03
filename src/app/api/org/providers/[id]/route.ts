@@ -56,8 +56,9 @@ export async function GET(
       organization_id: string | null;
       mfa_enabled: boolean;
       oscar_provider_no: string | null;
+      doxy_room_url: string | null;
     }>(
-      `SELECT id, first_name, last_name, clinic_name, username, email, phone, unique_slug, organization_id, mfa_enabled, oscar_provider_no
+      `SELECT id, first_name, last_name, clinic_name, username, email, phone, unique_slug, organization_id, mfa_enabled, oscar_provider_no, doxy_room_url
        FROM physicians
        WHERE id = $1 AND organization_id = $2`,
       [id, session.organizationId]
@@ -88,6 +89,7 @@ export async function GET(
         organizationId: provider.organization_id,
         mfaEnabled: provider.mfa_enabled,
         oscarProviderNo: provider.oscar_provider_no,
+        doxyRoomUrl: provider.doxy_room_url,
       },
     });
     logRequestMeta("/api/org/providers/[id]", requestId, status, Date.now() - started);
@@ -125,7 +127,7 @@ export async function PUT(
 
     const { id } = await params;
     const body = await request.json();
-    const { firstName, lastName, clinicName, email, phone, password, mfaEnabled, oscarProviderNo } = body;
+    const { firstName, lastName, clinicName, email, phone, password, mfaEnabled, oscarProviderNo, doxyRoomUrl } = body;
 
     // Verify provider belongs to organization
     const existingProvider = await query<{ id: string; organization_id: string | null }>(
@@ -241,6 +243,37 @@ export async function PUT(
       const cleaned = oscarProviderNo ? String(oscarProviderNo).replace(/\D/g, "") : "";
       updates.push(`oscar_provider_no = $${paramIndex++}`);
       values.push(cleaned || null);
+    }
+
+    if (doxyRoomUrl !== undefined) {
+      // Only https, and only a doxy.me host. This value is emailed to patients and written onto
+      // the OSCAR day sheet, so an unvalidated string here would be a way to point patients at an
+      // arbitrary site from a message they have every reason to trust.
+      const raw = doxyRoomUrl ? String(doxyRoomUrl).trim() : "";
+      let cleaned: string | null = null;
+      if (raw) {
+        try {
+          const u = new URL(raw);
+          const okHost = u.protocol === "https:" && /(^|\.)doxy\.me$/i.test(u.hostname);
+          if (!okHost) {
+            status = 400;
+            const res = NextResponse.json(
+              { error: "The Doxy link must be an https://doxy.me/… address." },
+              { status },
+            );
+            logRequestMeta("/api/org/providers/[id]", requestId, status, Date.now() - started);
+            return res;
+          }
+          cleaned = u.toString();
+        } catch {
+          status = 400;
+          const res = NextResponse.json({ error: "That isn't a valid link." }, { status });
+          logRequestMeta("/api/org/providers/[id]", requestId, status, Date.now() - started);
+          return res;
+        }
+      }
+      updates.push(`doxy_room_url = $${paramIndex++}`);
+      values.push(cleaned);
     }
 
     if (updates.length === 0) {

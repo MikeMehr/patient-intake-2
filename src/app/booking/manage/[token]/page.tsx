@@ -24,8 +24,8 @@ type Appointment = {
   coverageType: string;
   cancelledAt: string | null;
   appointmentModality: AppointmentModality;
-  /** Present only for a video visit whose room exists and hasn't ended. */
-  videoJoinUrl: string | null;
+  /** The provider's Doxy waiting room, for a video visit. */
+  doxyRoomUrl: string | null;
 };
 
 export default function ManageAppointmentPage({
@@ -158,20 +158,21 @@ export default function ManageAppointmentPage({
                 page is the one place a patient can always come back to for their link. The button
                 is shown outside the join window too; the visit page itself handles being early,
                 which keeps the two from disagreeing about the time. */}
-            {appointment.videoJoinUrl && (
+            {appointment.doxyRoomUrl && (
               <a
-                href={appointment.videoJoinUrl}
+                href={appointment.doxyRoomUrl}
                 className="block w-full bg-green-700 text-white text-center px-6 py-3 rounded-lg font-semibold hover:bg-green-800 transition mb-2"
               >
-                Join your video appointment
+                Open your video waiting room
               </a>
             )}
-            {appointment.videoJoinUrl && (
+            {appointment.doxyRoomUrl && (
               <p className="text-xs text-gray-500 mb-8">
-                The link becomes active 15 minutes before your scheduled time.
+                Open this at your appointment time, enter your name, and wait — your physician
+                will let you in.
               </p>
             )}
-            {!appointment.videoJoinUrl && <div className="mb-4" />}
+            {!appointment.doxyRoomUrl && <div className="mb-4" />}
 
             {error && (
               <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-red-700 text-sm mb-4">

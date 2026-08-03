@@ -10,6 +10,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getCurrentSession } from "@/lib/auth";
 import { getAppointmentsForOrg, getBookingSettingsByOrgId } from "@/lib/booking-store";
 import { resolveEffectiveModality } from "@/lib/appointment-modality";
+import { query } from "@/lib/db";
 import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
 
 export async function GET(request: NextRequest) {
@@ -39,12 +40,23 @@ export async function GET(request: NextRequest) {
     // format instead of each caller having to know the inheritance rule (and getting it wrong
     // by showing nothing).
     const settings = await getBookingSettingsByOrgId(session.organizationId);
+
+    // The provider's permanent Doxy waiting room, when the clinic uses one. Looked up per
+    // provider rather than per appointment because that is what it is — one room, not one
+    // per visit.
+    const doxyRows = await query<{ id: string; doxy_room_url: string | null }>(
+      `SELECT id, doxy_room_url FROM physicians WHERE organization_id = $1`,
+      [session.organizationId],
+    );
+    const doxyByPhysician = new Map(doxyRows.rows.map((r) => [r.id, r.doxy_room_url]));
+
     const withModality = appointments.map((a) => ({
       ...a,
       appointmentModality: resolveEffectiveModality(
         a.appointmentModality,
         settings?.appointmentModality,
       ),
+      doxyRoomUrl: doxyByPhysician.get(a.physicianId) ?? null,
     }));
 
     const res = NextResponse.json({ appointments: withModality });

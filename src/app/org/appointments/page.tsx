@@ -22,6 +22,8 @@ type Appointment = {
   oscarSyncStatus: string | null;
   /** null means "inherit the clinic default" — see resolveEffectiveModality. */
   appointmentModality: string | null;
+  /** The provider's permanent Doxy waiting room, or null when they haven't set one. */
+  doxyRoomUrl: string | null;
   /** null means the question wasn't asked (booked before it existed). */
   aiScribeConsent: boolean | null;
 };
@@ -87,28 +89,36 @@ function ModalityTag({ modality }: { modality: string | null }) {
  * Opens in a new tab so the list stays put behind the call.
  */
 function VideoCell({
-  appointmentId,
+  doxyRoomUrl,
   modality,
   cancelled,
 }: {
-  appointmentId: string;
+  doxyRoomUrl: string | null;
   modality: string | null;
   cancelled: boolean;
 }) {
   // Nothing to start, and a live join link for a cancelled appointment is precisely what
   // cancelVisitsForAppointment exists to prevent.
   if (cancelled) return <span className="text-gray-300">—</span>;
+  // No room configured yet — say so rather than offering a link to nowhere.
+  if (!doxyRoomUrl) {
+    return (
+      <span className="text-xs text-gray-300" title="No Doxy room set for this provider">
+        —
+      </span>
+    );
+  }
 
   const isVideo = modality === "VIDEO";
   return (
     <a
-      href={`/physician/video?appointmentId=${appointmentId}`}
+      href={doxyRoomUrl}
       target="_blank"
       rel="noopener noreferrer"
       title={
         isVideo
-          ? "Start this video visit"
-          : "Start a video call with this patient (booked as a phone or in-person visit)"
+          ? "Open your Doxy waiting room for this visit"
+          : "Open your Doxy waiting room (this was booked as a phone or in-person visit)"
       }
       className={
         isVideo
@@ -116,7 +126,7 @@ function VideoCell({
           : "inline-block whitespace-nowrap rounded-full border border-gray-200 px-2 py-0.5 text-xs font-medium text-gray-500 hover:border-gray-300 hover:text-gray-700"
       }
     >
-      🎥 Start
+      🎥 Open
     </a>
   );
 }
@@ -362,7 +372,7 @@ export default function AppointmentsPage() {
                       </td>
                       <td className="px-2 py-2">
                         <VideoCell
-                          appointmentId={appt.id}
+                          doxyRoomUrl={appt.doxyRoomUrl}
                           modality={appt.appointmentModality}
                           cancelled={!!appt.cancelledAt}
                         />
