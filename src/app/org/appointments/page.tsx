@@ -20,6 +20,8 @@ type Appointment = {
   oscarSyncStatus: string | null;
   /** null means "inherit the clinic default" — see resolveEffectiveModality. */
   appointmentModality: string | null;
+  /** null means the question wasn't asked (booked before it existed). */
+  aiScribeConsent: boolean | null;
 };
 
 type Physician = { id: string; firstName: string; lastName: string };
@@ -259,7 +261,7 @@ export default function AppointmentsPage() {
             </p>
           ) : (
             <div className="overflow-x-auto">
-              {/* text-xs rather than text-sm: eight columns of clinical data need the room more
+              {/* text-xs rather than text-sm: nine columns of clinical data need the room more
                   than the type needs the size, and this table is scanned, not read. */}
               <table className="w-full text-xs">
                 <thead className="bg-gray-50 border-b border-gray-200">
@@ -271,6 +273,7 @@ export default function AppointmentsPage() {
                     <th className="text-left px-2 py-2 text-gray-600 font-medium">Coverage</th>
                     <th className="text-left px-2 py-2 text-gray-600 font-medium">Status</th>
                     <th className="text-left px-2 py-2 text-gray-600 font-medium">OSCAR</th>
+                    <th className="text-left px-2 py-2 text-gray-600 font-medium">Scribe</th>
                     <th className="text-left px-2 py-2 text-gray-600 font-medium">Video</th>
                   </tr>
                 </thead>
@@ -315,6 +318,17 @@ export default function AppointmentsPage() {
                       </td>
                       <td className="px-2 py-2">
                         <OscarBadge status={appt.oscarSyncStatus} />
+                      </td>
+                      {/* Three distinct states: a decline must read as a deliberate "do not use
+                          the scribe", never as missing data. */}
+                      <td className="px-2 py-2">
+                        {appt.aiScribeConsent === true ? (
+                          <span className="text-green-600" title="Patient consented to AI scribe use">✓</span>
+                        ) : appt.aiScribeConsent === false ? (
+                          <span className="text-red-600 font-semibold" title="Patient DECLINED AI scribe use">✗</span>
+                        ) : (
+                          <span className="text-gray-300" title="Not asked (booked before this question existed)">—</span>
+                        )}
                       </td>
                       <td className="px-2 py-2">
                         <VideoCell

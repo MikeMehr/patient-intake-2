@@ -52,8 +52,13 @@ function sanitize(value: string): string {
 export function buildOscarAppointmentNotes(args: {
   modality: AppointmentModality;
   videoLaunchUrl?: string | null;
+  /** Null/undefined = question not asked; say nothing rather than invent an answer. */
+  aiScribeConsent?: boolean | null;
 }): string {
   const parts = [MODALITY_NOTE_LABEL[args.modality], "booked online"];
+  // DECLINED in caps: on a crowded daysheet the refusal is the answer that must not be missed.
+  if (args.aiScribeConsent === true) parts.push("AI scribe: OK");
+  if (args.aiScribeConsent === false) parts.push("AI scribe: DECLINED");
   const prose = sanitize(parts.join(" — "));
 
   const url = args.videoLaunchUrl ? sanitize(args.videoLaunchUrl) : "";

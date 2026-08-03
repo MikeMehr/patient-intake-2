@@ -67,6 +67,37 @@ describe("buildOscarAppointmentNotes", () => {
     expect(notes).not.toMatch(/\s{2,}/);
     expect(notes).not.toContain("\n");
   });
+
+  // The scribe answer is tri-state: silence must mean "not asked", never an invented answer.
+  it("records a scribe consent", () => {
+    expect(buildOscarAppointmentNotes({ modality: "PHONE", aiScribeConsent: true })).toContain(
+      "AI scribe: OK",
+    );
+  });
+
+  it("records a scribe decline loudly", () => {
+    expect(buildOscarAppointmentNotes({ modality: "PHONE", aiScribeConsent: false })).toContain(
+      "AI scribe: DECLINED",
+    );
+  });
+
+  it("says nothing about the scribe when the question was never asked", () => {
+    expect(buildOscarAppointmentNotes({ modality: "PHONE" })).not.toContain("AI scribe");
+    expect(buildOscarAppointmentNotes({ modality: "PHONE", aiScribeConsent: null })).not.toContain(
+      "AI scribe",
+    );
+  });
+
+  it("still lets a long video URL win the width budget over the scribe note", () => {
+    const url = `https://example.com/launch/oscar-video?appointmentId=${"a".repeat(200)}`;
+    const notes = buildOscarAppointmentNotes({
+      modality: "VIDEO",
+      videoLaunchUrl: url,
+      aiScribeConsent: false,
+    });
+    expect(notes.startsWith("https://")).toBe(true);
+    expect(notes.length).toBeLessThanOrEqual(MAX_NOTES_LEN);
+  });
 });
 
 describe("buildVideoLaunchUrl", () => {

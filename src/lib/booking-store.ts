@@ -89,6 +89,7 @@ export type AppointmentRow = {
   pharmacyName: string | null; // patient's preferred pharmacy, when they chose one
   pharmacyCity: string | null;
   pharmacyLinkStatus: string | null; // 'LINKED' | 'FAILED' | 'SKIPPED' | null (none chosen)
+  aiScribeConsent: boolean | null; // null = question not asked (pre-feature rows)
 };
 
 // ---------------------------------------------------------------------------
@@ -581,6 +582,8 @@ export type ConfirmAppointmentData = {
     fax?: string;
     source: "DIRECTORY" | "FREE_TEXT";
   };
+  /** Patient's answer to the AI-scribe question. Null = not asked (stored as NULL). */
+  aiScribeConsent?: boolean | null;
 };
 
 export async function confirmAppointment(
@@ -620,12 +623,12 @@ export async function confirmAppointment(
           manage_token_hash, manage_token_expires_at, oscar_demographic_no,
           pharmacy_oscar_id, pharmacy_name, pharmacy_address, pharmacy_city,
           pharmacy_phone, pharmacy_fax, pharmacy_source,
-          appointment_modality, patient_phone)
+          appointment_modality, patient_phone, ai_scribe_consent)
        SELECT
          hc.organization_id, su.physician_id, hc.id, $4, $5, $6::DATE,
          $7, $8, $9, $10, $11, $12, $13, $14::TIMESTAMPTZ, $15,
          $16, $17, $18, $19, $20, $21, $22,
-         $23, $24
+         $23, $24, $25
        FROM hold_check hc
        JOIN slot_update su ON TRUE
        RETURNING id AS appointment_id, physician_id
@@ -656,6 +659,7 @@ export async function confirmAppointment(
         data.pharmacy?.source ?? null,
         data.appointmentModality ?? null,
         data.patientPhone ?? null,
+        data.aiScribeConsent ?? null,
       ],
     );
   } catch (err) {
@@ -705,6 +709,7 @@ export async function getAppointmentByToken(tokenHash: string): Promise<Appointm
     pharmacy_link_status: string | null;
     appointment_modality: string | null;
     patient_phone: string | null;
+    ai_scribe_consent: boolean | null;
   }>(
     `SELECT
        a.id, a.organization_id, a.physician_id,
@@ -716,7 +721,7 @@ export async function getAppointmentByToken(tokenHash: string): Promise<Appointm
        a.coverage_type, a.province, a.health_card_number_enc, a.billing_note, a.reason,
        a.manage_token_expires_at, a.cancelled_at, a.created_at, a.oscar_sync_status, a.oscar_appointment_no,
        a.pharmacy_name, a.pharmacy_city, a.pharmacy_link_status,
-       a.appointment_modality, a.patient_phone
+       a.appointment_modality, a.patient_phone, a.ai_scribe_consent
      FROM appointments a
      JOIN appointment_slots s ON s.id = a.slot_id
      JOIN physicians ph ON ph.id = a.physician_id
@@ -769,6 +774,7 @@ export async function getAppointmentByToken(tokenHash: string): Promise<Appointm
     pharmacyName: row.pharmacy_name,
     pharmacyCity: row.pharmacy_city,
     pharmacyLinkStatus: row.pharmacy_link_status,
+    aiScribeConsent: row.ai_scribe_consent,
   };
 }
 
@@ -839,6 +845,7 @@ export async function getAppointmentsForOrg(
     reason: string | null;
     appointment_modality: string | null;
     patient_phone: string | null;
+    ai_scribe_consent: boolean | null;
   }>(
     `SELECT
        a.id, a.organization_id, a.physician_id,
@@ -849,7 +856,7 @@ export async function getAppointmentsForOrg(
        a.coverage_type, a.province, a.health_card_number_enc, a.billing_note, a.reason,
        a.manage_token_expires_at, a.cancelled_at, a.created_at, a.oscar_sync_status, a.oscar_appointment_no,
        a.pharmacy_name, a.pharmacy_city, a.pharmacy_link_status,
-       a.appointment_modality, a.patient_phone
+       a.appointment_modality, a.patient_phone, a.ai_scribe_consent
      FROM appointments a
      JOIN appointment_slots s ON s.id = a.slot_id
      JOIN physicians ph ON ph.id = a.physician_id
@@ -891,6 +898,7 @@ export async function getAppointmentsForOrg(
     pharmacyName: row.pharmacy_name,
     pharmacyCity: row.pharmacy_city,
     pharmacyLinkStatus: row.pharmacy_link_status,
+    aiScribeConsent: row.ai_scribe_consent,
   }));
 }
 

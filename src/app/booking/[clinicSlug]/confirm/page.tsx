@@ -115,6 +115,8 @@ export default function BookingConfirmPage({
   });
 
   const [consentGiven, setConsentGiven] = useState(false);
+  // Tri-state: null = not yet answered. The patient must pick one; "No" books fine.
+  const [aiScribeConsent, setAiScribeConsent] = useState<boolean | null>(null);
   const [submitting, setSubmitting]     = useState(false);
   const [error, setError]               = useState<string | null>(null);
   const [success, setSuccess]           = useState<{ manageUrl: string } | null>(null);
@@ -240,6 +242,7 @@ export default function BookingConfirmPage({
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!consentGiven) { setError("You must consent to proceed."); return; }
+    if (aiScribeConsent === null) { setError("Please answer the question about the AI scribe."); return; }
     setSubmitting(true);
     setError(null);
 
@@ -308,6 +311,7 @@ export default function BookingConfirmPage({
                             ? coverage.billingNote.trim()
                             : undefined,
         consentGiven:     true,
+        aiScribeConsent,  // real state — the guard above ensures it isn't null by now
         appointmentModality: modality,
         // Previously collected only on the "new to this clinic" branch and forwarded to OSCAR
         // without ever being kept. A video visit needs it to text a join link, and a phone visit
@@ -469,6 +473,40 @@ export default function BookingConfirmPage({
     </div>
   );
 
+  // AI-scribe question. Deliberately tri-state — "No" is a valid answer that books fine; the
+  // refusal is recorded so the doctor knows not to use the tool for this visit.
+  const aiScribeField = (
+    <fieldset className="bg-gray-50 border border-gray-200 rounded-lg p-4 text-left">
+      <legend className="sr-only">AI scribe consent</legend>
+      <p className="text-sm text-gray-600">
+        Our doctors may use an AI scribe tool during visits to help write the visit note. Your
+        doctor reviews everything it produces. Is it okay for your doctor to use this tool during
+        your visit? *
+      </p>
+      <div className="flex gap-6 mt-3">
+        {([
+          ["yes", true, "Yes, that's fine"],
+          ["no", false, "No, please don't"],
+        ] as const).map(([key, value, label]) => (
+          <label key={key} className="flex items-center gap-2 cursor-pointer text-sm text-gray-700">
+            <input
+              type="radio"
+              name="aiScribeConsent"
+              required
+              checked={aiScribeConsent === value}
+              onChange={() => setAiScribeConsent(value)}
+              className="accent-blue-600"
+            />
+            {label}
+          </label>
+        ))}
+      </div>
+      <p className="text-xs text-gray-400 mt-2">
+        You can say no — it will not affect your appointment or your care.
+      </p>
+    </fieldset>
+  );
+
   // ---------------------------------------------------------------------------
   // Render: Step 1 — identity form
   // ---------------------------------------------------------------------------
@@ -609,7 +647,7 @@ export default function BookingConfirmPage({
       <main className="min-h-screen bg-gray-50 py-10 px-4">
         <div className="max-w-lg mx-auto">
           <button
-            onClick={() => { setStep("identity"); setConsentGiven(false); setError(null); }}
+            onClick={() => { setStep("identity"); setConsentGiven(false); setAiScribeConsent(null); setError(null); }}
             className="text-blue-600 text-sm mb-4"
           >
             ← Back
@@ -637,6 +675,7 @@ export default function BookingConfirmPage({
             {reasonField}
             {modalityPicker}
             {modalityBanner}
+            {aiScribeField}
 
             <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 text-sm text-gray-600 space-y-2">
               <p>
@@ -662,7 +701,7 @@ export default function BookingConfirmPage({
 
             <button
               type="submit"
-              disabled={submitting || !consentGiven}
+              disabled={submitting || !consentGiven || aiScribeConsent === null}
               className="w-full bg-blue-600 text-white py-3 rounded-lg font-semibold hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition"
             >
               {submitting ? "Confirming…" : "Confirm Appointment"}
@@ -683,7 +722,7 @@ export default function BookingConfirmPage({
     <main className="min-h-screen bg-gray-50 py-10 px-4">
       <div className="max-w-lg mx-auto">
         <button
-          onClick={() => { setStep("identity"); setConsentGiven(false); setError(null); }}
+          onClick={() => { setStep("identity"); setConsentGiven(false); setAiScribeConsent(null); setError(null); }}
           className="text-blue-600 text-sm mb-4"
         >
           ← Back
@@ -898,6 +937,8 @@ export default function BookingConfirmPage({
             </div>
           )}
 
+          {aiScribeField}
+
           {/* Consent */}
           <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 text-sm text-gray-600 space-y-2">
             <p>
@@ -923,7 +964,7 @@ export default function BookingConfirmPage({
 
           <button
             type="submit"
-            disabled={submitting || !consentGiven}
+            disabled={submitting || !consentGiven || aiScribeConsent === null}
             className="w-full bg-blue-600 text-white py-3 rounded-lg font-semibold hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition"
           >
             {submitting

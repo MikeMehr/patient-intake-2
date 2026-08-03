@@ -89,7 +89,14 @@ async function handleConfirm(
     oscarDemographicNo,
     appointmentModality,
     phone,
+    aiScribeConsent,
   } = body as Record<string, string | boolean | undefined>;
+
+  // AI-scribe answer is tri-state. Strict boolean check: anything else (a form loaded before
+  // this deploy, or junk from a hand-rolled request) stores NULL = "not asked" — never a
+  // fabricated yes.
+  const aiScribe: boolean | null =
+    typeof aiScribeConsent === "boolean" ? aiScribeConsent : null;
 
   // Preferred pharmacy is optional and must never be able to fail a booking, so an unusable value
   // normalizes to null rather than 400.
@@ -190,6 +197,7 @@ async function handleConfirm(
     pharmacy: pharmacyRecord ?? undefined,
     appointmentModality: effectiveModality,
     patientPhone: storedPhone,
+    aiScribeConsent: aiScribe,
   });
 
   if (!result) {
@@ -256,6 +264,7 @@ async function handleConfirm(
       effectiveModality === "VIDEO"
         ? buildVideoLaunchUrl(appUrl, result.appointmentId)
         : null,
+    aiScribeConsent: aiScribe,
   });
 
   // Best-effort: set the chosen pharmacy as preferred on the OSCAR chart. Like the sync above,
@@ -345,6 +354,7 @@ async function syncAppointmentToOscar(args: {
   reason: string;
   modality: AppointmentModality;
   videoLaunchUrl: string | null;
+  aiScribeConsent: boolean | null;
 }): Promise<void> {
   const setSync = async (status: "SYNCED" | "FAILED" | "SKIPPED", apptNo: string | null, err: string | null) => {
     try {
@@ -425,6 +435,7 @@ async function syncAppointmentToOscar(args: {
       notes: buildOscarAppointmentNotes({
         modality: args.modality,
         videoLaunchUrl: args.videoLaunchUrl,
+        aiScribeConsent: args.aiScribeConsent,
       }),
     });
 
