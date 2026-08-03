@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import DateTimeField from "./DateTimeField";
+import { localDateString } from "@/lib/localDate";
 
 type Physician = { id: string; firstName: string; lastName: string };
 type Slot = {
@@ -78,10 +79,8 @@ export default function SlotsPage() {
   const [slots, setSlots] = useState<Slot[]>([]);
   const [filterPhysicianId, setFilterPhysicianId] = useState("all");
   const [showOverlapsOnly, setShowOverlapsOnly] = useState(false);
-  const [dateFrom, setDateFrom] = useState(new Date().toISOString().substring(0, 10));
-  const [dateTo, setDateTo] = useState(
-    new Date(Date.now() + 14 * 86400000).toISOString().substring(0, 10),
-  );
+  const [dateFrom, setDateFrom] = useState(localDateString());
+  const [dateTo, setDateTo] = useState(localDateString(14));
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -166,7 +165,7 @@ export default function SlotsPage() {
   function openAddModal() {
     // Prefill the date (and a sensible default time) so the Date fields are
     // never left blank — that was causing the form to fail/stall.
-    const day = dateFrom || new Date().toISOString().substring(0, 10);
+    const day = dateFrom || localDateString();
     setNewSlot((prev) => ({
       ...prev,
       // Default to the physician currently being filtered, so "Add Slot" matches

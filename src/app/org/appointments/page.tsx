@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { localDateString } from "@/lib/localDate";
 
 type Appointment = {
   id: string;
@@ -140,10 +141,8 @@ export default function AppointmentsPage() {
   const [physicians, setPhysicians] = useState<Physician[]>([]);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [filterPhysicianId, setFilterPhysicianId] = useState("all");
-  const [dateFrom, setDateFrom] = useState(new Date().toISOString().substring(0, 10));
-  const [dateTo, setDateTo] = useState(
-    new Date(Date.now() + 30 * 86400000).toISOString().substring(0, 10),
-  );
+  const [dateFrom, setDateFrom] = useState(localDateString());
+  const [dateTo, setDateTo] = useState(localDateString(30));
   const [bookedOnly, setBookedOnly] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
