@@ -17,11 +17,8 @@ import {
   normalizeModality,
   type AppointmentModality,
 } from "@/lib/appointment-modality";
-import { isDailyConfigured } from "@/lib/video/daily";
-import { getOrCreateVisitForAppointment } from "@/lib/video/video-store";
 import {
   buildOscarAppointmentNotes,
-  buildVideoLaunchUrl,
 } from "@/lib/oscar/appointment-notes";
 import { getPhysicianPhone } from "@/lib/physician-lookup";
 import { query } from "@/lib/db";
@@ -226,21 +223,16 @@ async function handleConfirm(
   // Deliberately fail-soft: a Daily outage must not fail a booking that is already committed,
   // and the provider's day-sheet button creates the room on demand anyway. The patient then
   // gets their link from the manage page or from the provider.
-  let videoJoinUrl: string | null = null;
-  if (effectiveModality === "VIDEO" && isDailyConfigured()) {
-    try {
-      const visit = await getOrCreateVisitForAppointment({
-        organizationId: clinic.id,
-        appointmentId: result.appointmentId,
-      });
-      if (visit.ok && visit.joinTokenRaw) {
-        videoJoinUrl = `${appUrl}/visit/${visit.joinTokenRaw}`;
-      } else if (!visit.ok) {
-        console.error(`[confirm] video room creation failed for ${result.appointmentId}: ${visit.detail}`);
-      }
-    } catch (err) {
-      console.error("[confirm] video room creation threw:", err);
-    }
+  // The provider's permanent Doxy waiting room, if the clinic uses one. Doxy has no API and no
+  // per-visit link — one room per provider, and the patient waits in it until admitted — so this
+  // is simply looked up rather than created.
+  let doxyRoomUrl: string | null = null;
+  if (effectiveModality === "VIDEO") {
+    const dr = await query<{ doxy_room_url: string | null }>(
+      `SELECT doxy_room_url FROM physicians WHERE id = $1`,
+      [result.physicianId],
+    );
+    doxyRoomUrl = dr.rows[0]?.doxy_room_url ?? null;
   }
 
   // Best-effort: push the booked appointment into OSCAR so it appears on the
@@ -261,9 +253,7 @@ async function handleConfirm(
     // part of creating that appointment, so its number doesn't exist yet, and OSCAR publishes
     // no way to amend a note afterwards (verified against the live WADL 2026-08-01).
     videoLaunchUrl:
-      effectiveModality === "VIDEO"
-        ? buildVideoLaunchUrl(appUrl, result.appointmentId)
-        : null,
+      effectiveModality === "VIDEO" ? doxyRoomUrl : null,
     aiScribeConsent: aiScribe,
   });
 
@@ -292,7 +282,7 @@ async function handleConfirm(
       emailFooter: clinic.settings.emailFooter,
       clinicEmail: clinic.email,
       appointmentModality: effectiveModality,
-      videoJoinUrl,
+      doxyRoomUrl,
     });
   } catch {
     // Email failure is non-fatal — appointment is already committed

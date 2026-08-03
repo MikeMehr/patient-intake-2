@@ -5,13 +5,13 @@
  * the appointment happens, and for a video visit carries a link the provider can click straight
  * from the schedule.
  *
- * WHICH LINK — the provider's, not the patient's. `notes` is a shared clinical field: staff read
+ * WHICH LINK — the provider's Doxy waiting room. `notes` is a shared clinical field: staff read
  * it, copy it, and it is rendered into the day-sheet row tooltip
  * (appointmentprovideradminday.jsp ~line 2637), so anything here is visible to anyone who can
- * see the schedule. A patient's join token is a bearer credential to a live consultation and has
- * no business with that blast radius. The provider deep link is useless without a physician
- * session, and a staff member who follows it lands on the console where they can send the
- * patient their link properly.
+ * see the schedule. That was a reason to keep a per-visit patient token out of it, but a Doxy
+ * room URL is not a credential — it is a permanent address the whole practice shares, and the
+ * waiting room is what actually controls entry. So it is safe here, and it is the useful thing:
+ * a provider reading the day sheet gets somewhere to click.
  *
  * WIDTH — `appointment.notes` is varchar(255), verified on the live box 2026-08-01. OSCAR does
  * not complain about an over-long value, it truncates, and a truncated URL is worse than no URL,
@@ -71,17 +71,4 @@ export function buildOscarAppointmentNotes(args: {
   return url.slice(0, MAX_NOTES_LEN);
 }
 
-/**
- * The provider-side deep link that opens the video console.
- *
- * Keyed on our own appointment id rather than the OSCAR appointment number, because of the
- * ordering: the note is written as part of *creating* the OSCAR appointment, so its number does
- * not exist yet, and there is no update call to go back and add it afterwards. Our UUID is known
- * before the write.
- *
- * The id is not a credential — the console resolves it inside the caller's organization and
- * requires a physician session either way.
- */
-export function buildVideoLaunchUrl(appUrl: string, appointmentId: string): string {
-  return `${appUrl}/launch/oscar-video?appointmentId=${encodeURIComponent(appointmentId)}`;
-}
+

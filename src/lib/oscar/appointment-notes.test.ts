@@ -1,9 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  MAX_NOTES_LEN,
-  buildOscarAppointmentNotes,
-  buildVideoLaunchUrl,
-} from "./appointment-notes";
+import { MAX_NOTES_LEN, buildOscarAppointmentNotes } from "./appointment-notes";
 
 describe("buildOscarAppointmentNotes", () => {
   it("says how the appointment happens", () => {
@@ -19,9 +15,9 @@ describe("buildOscarAppointmentNotes", () => {
   it("includes the launch link for a video visit", () => {
     const notes = buildOscarAppointmentNotes({
       modality: "VIDEO",
-      videoLaunchUrl: "https://physician.health-assist.org/launch/oscar-video?appointmentId=abc",
+      videoLaunchUrl: "https://doxy.me/drmehraein",
     });
-    expect(notes).toContain("/launch/oscar-video?appointmentId=abc");
+    expect(notes).toContain("https://doxy.me/drmehraein");
   });
 
   it("omits the link when there isn't one", () => {
@@ -35,13 +31,14 @@ describe("buildOscarAppointmentNotes", () => {
   it("never exceeds the column width", () => {
     const notes = buildOscarAppointmentNotes({
       modality: "VIDEO",
-      videoLaunchUrl: `https://example.com/launch/oscar-video?appointmentId=${"a".repeat(400)}`,
+      videoLaunchUrl: `https://doxy.me/${"a".repeat(400)}`,
     });
     expect(notes.length).toBeLessThanOrEqual(MAX_NOTES_LEN);
   });
 
   it("drops the prose rather than cutting the URL when both won't fit", () => {
-    const url = `https://example.com/launch/oscar-video?appointmentId=${"a".repeat(200)}`;
+    // Long enough that prose + URL genuinely exceeds the 250-char cap.
+    const url = `https://doxy.me/${"a".repeat(240)}`;
     const notes = buildOscarAppointmentNotes({ modality: "VIDEO", videoLaunchUrl: url });
     expect(notes.startsWith("https://")).toBe(true);
     expect(notes).not.toContain("Video visit");
@@ -89,7 +86,8 @@ describe("buildOscarAppointmentNotes", () => {
   });
 
   it("still lets a long video URL win the width budget over the scribe note", () => {
-    const url = `https://example.com/launch/oscar-video?appointmentId=${"a".repeat(200)}`;
+    // Long enough that prose + URL genuinely exceeds the 250-char cap.
+    const url = `https://doxy.me/${"a".repeat(240)}`;
     const notes = buildOscarAppointmentNotes({
       modality: "VIDEO",
       videoLaunchUrl: url,
@@ -100,13 +98,3 @@ describe("buildOscarAppointmentNotes", () => {
   });
 });
 
-describe("buildVideoLaunchUrl", () => {
-  it("keys on our appointment id, since the OSCAR number doesn't exist yet at write time", () => {
-    const url = buildVideoLaunchUrl("https://app.example.com", "abc-123");
-    expect(url).toBe("https://app.example.com/launch/oscar-video?appointmentId=abc-123");
-  });
-
-  it("encodes the id", () => {
-    expect(buildVideoLaunchUrl("https://a", "x/y&z")).toContain("appointmentId=x%2Fy%26z");
-  });
-});

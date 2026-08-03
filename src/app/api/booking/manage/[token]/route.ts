@@ -7,13 +7,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { hashManageToken } from "@/lib/booking-token";
 import { getAppointmentByToken, getBookingSettingsByOrgId } from "@/lib/booking-store";
 import { resolveEffectiveModality } from "@/lib/appointment-modality";
-import { resolveAppUrl } from "@/lib/app-url";
 import { query } from "@/lib/db";
-import { decryptString } from "@/lib/encrypted-field";
-import { resolveJoinState } from "@/lib/video/join-window";
 
 export async function GET(
-  req: NextRequest,
+  _req: NextRequest,
   { params }: { params: Promise<{ token: string }> },
 ) {
   const { token } = await params;
@@ -41,8 +38,10 @@ export async function GET(
     settings?.appointmentModality,
   );
 
-  const videoJoinUrl =
-    modality === "VIDEO" ? await resolveVideoJoinUrl(appointment.id, resolveAppUrl(req)) : null;
+  // Doxy has one permanent waiting room per provider, so this is a lookup rather than anything
+  // minted per visit — and it is the same link the confirmation email carried.
+  const doxyRoomUrl =
+    modality === "VIDEO" ? await resolveDoxyRoom(appointment.physicianId) : null;
 
   // Don't expose health card number via manage link
   return NextResponse.json({
@@ -52,52 +51,16 @@ export async function GET(
       // The phone is on the row now, but there is no reason for the manage page to echo it back.
       patientPhone: undefined,
       appointmentModality: modality,
-      videoJoinUrl,
+      doxyRoomUrl,
     },
   });
 }
 
-/**
- * The patient's own join link, for the page they already have a link to.
- *
- * Returned regardless of whether the window is open — the page shows a countdown and the join
- * endpoint is what actually refuses early entry. Suppressed once the visit is over or cancelled
- * so a stale manage page doesn't offer a dead button.
- */
-async function resolveVideoJoinUrl(
-  appointmentId: string,
-  appUrl: string,
-): Promise<string | null> {
-  const res = await query<{
-    patient_join_token_enc: string | null;
-    patient_join_expires_at: Date;
-    scheduled_start_at: Date | null;
-    scheduled_end_at: Date | null;
-    status: string;
-  }>(
-    `SELECT patient_join_token_enc, patient_join_expires_at,
-            scheduled_start_at, scheduled_end_at, status
-       FROM video_visits
-      WHERE appointment_id = $1
-      LIMIT 1`,
-    [appointmentId],
+/** The provider's permanent Doxy waiting room, or null when they haven't set one. */
+async function resolveDoxyRoom(physicianId: string): Promise<string | null> {
+  const res = await query<{ doxy_room_url: string | null }>(
+    `SELECT doxy_room_url FROM physicians WHERE id = $1`,
+    [physicianId],
   );
-  const row = res.rows[0];
-  if (!row?.patient_join_token_enc) return null;
-
-  const state = resolveJoinState({
-    now: new Date(),
-    scheduledStartAt: row.scheduled_start_at,
-    scheduledEndAt: row.scheduled_end_at,
-    cancelledAt: null,
-    tokenExpiresAt: row.patient_join_expires_at,
-    status: row.status,
-  });
-  if (state === "ended" || state === "cancelled" || state === "expired") return null;
-
-  try {
-    return `${appUrl}/visit/${decryptString(row.patient_join_token_enc)}`;
-  } catch {
-    return null;
-  }
+  return res.rows[0]?.doxy_room_url ?? null;
 }

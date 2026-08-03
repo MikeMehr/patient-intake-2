@@ -11,7 +11,6 @@ import { getClinicBySlug } from "@/lib/booking-store";
 import { query } from "@/lib/db";
 import { decryptString } from "@/lib/encrypted-field";
 import { updateOscarAppointmentStatus } from "@/lib/oscar/appointments";
-import { cancelVisitsForAppointment } from "@/lib/video/video-store";
 
 export const runtime = "nodejs";
 
@@ -41,15 +40,6 @@ export async function POST(
 
   // Best-effort: mark the appointment Cancelled in OSCAR too. Never block the
   // cancellation — the slot is already freed locally.
-  // Close any video room for this appointment. Without this a cancelled appointment keeps a
-  // live join link, and the patient who cancelled could still walk into a consultation.
-  // Best-effort inside — a Daily failure must not turn a successful cancellation into a 500.
-  try {
-    await cancelVisitsForAppointment(appointment.id);
-  } catch (err) {
-    console.error("[cancel] could not close the video visit:", err);
-  }
-
   await cancelAppointmentInOscar(appointment.id, appointment.organizationId, appointment.oscarAppointmentNo);
 
   // Fetch clinic timezone for email
