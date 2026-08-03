@@ -9,6 +9,7 @@ import {
   normalizeModality,
   type AppointmentModality,
 } from "@/lib/appointment-modality";
+import PoweredBy from "../PoweredBy";
 
 type Physician = {
   id: string;
@@ -327,6 +328,7 @@ export default function ClinicBookingPage({
         {settings?.cancellationPolicy && (
           <p className="text-xs text-gray-400 mt-6 border-t pt-4">{settings.cancellationPolicy}</p>
         )}
+        <PoweredBy />
       </div>
     </main>
   );

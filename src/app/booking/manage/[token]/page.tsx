@@ -9,6 +9,7 @@ import {
   normalizeModality,
   type AppointmentModality,
 } from "@/lib/appointment-modality";
+import PoweredBy from "../../PoweredBy";
 
 type Appointment = {
   id: string;
@@ -115,7 +116,7 @@ export default function ManageAppointmentPage({
   const modality = normalizeModality(appointment.appointmentModality);
 
   return (
-    <main className="min-h-screen bg-gray-50 flex items-center justify-center px-4 py-12">
+    <main className="min-h-screen bg-gray-50 flex flex-col items-center justify-center px-4 py-12">
       <div className="max-w-md w-full bg-white rounded-2xl border border-gray-200 shadow-sm p-8">
         {isCancelled ? (
           <>
@@ -188,6 +189,7 @@ export default function ManageAppointmentPage({
           </>
         )}
       </div>
+      <PoweredBy />
     </main>
   );
 }

@@ -11,6 +11,7 @@ import {
   type AppointmentModality,
 } from "@/lib/appointment-modality";
 import type { PharmacySelection } from "@/lib/pharmacy-selection";
+import PoweredBy from "../../PoweredBy";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -429,6 +430,7 @@ export default function BookingConfirmPage({
               </p>
             )}
           </div>
+          <PoweredBy />
         </div>
       </main>
     );
@@ -707,6 +709,7 @@ export default function BookingConfirmPage({
               {submitting ? "Confirming…" : "Confirm Appointment"}
             </button>
           </form>
+          <PoweredBy />
         </div>
       </main>
     );
@@ -974,6 +977,7 @@ export default function BookingConfirmPage({
               : "Confirm Appointment"}
           </button>
         </form>
+        <PoweredBy />
       </div>
     </main>
   );
