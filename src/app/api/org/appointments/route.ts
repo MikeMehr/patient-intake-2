@@ -8,7 +8,8 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentSession } from "@/lib/auth";
-import { getAppointmentsForOrg } from "@/lib/booking-store";
+import { getAppointmentsForOrg, getBookingSettingsByOrgId } from "@/lib/booking-store";
+import { resolveEffectiveModality } from "@/lib/appointment-modality";
 import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
 
 export async function GET(request: NextRequest) {
@@ -32,7 +33,21 @@ export async function GET(request: NextRequest) {
       dateTo: sp.get("dateTo") ?? undefined,
     });
 
-    const res = NextResponse.json({ appointments });
+    // appointments.appointment_modality is NULL whenever the booking inherits the clinic
+    // default — which is every row made before migration 067, and every booking at a clinic
+    // that doesn't let patients choose. Resolving it here means the table can simply print the
+    // format instead of each caller having to know the inheritance rule (and getting it wrong
+    // by showing nothing).
+    const settings = await getBookingSettingsByOrgId(session.organizationId);
+    const withModality = appointments.map((a) => ({
+      ...a,
+      appointmentModality: resolveEffectiveModality(
+        a.appointmentModality,
+        settings?.appointmentModality,
+      ),
+    }));
+
+    const res = NextResponse.json({ appointments: withModality });
     logRequestMeta("/api/org/appointments", requestId, status, Date.now() - started);
     return res;
   } catch {

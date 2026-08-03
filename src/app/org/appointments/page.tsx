@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { MODALITY_ICON, normalizeModality } from "@/lib/appointment-modality";
 import { localDateString } from "@/lib/localDate";
 
 type Appointment = {
@@ -47,6 +48,31 @@ function formatDT(iso: string): string {
   } catch {
     return iso;
   }
+}
+
+/**
+ * How the appointment happens, as a word rather than a shade of button.
+ *
+ * The Video column already differed for video bookings — solid button versus muted — but a
+ * colour difference is not something anyone can read down a column of appointments, and staff
+ * need to know whether to pick up the phone or wait in a room. So it is spelled out.
+ *
+ * Never blank: the API resolves a NULL modality against the clinic default before sending.
+ */
+function ModalityTag({ modality }: { modality: string | null }) {
+  const m = normalizeModality(modality);
+  const tone =
+    m === "VIDEO"
+      ? "text-blue-700"
+      : m === "IN_PERSON"
+        ? "text-purple-700"
+        : "text-gray-500";
+  const label = m === "VIDEO" ? "Video" : m === "IN_PERSON" ? "In person" : "Phone";
+  return (
+    <p className={`text-xs font-medium ${tone}`}>
+      <span aria-hidden>{MODALITY_ICON[m]}</span> {label}
+    </p>
+  );
 }
 
 /**
@@ -281,6 +307,11 @@ export default function AppointmentsPage() {
                     <tr key={appt.id} className="border-b border-gray-100 last:border-0 hover:bg-gray-50">
                       <td className="px-2 py-2 text-gray-800 whitespace-nowrap">
                         {formatDT(appt.slotStartTime)}
+                        {/* Under the date rather than in its own column: the format is something
+                            you read together with the time ("10:00, and it's a phone call"), and
+                            the row is already eight columns wide. The API resolves the clinic
+                            default, so this is never blank. */}
+                        <ModalityTag modality={appt.appointmentModality} />
                       </td>
                       <td className="px-2 py-2">
                         <p className="font-medium text-gray-900 whitespace-nowrap">
