@@ -48,39 +48,36 @@ Use this register to track all vendors that may process PHI.
   - Evidence link: `docs/compliance/evidence/baa-execution-log-2026-03-02.md`, `docs/compliance/evidence/baa-review-2026-03-13.md`
   - Approver: Manucher Mehraein
 
-- Vendor: Daily.co (video visits)
-  - PHI touchpoint: carries live consultation audio/video between patient and physician.
-    Stores no call content — `enable_recording: false` is set unconditionally in
-    `src/lib/video/daily.ts`, not as a toggle. What Daily retains is session metadata: random
-    room names (`visit-<random>`, deliberately not derived from patient, appointment or
-    demographic numbers), participant labels ("Patient", "Dr. <name>"), and timestamps.
-  - BAA required: no — see rationale
-  - BAA status: not_required_documented
-  - Rationale: HIPAA is US law binding US covered entities; this is a BC clinic, governed by
-    PIPA and CPSBC practice standards, so a BAA discharges no obligation here. Daily's
-    Healthcare add-on (the tier that carries a signed privacy agreement) was reviewed and
-    **declined on 2026-08-02** as disproportionate to current volume. The service therefore
-    operates under Daily's standard terms, with no bilateral privacy agreement in place.
-  - Residual risk accepted: consultation media transits US infrastructure under standard
-    commercial terms rather than a negotiated contract. PIPA does not impose the Canada-only
-    residency rule that FIPPA places on public bodies, so cross-border processing is a
-    disclosure-and-contract question rather than a prohibition — but the contract half is
-    currently absent.
-  - Compensating controls: recording disabled unconditionally; rooms are private, so a leaked
-    room URL is inert without a meeting token; patient join tokens are short-lived (visit end
-    + 24h) and only issued inside the join window; room names carry no clinical identifier.
-  - Reassess if: video volume grows beyond occasional use; any recording feature is
-    contemplated; CPSBC or the OIPC issues guidance on virtual-care vendors; or a patient
-    complaint touches the video path. The alternative already scoped is self-hosted Jitsi on
-    an Azure Canada Central VM, which removes the vendor entirely — `src/lib/video/daily.ts`
-    is four functions, so the swap is contained.
-  - Patient disclosure: OUTSTANDING. Patients are not currently told their video consultation
-    is processed outside Canada. This is the gap most worth closing, and it is cheap — a line
-    in the booking consent text and in the confirmation email.
+- Vendor: Doxy.me (video visits)
+  - PHI touchpoint: carries live consultation audio/video between patient and physician. No
+    recording is used, so no call content is stored.
+  - BAA required: yes
+  - BAA status: pending_execution
+  - Notes: replaced Daily.co on 2026-08-03. Daily's healthcare tier — the only one carrying a
+    signed agreement — was $500/month against a few hundred participant-minutes a year, so the
+    service ran on standard commercial terms with no bilateral agreement. Doxy offers a BAA at
+    no or nominal cost, which closes that gap.
+  - Architecture note: one permanent waiting room per provider, stored in
+    `physicians.doxy_room_url`. There are no per-visit rooms and no join tokens; the patient
+    opens the room, enters a name, and the provider admits them. Access control is the provider
+    recognising who turned up. Accepted deliberately as proportionate at this volume.
+  - Residual risk accepted: Doxy is US-hosted, so consultation media still crosses the border.
+    PIPA does not impose the Canada-only residency rule FIPPA places on public bodies, so this
+    is a disclosure question rather than a prohibition — but see the outstanding item below.
+  - Patient disclosure: OUTSTANDING. Patients are still not told their video consultation is
+    processed outside Canada. This carried over unchanged from the Daily entry and remains the
+    cheapest open item — a line in the booking consent text and the confirmation email.
+  - Reassess if: video volume grows beyond occasional use, or any recording feature is
+    contemplated.
   - Owner: Manucher Mehraein
-  - Last reviewed: 2026-08-02
-  - Next review: 2026-11-02
+  - Last reviewed: 2026-08-03
+  - Next review: 2026-11-03
   - Approver: Manucher Mehraein
+
+- Vendor: Daily.co (video visits) — REMOVED 2026-08-03
+  - Integration deleted; no API key, no account in use, no data retained by us. Recorded here
+    rather than dropped so the register shows what was evaluated and why it was not kept.
+  - Reason: healthcare tier disproportionate to volume; replaced by Doxy.me.
 
 ## Register Rules
 

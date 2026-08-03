@@ -1,8 +1,12 @@
 # Video-visit button on the OSCAR day sheet — install guide
 
-Puts a 🎥 beside every patient on the day sheet. Clicking it opens the Health Assist video
-console for that appointment; the room is created on demand, so it works for appointments typed
-straight into OSCAR and not only for ones booked online.
+Puts a 🎥 beside every patient on the day sheet. Clicking it opens the provider's Doxy.me
+waiting room.
+
+Note what the button does NOT do: video moved to Doxy on 2026-08-03, and Doxy has one permanent
+room per provider rather than one per visit. So the appointment number the script passes goes
+unused — it is kept because the install is unchanged and the day sheet has no other way to
+identify anything, but the room belongs to the provider, not the appointment.
 
 No OSCAR write API is involved and nothing is posted back — the provider simply lands in a video
 room. There is no `NotesService` to register, no Tomcat restart, and no client-device-certificate
@@ -18,11 +22,9 @@ physician.health-assist.org/launch/oscar-video?oscarApptNo=123&demographicNo=456
   │  client-side location.replace  ← re-attaches the SameSite=Strict cookie
   ▼
 physician.health-assist.org/physician/video?oscarApptNo=123&demographicNo=456
-  │  POST /api/physician/video/session
-  │    → resolves the visit INSIDE the caller's organization (never from the URL)
-  │    → creates the Daily room on first open
+  │  GET /api/physician/video/room → the signed-in provider's Doxy room
   ▼
-Provider joins; patient joins from their /visit/<token> link
+Provider clicks through to doxy.me and admits the patient from the waiting room
 ```
 
 The `/launch/oscar-video` hop exists for the same reason as `/launch/oscar`: `physician_session`
@@ -106,5 +108,5 @@ file, no database row, no nginx change.
 
 ## Prerequisites
 
-`DAILY_API_KEY` and `DAILY_DOMAIN` must be set in Azure App Settings. Without them every video
-path fails closed with a 503 and the button opens a console that says video isn't configured.
+Each provider needs their Doxy link set on their record (Online Booking Dashboard → Providers →
+Edit). Without it the button lands on a page saying exactly that, rather than failing silently.
