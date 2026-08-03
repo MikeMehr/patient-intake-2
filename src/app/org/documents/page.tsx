@@ -108,11 +108,44 @@ function ShareBadge({ status }: { status: DocShare["status"] }) {
   );
 }
 
-/** Upload one file directly to Azure Blob via its write-SAS URL, reporting progress. */
+/**
+ * submitShare makes three network calls — create share, upload each file, finalize — and
+ * used to collapse all three into one catch, so "Something went wrong" could equally mean a
+ * 500 from our API, a blocked CORS preflight, or a failed email. The step and the
+ * developer-facing detail now travel with the error so the banner can say which.
+ */
+type ShareStep = "create" | "upload" | "finalize";
+
+class ShareStepError extends Error {
+  readonly step: ShareStep;
+  readonly userMessage: string;
+  readonly detail: string;
+  constructor(step: ShareStep, userMessage: string, detail: string) {
+    super(detail);
+    this.name = "ShareStepError";
+    this.step = step;
+    this.userMessage = userMessage;
+    this.detail = detail;
+  }
+}
+
+/** Azure reports errors as <Error><Code>X</Code><Message>…</Message></Error>. */
+function azureErrorCode(body: string): string | null {
+  return /<Code>([^<]+)<\/Code>/.exec(body || "")?.[1] ?? null;
+}
+
+/**
+ * Upload one file directly to Azure Blob via its write-SAS URL, reporting progress.
+ *
+ * `label` is a PHI-free position marker ("file 2 of 5"). The filename and the URL are
+ * deliberately kept out of the logged detail — the URL carries a live SAS (a bearer
+ * credential) and the blob path embeds the filename.
+ */
 function putToAzure(
   url: string,
   file: File,
   contentType: string,
+  label: string,
   onProgress: (fraction: number) => void,
 ): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -123,11 +156,63 @@ function putToAzure(
     xhr.upload.onprogress = (e) => {
       if (e.lengthComputable) onProgress(e.loaded / e.total);
     };
-    xhr.onload = () =>
-      xhr.status >= 200 && xhr.status < 300
-        ? resolve()
-        : reject(new Error(`Upload failed (${xhr.status})`));
-    xhr.onerror = () => reject(new Error("Upload failed"));
+
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) return resolve();
+      // A real response means CORS passed and storage itself rejected the write: an
+      // expired or malformed SAS, a missing container, a size limit. Azure's <Code> and
+      // x-ms-request-id are the two things that make that diagnosable, and the account's
+      // ExposedHeaders rule is what lets us read the header at all.
+      const code = azureErrorCode(xhr.responseText);
+      reject(
+        new ShareStepError(
+          "upload",
+          `"${file.name}" was rejected by secure file storage${code ? ` (${code})` : ""}. Nothing was sent.`,
+          `PUT blob -> ${xhr.status} ${xhr.statusText} | ${label} | azure-code=${code ?? "unknown"} | ` +
+            `x-ms-request-id=${xhr.getResponseHeader("x-ms-request-id") ?? "n/a"}`,
+        ),
+      );
+    };
+
+    xhr.onerror = () => {
+      // status 0, no headers, no body: the request never completed at the network layer,
+      // so there is nothing to report but the shape of the failure. On this flow that is
+      // almost always the CORS preflight being refused — the storage account has no rule
+      // allowing PUT from this site's origin, which is exactly how this broke when the
+      // dashboard moved to a new domain. navigator.onLine rules out the one other
+      // realistic cause, so we can name the likely one instead of guessing.
+      const offline = typeof navigator !== "undefined" && navigator.onLine === false;
+      let blobHost = "unknown";
+      try {
+        blobHost = new URL(url).host;
+      } catch {
+        /* keep the placeholder */
+      }
+      reject(
+        new ShareStepError(
+          "upload",
+          offline
+            ? "Your connection dropped during the upload, so nothing was sent. Check your internet and try again."
+            : "The browser could not reach secure file storage, so nothing was sent. This is a setup " +
+              "issue on our side — file storage is not accepting uploads from this web address — not a " +
+              "problem with your files.",
+          `XHR error, status=0, no response (blocked at the network layer) | ${label} | ` +
+            `blob host=${blobHost} | page origin=${window.location.origin} | navigator.onLine=${!offline} | ` +
+            `Most likely: no blob CORS rule allows PUT from ${window.location.origin}. ` +
+            `Check: az storage cors list --services b --account-name <account>`,
+        ),
+      );
+    };
+
+    xhr.ontimeout = () =>
+      reject(
+        new ShareStepError(
+          "upload",
+          `"${file.name}" timed out while uploading, so nothing was sent.`,
+          `XHR timeout after ${xhr.timeout}ms | ${label}`,
+        ),
+      );
+
     xhr.send(file);
   });
 }
@@ -138,6 +223,7 @@ export default function OrgDocumentsPage() {
   const [shares, setShares] = useState<DocShare[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [errorDetail, setErrorDetail] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
   // Request documents (inbound)
@@ -158,6 +244,24 @@ export default function OrgDocumentsPage() {
   const [shareResult, setShareResult] = useState<{ url: string; emailSent: boolean } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  /**
+   * Two-tier errors. `message` is what a clinician reads — calm, honest, and it always says
+   * whether anything was actually sent. `detail` is the one line a developer needs, kept
+   * behind a disclosure and mirrored to console.error so it survives a screenshot-only bug
+   * report. Console is the right sink here: logDebug is a no-op in production (see
+   * src/lib/secure-logger.ts), so the repo's request-id logging would emit nothing in prod.
+   */
+  const showError = (message: string, detail?: string) => {
+    setError(message);
+    setErrorDetail(detail ?? null);
+    if (detail) console.error("[org/documents]", detail);
+  };
+
+  const clearError = () => {
+    setError(null);
+    setErrorDetail(null);
+  };
+
   const load = async () => {
     try {
       const [reqRes, shareRes] = await Promise.all([
@@ -172,8 +276,8 @@ export default function OrgDocumentsPage() {
       const shareData = await shareRes.json();
       setRequests(reqData.requests ?? []);
       setShares(shareData.shares ?? []);
-    } catch {
-      setError("Failed to load documents.");
+    } catch (err) {
+      showError("Failed to load documents.", `GET /api/org/documents -> ${String(err)}`);
     } finally {
       setLoading(false);
     }
@@ -187,7 +291,7 @@ export default function OrgDocumentsPage() {
   const sendRequest = async (e: React.FormEvent) => {
     e.preventDefault();
     setSending(true);
-    setError(null);
+    clearError();
     setNotice(null);
     try {
       const res = await fetch("/api/org/documents/send", {
@@ -201,7 +305,10 @@ export default function OrgDocumentsPage() {
         return;
       }
       if (!res.ok) {
-        setError(data.error || "Could not send the request.");
+        showError(
+          data.error || "Could not send the request.",
+          `POST /api/org/documents/send -> ${res.status}`,
+        );
         setSending(false);
         return;
       }
@@ -214,8 +321,11 @@ export default function OrgDocumentsPage() {
       setPatientEmail("");
       setRequestNote("");
       await load();
-    } catch {
-      setError("Could not send the request.");
+    } catch (err) {
+      showError(
+        "Could not reach the server to send the request. Nothing was sent — check your connection and try again.",
+        `POST /api/org/documents/send -> ${String(err)}`,
+      );
     } finally {
       setSending(false);
     }
@@ -223,15 +333,15 @@ export default function OrgDocumentsPage() {
 
   const addFiles = (incoming: FileList | null) => {
     if (!incoming) return;
-    setError(null);
+    clearError();
     const next = [...sendFiles];
     for (const f of Array.from(incoming)) {
       if (next.length >= MAX_SEND_FILES) {
-        setError(`You can send at most ${MAX_SEND_FILES} files.`);
+        showError(`You can send at most ${MAX_SEND_FILES} files.`);
         break;
       }
       if (f.size > MAX_SEND_BYTES) {
-        setError(`"${f.name}" is larger than the 200 MB limit.`);
+        showError(`"${f.name}" is larger than the 200 MB limit.`);
         continue;
       }
       if (!next.some((x) => x.name === f.name && x.size === f.size)) next.push(f);
@@ -246,18 +356,21 @@ export default function OrgDocumentsPage() {
 
   const submitShare = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError(null);
+    clearError();
     setNotice(null);
     setShareResult(null);
     if (passphrase.length < 6) {
-      setError("Passphrase must be at least 6 characters.");
+      showError("Passphrase must be at least 6 characters.");
       return;
     }
     if (!sendFiles.length) {
-      setError("Add at least one file to send.");
+      showError("Add at least one file to send.");
       return;
     }
     setUploading(true);
+    // Which of the three calls we are in, so a bare fetch() rejection — which carries no
+    // step of its own — is still attributed correctly by the catch below.
+    let step: ShareStep = "create";
     try {
       // 1. Create the share and reserve write-SAS URLs.
       const createRes = await fetch("/api/org/documents/shares", {
@@ -280,8 +393,10 @@ export default function OrgDocumentsPage() {
       }
       const createData = await createRes.json().catch(() => ({}));
       if (!createRes.ok) {
-        setError(createData.error || "Could not start the share.");
-        setUploading(false);
+        showError(
+          createData.error || "Could not start the share.",
+          `POST /api/org/documents/shares -> ${createRes.status}`,
+        );
         return;
       }
 
@@ -292,12 +407,14 @@ export default function OrgDocumentsPage() {
       };
 
       // 2. Upload each file directly to Azure, in order.
+      step = "upload";
       for (let i = 0; i < sendFiles.length; i++) {
         setProgress({ current: i + 1, total: sendFiles.length, pct: 0 });
         await putToAzure(
           uploads[i].writeSasUrl,
           sendFiles[i],
           uploads[i].contentType,
+          `file ${i + 1} of ${sendFiles.length}`,
           (frac) =>
             setProgress({ current: i + 1, total: sendFiles.length, pct: Math.round(frac * 100) }),
         );
@@ -305,6 +422,7 @@ export default function OrgDocumentsPage() {
       setProgress(null);
 
       // 3. Finalize — confirms blobs landed and emails the link if a recipient was given.
+      step = "finalize";
       const finRes = await fetch(`/api/org/documents/shares/${shareId}/finalize`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -312,8 +430,10 @@ export default function OrgDocumentsPage() {
       });
       const finData = await finRes.json().catch(() => ({}));
       if (!finRes.ok) {
-        setError(finData.error || "Upload finished but the share could not be published.");
-        setUploading(false);
+        showError(
+          finData.error || "Upload finished but the share could not be published.",
+          `POST /api/org/documents/shares/${shareId}/finalize -> ${finRes.status}`,
+        );
         await load();
         return;
       }
@@ -324,8 +444,29 @@ export default function OrgDocumentsPage() {
       setPassphrase("");
       setSendFiles([]);
       await load();
-    } catch {
-      setError("Something went wrong while sending. Please try again.");
+    } catch (err) {
+      // A ShareStepError already knows what to say. Anything else reaching here is a fetch()
+      // rejection — the server was unreachable — and which call it was changes the advice
+      // materially: after a successful upload the bytes ARE in storage, so telling the
+      // clinician to just re-send would silently create a duplicate share.
+      const failedStep = err instanceof ShareStepError ? err.step : step;
+      const fallback: Record<ShareStep, string> = {
+        create:
+          "Could not reach the server to start the send. Nothing was sent — check your connection and try again.",
+        upload: "The upload could not be completed, so nothing was sent. Please try again.",
+        finalize:
+          "Your files uploaded, but we could not reach the server to publish the link. " +
+          "Check the sent-files list below before sending again, so you do not create a duplicate.",
+      };
+      const message = err instanceof ShareStepError ? err.userMessage : fallback[failedStep];
+      const detail =
+        err instanceof ShareStepError
+          ? err.detail
+          : err instanceof Error
+            ? `${err.name}: ${err.message}`
+            : String(err);
+      showError(message, `[step: ${failedStep}] ${detail}`);
+      if (failedStep === "finalize") await load();
     } finally {
       setUploading(false);
       setProgress(null);
@@ -333,7 +474,7 @@ export default function OrgDocumentsPage() {
   };
 
   const revokeShare = async (id: string) => {
-    setError(null);
+    clearError();
     try {
       const res = await fetch(`/api/org/documents/shares/${id}/revoke`, { method: "POST" });
       if (res.status === 401) {
@@ -341,12 +482,12 @@ export default function OrgDocumentsPage() {
         return;
       }
       if (!res.ok) {
-        setError("Could not revoke the link.");
+        showError("Could not revoke the link.", `POST .../shares/${id}/revoke -> ${res.status}`);
         return;
       }
       await load();
-    } catch {
-      setError("Could not revoke the link.");
+    } catch (err) {
+      showError("Could not revoke the link.", `POST .../shares/${id}/revoke -> ${String(err)}`);
     }
   };
 
@@ -382,6 +523,16 @@ export default function OrgDocumentsPage() {
         {error && (
           <div className="mb-6 rounded-lg bg-red-50 border border-red-200 px-4 py-3">
             <p className="text-sm text-red-800">{error}</p>
+            {errorDetail && (
+              <details className="mt-2">
+                <summary className="text-xs text-red-600 cursor-pointer select-none">
+                  Technical details (for support)
+                </summary>
+                <p className="mt-1 text-xs font-mono text-red-700 break-all whitespace-pre-wrap">
+                  {errorDetail}
+                </p>
+              </details>
+            )}
           </div>
         )}
         {notice && (

@@ -17,7 +17,10 @@ import { hashPassword } from "@/lib/auth";
 import { query } from "@/lib/db";
 import { consumeRateLimit } from "@/lib/invitation-security";
 import { generateDocumentToken } from "@/lib/document-token";
-import { generateDocumentWriteSasUrl } from "@/lib/azure-blob-documents";
+import {
+  generateDocumentWriteSasUrl,
+  ensureDocumentsCors,
+} from "@/lib/azure-blob-documents";
 import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -139,6 +142,10 @@ export async function POST(request: NextRequest) {
       ],
     );
     const shareId = inserted.rows[0].id;
+
+    // These SAS URLs are PUT to by the *browser*, so the storage account needs a CORS rule
+    // naming this app's origin. Memoised and non-throwing — see ensureDocumentsCors.
+    await ensureDocumentsCors();
 
     const uploads: Array<{ fileId: string; writeSasUrl: string; contentType: string }> = [];
     for (const f of files) {
