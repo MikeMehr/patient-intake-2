@@ -249,8 +249,10 @@ export function mergeDocumentsCorsRules(
 
   // Prefer widening a rule we already own over appending — the account has a hard 5-rule
   // limit, and one rule per domain move would exhaust it.
+  // Field access stays defensive: CorsRule types every field as required, but this data
+  // comes off the wire and a missing one would throw inside a best-effort helper.
   const targetIndex = existing.findIndex(
-    (rule) => ruleIsAdequate(rule) && rule.allowedHeaders.trim() === CORS_ALLOWED_HEADERS,
+    (rule) => ruleIsAdequate(rule) && (rule.allowedHeaders || "").trim() === CORS_ALLOWED_HEADERS,
   );
 
   if (targetIndex >= 0) {
@@ -258,7 +260,7 @@ export function mergeDocumentsCorsRules(
     const merged: CorsRule = {
       ...target,
       allowedOrigins: [...splitList(target.allowedOrigins), ...missing].join(","),
-      maxAgeInSeconds: Math.max(target.maxAgeInSeconds, CORS_MAX_AGE_SECONDS),
+      maxAgeInSeconds: Math.max(target.maxAgeInSeconds || 0, CORS_MAX_AGE_SECONDS),
     };
     return existing.map((rule, i) => (i === targetIndex ? merged : rule));
   }
