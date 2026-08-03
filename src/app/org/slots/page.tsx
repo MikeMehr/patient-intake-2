@@ -61,6 +61,21 @@ function computeOverlapIds(slots: Slot[]): Set<string> {
   return ids;
 }
 
+// "YYYY-MM-DDTHH:mm" in local time — the format DateTimeField emits/expects
+// (toISOString() would shift the clock to UTC).
+function localDateTimeString(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+// Now, rounded up to the next quarter hour (1:07 → 1:15, 1:15 → 1:15).
+function nextQuarterHour(): Date {
+  const d = new Date();
+  d.setSeconds(0, 0);
+  d.setMinutes(Math.ceil(d.getMinutes() / 15) * 15); // 60 rolls the hour/day over
+  return d;
+}
+
 function formatTime(iso: string): string {
   try {
     return new Intl.DateTimeFormat("en-CA", {
@@ -163,17 +178,25 @@ export default function SlotsPage() {
   }
 
   function openAddModal() {
-    // Prefill the date (and a sensible default time) so the Date fields are
-    // never left blank — that was causing the form to fail/stall.
-    const day = dateFrom || localDateString();
+    // Prefill the date and time so the Date fields are never left blank — that
+    // was causing the form to fail/stall. Default to "now, rounded up to the
+    // next 15 minutes" for 30 minutes, on the day being browsed.
+    const now = nextQuarterHour();
+    const today = localDateString();
+    const day = dateFrom || today;
+    // On today, use the rounded time as-is (it may have rolled past midnight);
+    // on any other day, put the same clock time on that day.
+    let start = day === today ? now : new Date(`${day}T${localDateTimeString(now).slice(11)}`);
+    if (Number.isNaN(start.getTime())) start = now;
+    const end = new Date(start.getTime() + 30 * 60 * 1000);
     setNewSlot((prev) => ({
       ...prev,
       // Default to the physician currently being filtered, so "Add Slot" matches
       // who you're viewing. When viewing "All", leave it blank so the user has to
       // pick a doctor deliberately rather than inheriting an arbitrary default.
       physicianId: filterPhysicianId !== "all" ? filterPhysicianId : "",
-      startTime: `${day}T09:00`,
-      endTime: `${day}T09:30`,
+      startTime: localDateTimeString(start),
+      endTime: localDateTimeString(end),
     }));
     setAddError(null);
     setOverlapWarning(null);
