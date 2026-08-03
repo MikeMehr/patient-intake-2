@@ -30,8 +30,12 @@ export const MODALITY_ICON: Record<AppointmentModality, string> = {
 export const MODALITY_NOTE: Record<AppointmentModality, string> = {
   PHONE:
     "The physician will call you at the phone number on your file at the scheduled time. Please be available to answer.",
+  // Written for Doxy's waiting room, not a per-visit link. The old wording ("a link will be sent
+  // to you before the scheduled time") described a room created per appointment; the link now
+  // arrives with the confirmation and is the same one every time, so a patient waiting for a
+  // second email would wait forever.
   VIDEO:
-    "A link to join the video call will be sent to you before the scheduled time.",
+    "You'll get a link to your physician's video waiting room. Open it at your appointment time, enter your name, and wait — your physician will let you in.",
   IN_PERSON:
     "Please come to the clinic a few minutes before the scheduled time.",
 };

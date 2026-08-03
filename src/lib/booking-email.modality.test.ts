@@ -44,7 +44,9 @@ describe("Appointment format in the confirmation email", () => {
     await sendBookingConfirmation({ ...base, appointmentModality: "VIDEO" });
     const html = lastHtml();
     expect(html).toContain("Video appointment");
-    expect(html).toContain("link to join the video call");
+    // Waiting-room wording since the move to Doxy: the link arrives with this email and is
+    // the same one every time, so nothing is "sent before the scheduled time".
+    expect(html).toContain("video waiting room");
     expect(html).not.toContain("will call you");
   });
 
