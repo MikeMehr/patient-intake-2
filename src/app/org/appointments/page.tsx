@@ -86,8 +86,14 @@ function ModalityTag({ modality }: { modality: string | null }) {
  * and making them rebook to do it would be absurd. Appointments actually booked as video get the
  * solid button so they stand out in a day of phone calls.
  *
+ * Goes to the PROVIDER's Doxy dashboard, not the patient's check-in page. Doxy has two addresses
+ * and only one of them is any use to a clinician: the patient link opens a "please check in"
+ * form. The patient link lives on the invite page, where it is being sent to a patient.
+ *
  * Opens in a new tab so the list stays put behind the call.
  */
+const DOXY_DASHBOARD_URL = "https://doxy.me/sign-in";
+
 function VideoCell({
   doxyRoomUrl,
   modality,
@@ -112,13 +118,13 @@ function VideoCell({
   const isVideo = modality === "VIDEO";
   return (
     <a
-      href={doxyRoomUrl}
+      href={DOXY_DASHBOARD_URL}
       target="_blank"
       rel="noopener noreferrer"
       title={
         isVideo
-          ? "Open your Doxy waiting room for this visit"
-          : "Open your Doxy waiting room (this was booked as a phone or in-person visit)"
+          ? "Open your Doxy dashboard to see this patient check in"
+          : "Open your Doxy dashboard (this was booked as a phone or in-person visit)"
       }
       className={
         isVideo

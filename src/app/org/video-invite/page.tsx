@@ -194,7 +194,7 @@ export default function VideoInvitePage() {
           )}
           {result.error && <p className="text-sm text-red-600">{result.error}</p>}
 
-          <p className="mt-4 text-sm font-medium text-gray-700">Patient link</p>
+          <p className="mt-4 text-sm font-medium text-gray-700">Patient check-in link</p>
           <p className="mt-1 break-all rounded bg-gray-50 px-3 py-2 font-mono text-xs text-gray-600">
             {result.joinUrl}
           </p>
@@ -202,13 +202,16 @@ export default function VideoInvitePage() {
             {copied ? "Copied" : "Copy link"}
           </button>
 
+          {/* Deliberately secondary and labelled as a preview: this is the patient's form, not
+              the provider's dashboard, and a clinician clicking it expecting their waiting room
+              gets the wrong screen. The dashboard lives on /physician/video. */}
           <a
             href={result.joinUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="mt-5 block w-full rounded-lg bg-blue-600 px-4 py-2.5 text-center font-medium text-white hover:bg-blue-700"
+            className="mt-5 block w-full rounded-lg border border-gray-300 px-4 py-2.5 text-center text-sm font-medium text-gray-700 hover:bg-gray-50"
           >
-            Open the waiting room
+            Preview the patient's check-in page
           </a>
           <button
             onClick={() => {

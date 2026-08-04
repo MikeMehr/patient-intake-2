@@ -4,8 +4,14 @@
  * Where the OSCAR day-sheet 🎥 lands.
  *
  * Video runs on Doxy.me, which has no API and no per-visit rooms — one permanent waiting room per
- * provider, and the patient waits in it until admitted. So this page has nothing to create and
- * nothing to join: it hands the provider their room, and the link to give the patient.
+ * provider, and the patient waits in it until admitted.
+ *
+ * Doxy has TWO addresses and they are not interchangeable. `doxy_room_url` is the PATIENT
+ * check-in page (doxy.me/v2/check-in/<name>/) — the one to email, text, or put on the day sheet.
+ * The provider signs in to their own dashboard, which is where checked-in patients appear and
+ * where a call is actually started. Sending the provider to the patient link lands them on a
+ * "please check in" form, which is exactly the wrong screen and precisely what this page did at
+ * first.
  *
  * The path from OSCAR is unchanged (daysheet-video.js → /launch/oscar-video → here), which is why
  * the appointment number in the URL goes unused: the room belongs to the provider, not the
@@ -13,6 +19,13 @@
  */
 
 import { useCallback, useEffect, useState } from "react";
+
+/**
+ * Doxy's provider sign-in. Account-based rather than per-provider, so it is a constant rather
+ * than another column: signing in lands the provider on their own dashboard, and an already
+ * signed-in browser goes straight through.
+ */
+const DOXY_DASHBOARD_URL = "https://doxy.me/sign-in";
 
 type RoomInfo = {
   doxyRoomUrl: string | null;
@@ -87,16 +100,19 @@ export default function ProviderVideoPage() {
         </p>
 
         <a
-          href={room.doxyRoomUrl}
+          href={DOXY_DASHBOARD_URL}
           target="_blank"
           rel="noopener noreferrer"
           className="mt-5 block w-full rounded-lg bg-blue-600 px-6 py-3 text-center font-medium text-white hover:bg-blue-700"
         >
-          Open my Doxy waiting room
+          Open my Doxy dashboard
         </a>
+        <p className="mt-2 text-xs text-slate-500">
+          Your waiting room, where checked-in patients appear and you start the call.
+        </p>
 
         <div className="mt-6 border-t border-slate-200 pt-5">
-          <p className="text-sm font-medium text-slate-700">Patient link</p>
+          <p className="text-sm font-medium text-slate-700">Patient check-in link</p>
           <p className="mt-1 break-all rounded bg-slate-50 px-3 py-2 font-mono text-xs text-slate-600">
             {room.doxyRoomUrl}
           </p>
@@ -104,8 +120,9 @@ export default function ProviderVideoPage() {
             {copied ? "Copied" : "Copy link"}
           </button>
           <p className="mt-3 text-xs text-slate-500">
-            The same link every time — anyone who booked a video visit already has it in their
-            confirmation email. To text or email it, use{" "}
+            Send this to the patient, not to yourself — it opens the check-in form. The same link
+            every time, and anyone who booked a video visit already has it. To text or email it,
+            use{" "}
             <a href="/org/video-invite" className="text-blue-600 hover:underline">
               Invite to Video Call
             </a>

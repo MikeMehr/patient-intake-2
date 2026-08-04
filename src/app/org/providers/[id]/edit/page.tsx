@@ -428,7 +428,7 @@ export default function EditOrgProviderPage() {
                 htmlFor="doxyRoomUrl"
                 className="block text-sm font-medium text-slate-700 mb-1"
               >
-                Doxy.me room link
+                Doxy.me patient check-in link
               </label>
               <input
                 id="doxyRoomUrl"
@@ -441,8 +441,10 @@ export default function EditOrgProviderPage() {
                 className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200 disabled:cursor-not-allowed disabled:opacity-70"
               />
               <p className="mt-1 text-xs text-slate-500">
-                Your permanent waiting-room link. Patients who book a video visit are sent here in
-                their confirmation email, and it goes on the OSCAR appointment note.
+                The link patients use to check in — copy it from your Doxy dashboard (it looks
+                like doxy.me/yourname). Patients who book a video visit are sent it in their
+                confirmation email, and it goes on the OSCAR appointment note. This is not the
+                address you sign in at.
               </p>
             </div>
 
