@@ -14,6 +14,15 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
+/**
+ * Doxy's provider sign-in — the dashboard where checked-in patients appear.
+ *
+ * Distinct from the patient check-in link, and the distinction is the whole reason this constant
+ * exists: after sending a patient their link, the obvious next action is to go and wait for them,
+ * and that is here, not at the address the patient was just sent.
+ */
+const DOXY_DASHBOARD_URL = "https://doxy.me/sign-in";
+
 type Result = {
   joinUrl: string;
   sent: boolean;
@@ -202,16 +211,31 @@ export default function VideoInvitePage() {
             {copied ? "Copied" : "Copy link"}
           </button>
 
-          {/* Deliberately secondary and labelled as a preview: this is the patient's form, not
-              the provider's dashboard, and a clinician clicking it expecting their waiting room
-              gets the wrong screen. The dashboard lives on /physician/video. */}
+          {/* Primary: what you actually want next is to be in your waiting room when they
+              arrive. */}
+          <a
+            href={DOXY_DASHBOARD_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-5 block w-full rounded-lg bg-blue-600 px-4 py-2.5 text-center font-medium text-white hover:bg-blue-700"
+          >
+            Open my Doxy dashboard
+          </a>
+          <p className="mt-2 text-center text-xs text-gray-500">
+            Where {selected ? `Dr. ${selected.lastName}` : "the provider"} sees the patient check
+            in and starts the call.
+          </p>
+
+          {/* Secondary, and labelled as a preview: this is the patient's form. A clinician
+              clicking it expecting their waiting room gets the wrong screen — which is exactly
+              what happened when it was the only button here. */}
           <a
             href={result.joinUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="mt-5 block w-full rounded-lg border border-gray-300 px-4 py-2.5 text-center text-sm font-medium text-gray-700 hover:bg-gray-50"
+            className="mt-3 block w-full rounded-lg border border-gray-300 px-4 py-2 text-center text-sm font-medium text-gray-600 hover:bg-gray-50"
           >
-            Preview the patient's check-in page
+            Preview what the patient sees
           </a>
           <button
             onClick={() => {
