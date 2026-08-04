@@ -11,7 +11,7 @@
  * patient on the line.
  */
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
 type Result = {
@@ -23,8 +23,21 @@ type Result = {
 
 type Channel = "sms" | "email";
 
+type Provider = {
+  id: string;
+  firstName: string;
+  lastName: string;
+  doxyRoomUrl: string | null;
+};
+
 export default function VideoInvitePage() {
   const router = useRouter();
+
+  // Whose room is being sent. This page lives under /org, where the signed-in user is usually a
+  // clinic administrator with no room of their own — so the provider has to be chosen, not
+  // inferred. Without this the API rightly refused and there was no way to satisfy it.
+  const [providers, setProviders] = useState<Provider[]>([]);
+  const [physicianId, setPhysicianId] = useState("");
 
   const [patientName, setPatientName] = useState("");
   const [channel, setChannel] = useState<Channel>("sms");
@@ -34,6 +47,20 @@ export default function VideoInvitePage() {
   const [result, setResult] = useState<Result | null>(null);
   const [copied, setCopied] = useState(false);
 
+  useEffect(() => {
+    fetch("/api/org/providers")
+      .then((r) => r.json())
+      .then((d) => {
+        const list: Provider[] = d.providers ?? [];
+        setProviders(list);
+        // Preselect when there is no choice to make — including the common case where only one
+        // provider has a room set up.
+        const withRoom = list.filter((p) => p.doxyRoomUrl);
+        if (withRoom.length === 1) setPhysicianId(withRoom[0].id);
+      })
+      .catch(() => {});
+  }, []);
+
   const create = useCallback(async () => {
     setBusy(true);
     setError(null);
@@ -41,7 +68,7 @@ export default function VideoInvitePage() {
       const res = await fetch("/api/org/video-invite", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ patientName, channel, destination }),
+        body: JSON.stringify({ patientName, channel, destination, physicianId }),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -54,7 +81,7 @@ export default function VideoInvitePage() {
     } finally {
       setBusy(false);
     }
-  }, [patientName, channel, destination]);
+  }, [patientName, channel, destination, physicianId]);
 
   const copy = useCallback(async () => {
     if (!result) return;
@@ -63,7 +90,8 @@ export default function VideoInvitePage() {
     setTimeout(() => setCopied(false), 2000);
   }, [result]);
 
-  const canSubmit = !busy && destination.trim().length > 0;
+  const selected = providers.find((p) => p.id === physicianId);
+  const canSubmit = !busy && destination.trim().length > 0 && !!selected?.doxyRoomUrl;
 
   return (
     <main className="mx-auto max-w-lg px-5 py-10">
@@ -78,7 +106,30 @@ export default function VideoInvitePage() {
 
       {!result ? (
         <div className="mt-6 rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
-          <label className="block text-sm font-medium text-gray-700">Patient name</label>
+          <label className="block text-sm font-medium text-gray-700">Whose waiting room?</label>
+          <select
+            value={physicianId}
+            onChange={(e) => {
+              setPhysicianId(e.target.value);
+              setError(null);
+            }}
+            className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+          >
+            <option value="">Choose a provider…</option>
+            {providers.map((p) => (
+              <option key={p.id} value={p.id} disabled={!p.doxyRoomUrl}>
+                Dr. {p.firstName} {p.lastName}
+                {p.doxyRoomUrl ? "" : " — no Doxy link set"}
+              </option>
+            ))}
+          </select>
+          {physicianId && !selected?.doxyRoomUrl && (
+            <p className="mt-1 text-xs text-amber-700">
+              That provider has no Doxy link yet. Add it on their provider record first.
+            </p>
+          )}
+
+          <label className="mt-5 block text-sm font-medium text-gray-700">Patient name</label>
           <input
             value={patientName}
             onChange={(e) => setPatientName(e.target.value)}

@@ -46,8 +46,9 @@ export async function GET(request: NextRequest) {
       unique_slug: string;
       created_at: Date;
       oscar_provider_no: string | null;
+      doxy_room_url: string | null;
     }>(
-      `SELECT id, first_name, last_name, username, email, phone, unique_slug, created_at, oscar_provider_no
+      `SELECT id, first_name, last_name, username, email, phone, unique_slug, created_at, oscar_provider_no, doxy_room_url
        FROM physicians
        WHERE organization_id = $1
        ORDER BY created_at DESC`,
@@ -65,6 +66,9 @@ export async function GET(request: NextRequest) {
         uniqueSlug: p.unique_slug,
         createdAt: p.created_at,
         oscarProviderNo: p.oscar_provider_no,
+        // Whether a provider can be sent a video link at all. Returned so callers can say so up
+        // front rather than offering a choice that fails on submit.
+        doxyRoomUrl: p.doxy_room_url,
       })),
     });
     logRequestMeta("/api/org/providers", requestId, status, Date.now() - started);
