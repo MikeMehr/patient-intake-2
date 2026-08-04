@@ -3,7 +3,10 @@
 import { useEffect, useState } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { readReturnToFromLocation } from "@/lib/client/return-to";
+import {
+  isBareDashboardReturnTo,
+  readReturnToFromLocation,
+} from "@/lib/client/return-to";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -38,13 +41,18 @@ export default function LoginPage() {
       router.push("/admin/dashboard");
     } else if (userType === "org_admin") {
       router.push("/org/dashboard");
-    } else if (returnTo) {
+    } else if (returnTo && !isBareDashboardReturnTo(returnTo)) {
       // Honour the deep link (e.g. an OSCAR launch carrying ?demographicNo=).
       // Deliberately NOT setting physician.justLoggedIn here: that flag makes
       // the dashboard auto-redirect to /physician/transcription, which would
       // throw away the query string we are trying to preserve.
       router.push(returnTo);
     } else {
+      // Either no deep link at all, or one pointing at the bare dashboard —
+      // which is what the middleware stamps on when someone simply opens a
+      // bookmark or returns after their session expired. Nothing to preserve
+      // in that case, so treat it like any other sign-in.
+      //
       // Mark this as a fresh login so the dashboard can optionally redirect to
       // the transcription page (and only on the first load after login).
       try {

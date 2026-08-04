@@ -108,6 +108,22 @@ export function sanitizeReturnTo(raw: string | null | undefined): string | null 
   return url.pathname + url.search;
 }
 
+/**
+ * True when a `returnTo` is nothing more than the dashboard itself — no query
+ * string, no deeper path.
+ *
+ * The middleware stamps a `returnTo` on *every* unauthenticated hit to a
+ * `/physician` page, which includes the ordinary cases of opening a bookmark or
+ * coming back after a session expired. Those carry no deep-link payload, so
+ * they are indistinguishable from a plain sign-in and must not suppress the
+ * physician's "land on transcription" preference. Anything else — a different
+ * page, or a dashboard URL carrying params such as an OSCAR launch — keeps its
+ * own destination.
+ */
+export function isBareDashboardReturnTo(value: string | null | undefined): boolean {
+  return value === "/physician/dashboard" || value === "/physician/dashboard/";
+}
+
 /** Convenience wrapper for the browser: read and validate in one step. */
 export function readReturnToFromLocation(search: string): string | null {
   try {
