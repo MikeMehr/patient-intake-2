@@ -253,8 +253,14 @@ export async function PUT(
       let cleaned: string | null = null;
       if (raw) {
         try {
-          const u = new URL(raw);
-          const okHost = u.protocol === "https:" && /(^|\.)doxy\.me$/i.test(u.hostname);
+          // People type "doxy.me/drsomebody", because that is what Doxy shows them and what
+          // they say out loud. Requiring a scheme would reject the obvious input, so add one —
+          // and upgrade http, since Doxy is https-only and a downgrade here would be silently
+          // worse than the thing the user meant.
+          const withScheme = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
+          const u = new URL(withScheme);
+          if (u.protocol === "http:") u.protocol = "https:";
+          const okHost = /(^|\.)doxy\.me$/i.test(u.hostname);
           if (!okHost) {
             status = 400;
             const res = NextResponse.json(
