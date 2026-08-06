@@ -44,6 +44,21 @@ sudo java -cp "$(ls /opt/tomcat9/lib/*.jar /opt/tomcat9/bin/*.jar | tr '\n' ':')
 If a class was edited, clear `/opt/tomcat9/work/Catalina/localhost/oscar/org/apache/jsp/mymd/labImport_jsp.*`
 — Jasper's auto-recompile cannot be trusted on this box.
 
+## Required OSCAR setting
+
+```properties
+HL7TEXT_LABS=yes    # in WEB-INF/classes/oscar_mcmaster.properties
+```
+
+**Without this the import silently appears to do nothing.** `CommonLabResultData.populateLabResultsData`
+gates each lab type behind one of these flags (`CML_LABS`, `MDS_LABS`, `PATHNET_LABS`,
+`HL7TEXT_LABS`, `Epsilon_LABS`); with `HL7TEXT_LABS=no` the eChart never calls
+`Hl7textResultsData.populateHL7ResultsData`, so labs sit correctly in `hl7TextInfo` with the
+patient attached and the Lab Results tab still shows an empty section. This box shipped with `no`
+and nothing surfaced it, because no lab had ever been loaded.
+
+Requires a **Tomcat restart** — `OscarProperties` is read once at startup.
+
 ## Use
 
 `https://oscar.mymdonline.ca/oscar/mymd/labImport.jsp?documentNo=<n>`
@@ -90,11 +105,34 @@ Emitted as **HL7 v2.3 ORU^R01**, because OSCAR's PATHL7 parser reads it into HAP
 `ca.uhn.hl7v2.model.v23.message.ORU_R01`. PATHL7 is deliberate: it is already the configured
 `LAB_TYPE` for BC/Excelleris, so records stay consistent if a real feed is ever enabled.
 
-Two field placements are load-bearing and were found by round-trip testing:
+Three field placements are load-bearing, and every one of them fails *silently* — the message still
+parses and imports, the value just goes nowhere. All three were caught by round-trip testing:
 
 - **PHN goes in PID-2** — `PATHL7Handler.getHealthNum()` reads `PID.getPatientIDExternalID()`.
 - **Accession goes in ORC-3** — `getAccessionNum()` reads `ORC.getFillerOrderNumber()`. Without an
-  ORC segment the accession comes back empty and the duplicate guard silently stops working.
+  ORC segment the accession comes back empty and the duplicate guard stops working.
+- **Ordering provider goes in OBR-16, and must be the MSP number, not a name** — `getDocNums()`
+  reads `OBR.getOrderingProvider(0).getIDNumber()`, and `MessageUploader` resolves it with
+  `select provider_no from provider where ohip_no = <id>`. A name resolves to nothing, leaving
+  `providerLabRouting.provider_no` empty so the lab reaches no one's inbox. The number comes from
+  the report's **"Client Ref. #"** header field (e.g. 67199 → `provider_no` 100).
+
+Because an off-by-one in a pipe-delimited segment is invisible, `Hl7Builder` assembles OBR by field
+**number** into an array rather than by counting `|` characters. That bug is precisely how the
+provider first landed in OBR-15.
+
+The round-trip harness is the way to check all of this without touching the database:
+
+```bash
+W=/opt/tomcat9/webapps/oscar
+CP=$(ls $W/WEB-INF/lib/*.jar | tr '\n' ':')$W/WEB-INF/classes
+sudo java -cp /tmp/labgate:$CP mymd.lab.Hl7Builder <report.pdf>          # parse back via OSCAR
+sudo java -cp /tmp/labgate:$CP mymd.lab.Hl7Builder <report.pdf> print    # raw HL7
+```
+
+It generates the message, feeds it to OSCAR's own `PATHL7Handler`, and reads the values back —
+confirming the OBX count matches the PDF and that `docNums` is non-empty. Put `/tmp/labgate`
+**first** on the classpath or the deployed classes in `WEB-INF/classes` shadow your rebuild.
 
 Ingest calls `MessageUploader.routeReport(loggedInInfo, "PATHL7", "PATHL7", hl7, fileId)` directly.
 The PATHL7 *upload handler* expects an XML envelope wrapping HL7; calling `routeReport` in-process

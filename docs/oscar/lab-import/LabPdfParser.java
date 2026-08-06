@@ -52,6 +52,9 @@ public class LabPdfParser extends PDFTextStripper {
     public static class Report {
         public String patientName = "", dob = "", sex = "", phn = "";
         public String accession = "", dateOfService = "", reportStatus = "", requestingClient = "";
+        /** Excelleris "Client Ref. #" = the requesting practitioner's MSP number, which is what
+         *  OSCAR matches against provider.ohip_no to route the lab to an inbox. */
+        public String clientRef = "";
         public final List<Section> sections = new ArrayList<>();
         public final List<String> warnings = new ArrayList<>();
         public int resultCount() {
@@ -198,6 +201,7 @@ public class LabPdfParser extends PDFTextStripper {
                 report.reportStatus = field(t, "Report Status:", null);
             } else if (t.startsWith("Health #:")) {
                 report.phn = field(t, "Health #:", "Patient Location:");
+                report.clientRef = field(t, "Client Ref. #:", null);
             } else if (t.contains("Accession #:")) {
                 report.accession = field(t, "Accession #:", null);
             } else if (t.startsWith("Requesting Client:")) {

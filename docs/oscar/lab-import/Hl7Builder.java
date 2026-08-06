@@ -99,6 +99,29 @@ public class Hl7Builder {
         return esc(n.substring(i + 1)) + "^" + esc(n.substring(0, i));
     }
 
+    /**
+     * Ordering provider as an XCN for OBR-16: {@code id^family^given}.
+     *
+     * The ID must be the practitioner's MSP number, because MessageUploader resolves the
+     * receiving provider with {@code select provider_no from provider where ohip_no = <id>}.
+     * A name alone resolves to nothing, which leaves providerLabRouting.provider_no empty and
+     * the lab sitting in no one's inbox. The report's "Client Ref. #" carries that number.
+     *
+     * Returns "" when there is no number to match on -- better an empty field than a value that
+     * cannot resolve.
+     */
+    static String providerXcn(LabPdfParser.Report r) {
+        if (r.clientRef == null || r.clientRef.trim().isEmpty()) return "";
+        String name = r.requestingClient == null ? "" : r.requestingClient.trim().replaceAll("\\s+", " ");
+        String last = "", first = "";
+        if (!name.isEmpty()) {
+            int i = name.lastIndexOf(' ');
+            if (i < 0) { last = name; }
+            else { last = name.substring(i + 1); first = name.substring(0, i); }
+        }
+        return esc(r.clientRef.trim()) + "^" + esc(last) + "^" + esc(first);
+    }
+
     public String build(LabPdfParser.Report r, String messageControlId) {
         StringBuilder m = new StringBuilder();
         String now = ts(r.dateOfService.length() >= 10 ? r.dateOfService.substring(0, 10) : "", "")
@@ -126,11 +149,22 @@ public class Hl7Builder {
             // ORC-3 (filler order number) is where PATHL7Handler.getAccessionNum() looks, and
             // the accession is also the key the duplicate-import guard relies on.
             m.append("ORC|RE||").append(esc(r.accession)).append(CR);
-            m.append("OBR|").append(obrNo).append("||").append(esc(r.accession)).append("|")
-             .append(esc(s.code)).append("^").append(esc(s.code)).append("|||")
-             .append(obrTs).append("||||||||")
-             .append(esc(r.requestingClient))
-             .append("|||||||").append("|F").append(CR);
+
+            // Built by field NUMBER rather than by counting pipes. An off-by-one here is silent:
+            // the message still parses and imports, it just lands in the wrong field -- which is
+            // exactly how the ordering provider ended up in OBR-15 and the lab reached nobody's
+            // inbox.
+            String[] obr = new String[26];
+            java.util.Arrays.fill(obr, "");
+            obr[1]  = String.valueOf(obrNo);            // set ID
+            obr[3]  = esc(r.accession);                 // filler order number
+            obr[4]  = esc(s.code) + "^" + esc(s.code);  // universal service ID
+            obr[7]  = obrTs;                            // observation date/time
+            obr[16] = providerXcn(r);                   // ordering provider -> inbox routing
+            obr[25] = "F";                              // result status
+            m.append("OBR");
+            for (int i = 1; i <= 25; i++) m.append('|').append(obr[i]);
+            m.append(CR);
 
             int obxNo = 0, nteNo;
             for (LabPdfParser.Result res : s.results) {
@@ -180,6 +214,10 @@ public class Hl7Builder {
         System.out.println("  healthNum : " + h.getHealthNum());
         System.out.println("  accession : " + h.getAccessionNum());
         System.out.println("  serviceDt : " + h.getServiceDate());
+        // The lab reaches an inbox only if this resolves; empty means it routes to nobody.
+        System.out.println("  docNums   : " + h.getDocNums() + "   (must contain the MSP number "
+                + "that matches provider.ohip_no)");
+        System.out.println("  docName   : " + h.getDocName());
         System.out.println("  OBR count : " + h.getOBRCount());
 
         int totalObx = 0, mismatches = 0;
