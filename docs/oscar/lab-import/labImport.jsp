@@ -97,13 +97,53 @@
 
 <%
     if (documentNo.isEmpty()) {
+        // Recent PDFs, so there is no need to go hunting for a document number.
+        Connection lc = DbConnectionFilter.getThreadLocalDbConnection();
+        PreparedStatement lps = lc.prepareStatement(
+                "SELECT d.document_no, d.doctype, d.docdesc, d.observationdate, "
+              + "       c.module_id, dm.last_name, dm.first_name "
+              + "FROM document d "
+              + "LEFT JOIN ctl_document c ON c.document_no = d.document_no AND c.module='demographic' "
+              + "LEFT JOIN demographic dm ON dm.demographic_no = c.module_id "
+              + "WHERE d.status='A' AND LOWER(d.docfilename) LIKE '%.pdf' "
+              + "ORDER BY d.document_no DESC LIMIT 30");
+        ResultSet lrs = lps.executeQuery();
 %>
-  <form method="get">
-    <p>OSCAR document number of the filed lab PDF:
-       <input type="text" name="documentNo" size="8" autofocus/>
+  <p class="note">Download the result from Excelleris Launchpad, file it in OSCAR as a Document the
+     way you normally would, then pick it here. The PDF stays filed and remains the source of
+     truth; this adds a structured lab record so the values appear under Lab Results and trend.</p>
+
+  <table class="results">
+    <tr><th style="width:7%">Doc #</th><th style="width:10%">Type</th><th style="width:33%">Description</th>
+        <th style="width:28%">Filed to</th><th style="width:14%">Date</th><th style="width:8%"></th></tr>
+<%
+        while (lrs.next()) {
+            String dno = String.valueOf(lrs.getInt(1));
+            String dtype = nz(lrs.getString(2));
+            String ddesc = nz(lrs.getString(3));
+            String ddate = nz(lrs.getString(4));
+            String dlast = lrs.getString(6);
+            String pat = dlast == null ? "— not filed to a patient —"
+                    : dlast + ", " + nz(lrs.getString(7)) + " (#" + lrs.getInt(5) + ")";
+%>
+    <tr<%="lab".equalsIgnoreCase(dtype) ? " style=\"background:#f2f7fd;\"" : ""%>>
+      <td><%=Encode.forHtml(dno)%></td>
+      <td><%=Encode.forHtml(dtype)%></td>
+      <td><%=Encode.forHtml(ddesc)%></td>
+      <td><%=Encode.forHtml(pat)%></td>
+      <td><%=Encode.forHtml(ddate)%></td>
+      <td><a href="labImport.jsp?documentNo=<%=Encode.forHtmlAttribute(dno)%>">Import &rarr;</a></td>
+    </tr>
+<%
+        }
+        lrs.close(); lps.close();
+%>
+  </table>
+
+  <form method="get" style="margin-top:14px;">
+    <p class="note">Or enter a document number directly:
+       <input type="text" name="documentNo" size="8"/>
        <input type="submit" value="Load"/></p>
-    <p class="note">The PDF stays filed as a Document -- it remains the source of truth. This
-       creates a structured lab record from it so the values appear under Lab Results and trend.</p>
   </form>
 </body></html>
 <%
