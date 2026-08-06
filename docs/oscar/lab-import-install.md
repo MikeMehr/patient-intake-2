@@ -17,6 +17,7 @@ WAR redeploy will wipe it.** This document is the recovery procedure.
 | `/opt/tomcat9/webapps/oscar/WEB-INF/classes/mymd/lab/LabPdfParser.class` | PDF → structured results |
 | `/opt/tomcat9/webapps/oscar/WEB-INF/classes/mymd/lab/Hl7Builder.class` | results → HL7 v2.3 ORU^R01 |
 | `/opt/tomcat9/webapps/oscar/mymd/labImport.jsp` | review screen + ingest |
+| `provider/appointmentprovideradminday.jsp` (~line 1540) | **"Lab Import" top-nav link**, added directly after the existing Health Assist link. Inside the `_admin` `security:oscarSec` block, so it is admin-gated like that one. Backup `.oscarbak.20260805174613` |
 
 Sources live beside this doc in `docs/oscar/lab-import/`.
 
