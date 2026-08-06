@@ -307,6 +307,9 @@ async function handleConfirm(
         patientName: `${firstName} ${lastName}`,
         clinicName: clinic.name,
         dateLabel,
+        // Already sanitized and capped to MAX_REASON_LEN above; empty means the
+        // patient booked before the field existed, and the line is dropped.
+        reason: reasonText || undefined,
       });
     }
   } catch {

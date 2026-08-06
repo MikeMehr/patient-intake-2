@@ -119,6 +119,7 @@ export async function sendBookingAlertSMS(
     patientName: string;
     clinicName: string;
     dateLabel: string;
+    reason?: string;
     manageUrl?: string;
   }
 ): Promise<SendSmsResult> {
@@ -144,6 +145,11 @@ export async function sendBookingAlertSMS(
     const client = getTwilioClient();
 
     let message = `New appointment: ${details.patientName} booked ${details.dateLabel} at ${details.clinicName}.`;
+    const reason = details.reason?.trim();
+    if (reason) {
+      message += ` Reason: ${reason}`;
+      if (!/[.!?]$/.test(reason)) message += ".";
+    }
     if (details.manageUrl) {
       message += ` Details: ${details.manageUrl}`;
     }
