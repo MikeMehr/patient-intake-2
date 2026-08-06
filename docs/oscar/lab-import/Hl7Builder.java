@@ -161,6 +161,10 @@ public class Hl7Builder {
             obr[4]  = esc(s.code) + "^" + esc(s.code);  // universal service ID
             obr[7]  = obrTs;                            // observation date/time
             obr[16] = providerXcn(r);                   // ordering provider -> inbox routing
+            // OBR-24 is the label the eChart shows. MessageUploader joins getObservationHeader()
+            // across OBRs with "/" into hl7TextInfo.discipline, and DemographicLab.jsp renders
+            // that as the link text -- leave it empty and the Lab Results row has no name.
+            obr[24] = esc(s.code);                      // diagnostic service section ID
             obr[25] = "F";                              // result status
             m.append("OBR");
             for (int i = 1; i <= 25; i++) m.append('|').append(obr[i]);
@@ -218,6 +222,9 @@ public class Hl7Builder {
         System.out.println("  docNums   : " + h.getDocNums() + "   (must contain the MSP number "
                 + "that matches provider.ohip_no)");
         System.out.println("  docName   : " + h.getDocName());
+        // getHeaders() joined with "/" becomes hl7TextInfo.discipline, which IS the link text
+        // in the eChart Lab Results list. Empty here renders as a blank, unclickable-looking row.
+        System.out.println("  headers   : " + h.getHeaders() + "   (-> discipline / eChart label)");
         System.out.println("  OBR count : " + h.getOBRCount());
 
         int totalObx = 0, mismatches = 0;

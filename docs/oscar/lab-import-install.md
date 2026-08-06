@@ -105,8 +105,8 @@ Emitted as **HL7 v2.3 ORU^R01**, because OSCAR's PATHL7 parser reads it into HAP
 `ca.uhn.hl7v2.model.v23.message.ORU_R01`. PATHL7 is deliberate: it is already the configured
 `LAB_TYPE` for BC/Excelleris, so records stay consistent if a real feed is ever enabled.
 
-Three field placements are load-bearing, and every one of them fails *silently* — the message still
-parses and imports, the value just goes nowhere. All three were caught by round-trip testing:
+Four field placements are load-bearing, and every one of them fails *silently* — the message still
+parses and imports, the value just goes nowhere. All four were caught by round-trip testing:
 
 - **PHN goes in PID-2** — `PATHL7Handler.getHealthNum()` reads `PID.getPatientIDExternalID()`.
 - **Accession goes in ORC-3** — `getAccessionNum()` reads `ORC.getFillerOrderNumber()`. Without an
@@ -116,6 +116,12 @@ parses and imports, the value just goes nowhere. All three were caught by round-
   `select provider_no from provider where ohip_no = <id>`. A name resolves to nothing, leaving
   `providerLabRouting.provider_no` empty so the lab reaches no one's inbox. The number comes from
   the report's **"Client Ref. #"** header field (e.g. 67199 → `provider_no` 100).
+- **Section code goes in OBR-24** (Diagnostic Service Section ID) — this is the *label the eChart
+  displays*. `MessageUploader` joins `getObservationHeader()` across OBRs with `/` into
+  `hl7TextInfo.discipline`, and `DemographicLab.jsp` renders that as the link text. Leave OBR-24
+  empty and the lab imports perfectly but shows up as a nameless row (just `**`) in Lab Results.
+  Populated, it reads `GENERAL/HAEM1/CHEM1/…`, matching how other OSCAR installs display labs.
+  Note `discipline` is `varchar(100)`.
 
 Because an off-by-one in a pipe-delimited segment is invisible, `Hl7Builder` assembles OBR by field
 **number** into an array rather than by counting `|` characters. That bug is precisely how the
