@@ -231,6 +231,33 @@ of them, and `name_verify` in particular was not guessable.
 
 6. **One supervised real day.** Reconcile the results page against the day sheet.
 
+## If a claim fails partway
+
+`BillingSaveBillingAction` flips the appointment to Billed (`BS`) *before* it finishes writing the
+claim, and the three dispatched actions manage their own connections, so this cannot be wrapped in
+one transaction. A failure late in that action therefore leaves a visit **marked billed with no
+claim** — and because `BS` is not a billable status, the sweep will never show it again.
+
+Detect it:
+
+```sql
+SELECT a.appointment_no, a.appointment_date, a.status, a.provider_no
+FROM appointment a
+LEFT JOIN billing b ON b.appointment_no = a.appointment_no AND b.status <> 'D'
+WHERE a.status IN ('B','BS') AND a.demographic_no <> 0 AND b.billing_no IS NULL;
+```
+
+Repair it by reading the real prior status out of OSCAR's own archive rather than guessing —
+`appointmentArchive` keeps every previous version:
+
+```sql
+SELECT status, updatedatetime FROM appointmentArchive
+WHERE appointment_no = ? ORDER BY id DESC LIMIT 5;
+```
+
+This happened once, on 2026-08-07, from the `submit` NPE described below. One appointment; restored
+from `FS`.
+
 ## Rollback
 
 - **Nav link**: restore the `.oscarbak.<timestamp>` the patcher wrote, then clear the Jasper work

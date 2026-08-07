@@ -32,13 +32,23 @@ CREATE TABLE IF NOT EXISTS mymd_billing_log (
   -- PENDING is written first and replaced once the outcome is known. A row left PENDING means the
   -- JVM died mid-claim: check `billing` for that appointment before re-running.
   decision        VARCHAR(10)  NOT NULL DEFAULT 'PENDING',
+  -- Holds the double-billing guard below. 1 while a claim exists or might exist; NULL once we
+  -- know none does. MySQL lets NULLs repeat in a unique key, so releasing it is what allows a
+  -- retry -- and taking it is what stops a second claim.
+  --
+  -- Set to 1 on insert, BEFORE the claim is attempted, so a crash mid-write leaves it held
+  -- (PENDING) and someone has to look. Released on ERROR and on DRYRUN. Kept on BILLED forever.
+  --
+  -- Learned the hard way: without this, a dry run took the key and permanently blocked the very
+  -- visit it was rehearsing, and any failed attempt blocked its own retry.
+  claim_marker    TINYINT      NULL,
   billing_no      INT          NULL,
   operator        VARCHAR(30)  NOT NULL DEFAULT '',
   detail          VARCHAR(500) NOT NULL DEFAULT '',
   created_at      DATETIME     NOT NULL,
   PRIMARY KEY (id),
   -- The double-billing guard.
-  UNIQUE KEY uq_claim (appointment_no, service_date, fee_code),
+  UNIQUE KEY uq_claim (appointment_no, service_date, fee_code, claim_marker),
   KEY idx_run (run_id),
   KEY idx_created (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

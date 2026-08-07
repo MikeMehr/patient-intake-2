@@ -183,8 +183,19 @@ public class BillingWriter {
             dispatch(request, response, "/billing/CA/BC/CreateBilling.do",
                     claimParams(bc, serviceLocation()));
             // 3. Write.
-            dispatch(request, response, "/billing/CA/BC/SaveBilling.do",
-                    Collections.<String, String>emptyMap());
+            //
+            // `submit` is not optional. BillingSaveBillingAction line 199 does
+            // form.getSubmit().equals("Another Bill") with no null check, so dispatching this
+            // with an empty parameter map throws NPE *after* it has already flipped the
+            // appointment to Billed -- leaving a visit marked billed with no claim behind it.
+            // BillingSaveBillingForm has exactly one property, so this is the whole payload; the
+            // rest of the claim is read from BillingSessionBean.
+            //
+            // "Save Bill" is the plain save. The other two buttons on billingCreated.jsp are
+            // "Another Bill" (re-opens the form) and "Save & Print Receipt" (private billing).
+            Map<String, String> save = new LinkedHashMap<String, String>();
+            save.put("submit", "Save Bill");
+            dispatch(request, response, "/billing/CA/BC/SaveBilling.do", save);
 
             // Confirm by reading the claim back rather than by parsing the forwarded HTML — the
             // only thing that actually proves a row exists is the row.
@@ -266,8 +277,10 @@ public class BillingWriter {
         PreparedStatement ps = c.prepareStatement(
                 "INSERT INTO mymd_billing_log (run_id, appointment_no, demographic_no, provider_no, "
               + "service_date, fee_code, dx_proposed, dx_final, dx_source, confidence, "
-              + "hin_province, hin_normalized, decision, operator, created_at) "
-              + "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'PENDING',?,NOW())",
+              + "hin_province, hin_normalized, decision, claim_marker, operator, created_at) "
+              // claim_marker=1 takes the double-billing guard up front, before the claim is
+              // attempted, so a crash mid-write leaves it held and someone has to look.
+              + "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'PENDING',1,?,NOW())",
                 PreparedStatement.RETURN_GENERATED_KEYS);
         ps.setString(1, runId);
         ps.setInt(2, bc.appointmentNo);
@@ -292,8 +305,13 @@ public class BillingWriter {
 
     private void updateLogRow(Connection c, long id, String decision, int billingNo, String detail) {
         try {
+            // Release the guard when we know no claim was created, so the visit can be retried.
+            // Only BILLED (and a crashed PENDING) keep it. A dry run that held the key would
+            // block the very visit it was rehearsing; a failed attempt would block its own retry.
+            boolean claimExists = "BILLED".equals(decision);
             PreparedStatement ps = c.prepareStatement(
-                    "UPDATE mymd_billing_log SET decision=?, billing_no=?, detail=? WHERE id=?");
+                    "UPDATE mymd_billing_log SET decision=?, billing_no=?, detail=?, "
+                  + "claim_marker=" + (claimExists ? "1" : "NULL") + " WHERE id=?");
             ps.setString(1, decision);
             if (billingNo < 0) ps.setNull(2, java.sql.Types.INTEGER); else ps.setInt(2, billingNo);
             ps.setString(3, detail);
