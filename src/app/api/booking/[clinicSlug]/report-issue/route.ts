@@ -4,7 +4,7 @@
  * No authentication: the patient reporting the outage has no account, and often can't get past
  * this page at all.
  *
- * Body: { state?: "slot-failed" | "page-error" | "no-times" | "other" }
+ * Body: { state?: "slot-failed" | "page-error" | "no-times" | "booking-closed" | "other" }
  *
  * Always answers { ok: true } for a known clinic, even when the alert was rate-limited or the
  * send failed. The patient's half of the promise — "someone has been told" — is kept the moment
@@ -31,6 +31,7 @@ const VALID_STATES: readonly BookingIssueState[] = [
   "slot-failed",
   "page-error",
   "no-times",
+  "booking-closed",
   "other",
 ];
 

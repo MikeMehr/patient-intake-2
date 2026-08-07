@@ -78,7 +78,7 @@ function toLocalTimeString(isoString: string, tz: string): string {
 }
 
 /** What the patient was looking at when they said booking was broken — no free text, no PHI. */
-type IssueState = "slot-failed" | "page-error" | "no-times" | "other";
+type IssueState = "slot-failed" | "page-error" | "no-times" | "booking-closed" | "other";
 
 /**
  * "Online booking isn't working" — texts the clinic so someone can fix it.
@@ -125,7 +125,7 @@ function ReportIssueButton({
       <button
         onClick={report}
         disabled={status === "sending"}
-        className="text-sm text-gray-600 underline underline-offset-2 hover:text-gray-900 disabled:opacity-50"
+        className="text-lg text-gray-600 underline underline-offset-2 hover:text-gray-900 disabled:opacity-50"
       >
         {status === "sending" ? "Notifying the clinic…" : "Online booking not working? Tell us"}
       </button>
@@ -273,10 +273,12 @@ export default function ClinicBookingPage({
 
   // Tells the clinic what the patient was looking at, so the alert says more than "it's broken".
   const issueState: IssueState = error
-    ? holdingSlotId !== null || dates.length > 0
+    ? dates.length > 0
       ? "slot-failed"
       : "page-error"
-    : dates.length === 0 && !bookingClosed
+    : bookingClosed
+    ? "booking-closed"
+    : dates.length === 0
     ? "no-times"
     : "other";
 

@@ -440,7 +440,9 @@ export type BookingIssueState =
   | "page-error"
   /** No appointment times were offered at all. */
   | "no-times"
-  /** Booking window closed, or nothing else fit. */
+  /** The booking window itself is closed. */
+  | "booking-closed"
+  /** Times were on screen and nothing errored — the trouble is further on. */
   | "other";
 
 /**
@@ -477,7 +479,8 @@ export async function sendBookingIssueSMS(
       "slot-failed": "They picked a time and it wouldn't go through.",
       "page-error": "The page showed them an error.",
       "no-times": "No appointment times were showing.",
-      other: "No times available or booking closed.",
+      "booking-closed": "The booking window is showing as closed.",
+      other: "Times were on screen, so the trouble is somewhere past the time list.",
     };
     const message =
       `BOOKING ISSUE: a patient reported online booking isn't working at ${details.clinicName}.` +
