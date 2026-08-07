@@ -161,6 +161,11 @@ public class BillingWriter {
         // `visittype` property in oscar_mcmaster.properties.
         p.put("xml_visittype", serviceLocation);
         p.put("xml_billtype", "MSP");
+        // Payment method, despite the name. billingBC.jsp binds its payment-method dropdown to
+        // `xml_encounter` (line ~1198) and filters the list down to just id 6 ELECTRONIC and id 8
+        // OTHER, so 6 is what a physician's own claim carries. Omitting it produced paymentMethod
+        // 9 -- an id OSCAR's own UI cannot even offer.
+        p.put("xml_encounter", "6");
         p.put("submissionCode", "0");
         p.put("afterHours", "0");
         p.put("dependent", "00");
