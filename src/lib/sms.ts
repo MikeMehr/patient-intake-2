@@ -432,6 +432,90 @@ export async function sendMissedCallSMS(
   }
 }
 
+/** What the patient saw on the booking page when they reported it broken. */
+export type BookingIssueState =
+  /** Times were listed, but selecting one failed. */
+  | "slot-failed"
+  /** The page showed an error banner. */
+  | "page-error"
+  /** No appointment times were offered at all. */
+  | "no-times"
+  /** Booking window closed, or nothing else fit. */
+  | "other";
+
+/**
+ * Tell the clinic a patient couldn't book online.
+ *
+ * Deliberately NOT gated on HIPAA_MODE, unlike the senders above: the message carries no patient
+ * data at all — clinic name, what the page was showing, and the booking URL — and it is the only
+ * signal the clinic gets that its front door is broken. Suppressing it would leave online booking
+ * silently down, which is the exact failure this alert exists to catch.
+ *
+ * @param alertPhone - Where to send the alert (BOOKING_ISSUE_ALERT_PHONE)
+ * @param details - Which clinic, what the patient saw, and the page they were on
+ */
+export async function sendBookingIssueSMS(
+  alertPhone: string,
+  details: {
+    clinicName: string;
+    state: BookingIssueState;
+    bookingUrl: string;
+  },
+): Promise<SendSmsResult> {
+  try {
+    const fromNumber = process.env.TWILIO_PHONE_NUMBER;
+    if (!fromNumber) {
+      throw new Error(
+        "TWILIO_PHONE_NUMBER environment variable not configured"
+      );
+    }
+
+    const client = getTwilioClient();
+
+    // Fixed strings, never patient input — the state code is validated against this map server-side.
+    const stateText: Record<BookingIssueState, string> = {
+      "slot-failed": "They picked a time and it wouldn't go through.",
+      "page-error": "The page showed them an error.",
+      "no-times": "No appointment times were showing.",
+      other: "No times available or booking closed.",
+    };
+    const message =
+      `BOOKING ISSUE: a patient reported online booking isn't working at ${details.clinicName}.` +
+      ` ${stateText[details.state]} Page: ${details.bookingUrl}`;
+
+    logDebug("[sms] Sending booking issue SMS", {
+      to: "***",
+      state: details.state,
+    });
+
+    const result = await client.messages.create({
+      body: message,
+      from: fromNumber,
+      to: toE164(alertPhone),
+    });
+
+    logDebug("[sms] Booking issue SMS sent successfully", {
+      messageSid: result.sid,
+      status: result.status,
+    });
+
+    return {
+      success: true,
+      messageSid: result.sid,
+    };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logDebug("[sms] Failed to send booking issue SMS", {
+      error: errorMessage,
+    });
+
+    return {
+      success: false,
+      error: errorMessage,
+    };
+  }
+}
+
 /**
  * Send a one-time verification code (2FA) to a patient via SMS.
  * Used by the guided-interview invitation flow in place of email OTP.

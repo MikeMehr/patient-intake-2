@@ -77,6 +77,62 @@ function toLocalTimeString(isoString: string, tz: string): string {
   }).format(new Date(isoString));
 }
 
+/** What the patient was looking at when they said booking was broken — no free text, no PHI. */
+type IssueState = "slot-failed" | "page-error" | "no-times" | "other";
+
+/**
+ * "Online booking isn't working" — texts the clinic so someone can fix it.
+ * Deliberately reassures on any outcome: a patient staring at a broken page should not also be
+ * told their complaint failed. The alert is best-effort and the server rate-limits it.
+ */
+function ReportIssueButton({
+  clinicSlug,
+  state,
+}: {
+  clinicSlug: string;
+  state: IssueState;
+}) {
+  const [status, setStatus] = useState<"idle" | "sending" | "sent">("idle");
+
+  async function report() {
+    setStatus("sending");
+    try {
+      await fetch(`/api/booking/${clinicSlug}/report-issue`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ state }),
+      });
+    } catch {
+      // Ignore — the patient is told the same thing either way.
+    }
+    setStatus("sent");
+  }
+
+  if (status === "sent") {
+    return (
+      <div className="mt-6 bg-green-50 border border-green-200 rounded-xl p-4 text-sm text-green-800">
+        <p className="font-semibold">Thank you — the clinic has been notified.</p>
+        <p className="mt-1">
+          Someone has been alerted and will look into it shortly. If your appointment is urgent,
+          please call or email the clinic.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-6 text-center">
+      <button
+        onClick={report}
+        disabled={status === "sending"}
+        className="text-sm text-gray-600 underline underline-offset-2 hover:text-gray-900 disabled:opacity-50"
+      >
+        {status === "sending" ? "Notifying the clinic…" : "Online booking not working? Tell us"}
+      </button>
+    </div>
+  );
+}
+
 function groupByDate(slots: Slot[], tz: string): Record<string, Slot[]> {
   const groups: Record<string, Slot[]> = {};
   for (const slot of slots) {
@@ -204,6 +260,7 @@ export default function ClinicBookingPage({
           <button onClick={() => router.push("/booking")} className="text-blue-600 underline">
             Back to clinic list
           </button>
+          <ReportIssueButton clinicSlug={clinicSlug} state="page-error" />
         </div>
       </div>
     );
@@ -213,6 +270,15 @@ export default function ClinicBookingPage({
   const modality = normalizeModality(settings?.appointmentModality);
   const grouped = groupByDate(slots.filter((s) => s.status === "OPEN" || (settings?.showBlockedSlots && s.status === "BLOCKED")), tz);
   const dates = Object.keys(grouped).sort();
+
+  // Tells the clinic what the patient was looking at, so the alert says more than "it's broken".
+  const issueState: IssueState = error
+    ? holdingSlotId !== null || dates.length > 0
+      ? "slot-failed"
+      : "page-error"
+    : dates.length === 0 && !bookingClosed
+    ? "no-times"
+    : "other";
 
   return (
     <main className="min-h-screen bg-gray-50 py-10 px-4">
@@ -323,6 +389,9 @@ export default function ClinicBookingPage({
             ))}
           </div>
         )}
+
+        {/* Something's wrong — let the patient flag it */}
+        <ReportIssueButton clinicSlug={clinicSlug} state={issueState} />
 
         {/* Cancellation policy */}
         {settings?.cancellationPolicy && (
