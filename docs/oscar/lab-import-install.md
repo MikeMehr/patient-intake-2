@@ -42,8 +42,23 @@ sudo java -cp "$(ls /opt/tomcat9/lib/*.jar /opt/tomcat9/bin/*.jar | tr '\n' ':')
 ```
 
 "Generation completed with [0] errors" plus a `labImport_jsp.class` under `/tmp/jspc-lab` means good.
-If a class was edited, clear `/opt/tomcat9/work/Catalina/localhost/oscar/org/apache/jsp/mymd/labImport_jsp.*`
-— Jasper's auto-recompile cannot be trusted on this box.
+If the JSP was edited, clear its compiled copy — Jasper's auto-recompile cannot be trusted on this
+box. Put the glob **inside** sudo, or your login shell tries to expand a path it cannot read, `rm`
+gets a literal `*`, and it exits 0 having done nothing:
+
+```bash
+sudo sh -c 'rm -f /opt/tomcat9/work/Catalina/localhost/oscar/org/apache/jsp/mymd/labImport_jsp.*'
+```
+
+**If a `.class` under `WEB-INF/classes` was edited, that is not enough.** Those are held by the
+webapp classloader for the life of the context, so `LabPdfParser`/`Hl7Builder` changes do not take
+effect until the webapp reloads — the file on disk is new, the running code is not, and the fix
+simply appears not to work. Clearing the Jasper directory does not help; it only covers JSPs.
+
+```bash
+sudo touch /opt/tomcat9/webapps/oscar/WEB-INF/web.xml   # ~25 s, logs out everyone in OSCAR
+sudo grep -a "Reloading Context with name \[/oscar\]" /opt/tomcat9/logs/catalina.out | tail -2
+```
 
 ## Required OSCAR setting
 

@@ -83,6 +83,35 @@ login cannot read `servlet-api.jar` and `BillingWriter` will not compile. The WA
 `WEB-INF/lib` *is* readable, which is why the other four classes compile without it and only this
 one fails — a confusing way to lose ten minutes.
 
+**Copying the `.class` files does nothing until the webapp reloads.** Unlike a JSP, which Jasper
+recompiles on demand, classes under `WEB-INF/classes` are held by the webapp classloader for the
+life of the context. Replace them and OSCAR keeps running the version it loaded at startup — the
+file on disk is right, the running code is not, and the only symptom is that your fix appears to
+have had no effect at all. Clearing the Jasper work directory does **not** help; that is only for
+JSPs.
+
+```bash
+sudo touch /opt/tomcat9/webapps/oscar/WEB-INF/web.xml   # Host has autoDeploy="true"
+```
+
+Takes ~25 s and **logs out everyone signed into OSCAR**, so pick the moment. Confirm it actually
+happened rather than assuming:
+
+```bash
+sudo grep -a "Reloading Context with name \[/oscar\]" /opt/tomcat9/logs/catalina.out | tail -2
+```
+
+You want a "has started" *and* an "is completed". `NotSerializableException` and "web application
+instance has been stopped already" in the log during a reload are ordinary shutdown noise from the
+old context, not failures.
+
+To check which version is actually live, grep the class on disk for a string only the new build
+contains — but remember that proves the *disk*, not the JVM:
+
+```bash
+sudo grep -ac "Save Bill" /opt/tomcat9/webapps/oscar/WEB-INF/classes/mymd/billing/BillingWriter.class
+```
+
 Nav link (Lab Import must already be installed — the patcher anchors on it):
 
 ```bash
