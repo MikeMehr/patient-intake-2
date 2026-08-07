@@ -169,6 +169,14 @@ public class BillingWriter {
         p.put("submissionCode", "0");
         p.put("afterHours", "0");
         p.put("dependent", "00");
+        // Teleplan validates both of these and rejects the claim if they are blank:
+        //   C02:P56 Correspondence Code Wrong!   C02:P60 MVA Claim Code Wrong!
+        // A hand-made claim carries correspondence_code '0' and mva_claim_code 'N'; omitting the
+        // params left '' and NULL. Nothing in OSCAR complains -- the claim saves, renders
+        // correctly in the billing screen, and only the Teleplan simulation report shows it is
+        // unsubmittable. Run TeleplanSimulation.jsp after any change here.
+        p.put("correspondenceCode", "0");
+        p.put("mva_claim_code", "N");
         // The note fields must be present and non-null, even when empty.
         //
         // BillingSaveBillingAction line 170 is
