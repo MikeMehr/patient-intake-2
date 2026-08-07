@@ -174,3 +174,10 @@ test on a later date and confirming both plot as one series.
   those as Documents.
 - Related: [`reference_oscar_srfax_doc_perms`](../../CLAUDE.md) — a faxed PDF owned by anyone other
   than `tomcat` cannot be read here either.
+
+## Reinstall order
+
+The day-billing nav patch (`docs/oscar/billing/patch_daybilling_nav.py`) anchors on **this**
+feature's `<li>`, so after a WAR redeploy **reapply the Lab Import nav link first**. Run the other
+way round it aborts with "expected exactly one Lab Import nav link, found 0", which is an accurate
+message and a baffling one six months from now.

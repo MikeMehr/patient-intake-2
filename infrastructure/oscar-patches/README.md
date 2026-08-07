@@ -9,6 +9,45 @@ editing any JSP, delete its compiled copy under
 `/opt/tomcat9/work/Catalina/localhost/oscar/org/apache/jsp/...` to force a recompile — no Tomcat
 restart is needed.
 
+## Day billing (added 2026-08-06)
+
+"Bill Day" in the top nav, immediately right of Lab Import. Sweeps the logged-in provider's day
+sheet for visits marked Done with no claim, reads the diagnosis from the eChart note, picks the
+diagnostic code, and writes the MSP claim. Clean BC cases bill unattended; out-of-province,
+unsigned notes and unmatched codes wait for a tick. Claims are created Not-Submitted — Teleplan
+submission stays a separate manual step.
+
+Full install steps, the confirmed billing schema and the verify-before-billing sequence live in
+`docs/oscar/day-billing-install.md`. Sources in `docs/oscar/billing/`. On the box:
+
+| File | What |
+|---|---|
+| `mymd/dayBilling.jsp` | New. Sweep, results, review table. |
+| `WEB-INF/classes/mymd/billing/*.class` | New. `DayBilling`, `BillingWriter`, `DxClient`, `Config`, `BillingCandidate`. |
+| `provider/appointmentprovideradminday.jsp` | Patched — one `<li>` directly after the Lab Import link, same `_admin` block. |
+| `/var/lib/OscarDocument/oscar/mymd_billing.properties` | New. URL, shared secret, dry-run flag. `600 tomcat:tomcat`, outside the web root. |
+| `oscar_db.mymd_billing_log` | New table. Audit trail, and its unique key is the double-billing guard. |
+
+Two things that will cost time if forgotten: `javac` must run under **sudo** (`/opt/tomcat9/lib` is
+`tomcat`-only, so `servlet-api.jar` is unreadable otherwise and only `BillingWriter` fails to
+compile), and the nav patcher anchors on the **Lab Import** `<li>`, so that patch has to be
+reapplied first.
+
+## Lab import (added 2026-08-05)
+
+Turns a lab-result PDF already filed in OSCAR into a real HL7 lab so values land in the eChart Lab
+Results tab and trend. Full details in `docs/oscar/lab-import-install.md`; sources in
+`docs/oscar/lab-import/`. On the box:
+
+| File | What |
+|---|---|
+| `mymd/labImport.jsp` | New. Document picker, patient-match guard, review screen, ingest. |
+| `WEB-INF/classes/mymd/lab/*.class` | New. `LabPdfParser`, `Hl7Builder`. |
+| `provider/appointmentprovideradminday.jsp` | Patched — one `<li>` after the Health Assist link, inside the `_admin` block. |
+
+Requires `HL7TEXT_LABS=yes` in `oscar_mcmaster.properties` (needs a Tomcat restart); without it the
+import appears to do nothing.
+
 ## Video visit button on the day sheet (added 2026-08-01)
 
 Puts a 🎥 beside every patient on the day sheet, opening the Health Assist video console for
