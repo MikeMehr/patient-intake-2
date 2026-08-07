@@ -164,6 +164,18 @@ public class BillingWriter {
         p.put("submissionCode", "0");
         p.put("afterHours", "0");
         p.put("dependent", "00");
+        // The note fields must be present and non-null, even when empty.
+        //
+        // BillingSaveBillingAction line 170 is
+        //   if (bean.getMessageNotes() != null || !bean.getMessageNotes().trim().equals(""))
+        // -- an || where an && was meant, so a NULL messageNotes falls straight through to
+        // .trim() and throws. The real form always posts these fields, so OSCAR never trips over
+        // its own bug; a synthesised request that omits them does, *after* the claim has been
+        // written, which is how claim 18 ended up on the chart while the page showed a stack
+        // trace. Sending empty strings keeps us on the path OSCAR actually exercises.
+        p.put("messageNotes", "");
+        p.put("notes", "");
+        p.put("shortClaimNote", "");
         return p;
     }
 
@@ -223,6 +235,30 @@ public class BillingWriter {
             updateLogRow(c, logId, "BILLED", billingNo, "");
             return new Result("BILLED", billingNo, "");
         } catch (Exception e) {
+            // An exception does not mean no claim. SaveBilling writes the claim and only then
+            // walks the note path, so a throw late in that action leaves a perfectly good claim
+            // on the chart -- exactly what happened to claim 18, which this reported as ERROR.
+            // Ask the database what exists rather than inferring it from the exception; getting
+            // this backwards invites someone to re-bill a visit that is already billed.
+            int existing = -1;
+            try {
+                existing = findBilling(c, bc);
+            } catch (SQLException lookupFailed) {
+                // Cannot tell whether a claim exists. Say so rather than guess: leaving the
+                // appointment as Billed is the safe side of this, because the alternative is
+                // inviting a second claim for a visit that may already have one.
+                updateLogRow(c, logId, "ERROR", -1, truncate(
+                        "claim state UNKNOWN after " + e + " - check billing for appointment "
+                        + bc.appointmentNo + " before re-billing", 500));
+                return new Result("ERROR", -1,
+                        "Could not confirm whether a claim was created - check appointment "
+                        + bc.appointmentNo + " in OSCAR before billing it again");
+            }
+            if (existing >= 0) {
+                updateLogRow(c, logId, "BILLED", existing,
+                        truncate("claim written; OSCAR threw afterwards: " + e, 500));
+                return new Result("BILLED", existing, "");
+            }
             String undo = restoreAppointmentStatus(c, bc);
             updateLogRow(c, logId, "ERROR", -1, truncate(e + ". " + undo, 500));
             return new Result("ERROR", -1, String.valueOf(e));
