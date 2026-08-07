@@ -134,6 +134,12 @@ function hasValidSessionCookie(request: NextRequest): boolean {
  */
 const PUBLIC_EXCEPTIONS = new Set<string>([
   "/api/admin/emr/oscar/callback",
+  // Day billing asks this route for a diagnostic code. The caller is the OSCAR server itself, not
+  // a browser, so there is no physician_session cookie to present and the prefix guard would 401
+  // it — which is exactly what happened the first time it ran. The route authenticates itself with
+  // a shared secret compared in constant time, and returns 404 when that secret is unconfigured,
+  // so it is never reachable unauthenticated. Same reasoning as the OAuth callback above.
+  "/api/emr/oscar/billing-dx",
 ]);
 
 /**

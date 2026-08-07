@@ -154,6 +154,10 @@ describe("middleware", () => {
     "/auth/login",
     // OSCAR OAuth callback — must be public (browser arrives via cross-site redirect)
     "/api/admin/emr/oscar/callback",
+    // Day billing's diagnostic-code lookup — called by the OSCAR server, which has no session
+    // cookie to present. It guards itself with a shared secret. Without this exception the
+    // /api/emr/ prefix guard 401s it and every visit falls back to a hand-typed code.
+    "/api/emr/oscar/billing-dx",
   ])("does not block public route %s", (path) => {
     const res = proxy(makeRequest(path)); // no cookie
     expect(res.status).toBe(200);
