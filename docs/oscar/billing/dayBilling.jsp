@@ -77,11 +77,23 @@
     .commit { font-size: 15px; padding: 8px 18px; }
     input.dx { width: 62px; }
     .tag { font-size: 10px; padding: 1px 5px; border-radius: 3px; background: #ddd; }
+    .daypick { margin: 10px 0; padding: 7px 10px; background: #f4f5f8; border: 1px solid #dfe2e8; }
   </style>
 </head>
 <body>
 <h2>Bill day &mdash; <%=Encode.forHtml(date)%></h2>
 <div class="note">Provider <%=Encode.forHtml(providerNo)%> &middot; visits marked Done with no claim yet</div>
+
+<%-- Notes are often signed a day or two after the visit, so billing "today" is the exception
+     rather than the rule. Without this the only way to reach another day is editing the URL. --%>
+<form method="get" action="dayBilling.jsp" class="daypick">
+  <label>Day <input type="date" name="date" value="<%=Encode.forHtmlAttribute(date)%>"/></label>
+  <input type="submit" value="Show"/>
+  <label style="margin-left:14px;">
+    <input type="checkbox" name="go" value="1"/> bill the clean ones straight away
+  </label>
+  <span class="note">&nbsp;&mdash; leave unticked to look first</span>
+</form>
 
 <% if (cfg.dryRun) { %>
   <div class="warn"><b>Dry run.</b> Nothing will be written to OSCAR. Set <code>dryrun=false</code>
