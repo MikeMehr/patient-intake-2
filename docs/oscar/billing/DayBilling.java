@@ -384,10 +384,15 @@ public class DayBilling {
               + "ORDER BY COUNT(*) DESC LIMIT 40",
                 new Object[0]);
 
+        // Shortest code first. BC MSP's diagnostic list is largely 3-digit, and every code this
+        // clinic has had accepted is 3-digit -- but only 989 of the 15,364 rows in icd9 are that
+        // short, so an unordered list pushes the model towards a more specific code than MSP
+        // wants (it proposed 0340 where the claim wanted 034).
         for (String word : keywords(noteText)) {
             if (out.size() >= MAX_DX_CANDIDATES) break;
             addDx(out, c,
-                    "SELECT icd9, description FROM icd9 WHERE description LIKE ? LIMIT 8",
+                    "SELECT icd9, description FROM icd9 WHERE description LIKE ? "
+                  + "ORDER BY LENGTH(icd9), icd9 LIMIT 8",
                     new Object[] { "%" + word + "%" });
         }
 

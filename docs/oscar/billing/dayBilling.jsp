@@ -146,9 +146,14 @@
                     failed++;
                     continue;
                 }
+                // The box is pre-filled with the model's suggestion, so its value coming back
+                // does NOT by itself mean a person chose it. Only call it manual when the
+                // physician actually changed it -- an audit trail that logs AI-chosen codes as
+                // physician-chosen understates the AI's involvement, which is the wrong way for
+                // that record to be wrong.
+                if (!typed.equals(bc.dxFinal)) bc.dxSource = "manual";
                 bc.dxFinal = typed;
                 bc.dxDescription = desc;
-                bc.dxSource = "manual";
             }
             if (bc.dxFinal.isEmpty() || bc.claimHin.isEmpty() || bc.feeCode.isEmpty()
                     || bc.noteCount == 0) {
