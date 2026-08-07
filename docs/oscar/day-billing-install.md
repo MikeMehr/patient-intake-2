@@ -138,24 +138,64 @@ Put the build directory **first** on the classpath or the deployed classes shado
 `--no-llm` skips the app round trip entirely. Names are shown as initials by default because this
 lands in terminal scrollback and shell history; pass `--names` when you actually need them.
 
+## The captured claim — what one 13437 actually writes
+
+Captured 2026-08-07 from a claim made by hand through OSCAR's own BC billing form, by snapshotting
+the billing tables before and after. (A before/after diff rather than the MySQL general log: the
+general log records *every* query on the box while it is on, including other people's PHI, and the
+row diff answers the same question without that.)
+
+**A claim is four rows:** one `billing`, one `billingmaster`, one `billing_history`, one
+`billingnote`. `billactivity` and `billingdetail` are untouched.
+
+| `billing` | value | where it comes from |
+|---|---|---|
+| `appointment_no` | 96 | the appointment |
+| `billing_date` | 2026-08-04 | the **service** date |
+| `update_date` | 2026-08-07 | the day the claim was made |
+| `total` | 38.61 | looked up from `billingservice.value` |
+| `status` | `O` | Not Submitted |
+| `visittype` | `V|` | **char(2) truncation of `V|Virtual Care`** |
+| `provider_ohip_no` | 67199 | resolved from the provider record |
+| `billingtype` | MSP | |
+| `content`, `visitdate`, `*_time` | NULL | unused |
+
+| `billingmaster` | value | where it comes from |
+|---|---|---|
+| `billingstatus` | `O` | |
+| `billing_code` | 13437 | form `service` |
+| `dx_code1` | 462 | form `xml_diagnostic_detail1` |
+| `service_date` | 20260804 | `yyyyMMdd` |
+| `service_location` | `V` | **char(1) truncation of the same `V|Virtual Care`** |
+| `practitioner_no`, `payee_no` | 67199 | the **MSP number**, not provider_no 100 |
+| `datacenter` | S1865 | Teleplan config |
+| `name_verify` | `H GR` | derived by OSCAR from the patient name |
+| `bill_amount` | 38.61 | looked up |
+| `billing_unit` | 1.0 | default; the form has no unit field for the main service code |
+| `claimcode` / `paymentMethod` / `mva_claim_code` / `icbc_claim_no` | C02 / 6 / N / 00000000 | defaults |
+
+`billing_history` mirrors the amount and status, but its `practitioner_no` is **100** (the provider
+number) where `billingmaster` uses **67199** (the MSP number) — worth knowing before reading either
+one as a provider key.
+
+**This is the case for replaying OSCAR's actions rather than inserting rows.** The MSP number, the
+data centre, the fee amount, the truncation of `visittype` into two columns two different ways, and
+`name_verify` are all derived by OSCAR. Hand-written INSERTs would have had to reproduce every one
+of them, and `name_verify` in particular was not guessable.
+
+**Two things the capture corrected:**
+
+- `xml_visittype` must be the whole `V|Virtual Care` string, not `V`. billingBC.jsp defaults the
+  field from the `visittype` property (its lines ~894–901); the replay skips the JSP, so it has to
+  be passed. `BillingWriter.serviceLocation()` now reads the property.
+- OSCAR sets `appointment.status` to `BS` (Billed) itself. Nothing to do — and it means a billed
+  visit drops out of the sweep on the status filter as well as the unbilled join.
+
 ## Verify before billing for real
 
-`dryrun=true` until every step below has passed. Steps 1–2 are the ones that have **not** been done
-yet.
+`dryrun=true` until every step below has passed. Step 1 is done; step 2 is the next gate.
 
-1. **Capture a hand-made claim — this is the spec.** On a test demographic, outside clinic hours
-   (the general log records every query on the box, including PHI):
-
-   ```bash
-   sudo mysql -e "SET GLOBAL general_log_file='/tmp/mspclaim.log'; SET GLOBAL general_log=ON;"
-   # create ONE 13437 claim by hand through OSCAR's BC billing form
-   sudo mysql -e "SET GLOBAL general_log=OFF;"
-   sudo grep -iE 'insert|update' /tmp/mspclaim.log | grep -viE 'session|logged_in|oscar_log'
-   sudo shred -u /tmp/mspclaim.log
-   ```
-
-   Every later test diffs against that row set. Run it twice and diff: what differs is a
-   sequence or timestamp, what is constant is a literal that must be reproduced.
+1. ~~Capture a hand-made claim.~~ **Done 2026-08-07** — see the section above.
 
 2. **Diff the dry-run parameters against the capture.** With `dryrun=true`, click Bill Day, then
    read `SELECT detail FROM mymd_billing_log WHERE decision='DRYRUN'`. Those are the exact
@@ -164,7 +204,7 @@ yet.
 3. **One real claim on a test demographic.** Set `dryrun=false`. Then check it
    renders identically to the hand-made one in OSCAR's own billing screen, that
    `SELECT billingstatus FROM billingmaster WHERE billing_no = ?` is `'O'`, and that the row set
-   matches step 1 modulo primary keys and timestamps.
+   matches the table above modulo primary keys and timestamps.
 
 4. **Delete and reprocess it through OSCAR's own UI.** This is the completeness test — partially
    formed claims blow up exactly there, which is the code path that holds the `demographic.ver`

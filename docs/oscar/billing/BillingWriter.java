@@ -224,8 +224,25 @@ public class BillingWriter {
         }
     }
 
+    /**
+     * The value the service-location dropdown submits — the whole "V|Virtual Care" string, not "V".
+     *
+     * billingBC.jsp defaults this field straight from the `visittype` property (see its lines
+     * ~894-901), and OSCAR then truncates the same string two different ways: billing.visittype is
+     * char(2) so it stores "V|", and billingmaster.service_location is char(1) so it stores "V".
+     * A captured claim shows exactly that. Passing "V" here would have written "V" into a column
+     * that should hold "V|" — invisible on screen, wrong in the claim.
+     *
+     * Read from the property rather than hard-coded so it follows the clinic's own configuration.
+     */
     private String serviceLocation() {
-        return "V"; // exclusively virtual; matches the clinic's `visittype` default
+        try {
+            String v = oscar.OscarProperties.getInstance().getProperty("visittype");
+            if (v != null && !v.trim().isEmpty()) return v.trim();
+        } catch (Throwable t) {
+            // Outside Tomcat (or if the property is unset) fall through to the clinic's default.
+        }
+        return "V|Virtual Care";
     }
 
     /** The claim OSCAR just created for this appointment, or -1. */
