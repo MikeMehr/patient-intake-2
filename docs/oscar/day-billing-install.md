@@ -103,9 +103,24 @@ CP="$W/WEB-INF/classes:$(sudo find $W/WEB-INF/lib -name '*.jar' | tr '\n' ':')$(
 sudo java -cp "$CP" org.apache.jasper.JspC -uriroot $W -d /tmp/jspc-bill -compile mymd/dayBilling.jsp
 ```
 
-"Generation completed with [0] errors" plus a `dayBilling_jsp.class` means good. If a class was
-edited, clear `/opt/tomcat9/work/Catalina/localhost/oscar/org/apache/jsp/mymd/dayBilling_jsp.*` —
-Jasper's auto-recompile cannot be trusted on this box.
+"Generation completed with [0] errors" plus a `dayBilling_jsp.class` means good.
+
+If a class or JSP was edited, clear the compiled copy — Jasper's auto-recompile cannot be trusted
+on this box:
+
+```bash
+sudo sh -c 'rm -f /opt/tomcat9/work/Catalina/localhost/oscar/org/apache/jsp/mymd/dayBilling_jsp.*'
+sudo sh -c 'rm -f /opt/tomcat9/work/Catalina/localhost/oscar/org/apache/jsp/provider/appointmentprovideradminday_jsp.*'
+```
+
+**`sudo sh -c '...'` matters.** `/opt/tomcat9/work` is `tomcat`-only, so writing `sudo rm -f
+<path>/foo_jsp.*` lets your *login* shell expand the glob, which it cannot read — the pattern
+matches nothing, `rm` gets a literal `*`, and it **exits 0 having done nothing**. Same trap as
+`javac` needing sudo for `/opt/tomcat9/lib`. Verify rather than assume:
+
+```bash
+sudo grep -c dayBilling /opt/tomcat9/work/Catalina/localhost/oscar/org/apache/jsp/provider/appointmentprovideradminday_jsp.java
+```
 
 ## Settings
 
