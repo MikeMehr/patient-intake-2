@@ -136,7 +136,21 @@ public class BillingWriter {
      */
     static Map<String, String> claimParams(BillingCandidate bc, String serviceLocation) {
         Map<String, String> p = new LinkedHashMap<String, String>();
-        p.put("service", bc.feeCode);
+        // The fee code travels in xml_other1, NOT in `service`.
+        //
+        // billingBC.jsp's fee-code checkboxes are only a picker: ticking one runs JS that copies
+        // the code into the xml_other1 text box (`myform.xml_other1.value = svcCode`), and that box
+        // is what the form actually submits. BillingCreateBillingAction never reads the form's
+        // `service` array at all -- it passes a hardcoded `new String[0]` to
+        // BillingBillingManager.getDups2 and builds the bill items from xml_other1/2/3 alone.
+        //
+        // Sending `service` therefore left the item list empty, and BillingSaveBillingAction
+        // iterates that list to write the claim: zero items, zero rows, and it still forwards to
+        // "success". That is the silent "OSCAR reported no error but no claim was created" -- the
+        // appointment gets flipped to Billed with nothing behind it.
+        p.put("xml_other1", bc.feeCode);
+        // getDups2 substitutes "1" when the unit is blank, but be explicit rather than lean on it.
+        p.put("xml_other1_unit", "1");
         p.put("xml_diagnostic_detail1", bc.dxFinal);
         p.put("xml_diagnostic_detail2", "");
         p.put("xml_diagnostic_detail3", "");
@@ -201,15 +215,48 @@ public class BillingWriter {
             // only thing that actually proves a row exists is the row.
             int billingNo = findBilling(c, bc);
             if (billingNo < 0) {
-                updateLogRow(c, logId, "ERROR", -1, "No claim appeared after SaveBilling");
+                String undo = restoreAppointmentStatus(c, bc);
+                updateLogRow(c, logId, "ERROR", -1, "No claim appeared after SaveBilling. " + undo);
                 return new Result("ERROR", -1,
                         "OSCAR reported no error but no claim was created - check catalina.out");
             }
             updateLogRow(c, logId, "BILLED", billingNo, "");
             return new Result("BILLED", billingNo, "");
         } catch (Exception e) {
-            updateLogRow(c, logId, "ERROR", -1, truncate(String.valueOf(e), 500));
+            String undo = restoreAppointmentStatus(c, bc);
+            updateLogRow(c, logId, "ERROR", -1, truncate(e + ". " + undo, 500));
             return new Result("ERROR", -1, String.valueOf(e));
+        }
+    }
+
+    /**
+     * Put the appointment back the way it was when no claim was created.
+     *
+     * SaveBilling flips the appointment to Billed before it finishes writing, and the three
+     * dispatched actions each manage their own connection, so none of this can be wrapped in one
+     * transaction. A failure after that flip therefore leaves a visit marked Billed with nothing
+     * behind it -- and because Billed is not a billable status, the sweep never shows it again.
+     * It does not resurface, it does not error, it simply never gets paid.
+     *
+     * That happened to three visits before this existed. Guarded on the claim genuinely being
+     * absent, so a successful claim can never be un-marked.
+     */
+    private String restoreAppointmentStatus(Connection c, BillingCandidate bc) {
+        try {
+            if (findBilling(c, bc) >= 0) return "claim exists; status left alone";
+            PreparedStatement ps = c.prepareStatement(
+                    "UPDATE appointment SET status = ? WHERE appointment_no = ? AND status <> ?");
+            ps.setString(1, bc.apptStatus);
+            ps.setInt(2, bc.appointmentNo);
+            ps.setString(3, bc.apptStatus);
+            int n = ps.executeUpdate();
+            ps.close();
+            return n > 0 ? "appointment status restored to " + bc.apptStatus : "status unchanged";
+        } catch (SQLException e) {
+            // Worth shouting about: the visit is now stranded and only the log says so.
+            System.err.println("[mymd.billing] could not restore appointment " + bc.appointmentNo
+                    + " to " + bc.apptStatus + ": " + e);
+            return "COULD NOT restore appointment status - visit may be stranded as Billed";
         }
     }
 
