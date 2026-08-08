@@ -281,6 +281,28 @@ export default function OrganizationDetailPage() {
     }
   };
 
+  const setOrgAdminMfa = async (orgAdminId: string, mfaEnabled: boolean) => {
+    // Org admins can reset any provider's password and mint their MFA backup codes, so this
+    // is the control that stops that account being a single stolen password. Toggling it does
+    // not end the admin's current session — it governs the next sign-in.
+    try {
+      const response = await fetch(`/api/admin/organization-users/${orgAdminId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mfaEnabled }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        alert(data.error || "Failed to update MFA");
+        return;
+      }
+      await fetchOrganizationDetails();
+    } catch (err) {
+      console.error("Error updating org admin MFA:", err);
+      alert("Failed to update MFA");
+    }
+  };
+
   const runOrgAdminRecoveryAction = async (
     orgAdminId: string,
     action: "generate" | "rotate" | "reset",
@@ -897,6 +919,15 @@ export default function OrganizationDetailPage() {
                           </p>
                         </div>
                         <div className="flex items-center gap-2">
+                          <label className="inline-flex items-center gap-1.5 text-xs text-slate-700 whitespace-nowrap">
+                            <input
+                              type="checkbox"
+                              checked={Boolean(admin.mfaEnabled)}
+                              onChange={(e) => setOrgAdminMfa(admin.id, e.target.checked)}
+                              className="h-3.5 w-3.5 rounded border-slate-300 text-slate-900 focus:ring-slate-400"
+                            />
+                            Require MFA
+                          </label>
                           <button
                             onClick={() => runOrgAdminRecoveryAction(admin.id, "generate")}
                             className="px-2 py-1 text-xs rounded border border-slate-300 hover:bg-slate-50"
