@@ -146,6 +146,27 @@ export default function SuperAdminDashboard() {
     }
   };
 
+  const setSuperAdminMfa = async (user: WorkforceUser, mfaEnabled: boolean) => {
+    // The "must have backup codes first" rule lives in the route, not here — a check in the
+    // browser is a hint, not a control. This just surfaces whatever the server decided.
+    try {
+      const response = await fetch(`/api/admin/super-admin-users/${user.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mfaEnabled }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        alert(data.error || "Failed to update MFA");
+        return;
+      }
+      await fetchWorkforce();
+    } catch (err) {
+      console.error("Failed to update super admin MFA:", err);
+      alert("Failed to update MFA");
+    }
+  };
+
   const runRecoveryAction = async (path: string, body?: Record<string, unknown>) => {
     try {
       const response = await fetch(path, {
@@ -525,10 +546,20 @@ export default function SuperAdminDashboard() {
                             {user.firstName} {user.lastName} ({user.username})
                           </p>
                           <p className="text-xs text-slate-500">
-                            {user.email} • Backup codes required: {user.backupCodesRequired ? "Yes" : "No"}
+                            {user.email} • MFA: {user.mfaEnabled ? "Enabled" : "Disabled"} • Backup codes required:{" "}
+                            {user.backupCodesRequired ? "Yes" : "No"}
                           </p>
                         </div>
                         <div className="flex items-center gap-2">
+                          <label className="inline-flex items-center gap-1.5 text-xs text-slate-700 whitespace-nowrap">
+                            <input
+                              type="checkbox"
+                              checked={Boolean(user.mfaEnabled)}
+                              onChange={(e) => setSuperAdminMfa(user, e.target.checked)}
+                              className="h-3.5 w-3.5 rounded border-slate-300 text-slate-900 focus:ring-slate-400"
+                            />
+                            Require MFA
+                          </label>
                           <button
                             onClick={() =>
                               runRecoveryAction(`/api/admin/super-admin-users/${user.id}/mfa/backup-codes`, {
