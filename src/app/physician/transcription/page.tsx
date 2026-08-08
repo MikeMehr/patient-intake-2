@@ -469,7 +469,9 @@ export default function PhysicianTranscriptionPage() {
   const visibleItems = useMemo(
     () =>
       historyItems
-        .filter((item) => item.lifecycleState !== "FINALIZED_FOR_EXPORT")
+        // Finalized/exported notes stay listed (with an "Exported" badge) so a
+        // note sent to OSCAR from the eChart popup doesn't vanish from Recent
+        // snapshots the moment it is sent.
         .filter((item) => !snapshotAnonOnly || item.patientId === null)
         .filter((item) => {
           if (!snapshotFilterDate) return true;
@@ -2842,8 +2844,15 @@ export default function PhysicianTranscriptionPage() {
                             onClick={() => loadSoapVersion(item.soapVersionId, item.caseSoapIds)}
                             className="flex-1 text-left hover:bg-slate-50 rounded-md"
                           >
-                            <div className="text-sm font-medium text-slate-900">
-                              {item.patientName || <span className="italic text-slate-400">Anonymous</span>}
+                            <div className="flex items-center gap-2 text-sm font-medium text-slate-900">
+                              <span>
+                                {item.patientName || <span className="italic text-slate-400">Anonymous</span>}
+                              </span>
+                              {item.lifecycleState === "FINALIZED_FOR_EXPORT" && (
+                                <span className="shrink-0 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-800">
+                                  Exported
+                                </span>
+                              )}
                             </div>
                             {item.chiefComplaint && (
                               <div className="text-xs font-medium text-slate-500 mt-0.5">

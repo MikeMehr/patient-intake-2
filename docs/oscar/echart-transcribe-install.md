@@ -104,7 +104,9 @@ never need SSH.
 - **Ack before export.** The note is only marked exported in Health Assist after
   OSCAR confirms the insert. A closed window, a missing listener or a missing
   textarea means nothing is finalized and nothing is recorded as sent.
-- **Append, never replace.** Anything the physician already typed survives.
+- **Insert above, never replace.** The note goes in at the TOP of the field so
+  prescriptions OSCAR's Rx module already wrote into the note end up below the
+  Assessment/Plan. Anything the physician already typed survives, lower down.
 - **No auto-save.** The encounter is not saved by this script.
 - **`window.opener` is required.** Do not add `noopener` to the `window.open`
   call, and never add a `Cross-Origin-Opener-Policy` header to the Health Assist

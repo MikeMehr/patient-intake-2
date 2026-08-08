@@ -203,9 +203,13 @@
         return;
       }
 
-      // Append, never replace — anything the doctor already typed must survive.
-      var separator = ta.value && !/\n\s*$/.test(ta.value) ? "\n\n" : "";
-      ta.value = ta.value + separator + data.text + "\n";
+      // Insert ABOVE any existing content, never replace. OSCAR's Rx module
+      // writes prescriptions into the open note before the doctor dictates, so
+      // prepending keeps the SOAP (Subjective/Objective/Assessment/Plan) on
+      // top and the prescription below the plan — the order Dr. Mehraein
+      // wants. Anything already typed in the note survives, just lower down.
+      var existing = ta.value;
+      ta.value = data.text + "\n" + (existing && existing.trim() ? "\n" + existing : "");
 
       // Let OSCAR's dirty-tracking / autosave notice the change.
       try {
@@ -215,11 +219,12 @@
         ta.dispatchEvent(new Event("change", { bubbles: true }));
       } catch (e) {}
 
+      // The note was inserted at the top, so show the top.
       ta.focus();
       try {
-        ta.selectionStart = ta.selectionEnd = ta.value.length;
+        ta.selectionStart = ta.selectionEnd = 0;
       } catch (e) {}
-      ta.scrollTop = ta.scrollHeight;
+      ta.scrollTop = 0;
 
       // Acknowledge, so the popup knows the text actually landed. Without this
       // it would mark the note exported even when nothing was inserted.
