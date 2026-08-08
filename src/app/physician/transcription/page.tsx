@@ -1834,6 +1834,14 @@ export default function PhysicianTranscriptionPage() {
                     <>
                       <div className="fixed inset-0 z-10" onClick={() => setShowMenu(false)} />
                       <div className="absolute right-0 top-9 z-20 min-w-[200px] rounded-xl border border-slate-200 bg-white py-1 shadow-lg">
+                        {/* Same session, no switch — the Booking Dashboard can sit in another
+                            tab while a recording continues here. */}
+                        {physicianSession?.canAccessBookingDashboard && (
+                          <>
+                            <a href="/org/dashboard" className="flex w-full items-center rounded-md px-2 py-2 text-sm text-slate-700 hover:bg-slate-50">Booking Dashboard</a>
+                            <div className="my-1 border-t border-slate-100" />
+                          </>
+                        )}
                         <a href="/physician/forms" className="flex w-full items-center rounded-md px-2 py-2 text-sm text-slate-700 hover:bg-slate-50">Forms</a>
                         <a href="/physician/summarizing" className="flex w-full items-center rounded-md px-2 py-2 text-sm text-slate-700 hover:bg-slate-50">Summarizing</a>
                         <a href="/physician/email" className="flex w-full items-center rounded-md px-2 py-2 text-sm text-slate-700 hover:bg-slate-50">Email</a>

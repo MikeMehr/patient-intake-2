@@ -13,6 +13,13 @@ import { createContext, useContext } from "react";
 
 export interface PhysicianSessionValue {
   userId: string;
+  /**
+   * Whether this same session may also use the Booking Dashboard (a physician holding
+   * manages_org_booking). Resolved once in the layout so every /physician page can offer the
+   * cross-link without its own /api/auth/me round trip — and so the answer cannot differ
+   * between two pages of the same session.
+   */
+  canAccessBookingDashboard: boolean;
 }
 
 const PhysicianSessionContext = createContext<PhysicianSessionValue | null>(null);

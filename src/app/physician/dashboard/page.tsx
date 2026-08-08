@@ -7,6 +7,7 @@ import type { PatientSession } from "@/lib/session-store";
 import SessionKeepAlive from "@/components/auth/SessionKeepAlive";
 import PasskeyEnrollmentBanner from "@/components/auth/PasskeyEnrollmentBanner";
 import PasskeyManagement from "@/components/auth/PasskeyManagement";
+import { usePhysicianSession } from "@/components/auth/PhysicianSessionContext";
 import CollapsibleSection from "@/components/CollapsibleSection";
 import QuickAskAiModal from "@/components/QuickAskAiModal";
 
@@ -151,6 +152,8 @@ function mapInvitationFromApi(inv: any): Invitation {
 
 function PhysicianDashboard() {
   const router = useRouter();
+  // Resolved server-side by src/app/physician/layout.tsx — no /api/auth/me round trip.
+  const physicianSession = usePhysicianSession();
   const patientLookupSectionRef = useRef<HTMLDivElement | null>(null);
   const inviteSectionRef = useRef<HTMLDivElement | null>(null);
   const patientPhotoInputRef = useRef<HTMLInputElement>(null);
@@ -173,7 +176,9 @@ function PhysicianDashboard() {
   const [canReturnToBooking, setCanReturnToBooking] = useState(false);
   // Distinct from canReturnToBooking: this session may simply *use* the Booking Dashboard,
   // so it is a plain link that leaves the session alone rather than a switch that ends it.
-  const [canAccessBooking, setCanAccessBooking] = useState(false);
+  // From the layout, not /api/auth/me: one resolution per session, shared by every
+  // /physician page, so two pages can never disagree about it.
+  const canAccessBooking = Boolean(physicianSession?.canAccessBookingDashboard);
   const [returningToBooking, setReturningToBooking] = useState(false);
   const [assistantInfo, setAssistantInfo] = useState<{ id: string; firstName: string; lastName: string } | null>(null);
   const [showAssistantsPanel, setShowAssistantsPanel] = useState(false);
@@ -334,7 +339,6 @@ function PhysicianDashboard() {
           setAssistantInfo(data.assistant);
         }
         setCanReturnToBooking(Boolean(data.canReturnToBookingDashboard));
-        setCanAccessBooking(Boolean(data.canAccessBookingDashboard));
       })
       .catch(() => {
         // Ignore errors

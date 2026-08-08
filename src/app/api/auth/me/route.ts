@@ -5,7 +5,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentSession } from "@/lib/auth";
-import { getOrganizationById, isAssistantSession, getOrgAdminContext } from "@/lib/auth-helpers";
+import { getOrganizationById, isAssistantSession } from "@/lib/auth-helpers";
 import { query } from "@/lib/db";
 import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
 
@@ -50,12 +50,10 @@ export async function GET(request: NextRequest) {
     const responseBody: Record<string, unknown> = {
       // True when this provider session was opened by an org admin via "act as provider";
       // the client uses it to offer a one-click switch back to the Booking Dashboard.
-      // Distinct from canAccessBookingDashboard below: acting on this DESTROYS the current
-      // provider session (see /api/org/return-to-admin), so the two cannot share a flag.
+      // Note this DESTROYS the current provider session (see /api/org/return-to-admin), so
+      // it is not the same thing as the plain cross-link, which leaves the session alone and
+      // comes from PhysicianSessionContext via src/app/physician/layout.tsx.
       canReturnToBookingDashboard: Boolean(session.impersonatorOrgAdminId),
-      // True when this same session may also use the Booking Dashboard — a plain link, no
-      // session change, so both surfaces can be open in different tabs at once.
-      canAccessBookingDashboard: Boolean(await getOrgAdminContext(session)),
       physician: {
         id: isAssistant ? session.linkedPhysicianId : session.userId,
         username: session.username,

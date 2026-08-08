@@ -13,6 +13,7 @@
 
 import { redirect } from "next/navigation";
 import { getSessionForRender } from "@/lib/auth";
+import { getOrgAdminContext } from "@/lib/auth-helpers";
 import ProviderSwitchInterstitial from "@/components/auth/ProviderSwitchInterstitial";
 import { PhysicianSessionProvider } from "@/components/auth/PhysicianSessionContext";
 
@@ -47,8 +48,18 @@ export default async function PhysicianLayout({
     );
   }
 
+  // One small indexed lookup per render, so every /physician page can offer the Booking
+  // Dashboard link without its own round trip. Non-fatal: losing the cross-link is a far
+  // better failure than losing the page.
+  let canAccessBookingDashboard = false;
+  try {
+    canAccessBookingDashboard = Boolean(await getOrgAdminContext(session));
+  } catch (error) {
+    console.error("[physician/layout] Booking access lookup failed");
+  }
+
   return (
-    <PhysicianSessionProvider value={{ userId: session.userId }}>
+    <PhysicianSessionProvider value={{ userId: session.userId, canAccessBookingDashboard }}>
       {children}
     </PhysicianSessionProvider>
   );
