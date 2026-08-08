@@ -79,6 +79,12 @@ jobs:
           echo "::warning::npm audit endpoint unavailable after ${attempts} attempts; skipping the runtime security gate for this run (no report could be fetched)."
           exit 0
 
+      # The Build step below calls next directly, which does not fire npm lifecycle hooks,
+      # so the `prebuild` guard never ran here. Invoke it explicitly or it protects nothing
+      # on the only path that reaches production.
+      - name: Check critical routes
+        run: node scripts/check-critical-routes.js
+
       - name: Build
         run: npx next build --webpack
 

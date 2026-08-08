@@ -2,9 +2,14 @@
  * Pre-build guard: verifies that critical API routes exist before `next build` runs.
  *
  * These routes have been accidentally deleted three times by large unrelated commits
- * (fa2282d, 5694194, and once more). Running this as a `prebuild` npm script means
- * `npm run build` — and therefore every CI deploy — fails immediately with a clear
- * message before any expensive build work begins.
+ * (fa2282d, 5694194, and once more). It runs as the `prebuild` npm script and as an
+ * explicit step in .github/workflows/main_healt-assist-ai-prod.yml — the workflow calls
+ * `npx next build` directly, which does NOT fire npm lifecycle hooks, so without that
+ * step this guard would never run on the one path that matters. Keep both.
+ *
+ * WHEN A ROUTE IS INTENTIONALLY REMOVED, DELETE ITS LINE HERE IN THE SAME COMMIT.
+ * A stale entry fails every build forever, which trains people to bypass the guard —
+ * exactly what happened to the Daily.co entries between 2026-08-03 and 2026-08-08.
  *
  * To add a new protected route, append its path to the CRITICAL_ROUTES array.
  */
@@ -15,11 +20,14 @@ const path = require("path");
 const CRITICAL_ROUTES = [
   "src/app/api/sessions/feedback/route.ts",
   "src/app/api/admin/feedback/route.ts",
-  // Video visits: the provider reaches these from the OSCAR day sheet and the patient from an
-  // emailed link, so neither has a fallback path if the route silently disappears.
-  "src/app/api/physician/video/session/route.ts",
-  "src/app/api/visit/[token]/route.ts",
-  "src/app/api/visit/[token]/join/route.ts",
+  // Video visits, post-Daily.co. Doxy has no API and no per-visit rooms, so the whole
+  // surface is these two: the provider asks which waiting room is theirs (reached from the
+  // OSCAR day sheet via /launch/oscar-video, where the session is the only identity we
+  // have), and the clinic sends a patient a link with no booking attached. Neither has a
+  // fallback path if the route silently disappears — the original reason for guarding the
+  // three Daily routes these replaced.
+  "src/app/api/physician/video/room/route.ts",
+  "src/app/api/org/video-invite/route.ts",
 ];
 
 const root = path.resolve(__dirname, "..");
