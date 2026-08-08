@@ -15,6 +15,7 @@ import { decryptString } from "@/lib/encrypted-field";
 import { getOscarRestBase, oscarFetch } from "@/lib/oscar/client";
 import { signOAuth1Request } from "@/lib/oscar/oauth1";
 import { extractOscarDob, normalizeOscarDob } from "@/lib/oscar/dob";
+import { toProvinceCode } from "@/lib/province-code";
 
 export type OscarCreds = {
   client_key: string;
@@ -403,25 +404,7 @@ export type CreateDemographicInput = {
 };
 
 /** Map a Canadian province/territory name (or code) to OSCAR's 2-letter health-card type. */
-function toHcType(province: string): string {
-  const p = province.trim().toUpperCase();
-  const map: Record<string, string> = {
-    "ALBERTA": "AB", "AB": "AB",
-    "BRITISH COLUMBIA": "BC", "BC": "BC",
-    "MANITOBA": "MB", "MB": "MB",
-    "NEW BRUNSWICK": "NB", "NB": "NB",
-    "NEWFOUNDLAND AND LABRADOR": "NL", "NEWFOUNDLAND": "NL", "NL": "NL",
-    "NORTHWEST TERRITORIES": "NT", "NT": "NT",
-    "NOVA SCOTIA": "NS", "NS": "NS",
-    "NUNAVUT": "NU", "NU": "NU",
-    "ONTARIO": "ON", "ON": "ON",
-    "PRINCE EDWARD ISLAND": "PE", "PE": "PE", "PEI": "PE",
-    "QUEBEC": "QC", "QC": "QC",
-    "SASKATCHEWAN": "SK", "SK": "SK",
-    "YUKON": "YT", "YT": "YT",
-  };
-  return map[p] ?? "";
-}
+const toHcType = toProvinceCode;
 
 export type CreateDemographicResult =
   | { demographicNo: string }

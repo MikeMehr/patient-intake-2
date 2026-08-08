@@ -13,6 +13,7 @@ import { getClinicBySlug, getPhysiciansForBooking, confirmAppointment } from "@/
 import { generateManageToken } from "@/lib/booking-token";
 import { sendBookingConfirmation } from "@/lib/booking-email";
 import { sendBookingAlertSMS, toE164 } from "@/lib/sms";
+import { describeMspEligibility } from "@/lib/billing/msp-eligibility";
 import {
   normalizeModality,
   type AppointmentModality,
@@ -310,6 +311,14 @@ async function handleConfirm(
         // Already sanitized and capped to MAX_REASON_LEN above; empty means the
         // patient booked before the field existed, and the line is dropped.
         reason: reasonText || undefined,
+        // storedPhone, not the raw field: only a well-formed E.164 number is worth
+        // texting to a physician who may dial it.
+        patientPhone: storedPhone ?? undefined,
+        mspStatus: describeMspEligibility({
+          coverageType: String(coverageType),
+          province: province ? String(province) : null,
+          healthCardNumber: healthCardNumber ? String(healthCardNumber) : null,
+        }),
       });
     }
   } catch {

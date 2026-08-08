@@ -120,6 +120,10 @@ export async function sendBookingAlertSMS(
     clinicName: string;
     dateLabel: string;
     reason?: string;
+    /** Patient's own number, already E.164, so the physician can call back from the text. */
+    patientPhone?: string;
+    /** Short MSP verdict from describeMspEligibility(); never carries the card number itself. */
+    mspStatus?: string;
     manageUrl?: string;
   }
 ): Promise<SendSmsResult> {
@@ -149,6 +153,14 @@ export async function sendBookingAlertSMS(
     if (reason) {
       message += ` Reason: ${reason}`;
       if (!/[.!?]$/.test(reason)) message += ".";
+    }
+    const patientPhone = details.patientPhone?.trim();
+    if (patientPhone) {
+      message += ` Phone: ${patientPhone}.`;
+    }
+    const mspStatus = details.mspStatus?.trim();
+    if (mspStatus) {
+      message += ` MSP: ${mspStatus}.`;
     }
     if (details.manageUrl) {
       message += ` Details: ${details.manageUrl}`;
