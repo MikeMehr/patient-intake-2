@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import MfaChallengeForm from "@/components/auth/MfaChallengeForm";
 
 export default function SuperAdminLoginPage() {
   const router = useRouter();
@@ -9,6 +10,21 @@ export default function SuperAdminLoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  // Set when /api/auth/login answers 202 because the account has mfa_enabled. No session
+  // cookie exists until the challenge is completed.
+  const [challengeToken, setChallengeToken] = useState<string | null>(null);
+  const [mfaMessage, setMfaMessage] = useState<string | null>(null);
+
+  const redirectByUserType = (userType: string) => {
+    if (userType === "super_admin") {
+      router.push("/admin/dashboard");
+    } else if (userType === "org_admin") {
+      router.push("/org/dashboard");
+    } else {
+      router.push("/physician/dashboard");
+    }
+    router.refresh();
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -30,15 +46,18 @@ export default function SuperAdminLoginPage() {
         return;
       }
 
-      // Redirect based on user type
-      if (data.userType === "super_admin") {
-        router.push("/admin/dashboard");
-      } else if (data.userType === "org_admin") {
-        router.push("/org/dashboard");
-      } else {
-        router.push("/physician/dashboard");
+      // A 202 is response.ok. Redirecting here would land on /admin/dashboard with no session
+      // cookie and bounce straight back — an unescapable loop for any MFA-enabled account.
+      // super_admin_users.mfa_enabled has no write path today, so this is unreachable; it is
+      // here so that adding one is a one-line change rather than a lockout.
+      if (data.mfaRequired && data.challengeToken) {
+        setChallengeToken(data.challengeToken);
+        setMfaMessage(data.message || "Enter the verification code we just sent you.");
+        setLoading(false);
+        return;
       }
-      router.refresh();
+
+      redirectByUserType(data.userType);
     } catch (err) {
       setError("An error occurred. Please try again.");
       setLoading(false);
@@ -55,59 +74,69 @@ export default function SuperAdminLoginPage() {
           Sign in to access the super admin dashboard.
         </p>
 
-        {error && (
-          <div className="mb-4 rounded-lg bg-red-50 border border-red-200 px-4 py-3">
-            <p className="text-sm text-red-800">{error}</p>
-          </div>
+        {challengeToken ? (
+          <MfaChallengeForm
+            challengeToken={challengeToken}
+            message={mfaMessage}
+            onVerified={redirectByUserType}
+          />
+        ) : (
+          <>
+            {error && (
+              <div className="mb-4 rounded-lg bg-red-50 border border-red-200 px-4 py-3">
+                <p className="text-sm text-red-800">{error}</p>
+              </div>
+            )}
+
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div>
+                <label
+                  htmlFor="username"
+                  className="block text-sm font-medium text-slate-700 mb-1"
+                >
+                  Username
+                </label>
+                <input
+                  id="username"
+                  type="text"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  required
+                  disabled={loading}
+                  className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200 disabled:cursor-not-allowed disabled:opacity-70"
+                  placeholder="Enter your username"
+                />
+              </div>
+
+              <div>
+                <label
+                  htmlFor="password"
+                  className="block text-sm font-medium text-slate-700 mb-1"
+                >
+                  Password
+                </label>
+                <input
+                  id="password"
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                  disabled={loading}
+                  className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200 disabled:cursor-not-allowed disabled:opacity-70"
+                  placeholder="Enter your password"
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full rounded-lg bg-slate-900 px-4 py-3 text-base font-semibold text-white transition hover:bg-slate-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900 disabled:cursor-not-allowed disabled:bg-slate-400"
+              >
+                {loading ? "Signing in..." : "Sign In"}
+              </button>
+            </form>
+          </>
         )}
-
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label
-              htmlFor="username"
-              className="block text-sm font-medium text-slate-700 mb-1"
-            >
-              Username
-            </label>
-            <input
-              id="username"
-              type="text"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              required
-              disabled={loading}
-              className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200 disabled:cursor-not-allowed disabled:opacity-70"
-              placeholder="Enter your username"
-            />
-          </div>
-
-          <div>
-            <label
-              htmlFor="password"
-              className="block text-sm font-medium text-slate-700 mb-1"
-            >
-              Password
-            </label>
-            <input
-              id="password"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              disabled={loading}
-              className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-base text-slate-900 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200 disabled:cursor-not-allowed disabled:opacity-70"
-              placeholder="Enter your password"
-            />
-          </div>
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full rounded-lg bg-slate-900 px-4 py-3 text-base font-semibold text-white transition hover:bg-slate-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900 disabled:cursor-not-allowed disabled:bg-slate-400"
-          >
-            {loading ? "Signing in..." : "Sign In"}
-          </button>
-        </form>
 
         <p className="mt-6 text-xs text-slate-500 text-center">
           This application uses security safeguards and requires authentication to protect patient health information.
@@ -116,4 +145,3 @@ export default function SuperAdminLoginPage() {
     </div>
   );
 }
-
