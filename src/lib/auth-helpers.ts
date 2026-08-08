@@ -211,6 +211,55 @@ export function isAssistantSession(session: UserSession): boolean {
   return !!session.linkedPhysicianId;
 }
 
+export interface OrgAdminContext {
+  organizationId: string;
+  /**
+   * True only for organization_users logins. Gate credential and session powers on this
+   * — creating providers, setting their passwords, minting their MFA backup codes and
+   * org-wide session termination stay off-limits to a granted physician.
+   */
+  isOrgAdminAccount: boolean;
+}
+
+/**
+ * Resolves the caller's authority over an organization's Booking Dashboard.
+ *
+ * Two account shapes can hold it:
+ *   - an organization_users login (userType "org_admin") — the original identity;
+ *   - a physicians login carrying manages_org_booking — the clinic owner who also treats
+ *     patients, so a single session serves /physician/* and /org/* at the same time.
+ *
+ * Read live from the database rather than snapshotted into session_data, so revoking the
+ * grant applies on the next request instead of up to four hours later — and without
+ * destroying a session that may be mid-recording.
+ */
+export async function getOrgAdminContext(
+  session: UserSession | null,
+): Promise<OrgAdminContext | null> {
+  if (!session?.organizationId) return null;
+
+  if (session.userType === "org_admin") {
+    return { organizationId: session.organizationId, isOrgAdminAccount: true };
+  }
+
+  // A provider_assistants login is userType "provider" with linkedPhysicianId set. It must
+  // never inherit its physician's grant, so reject before the lookup rather than relying on
+  // the query keying off the assistant's own id.
+  if (session.userType !== "provider" || isAssistantSession(session)) return null;
+
+  // Re-checking organization_id against the row (not just the session snapshot) means a
+  // physician moved or detached from the org loses access on the next request.
+  const result = await query<{ manages_org_booking: boolean }>(
+    `SELECT manages_org_booking
+     FROM physicians
+     WHERE id = $1 AND organization_id = $2`,
+    [session.userId, session.organizationId]
+  );
+  if (!result?.rows?.[0]?.manages_org_booking) return null;
+
+  return { organizationId: session.organizationId, isOrgAdminAccount: false };
+}
+
 /**
  * Get organization by ID
  */

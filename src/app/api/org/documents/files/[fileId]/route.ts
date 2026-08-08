@@ -7,6 +7,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentSession } from "@/lib/auth";
+import { getOrgAdminContext } from "@/lib/auth-helpers";
 import { query } from "@/lib/db";
 import { generateDocumentSasUrl } from "@/lib/azure-blob-documents";
 import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
@@ -22,7 +23,8 @@ export async function GET(
 
   try {
     const session = await getCurrentSession();
-    if (!session || session.userType !== "org_admin" || !session.organizationId) {
+    const orgContext = await getOrgAdminContext(session);
+    if (!orgContext) {
       status = 401;
       const res = NextResponse.json({ error: "Unauthorized" }, { status });
       logRequestMeta("/api/org/documents/files", requestId, status, Date.now() - started);
@@ -34,7 +36,7 @@ export async function GET(
        FROM patient_document_files f
        JOIN patient_document_requests r ON r.id = f.request_id
        WHERE f.id = $1 AND f.deleted_at IS NULL AND r.organization_id = $2`,
-      [fileId, session.organizationId],
+      [fileId, orgContext.organizationId],
     );
 
     if (!result.rows.length) {

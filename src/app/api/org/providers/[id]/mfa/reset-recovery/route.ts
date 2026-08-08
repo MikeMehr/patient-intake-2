@@ -12,6 +12,8 @@ export async function POST(
   const started = Date.now();
   let status = 200;
   try {
+    // Deliberately org_admin-only: manages_org_booking does not confer credential/session
+    // powers. See getOrgAdminContext() in src/lib/auth-helpers.ts.
     const session = await getCurrentSession();
     if (!session || session.userType !== "org_admin" || !session.organizationId) {
       status = 401;

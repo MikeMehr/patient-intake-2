@@ -1,11 +1,16 @@
 /**
- * GET /api/org/providers/[id] - Get provider details (org admin only)
+ * GET /api/org/providers/[id] - Get provider details
  * PUT /api/org/providers/[id] - Update provider (org admin only)
  * DELETE /api/org/providers/[id] - Delete provider (org admin only)
+ *
+ * PUT and DELETE stay org_admin-only on purpose — they set another provider's password
+ * and destroy accounts, which manages_org_booking deliberately does not confer. Because
+ * PUT is also where that grant is toggled, a physician holding it cannot widen it.
  */
 
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentSession } from "@/lib/auth";
+import { getOrgAdminContext } from "@/lib/auth-helpers";
 import { query } from "@/lib/db";
 import { hashPassword, validatePassword } from "@/lib/auth";
 import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
@@ -31,10 +36,11 @@ export async function GET(
   let status = 200;
   try {
     const session = await getCurrentSession();
-    if (!session || session.userType !== "org_admin" || !session.organizationId) {
+    const orgContext = await getOrgAdminContext(session);
+    if (!orgContext) {
       status = 401;
       const res = NextResponse.json(
-        { error: "Unauthorized - Organization admin access required" },
+        { error: "Unauthorized - Booking Dashboard access required" },
         { status }
       );
       logRequestMeta("/api/org/providers/[id]", requestId, status, Date.now() - started);
@@ -55,13 +61,14 @@ export async function GET(
       unique_slug: string;
       organization_id: string | null;
       mfa_enabled: boolean;
+      manages_org_booking: boolean;
       oscar_provider_no: string | null;
       doxy_room_url: string | null;
     }>(
-      `SELECT id, first_name, last_name, clinic_name, username, email, phone, unique_slug, organization_id, mfa_enabled, oscar_provider_no, doxy_room_url
+      `SELECT id, first_name, last_name, clinic_name, username, email, phone, unique_slug, organization_id, mfa_enabled, manages_org_booking, oscar_provider_no, doxy_room_url
        FROM physicians
        WHERE id = $1 AND organization_id = $2`,
-      [id, session.organizationId]
+      [id, orgContext.organizationId]
     );
 
     if (result.rows.length === 0) {
@@ -88,6 +95,7 @@ export async function GET(
         uniqueSlug: provider.unique_slug,
         organizationId: provider.organization_id,
         mfaEnabled: provider.mfa_enabled,
+        managesOrgBooking: provider.manages_org_booking,
         oscarProviderNo: provider.oscar_provider_no,
         doxyRoomUrl: provider.doxy_room_url,
       },
@@ -114,6 +122,8 @@ export async function PUT(
   const started = Date.now();
   let status = 200;
   try {
+    // Deliberately org_admin-only (see file header): this sets another provider's
+    // password_hash, and it is where manages_org_booking itself is toggled.
     const session = await getCurrentSession();
     if (!session || session.userType !== "org_admin" || !session.organizationId) {
       status = 401;
@@ -127,7 +137,7 @@ export async function PUT(
 
     const { id } = await params;
     const body = await request.json();
-    const { firstName, lastName, clinicName, email, phone, password, mfaEnabled, oscarProviderNo, doxyRoomUrl } = body;
+    const { firstName, lastName, clinicName, email, phone, password, mfaEnabled, managesOrgBooking, oscarProviderNo, doxyRoomUrl } = body;
 
     // Verify provider belongs to organization
     const existingProvider = await query<{ id: string; organization_id: string | null }>(
@@ -238,6 +248,13 @@ export async function PUT(
       updates.push(`mfa_enabled = $${paramIndex++}`);
       values.push(Boolean(mfaEnabled));
     }
+    if (managesOrgBooking !== undefined) {
+      // No session purge on revoke. getOrgAdminContext reads this column live, so clearing it
+      // denies the next /api/org/* request on its own — and killing the provider's sessions
+      // here would end an in-progress AI Scribe recording to revoke a booking permission.
+      updates.push(`manages_org_booking = $${paramIndex++}`);
+      values.push(Boolean(managesOrgBooking));
+    }
     if (oscarProviderNo !== undefined) {
       // OSCAR provider numbers are numeric; store digits only, allow clearing.
       const cleaned = oscarProviderNo ? String(oscarProviderNo).replace(/\D/g, "") : "";
@@ -333,6 +350,7 @@ export async function DELETE(
   const started = Date.now();
   let status = 200;
   try {
+    // Deliberately org_admin-only (see file header): this destroys a colleague's account.
     const session = await getCurrentSession();
     if (!session || session.userType !== "org_admin" || !session.organizationId) {
       status = 401;

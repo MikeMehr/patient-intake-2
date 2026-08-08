@@ -2,20 +2,9 @@ import { NextResponse, type NextRequest } from "next/server";
 
 // ── Security headers ─────────────────────────────────────────────────────────
 
-/**
- * Video-visit surfaces: the provider's console and the patient's join page. These are the only
- * two paths allowed to embed Daily and to reach a camera; everywhere else keeps the tighter
- * policy below. Kept as one predicate so the CSP and the Permissions-Policy can never drift
- * apart and open one without the other.
- */
-function isVideoPath(pathname: string): boolean {
-  return pathname.startsWith("/physician/video") || pathname.startsWith("/visit/");
-}
-
 function buildCspHeader(pathname: string, nonce: string) {
   const isDevelopment = process.env.NODE_ENV !== "production";
   const isLegacyEformPath = pathname.startsWith("/eforms/");
-  const isVideo = isVideoPath(pathname);
   // Development: keep unsafe-inline + unsafe-eval for HMR/fast-refresh.
   // Production: 'self' covers static /_next/static/chunks/*.js files loaded
   // via <script src>. The nonce covers any inline scripts Next.js generates
@@ -31,69 +20,26 @@ function buildCspHeader(pathname: string, nonce: string) {
   const blobHost = process.env.AZURE_STORAGE_ACCOUNT_NAME
     ? `https://${process.env.AZURE_STORAGE_ACCOUNT_NAME}.blob.core.windows.net`
     : "https://*.blob.core.windows.net";
-  // Video visits run through Daily's *prebuilt* iframe (DailyIframe.createFrame), so the
-  // WebRTC transport, the media workers and the call UI all live inside a *.daily.co document
-  // governed by Daily's own CSP — not ours. That is why this list is so much shorter than
-  // Daily's generic documentation suggests: the parent only has to be allowed to embed the
-  // frame and to talk to Daily's REST/WebSocket endpoints.
-  //
-  // script-src deliberately unchanged: @daily-co/daily-js comes from npm and is bundled by
-  // Next, so no third-party script host is needed. If this ever moves to createCallObject
-  // (custom UI instead of prebuilt), the SFU hosts must be added to connect-src and
-  // `worker-src blob:` stops being belt-and-braces and becomes mandatory.
-  const dailyFrame = isVideo ? " https://*.daily.co" : "";
-  const dailyConnect = isVideo ? " https://*.daily.co wss://*.daily.co" : "";
   return [
     "default-src 'self'",
     "base-uri 'self'",
-    // Governs who may frame *us*. Daily is framed *by* us, so this stays closed on every path.
     "frame-ancestors 'none'",
-    `frame-src 'self' data: blob:${dailyFrame}`,
+    "frame-src 'self' data: blob:",
     "object-src 'none'",
     "form-action 'self'",
     "img-src 'self' data: blob:",
     "font-src 'self' data:",
     "media-src 'self' blob: data:",
-    // Absent until now, so blob-backed workers fell through to default-src 'self' and were
-    // blocked. Harmless everywhere, and it removes the most likely silent breakage in the
-    // video path.
+    // Absent originally, so blob-backed workers fell through to default-src 'self' and were
+    // blocked. Unrelated to video and kept: a genuine fix either way.
     "worker-src 'self' blob:",
     "style-src 'self' 'unsafe-inline'",
     scriptSrc,
     // Most external API calls (Azure OpenAI, Speech, Document Intelligence,
     // Resend) are made server-side. The one browser→external call is the direct
     // upload to Azure Blob Storage for secure file sharing.
-    `connect-src 'self' ${blobHost}${dailyConnect}`,
+    `connect-src 'self' ${blobHost}`,
   ].join("; ");
-}
-
-/**
- * Permissions-Policy for the video paths.
- *
- * The default policy disables the camera outright, and `microphone=(self)` does not delegate
- * into a cross-origin subframe — so Daily's iframe gets neither unless both are widened here.
- *
- * Two things to know before editing:
- *   - Permissions-Policy allowlists do NOT accept wildcards. `"https://*.daily.co"` is not a
- *     narrower rule, it is an invalid one, and the whole directive is dropped. It has to be the
- *     literal subdomain, which is why DAILY_DOMAIN is read here rather than hardcoded.
- *   - If DAILY_DOMAIN is unset we fall back to the restrictive header. Video then fails
- *     visibly on a permissions error rather than the header silently going malformed.
- */
-function buildPermissionsPolicy(pathname: string): string {
-  const restrictive = "camera=(), microphone=(self), geolocation=()";
-  if (!isVideoPath(pathname)) return restrictive;
-
-  const domain = process.env.DAILY_DOMAIN?.trim();
-  if (!domain || !/^[a-z0-9.-]+$/i.test(domain)) return restrictive;
-
-  const origin = `"https://${domain}"`;
-  return [
-    `camera=(self ${origin})`,
-    `microphone=(self ${origin})`,
-    `display-capture=(self ${origin})`,
-    "geolocation=()",
-  ].join(", ");
 }
 
 function applySecurityHeaders(res: NextResponse, pathname: string, nonce: string): void {
@@ -101,7 +47,10 @@ function applySecurityHeaders(res: NextResponse, pathname: string, nonce: string
   res.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
   res.headers.set("X-Content-Type-Options", "nosniff");
   res.headers.set("X-Frame-Options", "DENY");
-  res.headers.set("Permissions-Policy", buildPermissionsPolicy(pathname));
+  // Video consultations run on Doxy.me, which the patient opens directly in their own tab —
+  // nothing is embedded here, so this app needs no camera at all. microphone=(self) stays for
+  // dictation and transcription.
+  res.headers.set("Permissions-Policy", "camera=(), microphone=(self), geolocation=()");
   if (process.env.NODE_ENV === "production") {
     res.headers.set(
       "Strict-Transport-Security",
@@ -236,6 +185,20 @@ export function proxy(req: NextRequest) {
       const returnTo = pathname + search;
       if (returnTo.length <= 512) loginUrl.searchParams.set("returnTo", returnTo);
       const res = NextResponse.redirect(loginUrl);
+      applySecurityHeaders(res, pathname, nonce);
+      return res;
+    }
+  }
+
+  // ── Booking Dashboard page routes ──────────────────────────────────────
+  // Same purpose as the /physician block above. src/app/org/(protected)/layout.tsx is the
+  // real guard — it can read the DB and check the caller's booking authority, which this
+  // cannot. This is the edge backstop: a page file added to /org outside the (protected)
+  // group would otherwise get no guard at all, so anonymous visitors fail closed here
+  // regardless of where the file lives. /org/login must stay reachable.
+  if (pathname.startsWith("/org") && pathname !== "/org/login") {
+    if (!hasValidSessionCookie(req)) {
+      const res = NextResponse.redirect(new URL("/org/login", req.url));
       applySecurityHeaders(res, pathname, nonce);
       return res;
     }

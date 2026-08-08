@@ -5,6 +5,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentSession } from "@/lib/auth";
+import { getOrgAdminContext } from "@/lib/auth-helpers";
 import { query } from "@/lib/db";
 import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
 
@@ -19,7 +20,8 @@ export async function POST(
 
   try {
     const session = await getCurrentSession();
-    if (!session || session.userType !== "org_admin" || !session.organizationId) {
+    const orgContext = await getOrgAdminContext(session);
+    if (!orgContext) {
       status = 401;
       const res = NextResponse.json({ error: "Unauthorized" }, { status });
       logRequestMeta("/api/org/documents/shares/revoke", requestId, status, Date.now() - started);
@@ -30,7 +32,7 @@ export async function POST(
       `UPDATE document_shares SET revoked_at = COALESCE(revoked_at, NOW())
        WHERE id = $1 AND organization_id = $2
        RETURNING id`,
-      [id, session.organizationId],
+      [id, orgContext.organizationId],
     );
 
     if (!result.rows.length) {

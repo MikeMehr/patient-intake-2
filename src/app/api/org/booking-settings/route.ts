@@ -5,6 +5,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentSession } from "@/lib/auth";
+import { getOrgAdminContext } from "@/lib/auth-helpers";
 import { getBookingSettingsByOrgId, upsertBookingSettings } from "@/lib/booking-store";
 import { normalizeModality } from "@/lib/appointment-modality";
 import { query } from "@/lib/db";
@@ -25,7 +26,8 @@ export async function GET(request: NextRequest) {
 
   try {
     const session = await getCurrentSession();
-    if (!session || session.userType !== "org_admin" || !session.organizationId) {
+    const orgContext = await getOrgAdminContext(session);
+    if (!orgContext) {
       status = 401;
       const res = NextResponse.json({ error: "Unauthorized" }, { status });
       logRequestMeta("/api/org/booking-settings", requestId, status, Date.now() - started);
@@ -36,11 +38,11 @@ export async function GET(request: NextRequest) {
     // and let the admin manage the public website link.
     const orgRow = await query<{ name: string; slug: string | null; website_url: string | null }>(
       "SELECT name, slug, website_url FROM organizations WHERE id = $1",
-      [session.organizationId],
+      [orgContext.organizationId],
     );
     const org = orgRow.rows[0];
 
-    const settings = await getBookingSettingsByOrgId(session.organizationId);
+    const settings = await getBookingSettingsByOrgId(orgContext.organizationId);
 
     const res = NextResponse.json({
       orgName: org?.name ?? "",
@@ -65,7 +67,8 @@ export async function PATCH(request: NextRequest) {
 
   try {
     const session = await getCurrentSession();
-    if (!session || session.userType !== "org_admin" || !session.organizationId) {
+    const orgContext = await getOrgAdminContext(session);
+    if (!orgContext) {
       status = 401;
       const res = NextResponse.json({ error: "Unauthorized" }, { status });
       logRequestMeta("/api/org/booking-settings", requestId, status, Date.now() - started);
@@ -86,7 +89,7 @@ export async function PATCH(request: NextRequest) {
         // Check uniqueness
         const existing = await query<{ id: string }>(
           "SELECT id FROM organizations WHERE slug = $1 AND id != $2",
-          [slug, session.organizationId],
+          [slug, orgContext.organizationId],
         );
         if (existing.rows.length > 0) {
           status = 409;
@@ -94,7 +97,7 @@ export async function PATCH(request: NextRequest) {
           logRequestMeta("/api/org/booking-settings", requestId, status, Date.now() - started);
           return res;
         }
-        await query("UPDATE organizations SET slug = $1 WHERE id = $2", [slug, session.organizationId]);
+        await query("UPDATE organizations SET slug = $1 WHERE id = $2", [slug, orgContext.organizationId]);
       }
     }
 
@@ -107,7 +110,7 @@ export async function PATCH(request: NextRequest) {
         : null;
       await query("UPDATE organizations SET website_url = $1 WHERE id = $2", [
         website,
-        session.organizationId,
+        orgContext.organizationId,
       ]);
     }
 
@@ -118,7 +121,7 @@ export async function PATCH(request: NextRequest) {
           await query(
             `UPDATE physicians SET online_booking_enabled = $1
              WHERE id = $2 AND organization_id = $3`,
-            [enabled, physicianId, session.organizationId],
+            [enabled, physicianId, orgContext.organizationId],
           );
         }
       }
@@ -131,7 +134,7 @@ export async function PATCH(request: NextRequest) {
       if (typeof pid === "string" && pid.trim()) {
         const owns = await query<{ id: string }>(
           "SELECT id FROM physicians WHERE id = $1 AND organization_id = $2 LIMIT 1",
-          [pid.trim(), session.organizationId],
+          [pid.trim(), orgContext.organizationId],
         );
         if (owns.rows.length === 0) {
           status = 400;
@@ -147,7 +150,7 @@ export async function PATCH(request: NextRequest) {
     }
 
     // Update booking settings
-    await upsertBookingSettings(session.organizationId, {
+    await upsertBookingSettings(orgContext.organizationId, {
       onlineBookingEnabled: body.onlineBookingEnabled,
       publicBookingStart: body.publicBookingStart,
       publicBookingEnd: body.publicBookingEnd,
@@ -169,10 +172,10 @@ export async function PATCH(request: NextRequest) {
       selfServeInterviewPhysicianId,
     });
 
-    const updatedSettings = await getBookingSettingsByOrgId(session.organizationId);
+    const updatedSettings = await getBookingSettingsByOrgId(orgContext.organizationId);
     const orgRow = await query<{ name: string; slug: string | null; website_url: string | null }>(
       "SELECT name, slug, website_url FROM organizations WHERE id = $1",
-      [session.organizationId],
+      [orgContext.organizationId],
     );
     const org = orgRow.rows[0];
 

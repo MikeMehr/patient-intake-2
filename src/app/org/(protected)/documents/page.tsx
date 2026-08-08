@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { useOrgSession } from "@/components/auth/OrgSessionContext";
 
 interface DocFile {
   id: string;
@@ -219,6 +220,8 @@ function putToAzure(
 
 export default function OrgDocumentsPage() {
   const router = useRouter();
+  // Resolved server-side by src/app/org/(protected)/layout.tsx — no /api/auth/me round trip.
+  const orgSession = useOrgSession();
   const [requests, setRequests] = useState<DocRequest[]>([]);
   const [shares, setShares] = useState<DocShare[]>([]);
   const [loading, setLoading] = useState(true);
@@ -510,12 +513,23 @@ export default function OrgDocumentsPage() {
               Request documents from a patient, or send files securely to anyone.
             </p>
           </div>
-          <Link
-            href="/org/dashboard"
-            className="text-sm font-medium text-slate-600 hover:text-slate-900"
-          >
-            ← Dashboard
-          </Link>
+          <div className="flex items-center gap-4">
+            {/* Same session, no switch — AI Scribe can stay open in another tab. */}
+            {orgSession?.canAccessPhysicianDashboard && (
+              <Link
+                href="/physician/dashboard"
+                className="text-sm font-medium text-slate-600 hover:text-slate-900"
+              >
+                AI Scribe
+              </Link>
+            )}
+            <Link
+              href="/org/dashboard"
+              className="text-sm font-medium text-slate-600 hover:text-slate-900"
+            >
+              ← Dashboard
+            </Link>
+          </div>
         </div>
       </div>
 

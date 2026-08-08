@@ -8,6 +8,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentSession } from "@/lib/auth";
+import { getOrgAdminContext } from "@/lib/auth-helpers";
 import { getAppointmentsForOrg, getBookingSettingsByOrgId } from "@/lib/booking-store";
 import { resolveEffectiveModality } from "@/lib/appointment-modality";
 import { query } from "@/lib/db";
@@ -20,7 +21,8 @@ export async function GET(request: NextRequest) {
 
   try {
     const session = await getCurrentSession();
-    if (!session || session.userType !== "org_admin" || !session.organizationId) {
+    const orgContext = await getOrgAdminContext(session);
+    if (!orgContext) {
       status = 401;
       const res = NextResponse.json({ error: "Unauthorized" }, { status });
       logRequestMeta("/api/org/appointments", requestId, status, Date.now() - started);
@@ -28,7 +30,7 @@ export async function GET(request: NextRequest) {
     }
 
     const sp = request.nextUrl.searchParams;
-    const appointments = await getAppointmentsForOrg(session.organizationId, {
+    const appointments = await getAppointmentsForOrg(orgContext.organizationId, {
       physicianId: sp.get("physicianId") ?? undefined,
       dateFrom: sp.get("dateFrom") ?? undefined,
       dateTo: sp.get("dateTo") ?? undefined,
@@ -39,14 +41,14 @@ export async function GET(request: NextRequest) {
     // that doesn't let patients choose. Resolving it here means the table can simply print the
     // format instead of each caller having to know the inheritance rule (and getting it wrong
     // by showing nothing).
-    const settings = await getBookingSettingsByOrgId(session.organizationId);
+    const settings = await getBookingSettingsByOrgId(orgContext.organizationId);
 
     // The provider's permanent Doxy waiting room, when the clinic uses one. Looked up per
     // provider rather than per appointment because that is what it is — one room, not one
     // per visit.
     const doxyRows = await query<{ id: string; doxy_room_url: string | null }>(
       `SELECT id, doxy_room_url FROM physicians WHERE organization_id = $1`,
-      [session.organizationId],
+      [orgContext.organizationId],
     );
     const doxyByPhysician = new Map(doxyRows.rows.map((r) => [r.id, r.doxy_room_url]));
 

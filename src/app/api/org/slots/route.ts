@@ -5,6 +5,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentSession } from "@/lib/auth";
+import { getOrgAdminContext } from "@/lib/auth-helpers";
 import { getSlots, createSlot, getBookingSettingsByOrgId, findOverlappingSlots } from "@/lib/booking-store";
 import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
 
@@ -18,7 +19,8 @@ export async function GET(request: NextRequest) {
 
   try {
     const session = await getCurrentSession();
-    if (!session || session.userType !== "org_admin" || !session.organizationId) {
+    const orgContext = await getOrgAdminContext(session);
+    if (!orgContext) {
       status = 401;
       const res = NextResponse.json({ error: "Unauthorized" }, { status });
       logRequestMeta("/api/org/slots", requestId, status, Date.now() - started);
@@ -32,9 +34,9 @@ export async function GET(request: NextRequest) {
 
     // Interpret the From/To day boundaries in the clinic's local timezone so the
     // list matches the dates the admin sees (not UTC-shifted by ~a day).
-    const settings = await getBookingSettingsByOrgId(session.organizationId);
+    const settings = await getBookingSettingsByOrgId(orgContext.organizationId);
 
-    const slots = await getSlots(session.organizationId, {
+    const slots = await getSlots(orgContext.organizationId, {
       physicianId,
       dateFrom,
       dateTo,
@@ -60,7 +62,8 @@ export async function POST(request: NextRequest) {
 
   try {
     const session = await getCurrentSession();
-    if (!session || session.userType !== "org_admin" || !session.organizationId) {
+    const orgContext = await getOrgAdminContext(session);
+    if (!orgContext) {
       status = 401;
       const res = NextResponse.json({ error: "Unauthorized" }, { status });
       logRequestMeta("/api/org/slots", requestId, status, Date.now() - started);
@@ -118,7 +121,7 @@ export async function POST(request: NextRequest) {
     const allowOverlap = (body as Record<string, unknown>).allowOverlap === true;
     if (!allowOverlap) {
       const overlaps = await findOverlappingSlots(
-        session.organizationId,
+        orgContext.organizationId,
         String(physicianId),
         ranges,
       );
@@ -133,7 +136,7 @@ export async function POST(request: NextRequest) {
     const slotIds: string[] = [];
     for (const r of ranges) {
       const id = await createSlot(
-        session.organizationId,
+        orgContext.organizationId,
         String(physicianId),
         r.start.toISOString(),
         r.end.toISOString(),

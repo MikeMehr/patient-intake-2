@@ -4,7 +4,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentSession } from "@/lib/auth";
-import { getOrganizationById } from "@/lib/auth-helpers";
+import { getOrganizationById, getOrgAdminContext } from "@/lib/auth-helpers";
 import { query } from "@/lib/db";
 import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
 
@@ -14,20 +14,21 @@ export async function GET(request: NextRequest) {
   let status = 200;
   try {
     const session = await getCurrentSession();
-    if (!session || session.userType !== "org_admin" || !session.organizationId) {
+    const orgContext = await getOrgAdminContext(session);
+    if (!orgContext) {
       status = 401;
       const res = NextResponse.json(
-        { error: "Unauthorized - Organization admin access required" },
+        { error: "Unauthorized - Booking Dashboard access required" },
         { status }
       );
       logRequestMeta("/api/org/organization", requestId, status, Date.now() - started);
       return res;
     }
 
-    const organization = await getOrganizationById(session.organizationId);
+    const organization = await getOrganizationById(orgContext.organizationId);
     const slugRow = await query<{ slug: string | null }>(
       "SELECT slug FROM organizations WHERE id = $1",
-      [session.organizationId]
+      [orgContext.organizationId]
     );
     if (!organization) {
       status = 404;

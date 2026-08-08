@@ -1,5 +1,5 @@
 /**
- * Pharmacy directory sync for the logged-in org admin's own organization.
+ * Pharmacy directory sync for the caller's own organization.
  *
  * GET  — current state (how many pharmacies, when it last synced, last error).
  * POST — pull the directory from OSCAR through the pharmacy bridge and mirror it locally.
@@ -11,6 +11,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentSession } from "@/lib/auth";
+import { getOrgAdminContext } from "@/lib/auth-helpers";
 import { getPharmacyDirectoryState, syncPharmacyDirectoryForOrg } from "@/lib/pharmacy-directory";
 import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
 
@@ -18,10 +19,8 @@ export const runtime = "nodejs";
 
 const ROUTE = "/api/org/pharmacy-directory/sync";
 
-async function requireOrgAdmin() {
-  const session = await getCurrentSession();
-  if (!session || session.userType !== "org_admin" || !session.organizationId) return null;
-  return session;
+async function requireBookingAccess() {
+  return getOrgAdminContext(await getCurrentSession());
 }
 
 export async function GET(request: NextRequest) {
@@ -29,13 +28,13 @@ export async function GET(request: NextRequest) {
   const started = Date.now();
 
   try {
-    const session = await requireOrgAdmin();
-    if (!session) {
+    const orgContext = await requireBookingAccess();
+    if (!orgContext) {
       logRequestMeta(ROUTE, requestId, 401, Date.now() - started);
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const state = await getPharmacyDirectoryState(session.organizationId!);
+    const state = await getPharmacyDirectoryState(orgContext.organizationId);
     logRequestMeta(ROUTE, requestId, 200, Date.now() - started);
     return NextResponse.json({
       count: state.count,
@@ -56,19 +55,19 @@ export async function POST(request: NextRequest) {
   const started = Date.now();
 
   try {
-    const session = await requireOrgAdmin();
-    if (!session) {
+    const orgContext = await requireBookingAccess();
+    if (!orgContext) {
       logRequestMeta(ROUTE, requestId, 401, Date.now() - started);
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const result = await syncPharmacyDirectoryForOrg(session.organizationId!);
+    const result = await syncPharmacyDirectoryForOrg(orgContext.organizationId);
     if ("error" in result) {
       logRequestMeta(ROUTE, requestId, result.status, Date.now() - started);
       return NextResponse.json({ error: result.error }, { status: result.status });
     }
 
-    const state = await getPharmacyDirectoryState(session.organizationId!);
+    const state = await getPharmacyDirectoryState(orgContext.organizationId);
     logRequestMeta(ROUTE, requestId, 200, Date.now() - started);
     return NextResponse.json({
       synced: result.synced,

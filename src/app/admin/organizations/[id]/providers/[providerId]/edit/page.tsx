@@ -24,6 +24,7 @@ export default function EditProviderPage() {
     password: "",
     confirmPassword: "",
     mfaEnabled: false,
+    managesOrgBooking: false,
   });
   const [backupCodeStatus, setBackupCodeStatus] = useState<{
     activeCodes: number;
@@ -58,6 +59,7 @@ export default function EditProviderPage() {
           password: "",
           confirmPassword: "",
           mfaEnabled: Boolean(provider.mfaEnabled),
+          managesOrgBooking: Boolean(provider.managesOrgBooking),
         });
         await fetchBackupCodeStatus();
       }
@@ -152,6 +154,7 @@ export default function EditProviderPage() {
         email: formData.email || null,
         phone: formData.phone || null,
         mfaEnabled: formData.mfaEnabled,
+        managesOrgBooking: formData.managesOrgBooking,
       };
 
       // Only include password if it's been changed
@@ -227,6 +230,33 @@ export default function EditProviderPage() {
                     className="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-400"
                   />
                   MFA enabled
+                </label>
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <p className="text-sm font-medium text-slate-900">
+                    Online Booking Dashboard access
+                  </p>
+                  <p className="text-xs text-slate-600">
+                    Let this provider open their clinic&apos;s Booking Dashboard with their own
+                    login, alongside AI Scribe. Has no effect unless the provider belongs to an
+                    organization. Does not allow editing other providers or their credentials.
+                  </p>
+                </div>
+                <label className="inline-flex items-center gap-2 text-sm text-slate-700 whitespace-nowrap">
+                  <input
+                    type="checkbox"
+                    checked={formData.managesOrgBooking}
+                    onChange={(e) =>
+                      setFormData({ ...formData, managesOrgBooking: e.target.checked })
+                    }
+                    disabled={saving}
+                    className="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-400"
+                  />
+                  Can manage online booking
                 </label>
               </div>
             </div>

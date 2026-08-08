@@ -171,6 +171,9 @@ function PhysicianDashboard() {
   } | null>(null);
   const [isAssistantSession, setIsAssistantSession] = useState(false);
   const [canReturnToBooking, setCanReturnToBooking] = useState(false);
+  // Distinct from canReturnToBooking: this session may simply *use* the Booking Dashboard,
+  // so it is a plain link that leaves the session alone rather than a switch that ends it.
+  const [canAccessBooking, setCanAccessBooking] = useState(false);
   const [returningToBooking, setReturningToBooking] = useState(false);
   const [assistantInfo, setAssistantInfo] = useState<{ id: string; firstName: string; lastName: string } | null>(null);
   const [showAssistantsPanel, setShowAssistantsPanel] = useState(false);
@@ -331,6 +334,7 @@ function PhysicianDashboard() {
           setAssistantInfo(data.assistant);
         }
         setCanReturnToBooking(Boolean(data.canReturnToBookingDashboard));
+        setCanAccessBooking(Boolean(data.canAccessBookingDashboard));
       })
       .catch(() => {
         // Ignore errors
@@ -1071,6 +1075,17 @@ function PhysicianDashboard() {
                 </button>
                 {settingsMenuOpen && (
                   <div className="absolute right-0 mt-2 w-64 rounded-lg border border-slate-200 bg-white shadow-md z-50 p-3">
+                    {/* Plain link, not the canReturnToBooking switch: this session keeps its
+                        provider identity, so the Booking Dashboard can sit in a second tab
+                        while a recording continues here. */}
+                    {canAccessBooking && !canReturnToBooking && (
+                      <a
+                        href="/org/dashboard"
+                        className="mb-1 flex w-full items-center rounded-md border-b border-slate-100 px-2 py-2 pb-3 text-sm text-slate-700 hover:bg-slate-50"
+                      >
+                        Booking Dashboard
+                      </a>
+                    )}
                     <button
                       type="button"
                       onClick={() => { setSettingsMenuOpen(false); handleScrollToPatientLookup(); }}

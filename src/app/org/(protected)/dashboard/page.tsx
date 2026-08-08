@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import SessionKeepAlive from "@/components/auth/SessionKeepAlive";
 import PasskeyEnrollmentBanner from "@/components/auth/PasskeyEnrollmentBanner";
+import { useOrgSession } from "@/components/auth/OrgSessionContext";
 
 interface Organization {
   id: string;
@@ -45,6 +46,8 @@ interface EmrStatus {
 
 export default function OrgDashboard() {
   const router = useRouter();
+  // Resolved server-side by src/app/org/(protected)/layout.tsx — no /api/auth/me round trip.
+  const orgSession = useOrgSession();
   const [organization, setOrganization] = useState<Organization | null>(null);
   const [providers, setProviders] = useState<Provider[]>([]);
   const [emrStatus, setEmrStatus] = useState<EmrStatus | null>(null);
@@ -274,6 +277,20 @@ export default function OrgDashboard() {
               <p className="text-xs text-slate-500">Request &amp; view uploaded files</p>
             </div>
           </Link>
+          {/* Only a physician who reached this page via manages_org_booking has a provider
+              workspace to open; an organization_users login has no physicians row at all. */}
+          {orgSession?.canAccessPhysicianDashboard && (
+            <Link
+              href="/physician/dashboard"
+              className="flex items-center gap-3 bg-white border border-slate-200 rounded-lg px-5 py-4 hover:border-blue-400 hover:shadow-sm transition"
+            >
+              <span className="text-2xl">🩺</span>
+              <div>
+                <p className="text-sm font-semibold text-slate-900">AI Scribe</p>
+                <p className="text-xs text-slate-500">Record &amp; transcribe a visit</p>
+              </div>
+            </Link>
+          )}
           {organization?.slug && (
             <a
               href={`/booking/${organization.slug}`}

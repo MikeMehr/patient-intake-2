@@ -11,6 +11,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentSession } from "@/lib/auth";
+import { getOrgAdminContext } from "@/lib/auth-helpers";
 import { query } from "@/lib/db";
 import { hashDocumentToken } from "@/lib/document-token";
 import { documentBlobExists } from "@/lib/azure-blob-documents";
@@ -38,7 +39,8 @@ export async function POST(
 
   try {
     const session = await getCurrentSession();
-    if (!session || session.userType !== "org_admin" || !session.organizationId) {
+    const orgContext = await getOrgAdminContext(session);
+    if (!orgContext) {
       status = 401;
       const res = NextResponse.json({ error: "Unauthorized" }, { status });
       logRequestMeta("/api/org/documents/shares/finalize", requestId, status, Date.now() - started);
@@ -52,7 +54,7 @@ export async function POST(
       `SELECT id, token_hash, recipient_name, recipient_email, expires_at, revoked_at
        FROM document_shares
        WHERE id = $1 AND organization_id = $2`,
-      [id, session.organizationId],
+      [id, orgContext.organizationId],
     );
     if (!shareResult.rows.length) {
       status = 404;
@@ -119,7 +121,7 @@ export async function POST(
          FROM organizations o
          LEFT JOIN booking_settings bs ON bs.organization_id = o.id
          WHERE o.id = $1`,
-        [session.organizationId],
+        [orgContext.organizationId],
       );
       const org = orgResult.rows[0];
       if (org) {

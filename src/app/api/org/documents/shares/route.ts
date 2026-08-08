@@ -13,6 +13,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { randomBytes } from "crypto";
 import { getCurrentSession } from "@/lib/auth";
+import { getOrgAdminContext } from "@/lib/auth-helpers";
 import { hashPassword } from "@/lib/auth";
 import { query } from "@/lib/db";
 import { consumeRateLimit } from "@/lib/invitation-security";
@@ -48,14 +49,17 @@ export async function POST(request: NextRequest) {
 
   try {
     const session = await getCurrentSession();
-    if (!session || session.userType !== "org_admin" || !session.organizationId) {
+    const orgContext = await getOrgAdminContext(session);
+    // !session is redundant for authorization (getOrgAdminContext(null) is null); it is here
+    // so session narrows for the created_by_user_id/type columns written below.
+    if (!session || !orgContext) {
       status = 401;
       const res = NextResponse.json({ error: "Unauthorized" }, { status });
       logRequestMeta("/api/org/documents/shares", requestId, status, Date.now() - started);
       return res;
     }
 
-    const rl = await consumeRateLimit(`documents:share:${session.organizationId}`, 30, 600);
+    const rl = await consumeRateLimit(`documents:share:${orgContext.organizationId}`, 30, 600);
     if (!rl.allowed) {
       status = 429;
       const res = NextResponse.json(
@@ -125,15 +129,18 @@ export async function POST(request: NextRequest) {
     const { raw, hash, expiresAt } = generateDocumentToken();
     const passphraseHash = await hashPassword(passphrase);
 
+    // created_by_user_id can now be either an organization_users.id or a physicians.id, so
+    // record which table it points at — the column has no FK to disambiguate it.
     const inserted = await query<{ id: string }>(
       `INSERT INTO document_shares
-         (organization_id, created_by_user_id, recipient_name, recipient_email,
-          token_hash, passphrase_hash, expires_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+         (organization_id, created_by_user_id, created_by_user_type, recipient_name,
+          recipient_email, token_hash, passphrase_hash, expires_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        RETURNING id`,
       [
-        session.organizationId,
+        orgContext.organizationId,
         session.userId,
+        session.userType,
         recipientName,
         recipientEmail,
         hash,
@@ -150,7 +157,7 @@ export async function POST(request: NextRequest) {
     const uploads: Array<{ fileId: string; writeSasUrl: string; contentType: string }> = [];
     for (const f of files) {
       const contentType = f.contentType || "application/octet-stream";
-      const blobPath = `${session.organizationId}/shares/${shareId}/${randomBytes(8).toString("hex")}-${sanitizeFilename(f.filename)}`;
+      const blobPath = `${orgContext.organizationId}/shares/${shareId}/${randomBytes(8).toString("hex")}-${sanitizeFilename(f.filename)}`;
       const fileRow = await query<{ id: string }>(
         `INSERT INTO document_share_files
            (share_id, blob_path, original_filename, content_type, size_bytes)
@@ -209,7 +216,8 @@ export async function GET(request: NextRequest) {
 
   try {
     const session = await getCurrentSession();
-    if (!session || session.userType !== "org_admin" || !session.organizationId) {
+    const orgContext = await getOrgAdminContext(session);
+    if (!orgContext) {
       status = 401;
       const res = NextResponse.json({ error: "Unauthorized" }, { status });
       logRequestMeta("/api/org/documents/shares", requestId, status, Date.now() - started);
@@ -223,7 +231,7 @@ export async function GET(request: NextRequest) {
        WHERE organization_id = $1
        ORDER BY created_at DESC
        LIMIT 100`,
-      [session.organizationId],
+      [orgContext.organizationId],
     );
 
     const shares = sharesResult.rows;

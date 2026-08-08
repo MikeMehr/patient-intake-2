@@ -9,6 +9,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentSession } from "@/lib/auth";
+import { getOrgAdminContext } from "@/lib/auth-helpers";
 import { query } from "@/lib/db";
 import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
 
@@ -19,7 +20,8 @@ export async function GET(request: NextRequest) {
 
   try {
     const session = await getCurrentSession();
-    if (!session || session.userType !== "org_admin" || !session.organizationId) {
+    const orgContext = await getOrgAdminContext(session);
+    if (!orgContext) {
       status = 401;
       const res = NextResponse.json({ error: "Unauthorized" }, { status });
       logRequestMeta("/api/org/emr-status", requestId, status, Date.now() - started);
@@ -38,7 +40,7 @@ export async function GET(request: NextRequest) {
          FROM emr_connections
          WHERE organization_id = $1 AND vendor = 'OSCAR'
          LIMIT 1`,
-        [session.organizationId],
+        [orgContext.organizationId],
       )
     ).rows[0];
 

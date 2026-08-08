@@ -54,8 +54,9 @@ export async function GET(
       unique_slug: string;
       organization_id: string | null;
       mfa_enabled: boolean;
+      manages_org_booking: boolean;
     }>(
-      `SELECT id, first_name, last_name, clinic_name, username, email, phone, unique_slug, organization_id, mfa_enabled
+      `SELECT id, first_name, last_name, clinic_name, username, email, phone, unique_slug, organization_id, mfa_enabled, manages_org_booking
        FROM physicians
        WHERE id = $1`,
       [id]
@@ -85,6 +86,7 @@ export async function GET(
         uniqueSlug: provider.unique_slug,
         organizationId: provider.organization_id,
         mfaEnabled: provider.mfa_enabled,
+        managesOrgBooking: provider.manages_org_booking,
       },
     });
     logRequestMeta("/api/admin/providers/[id]", requestId, status, Date.now() - started);
@@ -122,7 +124,7 @@ export async function PUT(
 
     const { id } = await params;
     const body = await request.json();
-    const { firstName, lastName, clinicName, email, phone, organizationId, password, mfaEnabled } = body;
+    const { firstName, lastName, clinicName, email, phone, organizationId, password, mfaEnabled, managesOrgBooking } = body;
 
     // Check if provider exists
     const existingProvider = await query<{ id: string }>(
@@ -236,6 +238,13 @@ export async function PUT(
     if (mfaEnabled !== undefined) {
       updates.push(`mfa_enabled = $${paramIndex++}`);
       values.push(Boolean(mfaEnabled));
+    }
+    if (managesOrgBooking !== undefined) {
+      // Inert unless the physician also has an organization_id — getOrgAdminContext requires
+      // both. No session purge on revoke: the column is read live, so clearing it denies the
+      // next /api/org/* request without ending an in-progress AI Scribe recording.
+      updates.push(`manages_org_booking = $${paramIndex++}`);
+      values.push(Boolean(managesOrgBooking));
     }
 
     if (updates.length === 0) {

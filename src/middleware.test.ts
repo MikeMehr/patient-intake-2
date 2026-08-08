@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { proxy } from "./proxy";
 import { NextRequest } from "next/server";
 
@@ -83,6 +83,40 @@ describe("middleware", () => {
     expect(res.status).toBe(200);
   });
 
+  // ── Booking Dashboard page routes ────────────────────────────────────────
+  // Edge backstop only. The real authority check is in src/app/org/(protected)/layout.tsx,
+  // which can read the DB; this just stops anonymous visitors seeing the shell, including
+  // on any /org page added outside the (protected) group.
+
+  it.each([
+    "/org/dashboard",
+    "/org/documents",
+    "/org/appointments",
+    "/org/slots",
+  ])("redirects %s to /org/login when no cookie", (path) => {
+    const res = proxy(makeRequest(path));
+    const location = new URL(res.headers.get("location") ?? "", BASE);
+    expect(location.pathname).toBe("/org/login");
+  });
+
+  it("redirects /org/* to /org/login when cookie is malformed", () => {
+    const res = proxy(makeRequest("/org/documents", "bad-token"));
+    const location = new URL(res.headers.get("location") ?? "", BASE);
+    expect(location.pathname).toBe("/org/login");
+  });
+
+  it("leaves /org/login reachable without a cookie", () => {
+    // Guarding this would be an infinite redirect loop.
+    const res = proxy(makeRequest("/org/login"));
+    expect(res.status).toBe(200);
+    expect(res.headers.get("location")).toBeNull();
+  });
+
+  it("passes /org/* through when valid cookie is present", () => {
+    const res = proxy(makeRequest("/org/documents", VALID_TOKEN));
+    expect(res.status).toBe(200);
+  });
+
   // ── Protected API prefixes ───────────────────────────────────────────────
 
   it.each([
@@ -164,87 +198,45 @@ describe("middleware", () => {
   });
 
   // ── Video visits ─────────────────────────────────────────────────────────
-  // The camera is disabled site-wide by default. These tests exist to pin down that the
-  // exception is exactly two path prefixes wide — the failure mode worth catching is not
-  // "video is broken" (obvious in seconds) but "video quietly opened the camera everywhere".
+  // Video moved to Doxy.me, which the patient opens directly in their own tab. Nothing is
+  // embedded in this origin any more, so the app needs no camera and no third-party frame host.
+  // These pin the revert: the Daily-era headers briefly delegated camera to a *.daily.co origin,
+  // and that must not creep back without someone deciding to.
 
-  describe("video-visit headers", () => {
-    const DOMAIN = "clinic.daily.co";
-    beforeEach(() => {
-      process.env.DAILY_DOMAIN = DOMAIN;
-    });
-    afterEach(() => {
-      delete process.env.DAILY_DOMAIN;
-    });
-
-    it("delegates camera and microphone to Daily on the patient join page", () => {
-      const res = proxy(makeRequest("/visit/" + "a".repeat(64)));
-      const policy = res.headers.get("Permissions-Policy") ?? "";
-      expect(policy).toContain(`camera=(self "https://${DOMAIN}")`);
-      expect(policy).toContain(`microphone=(self "https://${DOMAIN}")`);
+  describe("video-visit headers are gone", () => {
+    it("never delegates the camera to a third-party origin", () => {
+      for (const path of ["/booking/some-clinic", "/physician/dashboard", "/org/appointments"]) {
+        const res = proxy(makeRequest(path, VALID_TOKEN));
+        const policy = res.headers.get("Permissions-Policy") ?? "";
+        expect(policy).toContain("camera=()");
+        expect(policy).not.toContain("daily.co");
+        // Dictation and transcription depend on this; the revert must not have taken it too.
+        expect(policy).toContain("microphone=(self)");
+      }
     });
 
-    it("delegates camera and microphone on the provider console", () => {
-      const res = proxy(makeRequest("/physician/video?oscarApptNo=1", VALID_TOKEN));
-      expect(res.headers.get("Permissions-Policy") ?? "").toContain(`camera=(self "https://${DOMAIN}")`);
-    });
-
-    it("keeps the camera disabled on every other physician page", () => {
-      const res = proxy(makeRequest("/physician/dashboard", VALID_TOKEN));
-      const policy = res.headers.get("Permissions-Policy") ?? "";
-      expect(policy).toContain("camera=()");
-      // Dictation depends on this and must not be narrowed while widening camera.
-      expect(policy).toContain("microphone=(self)");
-    });
-
-    it("keeps the camera disabled on ordinary public pages", () => {
+    it("has no third-party frame or connect host in the CSP", () => {
       const res = proxy(makeRequest("/booking/some-clinic"));
-      expect(res.headers.get("Permissions-Policy") ?? "").toContain("camera=()");
+      const csp = res.headers.get("Content-Security-Policy") ?? "";
+      expect(csp).not.toContain("daily.co");
+      expect(csp).toContain("frame-src 'self' data: blob:");
     });
 
-    it("allows the Daily iframe and its transport only on video paths", () => {
-      const video = proxy(makeRequest("/visit/" + "a".repeat(64)));
-      const csp = video.headers.get("Content-Security-Policy") ?? "";
-      expect(csp).toContain("frame-src 'self' data: blob: https://*.daily.co");
-      expect(csp).toContain("https://*.daily.co wss://*.daily.co");
-
-      const other = proxy(makeRequest("/booking/some-clinic"));
-      expect(other.headers.get("Content-Security-Policy") ?? "").not.toContain("daily.co");
-    });
-
-    it("never lets anyone frame us, video path or not", () => {
-      // frame-ancestors governs who embeds *us*; Daily is embedded *by* us, so widening this
-      // would be a pure regression.
-      const res = proxy(makeRequest("/visit/" + "a".repeat(64)));
+    it("still refuses to let anyone frame us", () => {
+      const res = proxy(makeRequest("/booking/some-clinic"));
       expect(res.headers.get("Content-Security-Policy") ?? "").toContain("frame-ancestors 'none'");
       expect(res.headers.get("X-Frame-Options")).toBe("DENY");
     });
 
-    it("falls back to the restrictive policy when DAILY_DOMAIN is unset", () => {
-      // A wildcard is not valid in a Permissions-Policy allowlist, so there is no safe generic
-      // value — better to fail visibly on a permissions error than emit a malformed header.
-      delete process.env.DAILY_DOMAIN;
-      const res = proxy(makeRequest("/visit/" + "a".repeat(64)));
-      expect(res.headers.get("Permissions-Policy") ?? "").toContain("camera=()");
-    });
-
-    it("ignores a malformed DAILY_DOMAIN rather than injecting it into the header", () => {
-      process.env.DAILY_DOMAIN = 'evil.com"), camera=*, x=(';
-      const res = proxy(makeRequest("/visit/" + "a".repeat(64)));
-      expect(res.headers.get("Permissions-Policy") ?? "").toContain("camera=()");
-    });
-
-    it("still requires a session for the provider video console", () => {
-      const res = proxy(makeRequest("/physician/video?oscarApptNo=1")); // no cookie
-      expect(res.status).toBe(307);
-      expect(res.headers.get("location")).toContain("/auth/login");
-    });
-
-    it("leaves the OSCAR video launch page public", () => {
-      // Same reasoning as /launch/oscar: OSCAR opens it cross-site, so the SameSite=Strict
-      // cookie cannot be present on that first hop.
+    it("keeps /launch/oscar-video public — the OSCAR day-sheet button still routes through it", () => {
       const res = proxy(makeRequest("/launch/oscar-video?oscarApptNo=123"));
       expect(res.status).toBe(200);
+    });
+
+    it("still requires a session for the provider video launcher", () => {
+      const res = proxy(makeRequest("/physician/video?oscarApptNo=1"));
+      expect(res.status).toBe(307);
+      expect(res.headers.get("location")).toContain("/auth/login");
     });
   });
 });

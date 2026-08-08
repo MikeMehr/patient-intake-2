@@ -56,6 +56,16 @@ const nextConfig: NextConfig = {
           { key: "Expires", value: "0" },
         ],
       },
+      {
+        // Same reasoning as /physician above: without this the /org guard is decorative
+        // on the back button and on shared machines.
+        source: "/org/:path*",
+        headers: [
+          { key: "Cache-Control", value: "no-store, no-cache, must-revalidate, max-age=0" },
+          { key: "Pragma", value: "no-cache" },
+          { key: "Expires", value: "0" },
+        ],
+      },
       // Static assets bypass middleware, so security headers must be set here.
       {
         source: "/_next/static/:path*",

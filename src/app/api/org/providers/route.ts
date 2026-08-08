@@ -1,10 +1,11 @@
 /**
- * GET /api/org/providers - List providers for logged-in organization (org admin only)
+ * GET  /api/org/providers - List providers for the caller's organization
  * POST /api/org/providers - Add new provider to organization (org admin only)
  */
 
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentSession } from "@/lib/auth";
+import { getOrgAdminContext } from "@/lib/auth-helpers";
 import { query } from "@/lib/db";
 import { hashPassword, validatePassword } from "@/lib/auth";
 import { isPasswordContextWordSafe, CONTEXT_PASSWORD_ERROR } from "@/lib/password-context";
@@ -26,10 +27,11 @@ export async function GET(request: NextRequest) {
   let status = 200;
   try {
     const session = await getCurrentSession();
-    if (!session || session.userType !== "org_admin" || !session.organizationId) {
+    const orgContext = await getOrgAdminContext(session);
+    if (!orgContext) {
       status = 401;
       const res = NextResponse.json(
-        { error: "Unauthorized - Organization admin access required" },
+        { error: "Unauthorized - Booking Dashboard access required" },
         { status }
       );
       logRequestMeta("/api/org/providers", requestId, status, Date.now() - started);
@@ -52,7 +54,7 @@ export async function GET(request: NextRequest) {
        FROM physicians
        WHERE organization_id = $1
        ORDER BY created_at DESC`,
-      [session.organizationId]
+      [orgContext.organizationId]
     );
 
     const res = NextResponse.json({
@@ -90,6 +92,9 @@ export async function POST(request: NextRequest) {
   const started = Date.now();
   let status = 200;
   try {
+    // Deliberately org_admin-only: manages_org_booking does not confer credential powers.
+    // This creates a physician with a caller-chosen password, so opening it to the grant
+    // would make create-then-log-in-as an escalation path. See getOrgAdminContext().
     const session = await getCurrentSession();
     if (!session || session.userType !== "org_admin" || !session.organizationId) {
       status = 401;
