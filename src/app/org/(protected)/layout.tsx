@@ -15,6 +15,7 @@
  */
 
 import { redirect } from "next/navigation";
+import { headers } from "next/headers";
 import { getSessionForRender } from "@/lib/auth";
 import { getOrgAdminContext } from "@/lib/auth-helpers";
 import { OrgSessionProvider } from "@/components/auth/OrgSessionContext";
@@ -37,6 +38,14 @@ export default async function OrgLayout({
   }
 
   if (!session) {
+    // x-pathname is stamped by proxy.ts. This is the EXPIRED-cookie path (a
+    // missing cookie never reaches this layout — the middleware bounces it
+    // first), so without returnTo here, a doctor whose session lapsed would
+    // sign in and land on the dashboard instead of the page they asked for.
+    const requestPath = (await headers()).get("x-pathname") ?? "";
+    if (requestPath.startsWith("/org")) {
+      redirect(`/org/login?${new URLSearchParams({ returnTo: requestPath })}`);
+    }
     redirect("/org/login");
   }
 

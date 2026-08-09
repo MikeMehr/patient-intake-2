@@ -225,6 +225,12 @@ export function proxy(req: NextRequest) {
   // ── All other routes ───────────────────────────────────────────────────
   const requestHeaders = new Headers(req.headers);
   requestHeaders.set("x-request-id", incomingId);
+  // Server layouts cannot see the request URL, but they need it to stamp
+  // returnTo on their login redirects. The guards above only fire when the
+  // cookie is absent/malformed — an EXPIRED cookie passes them and is caught
+  // by the layout's DB check instead, and without this header that redirect
+  // would lose the deep link (e.g. /org/documents from the eChart button).
+  requestHeaders.set("x-pathname", (pathname + search).slice(0, 512));
   // Forward nonce so Next.js server components can read it via headers() and
   // pass it to any <Script nonce={nonce}> elements they render.
   requestHeaders.set("x-nonce", nonce);

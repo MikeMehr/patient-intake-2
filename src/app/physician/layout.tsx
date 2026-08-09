@@ -12,6 +12,7 @@
  */
 
 import { redirect } from "next/navigation";
+import { headers } from "next/headers";
 import { getSessionForRender } from "@/lib/auth";
 import { getOrgAdminContext } from "@/lib/auth-helpers";
 import ProviderSwitchInterstitial from "@/components/auth/ProviderSwitchInterstitial";
@@ -34,6 +35,14 @@ export default async function PhysicianLayout({
   }
 
   if (!session) {
+    // Expired-cookie path (a missing cookie is bounced by the middleware
+    // before reaching this layout). x-pathname is stamped by proxy.ts;
+    // carrying it as returnTo keeps deep links — e.g. the OSCAR Transcribe
+    // launch — alive across a session lapse.
+    const requestPath = (await headers()).get("x-pathname") ?? "";
+    if (requestPath.startsWith("/physician")) {
+      redirect(`/auth/login?${new URLSearchParams({ returnTo: requestPath })}`);
+    }
     redirect("/auth/login");
   }
 
