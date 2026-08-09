@@ -196,9 +196,14 @@ export function proxy(req: NextRequest) {
   // cannot. This is the edge backstop: a page file added to /org outside the (protected)
   // group would otherwise get no guard at all, so anonymous visitors fail closed here
   // regardless of where the file lives. /org/login must stay reachable.
+  // Carries returnTo (like the /physician block) so a deep link such as
+  // /org/documents — the eChart "Request Docs" button — survives login.
   if (pathname.startsWith("/org") && pathname !== "/org/login") {
     if (!hasValidSessionCookie(req)) {
-      const res = NextResponse.redirect(new URL("/org/login", req.url));
+      const loginUrl = new URL("/org/login", req.url);
+      const returnTo = pathname + search;
+      if (returnTo.length <= 512) loginUrl.searchParams.set("returnTo", returnTo);
+      const res = NextResponse.redirect(loginUrl);
       applySecurityHeaders(res, pathname, nonce);
       return res;
     }

@@ -46,8 +46,26 @@ const DEMOGRAPHIC_NO_RE = /^[0-9]{1,12}$/;
  */
 const ORIGIN_SHAPE_RE = /^https?:\/\/[a-z0-9.-]{1,253}(:[0-9]{1,5})?$/i;
 
+/**
+ * Hard-coded destinations per launch target. Only values in this map are ever
+ * navigated to — the `target` parameter selects a key, it never contributes
+ * path characters, so the no-open-redirect property is preserved.
+ */
+const TARGET_PATHS: Record<string, string> = {
+  transcription: DESTINATION_PATH,
+  documents: "/org/documents",
+};
+
 function buildDestination(search: string): string {
   const incoming = new URLSearchParams(search);
+
+  // Non-transcription targets (e.g. the "Request Docs" button) carry no
+  // params — the bounce exists purely to re-attach the Strict cookie.
+  const target = incoming.get("target") ?? "transcription";
+  if (target !== "transcription" && TARGET_PATHS[target]) {
+    return TARGET_PATHS[target];
+  }
+
   const out = new URLSearchParams();
   out.set("launch", "oscar");
 

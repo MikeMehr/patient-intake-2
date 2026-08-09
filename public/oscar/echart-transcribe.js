@@ -134,7 +134,12 @@
     // Regular named window (not the transcription popup) — the Documents
     // dashboard is a full page for sending photo/document requests to
     // patients. Reusing the name focuses an already-open window.
-    var win = window.open(APP_ORIGIN + "/org/documents", "healthassistDocs");
+    //
+    // Routed through /launch/oscar (the SameSite=Strict bounce) exactly like
+    // Transcribe: opening /org/documents directly is a cross-site navigation,
+    // so the session cookie would be withheld and a logged-in doctor would
+    // still land on the org login page.
+    var win = window.open(APP_ORIGIN + LAUNCH_PATH + "?target=documents", "healthassistDocs");
     if (!win) {
       window.alert(
         "Your browser blocked the Health Assist window.\n\n" +

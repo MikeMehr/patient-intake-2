@@ -105,6 +105,14 @@ describe("middleware", () => {
     expect(location.pathname).toBe("/org/login");
   });
 
+  it("stamps returnTo on the /org/login redirect so the deep link survives login", () => {
+    // The eChart "Request Docs" button lands on /org/documents; without
+    // returnTo a logged-out doctor would end up on the dashboard instead.
+    const res = proxy(makeRequest("/org/documents"));
+    const location = new URL(res.headers.get("location") ?? "", BASE);
+    expect(location.searchParams.get("returnTo")).toBe("/org/documents");
+  });
+
   it("leaves /org/login reachable without a cookie", () => {
     // Guarding this would be an infinite redirect loop.
     const res = proxy(makeRequest("/org/login"));

@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import MfaChallengeForm from "@/components/auth/MfaChallengeForm";
+import { readReturnToFromLocation } from "@/lib/client/return-to";
 
 export default function OrgAdminLoginPage() {
   const router = useRouter();
@@ -14,12 +15,30 @@ export default function OrgAdminLoginPage() {
   // cookie exists until the challenge is completed.
   const [challengeToken, setChallengeToken] = useState<string | null>(null);
   const [mfaMessage, setMfaMessage] = useState<string | null>(null);
+  // Deep link stamped by the middleware when an unauthenticated request hit an
+  // /org page (e.g. /org/documents from the eChart "Request Docs" button).
+  const [returnTo, setReturnTo] = useState<string | null>(null);
+
+  useEffect(() => {
+    setReturnTo(readReturnToFromLocation(window.location.search));
+  }, []);
 
   const redirectByUserType = (userType: string) => {
+    // Honour an /org deep link for anyone who can hold org access: org admins,
+    // and providers with the manages_org_booking grant (the layout's
+    // getOrgAdminContext re-checks authority server-side either way — a
+    // provider without the grant just sees the access interstitial).
+    const orgReturnTo = returnTo && returnTo.startsWith("/org/") ? returnTo : null;
     if (userType === "super_admin") {
       router.push("/admin/dashboard");
-    } else if (userType === "org_admin") {
-      router.push("/org/dashboard");
+    } else if (userType === "org_admin" || userType === "provider") {
+      if (orgReturnTo) {
+        router.push(orgReturnTo);
+      } else if (userType === "org_admin") {
+        router.push("/org/dashboard");
+      } else {
+        router.push("/physician/dashboard");
+      }
     } else {
       router.push("/physician/dashboard");
     }

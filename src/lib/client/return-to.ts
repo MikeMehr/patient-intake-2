@@ -14,7 +14,7 @@
 const MAX_LENGTH = 512;
 
 /** Only these prefixes are ever safe to bounce back to after login. */
-const ALLOWED_PREFIXES = ["/physician/", "/launch/"];
+const ALLOWED_PREFIXES = ["/physician/", "/launch/", "/org/"];
 
 /** Origin used purely as a parsing base; never appears in the returned value. */
 const PARSE_BASE = "https://placeholder.invalid";
