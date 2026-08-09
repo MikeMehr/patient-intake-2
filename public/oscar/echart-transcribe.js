@@ -130,28 +130,60 @@
     return null;
   }
 
+  function openDocumentsPage() {
+    // Regular named window (not the transcription popup) — the Documents
+    // dashboard is a full page for sending photo/document requests to
+    // patients. Reusing the name focuses an already-open window.
+    var win = window.open(APP_ORIGIN + "/org/documents", "healthassistDocs");
+    if (!win) {
+      window.alert(
+        "Your browser blocked the Health Assist window.\n\n" +
+          "Allow pop-ups for this site, then click Request Docs again.",
+      );
+    }
+  }
+
+  function makeHeaderButton(id, label, title, background, onClick) {
+    var btn = document.createElement("button");
+    btn.id = id;
+    btn.type = "button";
+    btn.textContent = label;
+    btn.title = title;
+    btn.style.cssText =
+      "margin:0 0 0 6px;padding:2px 8px;cursor:pointer;font:10px sans-serif;" +
+      "border:1px solid " + background + ";background:" + background + ";color:#fff;" +
+      "border-radius:4px;vertical-align:middle";
+    btn.onclick = onClick;
+    return btn;
+  }
+
   function addButton() {
     if (document.getElementById("haTranscribeBtn")) return;
 
-    var btn = document.createElement("button");
-    btn.id = "haTranscribeBtn";
-    btn.type = "button";
-    btn.textContent = "Transcribe";
-    btn.title = "Dictate this encounter with Health Assist AI";
-    btn.style.cssText =
-      "margin:0 6px;padding:2px 8px;cursor:pointer;font:10px sans-serif;" +
-      "border:1px solid #047857;background:#047857;color:#fff;border-radius:4px;" +
-      "vertical-align:middle";
-    btn.onclick = openTranscribe;
+    var transcribeBtn = makeHeaderButton(
+      "haTranscribeBtn",
+      "Transcribe",
+      "Dictate this encounter with Health Assist AI",
+      "#047857",
+      openTranscribe,
+    );
+    var docsBtn = makeHeaderButton(
+      "haRequestDocsBtn",
+      "Request Docs",
+      "Request photos or documents from the patient via Health Assist",
+      "#1d4ed8",
+      openDocumentsPage,
+    );
 
     var nextAppt = findNextApptLink();
     if (nextAppt) {
       // Shrink the Next Appt link by ~20% (inline 14.3px → 11.4px), then put
-      // the button immediately after it on the same line.
+      // the buttons immediately after it on the same line.
       nextAppt.style.fontSize = "11.4px";
       var span = nextAppt.querySelector("span");
       if (span) span.style.fontSize = "11.4px";
-      nextAppt.parentNode.insertBefore(btn, nextAppt.nextSibling);
+      nextAppt.parentNode.insertBefore(docsBtn, nextAppt.nextSibling);
+      nextAppt.parentNode.insertBefore(transcribeBtn, docsBtn);
       return;
     }
 
@@ -162,10 +194,13 @@
       document.querySelector(".EncounterTitleBar") ||
       document.getElementById("topBar");
     if (host) {
-      host.appendChild(btn);
+      host.appendChild(transcribeBtn);
+      host.appendChild(docsBtn);
     } else {
-      btn.style.cssText += ";position:fixed;top:6px;right:8px;z-index:99999";
-      document.body.appendChild(btn);
+      transcribeBtn.style.cssText += ";position:fixed;top:6px;right:8px;z-index:99999";
+      docsBtn.style.cssText += ";position:fixed;top:6px;right:90px;z-index:99999";
+      document.body.appendChild(transcribeBtn);
+      document.body.appendChild(docsBtn);
     }
   }
 
