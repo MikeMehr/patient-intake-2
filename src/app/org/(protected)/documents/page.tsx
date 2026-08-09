@@ -248,6 +248,53 @@ export default function OrgDocumentsPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   /**
+   * Prefill from an OSCAR eChart launch (?demographicNo=…, set by the
+   * "Request Docs" button — see public/oscar/echart-transcribe.js). Resolves
+   * the demographic to the patient's name/email through the same route the
+   * Transcribe launch uses. Best-effort on purpose: the route is provider-only
+   * (an org-admin session gets 403) and the patient may be unknown — in every
+   * failure case the forms simply stay blank and the page works as before.
+   */
+  useEffect(() => {
+    const demographicNo = new URLSearchParams(window.location.search).get("demographicNo") ?? "";
+    if (!/^[0-9]{1,12}$/.test(demographicNo)) return;
+    // Strip the identifier from the address bar and history once captured.
+    try {
+      window.history.replaceState({}, "", "/org/documents");
+    } catch {}
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/physician/oscar-launch/resolve", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ demographicNo }),
+        });
+        if (cancelled || !res.ok) return;
+        const data = await res.json();
+        if (cancelled || data?.status !== "resolved" || !data.patient?.fullName) return;
+        const name: string = data.patient.fullName;
+        const email: string = data.patient.email || "";
+        // Never overwrite something the user already typed.
+        setPatientName((v) => v || name);
+        setPatientEmail((v) => v || email);
+        setRecipientName((v) => v || name);
+        setRecipientEmail((v) => v || email);
+        setNotice(
+          email
+            ? `Patient loaded from the OSCAR eChart: ${name}`
+            : `Patient loaded from the OSCAR eChart: ${name} — no email on file, enter one below.`,
+        );
+      } catch {
+        /* prefill is best-effort */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  /**
    * Two-tier errors. `message` is what a clinician reads — calm, honest, and it always says
    * whether anything was actually sent. `detail` is the one line a developer needs, kept
    * behind a disclosure and mirrored to console.error so it survives a screenshot-only bug

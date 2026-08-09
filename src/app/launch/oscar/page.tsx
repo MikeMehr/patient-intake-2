@@ -59,10 +59,16 @@ const TARGET_PATHS: Record<string, string> = {
 function buildDestination(search: string): string {
   const incoming = new URLSearchParams(search);
 
-  // Non-transcription targets (e.g. the "Request Docs" button) carry no
-  // params — the bounce exists purely to re-attach the Strict cookie.
+  // Non-transcription targets (e.g. the "Request Docs" button). The bounce
+  // re-attaches the Strict cookie; a validated demographicNo rides along so
+  // the destination can prefill the patient. Same rule as below: only
+  // individually validated params are appended to a hard-coded path.
   const target = incoming.get("target") ?? "transcription";
   if (target !== "transcription" && TARGET_PATHS[target]) {
+    const demographicNo = incoming.get("demographicNo") ?? "";
+    if (DEMOGRAPHIC_NO_RE.test(demographicNo)) {
+      return `${TARGET_PATHS[target]}?${new URLSearchParams({ demographicNo })}`;
+    }
     return TARGET_PATHS[target];
   }
 

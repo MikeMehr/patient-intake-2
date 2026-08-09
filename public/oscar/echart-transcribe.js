@@ -138,8 +138,13 @@
     // Routed through /launch/oscar (the SameSite=Strict bounce) exactly like
     // Transcribe: opening /org/documents directly is a cross-site navigation,
     // so the session cookie would be withheld and a logged-in doctor would
-    // still land on the org login page.
-    var win = window.open(APP_ORIGIN + LAUNCH_PATH + "?target=documents", "healthassistDocs");
+    // still land on the org login page. The demographic number rides along so
+    // the Documents page can prefill the patient's name and email.
+    var demo = currentDemographicNo();
+    var url =
+      APP_ORIGIN + LAUNCH_PATH + "?target=documents" +
+      (demo ? "&demographicNo=" + encodeURIComponent(demo) : "");
+    var win = window.open(url, "healthassistDocs");
     if (!win) {
       window.alert(
         "Your browser blocked the Health Assist window.\n\n" +
