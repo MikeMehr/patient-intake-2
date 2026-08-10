@@ -262,6 +262,69 @@
             rs.close(); ps.close();
         }
 
+        // ---- resolve the message being replied to (replyTo mode) ------------------------
+        // Only the row id travels on the URL. The subject, the quoted text and the threading
+        // headers are all read back from the database, so nothing attacker-influenced arrives
+        // through the query string - and the AND demographic_no = ? is the security check, the
+        // same shape as the ctl_document join below: a replyTo belonging to another patient
+        // resolves to nothing.
+        int replyToId = 0;
+        String replySubject = null, replyQuote = null, replyMessageId = null, replyRefs = null;
+        try { replyToId = Integer.parseInt(request.getParameter("replyTo")); }
+        catch (Exception nfe) { replyToId = 0; }
+        if (replyToId > 0 && demoNo > 0) {
+            // Wrapped so this page keeps working when mymd_inbox_message does not exist -
+            // which is the state during a partial rollout, or after a WAR redeploy when the
+            // schema has not been reapplied yet.
+            try {
+                PreparedStatement ps = conn.prepareStatement(
+                    "SELECT subject, body_text, from_name, from_email, sent_datetime, "
+                  + "       message_id, thread_refs "
+                  + "  FROM mymd_inbox_message WHERE id = ? AND demographic_no = ?");
+                ps.setInt(1, replyToId);
+                ps.setInt(2, demoNo);
+                ResultSet rs = ps.executeQuery();
+                if (rs.next()) {
+                    String origSubject = rs.getString("subject");
+                    if (origSubject == null) origSubject = "";
+                    // Strip any existing Re:/Aw:/Sv: so replies do not grow "Re: Re: Re:".
+                    String prev;
+                    do {
+                        prev = origSubject;
+                        origSubject = origSubject.replaceFirst(
+                            "(?i)^\\s*(re|aw|sv|vs|antw)\\s*(\\[\\d+\\])?\\s*:\\s*", "");
+                    } while (!origSubject.equals(prev));
+                    replySubject = "Re: " + origSubject;
+
+                    String who = rs.getString("from_name");
+                    if (who == null || who.trim().length() == 0) who = rs.getString("from_email");
+                    java.sql.Timestamp when = rs.getTimestamp("sent_datetime");
+                    StringBuilder q = new StringBuilder();
+                    q.append("\n\nOn ")
+                     .append(when == null ? "an earlier date"
+                             : new SimpleDateFormat("d MMM yyyy 'at' h:mm a").format(when))
+                     .append(", ").append(tidyName(who)).append(" wrote:\n");
+                    // Quote from body_text only, never the HTML part.
+                    String orig = rs.getString("body_text");
+                    if (orig != null) {
+                        int lines = 0;
+                        for (String line : orig.split("\n", -1)) {
+                            if (++lines > 200) { q.append("> [...]\n"); break; }
+                            q.append("> ").append(line).append("\n");
+                        }
+                    }
+                    replyQuote = q.toString();
+                    replyMessageId = rs.getString("message_id");
+                    replyRefs = rs.getString("thread_refs");
+                } else {
+                    replyToId = 0;   // not this patient's message, or gone
+                }
+                rs.close(); ps.close();
+            } catch (Exception replyEx) {
+                replyToId = 0;
+            }
+        }
+
         // ---- resolve a chart document to attach (documentNo mode) -----------------------
         // The ctl_document join is the security check: a tampered documentNo that belongs to
         // a different patient simply resolves to nothing.
@@ -367,6 +430,7 @@
 
                 String status;
                 String errorMsg = null;
+                String sentMessageId = null;
                 try {
                     Properties sp = new Properties();
                     sp.put("mail.smtp.host", host);
@@ -407,6 +471,39 @@
                         msg.setContent(mixed);
                     }
                     msg.setSentDate(new java.util.Date());
+
+                    // ---- threading -------------------------------------------------------
+                    // So the reply lands under the original in the patient's mail client
+                    // instead of starting a new conversation.
+                    //
+                    // replyMessageId came out of a stranger's email, so it is validated hard
+                    // before going into a header of OUR outbound message: a value containing
+                    // CRLF would be a header injection into our own mail. Anything that does
+                    // not look exactly like <token> is dropped rather than sanitised.
+                    if (replyMessageId != null
+                            && replyMessageId.matches("^<[^<>\\s]{1,900}>$")) {
+                        msg.setHeader("In-Reply-To", replyMessageId);
+                        StringBuilder refs = new StringBuilder();
+                        if (replyRefs != null) {
+                            for (String r : replyRefs.trim().split("\\s+")) {
+                                if (r.matches("^<[^<>\\s]{1,900}>$")) {
+                                    refs.append(r).append(' ');
+                                    // Some servers mangle an over-long References chain.
+                                    if (refs.length() > 1800) break;
+                                }
+                            }
+                        }
+                        refs.append(replyMessageId);
+                        msg.setHeader("References", refs.toString().trim());
+                    }
+
+                    // saveChanges() is what generates the Message-ID; getMessageID() is null
+                    // before it. Capturing it is what lets a future inbound reply thread onto
+                    // this message, and lets the mirrored Sent copy be deduped against this
+                    // log row instead of being listed twice.
+                    msg.saveChanges();
+                    sentMessageId = msg.getMessageID();
+
                     Transport.send(msg);
 
                     status = "SENT";
@@ -426,8 +523,8 @@
                 try {
                     PreparedStatement lp = conn.prepareStatement(
                         "INSERT INTO mymd_patient_email_log "
-                      + "(demographic_no, appointment_no, provider_no, to_email, subject, body, attachments, status, error_msg, sent_datetime) "
-                      + "VALUES (?,?,?,?,?,?,?,?,?,?)");
+                      + "(demographic_no, appointment_no, provider_no, to_email, subject, body, attachments, status, error_msg, sent_datetime, message_id, in_reply_to_id) "
+                      + "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)");
                     lp.setInt(1, demoNo);
                     if (apptNo > 0) lp.setInt(2, apptNo); else lp.setNull(2, java.sql.Types.INTEGER);
                     lp.setString(3, providerNo);
@@ -438,6 +535,8 @@
                     lp.setString(8, status);
                     lp.setString(9, errorMsg);
                     lp.setTimestamp(10, new Timestamp(System.currentTimeMillis()));
+                    lp.setString(11, sentMessageId);
+                    if (replyToId > 0) lp.setInt(12, replyToId); else lp.setNull(12, java.sql.Types.INTEGER);
                     lp.executeUpdate();
                     lp.close();
                 } catch (Exception logEx) {
@@ -458,7 +557,13 @@
 
         String defaultSubject = "";
         String defaultBody = "";
-        if (apptNo > 0 && apptWhen != null) {
+        if (replyToId > 0 && replySubject != null) {
+            // Reply mode wins over the appointment and document prefills - the clinician got
+            // here from a specific message and is answering that.
+            defaultSubject = replySubject;
+            defaultBody = greeting + "\n\n\n" + (replyQuote == null ? "" : replyQuote)
+                        + "\nThank you,\n" + signature;
+        } else if (apptNo > 0 && apptWhen != null) {
             defaultSubject = "Your appointment at MyMD Telehealth";
             defaultBody = greeting + "\n\nThis is a reminder of your upcoming appointment:\n\n"
                         + "    Date and time: " + apptWhen + "\n"
@@ -656,17 +761,53 @@
 
     <% } %>
 
-    <%-- ---- history -------------------------------------------------------------- --%>
+    <%-- ---- history: both directions, one conversation ---------------------------- --%>
     <div class="card">
-        <b>Previous emails to this patient</b>
+        <b>Email conversation with this patient</b>
         <%
-            PreparedStatement hp = conn.prepareStatement(
-                "SELECT l.sent_datetime, l.subject, l.status, l.to_email, l.attachments, "
-              + "       p.first_name AS pfirst, p.last_name AS plast "
-              + "FROM mymd_patient_email_log l "
-              + "LEFT JOIN provider p ON p.provider_no = l.provider_no "
-              + "WHERE l.demographic_no = ? ORDER BY l.sent_datetime DESC LIMIT 25");
+            // Outbound comes from mymd_patient_email_log, inbound from the mirrored mailbox.
+            //
+            // The two interleave correctly only because both timestamps are LOCAL time
+            // (America/Vancouver): mymd_mail_sync.py converts the Date: header in Python
+            // precisely so this UNION sorts right. MySQL's CONVERT_TZ returns NULL on this
+            // box - the timezone tables were never loaded - so do not try to convert here.
+            //
+            // The whole block is wrapped so this page still works when mymd_inbox_message
+            // does not exist: during a partial rollout, or after a WAR redeploy before the
+            // schema has been reapplied. In that case it silently falls back to the
+            // outbound-only history this page has always shown.
+            String histSql =
+                "SELECT 'OUT' AS dir, l.sent_datetime AS ts, l.subject AS subject, "
+              + "       l.status AS status, l.to_email AS party, l.attachments AS att, "
+              + "       CONCAT(COALESCE(p.first_name,''),' ',COALESCE(p.last_name,'')) AS by_whom, "
+              + "       NULL AS inbox_id "
+              + "  FROM mymd_patient_email_log l "
+              + "  LEFT JOIN provider p ON p.provider_no = l.provider_no "
+              + " WHERE l.demographic_no = ? ";
+            boolean unified = false;
+            try {
+                PreparedStatement probe = conn.prepareStatement(
+                    "SELECT 1 FROM mymd_inbox_message LIMIT 1");
+                probe.executeQuery().close();
+                probe.close();
+                unified = true;
+            } catch (Exception noMirror) {
+                unified = false;
+            }
+            if (unified) {
+                histSql +=
+                    "UNION ALL "
+                  + "SELECT 'IN', COALESCE(m.sent_datetime, m.received_at), m.subject, "
+                  + "       m.status, m.from_email, "
+                  + "       IF(m.has_attachments=1,'(attachment)',NULL), '', m.id "
+                  + "  FROM mymd_inbox_message m "
+                  + " WHERE m.demographic_no = ? AND m.direction = 'IN' ";
+            }
+            histSql += "ORDER BY ts DESC LIMIT 50";
+
+            PreparedStatement hp = conn.prepareStatement(histSql);
             hp.setInt(1, demoNo);
+            if (unified) hp.setInt(2, demoNo);
             ResultSet hrs = hp.executeQuery();
             boolean anyHistory = false;
         %>
@@ -675,21 +816,30 @@
             while (hrs.next()) {
                 if (!anyHistory) {
         %>
-            <tr><th>Sent</th><th>By</th><th>To</th><th>Subject</th><th>Status</th></tr>
+            <tr><th></th><th>When</th><th>By</th><th>From / To</th><th>Subject</th><th>Status</th></tr>
         <%
                 }
                 anyHistory = true;
-                Timestamp ts = hrs.getTimestamp("sent_datetime");
-                String by = ((hrs.getString("pfirst") == null ? "" : hrs.getString("pfirst")) + " "
-                           + (hrs.getString("plast") == null ? "" : hrs.getString("plast"))).trim();
+                boolean inbound = "IN".equals(hrs.getString("dir"));
+                Timestamp ts = hrs.getTimestamp("ts");
+                String by = hrs.getString("by_whom") == null ? "" : hrs.getString("by_whom").trim();
                 String st = hrs.getString("status");
-                String att = hrs.getString("attachments");
+                String att = hrs.getString("att");
+                int inboxId = hrs.getInt("inbox_id");
         %>
             <tr>
+                <td title="<%= inbound ? "Received from the patient" : "Sent to the patient" %>"
+                    style="font-weight:bold;color:<%= inbound ? "#1a6fb5" : "#5a6570" %>"><%=
+                    inbound ? "&#8592;" : "&#8594;" %></td>
                 <td><%= ts == null ? "" : new SimpleDateFormat("yyyy-MM-dd HH:mm").format(ts) %></td>
-                <td><%= esc(by) %></td>
-                <td><%= esc(hrs.getString("to_email")) %></td>
-                <td><%= esc(hrs.getString("subject")) %><%= att != null && att.trim().length() > 0
+                <td><%= esc(tidyName(by)) %></td>
+                <td><%= esc(hrs.getString("party")) %></td>
+                <td><%
+                    if (inbound) { %><a href="<%= request.getContextPath()
+                        %>/mymd/inbox.jsp?id=<%= inboxId %>" target="_blank"><%=
+                        esc(hrs.getString("subject")) %></a><%
+                    } else { %><%= esc(hrs.getString("subject")) %><% }
+                    %><%= att != null && att.trim().length() > 0
                         ? " <span title=\"" + esc(att) + "\">&#128206;</span>" : "" %></td>
                 <td<%= "FAILED".equals(st) ? " style=\"color:#b3261e;font-weight:bold;\"" : "" %>><%= esc(st) %></td>
             </tr>
@@ -698,9 +848,13 @@
             hrs.close(); hp.close();
             if (!anyHistory) {
         %>
-            <tr><td class="muted">No emails have been sent to this patient yet.</td></tr>
+            <tr><td class="muted">No email has been exchanged with this patient yet.</td></tr>
         <%  } %>
         </table>
+        <% if (!unified) { %>
+        <div class="foot-note">Showing sent messages only &mdash; the inbound mail mirror is
+            not installed on this server.</div>
+        <% } %>
     </div>
 
 <% } %>

@@ -1,0 +1,46 @@
+# MyMD inbox mirror - one sync pass. Fired by mymd-mail-sync.timer, not enabled directly.
+# Deployed to /etc/systemd/system/mymd-mail-sync.service on the live OSCAR box.
+#
+# Type=oneshot rather than the Restart=always used by pharmacy-bridge.service: that one is a
+# service because it serves HTTP. This is a short batch with no inbound surface, and a
+# long-running process holding a wedged IMAP socket still looks "active" to systemd, so the
+# mirror would stop silently. A oneshot gets killed by TimeoutStartSec and the next tick
+# starts clean.
+#
+# User=tomcat is load-bearing. tomcat already owns both secrets this needs -
+# /var/lib/OscarDocument/oscar/mymd_mail.properties (IMAP) and
+# WEB-INF/classes/oscar_mcmaster.properties (database) - so no credential has to be copied
+# into a second file, and attachments it writes are readable by the JSP without a chown.
+
+[Unit]
+Description=MyMD OSCAR inbound mail mirror
+Documentation=file:///usr/local/share/mymd/inbox-install.md
+After=network-online.target mysql.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=tomcat
+Group=tomcat
+ExecStart=/usr/bin/python3 /usr/local/bin/mymd_mail_sync.py
+TimeoutStartSec=120
+
+StandardOutput=journal
+StandardError=journal
+
+# Outbound IMAPS and a local MySQL socket are the entire required surface.
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+# ProtectHome is why this script lives in /usr/local/bin and not /home/manucher, which is
+# where pharmacy_bridge_service.py sits. Deliberate departure from that precedent.
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+CapabilityBoundingSet=
+# The only path it may write to.
+ReadWritePaths=/var/lib/OscarDocument/oscar/mymd_inbox
+
+[Install]
+WantedBy=multi-user.target

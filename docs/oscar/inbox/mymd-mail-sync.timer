@@ -1,0 +1,25 @@
+# Fires mymd-mail-sync.service. Deployed to /etc/systemd/system/mymd-mail-sync.timer.
+#
+# Interval: 5 minutes to start, matching the existing cPanel new-mail SMS cron, so OSCAR is
+# never more than one cycle behind the text message. Tighten to 2 minutes once the mirror has
+# run clean for a week. Even at 2 minutes that is ~720 short logins a day, which is nothing
+# for cPanel Dovecot.
+#
+# systemd will not start a second run while one is still going, so no lock file is needed.
+
+[Unit]
+Description=Run the MyMD OSCAR inbound mail mirror on a schedule
+Requires=mymd-mail-sync.service
+
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=5min
+AccuracySec=30s
+# Keeps the clinic off a round-number polling schedule shared with every other cPanel tenant.
+RandomizedDelaySec=20s
+# Catch up after a reboot rather than waiting a full interval.
+Persistent=true
+Unit=mymd-mail-sync.service
+
+[Install]
+WantedBy=timers.target

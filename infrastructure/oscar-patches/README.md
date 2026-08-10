@@ -9,6 +9,58 @@ editing any JSP, delete its compiled copy under
 `/opt/tomcat9/work/Catalina/localhost/oscar/org/apache/jsp/...` to force a recompile — no Tomcat
 restart is needed.
 
+## Patient email inbox (added 2026-08-09)
+
+"Patient Email" in the top nav, immediately right of Bill Day. Mirrors the
+`info@mymdonline.ca` mailbox into `oscar_db` over IMAP so inbound patient mail is visible
+inside OSCAR, auto-linked to the chart when the sender's address matches exactly one patient,
+and replyable through `emailPatient.jsp`. Roundcube keeps working untouched and stays the
+system of record for the mailbox itself.
+
+Full install steps, the verified server facts and the verification procedure live in
+`docs/oscar/inbox-install.md`. Sources in `docs/oscar/inbox/`. On the box:
+
+| File | What |
+|---|---|
+| `mymd/inbox.jsp` | New. List, filters, message detail, assign, mark handled. |
+| `mymd/inboxAttachment.jsp` | New. Attachment / original `.eml` download. |
+| `mymd/inboxHtml.jsp` | New. Serves an HTML body into a sandboxed iframe, nothing else. |
+| `mymd/emailPatient.jsp` | Patched — `&replyTo=` prefill, `In-Reply-To`/`References`, two-way history. |
+| `/usr/local/bin/mymd_mail_sync.py` | New. The IMAP poller. |
+| `/etc/systemd/system/mymd-mail-sync.{service,timer}` | New. Oneshot + 5-minute timer, `User=tomcat`. |
+| `/etc/mymd/mail-sync.conf` | New. Settings only — deliberately no secrets. `root:tomcat 0640`. |
+| `/var/lib/OscarDocument/oscar/mymd_inbox/` | New. Attachments and stored `.eml`, `0750 tomcat:tomcat`. |
+| `provider/appointmentprovideradminday.jsp` | Patched — one `<li>` after the Bill Day link. |
+| `oscar_db.mymd_inbox_message` + `_attachment`, `_sync_state`, `_access_log` | New tables. |
+
+### The rule that matters
+
+**The poller must never mark mail read.** A cPanel cron texts a new-mail alert and decides
+"unread" from the Maildir filename flags; writing `\Seen` back would kill those texts silently.
+The poller uses `EXAMINE` + `BODY.PEEK[]` only, and "Handled" is an OSCAR-side flag that is
+never written back to IMAP. There is a banner in the UI saying so, so nobody "fixes" it later.
+
+### Three things that will cost time if forgotten
+
+- **`User=tomcat` is load-bearing.** tomcat already owns both secrets the poller needs
+  (`mymd_mail.properties` for IMAP, `oscar_mcmaster.properties` for the database), so nothing is
+  copied into a second file and attachments are Tomcat-readable without a chown. `manucher` is
+  not in group `tomcat`, so the pharmacy-bridge pattern would have needed duplicated credentials.
+  `ProtectHome=yes` in the unit is also why this script lives in `/usr/local/bin`, not
+  `/home/manucher`.
+- **MySQL 8 has no `ADD COLUMN IF NOT EXISTS`** and this server runs **without strict mode**, so
+  over-long values truncate silently. `mymd_inbox.sql` guards its ALTERs via `information_schema`
+  and the poller caps every field in Python.
+- **The nav patcher anchors on the Bill Day `<li>`**, so the reinstall chain is now Health
+  Assist → Lab Import → Bill Day → Patient Email. The block is inside `_admin`, so the link is
+  admin-only.
+
+### Also fixed here
+
+`docs/oscar/inbox/mymd_patient_email_log.sql` finally commits the DDL for the outbound log
+table, which had existed only in production since 2026-07-21 and could previously only be
+reverse-engineered from the INSERT in `emailPatient.jsp`.
+
 ## Day billing (added 2026-08-06)
 
 "Bill Day" in the top nav, immediately right of Lab Import. Sweeps the logged-in provider's day
