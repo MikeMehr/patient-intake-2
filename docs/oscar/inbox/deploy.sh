@@ -78,7 +78,13 @@ deploy_pages() {
     done
 
     # Back up the existing emailPatient.jsp before replacing it - it is a live, working page.
-    if [ -f "$WEBAPP/mymd/emailPatient.jsp" ]; then
+    #
+    # `sudo test -f`, not `[ -f ... ]`. The webapp directory is mode 750 tomcat:tomcat, so an
+    # unprivileged `[ -f ]` cannot stat anything inside it and returns FALSE - the backup then
+    # gets skipped in silence while the overwrite proceeds under sudo regardless. Same family
+    # of trap as the /opt/tomcat9/work glob that must be expanded inside sudo. Caught the hard
+    # way on 2026-08-10, after it had already skipped one backup.
+    if sudo test -f "$WEBAPP/mymd/emailPatient.jsp"; then
         BAK="$WEBAPP/mymd/emailPatient.jsp.oscarbak.$(date +%Y%m%d%H%M%S)"
         sudo cp -p "$WEBAPP/mymd/emailPatient.jsp" "$BAK"
         echo "Backed up to $BAK"
