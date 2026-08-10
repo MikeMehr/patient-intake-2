@@ -801,13 +801,29 @@
                   + "       m.status, m.from_email, "
                   + "       IF(m.has_attachments=1,'(attachment)',NULL), '', m.id "
                   + "  FROM mymd_inbox_message m "
-                  + " WHERE m.demographic_no = ? AND m.direction = 'IN' ";
+                  + " WHERE m.demographic_no = ? AND m.direction = 'IN' "
+                  // Replies sent straight from Roundcube live only in the mirrored Sent
+                  // folder - they never touch mymd_patient_email_log. Without this the chart
+                  // would show the patient's questions with no answers, which is worse than
+                  // showing nothing. Anything already in the log is excluded by Message-ID so
+                  // it is not listed twice; when the Message-ID is unknown the row is shown
+                  // rather than hidden, because a duplicate is a smaller error than a missing
+                  // message.
+                  + "UNION ALL "
+                  + "SELECT 'OUT', COALESCE(m.sent_datetime, m.received_at), m.subject, "
+                  + "       'SENT', m.to_emails, "
+                  + "       IF(m.has_attachments=1,'(attachment)',NULL), 'webmail', m.id "
+                  + "  FROM mymd_inbox_message m "
+                  + " WHERE m.demographic_no = ? AND m.direction = 'OUT' "
+                  + "   AND NOT EXISTS (SELECT 1 FROM mymd_patient_email_log l2 "
+                  + "                    WHERE l2.demographic_no = m.demographic_no "
+                  + "                      AND l2.message_id = m.message_id) ";
             }
             histSql += "ORDER BY ts DESC LIMIT 50";
 
             PreparedStatement hp = conn.prepareStatement(histSql);
             hp.setInt(1, demoNo);
-            if (unified) hp.setInt(2, demoNo);
+            if (unified) { hp.setInt(2, demoNo); hp.setInt(3, demoNo); }
             ResultSet hrs = hp.executeQuery();
             boolean anyHistory = false;
         %>
@@ -835,7 +851,8 @@
                 <td><%= esc(tidyName(by)) %></td>
                 <td><%= esc(hrs.getString("party")) %></td>
                 <td><%
-                    if (inbound) { %><a href="<%= request.getContextPath()
+                    // Any row that came from the mirror is clickable, inbound or Roundcube-sent.
+                    if (inboxId > 0) { %><a href="<%= request.getContextPath()
                         %>/mymd/inbox.jsp?id=<%= inboxId %>" target="_blank"><%=
                         esc(hrs.getString("subject")) %></a><%
                     } else { %><%= esc(hrs.getString("subject")) %><% }
