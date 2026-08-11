@@ -287,6 +287,18 @@
     return /^image\//i.test(contentType || "") ? "photo" : "others";
   }
 
+  /**
+   * AddEditDocumentAction.addDocument does an UNGUARDED Integer.parseInt on this
+   * (line 297 of the deployed build) — an empty string throws NumberFormatException
+   * and the add is silently abandoned. OSCAR's own rows use 0 for "no appointment",
+   * so never send "". When the eChart was opened from the day sheet the real
+   * appointment number is in the URL, and using it links the document to that visit.
+   */
+  function currentAppointmentNo() {
+    var m = /[?&]appointmentNo=(\d+)/.exec(window.location.search);
+    return m ? m[1] : "0";
+  }
+
   function fileAttachmentToChart(data, demo) {
     var providerNo = currentProviderNo();
     if (!providerNo) {
@@ -306,7 +318,7 @@
     form.append("observationDate", today());
     form.append("curUser", providerNo);
     form.append("parentAjaxId", "");
-    form.append("appointmentNo", "");
+    form.append("appointmentNo", currentAppointmentNo());
     form.append(
       "docFile",
       new File([data.buffer], String(data.filename || "attachment"), {
@@ -322,16 +334,25 @@
       .then(function (res) {
         if (!res.ok) return { ok: false, error: "OSCAR returned " + res.status + "." };
         return res.text().then(function (html) {
-          // The action forwards to documentReport.jsp either way, so the status
-          // code alone proves nothing. It renders "Error: ..." on failure, and
-          // a securityError page if _edoc write rights are missing.
-          if (/securityError/i.test(res.url || "") || /_edoc/.test(html)) {
+          if (/securityError/i.test(res.url || "")) {
             return { ok: false, error: "Your OSCAR account cannot add documents." };
           }
+
+          // THE success signal is the redirect. A successful add ends in a 302 to
+          // documentReport.jsp (res.redirected === true once fetch has followed it);
+          // a failure re-renders the form as a plain 200. Scraping the HTML for an
+          // error string is not enough on its own — when addDocument throws, the
+          // page comes back looking perfectly normal, which is exactly how the
+          // first live attempt reported success while filing nothing.
+          if (res.redirected) return { ok: true };
+
           if (/<font class="warning">\s*Error:/i.test(html)) {
             return { ok: false, error: "OSCAR rejected the document." };
           }
-          return { ok: true };
+          return {
+            ok: false,
+            error: "OSCAR did not file the document. Check the OSCAR logs for the reason.",
+          };
         });
       })
       .catch(function () {

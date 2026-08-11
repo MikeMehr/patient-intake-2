@@ -42,7 +42,7 @@ A provider who can add a document by hand can add one this way; nobody else can.
 | `Submit` | yes | `Add` |
 | `docClass` | no | from `ctl_doc_class` report classes |
 | `docSubClass` | no | free text |
-| `appointmentNo` | no | links the document to an appointment |
+| `appointmentNo` | **yes — see below** | appointment number, or `0` for none. NEVER empty |
 | `restrictToProgram` | no | checkbox |
 | `curUser`, `parentAjaxId` | no | UI plumbing; safe to send empty |
 | `docPublic` | no | only rendered when `function=provider` |
@@ -54,6 +54,30 @@ A provider who can add a document by hand can add one this way; nobody else can.
 
 `photo` is the right type for a patient-submitted picture of a complaint — staff already use
 it that way (existing rows: "nose rash photo", "left side of face"). Use `others` for a form.
+
+## Two traps that fail silently (both cost a live debugging round)
+
+**1. `appointmentNo` must never be an empty string.** `AddEditDocumentAction.addDocument`
+does an unguarded `Integer.parseInt(form.getAppointmentNo())` — line 297 of the deployed
+build — so `""` throws `NumberFormatException`, the add is abandoned, and **the browser still
+gets a normal-looking 200 page**. Send the real appointment number, or `0` (what OSCAR's own
+rows use for "no appointment"). Note the *edit* path guards this same call with null/length
+checks; the *add* path does not.
+
+**2. Success is the redirect, not the HTML.** A successful add ends in a `302` to
+`documentReport.jsp`; a failure re-renders the form as a plain `200`. Verified in
+`localhost_access_log`:
+
+```
+POST /oscar/dms/addEditDocument.do  302 -        <- filed
+POST /oscar/dms/addEditDocument.do  200 99536    <- threw, nothing filed
+```
+
+So check `response.redirected` (after fetch follows it). Scraping the body for
+`<font class="warning">Error:` is not sufficient on its own — when `addDocument` throws, no
+error markup is rendered at all, and a naive check reports success while filing nothing.
+When something does go wrong, `catalina.out` has the stack trace; the access log tells you
+whether it was a 302 or a 200.
 
 ## What a successful add writes
 
