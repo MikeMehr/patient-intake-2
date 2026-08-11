@@ -90,6 +90,13 @@ export type AppointmentRow = {
   pharmacyCity: string | null;
   pharmacyLinkStatus: string | null; // 'LINKED' | 'FAILED' | 'SKIPPED' | null (none chosen)
   aiScribeConsent: boolean | null; // null = question not asked (pre-feature rows)
+  attachments?: AppointmentAttachment[]; // files the patient attached when booking
+};
+
+export type AppointmentAttachment = {
+  id: string;
+  filename: string | null;
+  contentType: string | null;
 };
 
 // ---------------------------------------------------------------------------
@@ -865,6 +872,37 @@ export async function getAppointmentsForOrg(
     params,
   );
 
+  // One batched follow-up rather than a JOIN: an appointment may have several files, and
+  // joining would multiply every appointment row by its file count.
+  //
+  // Deliberately best-effort: attachments are an extra on this screen, but the screen itself is
+  // how staff see their day. If migration 073 hasn't landed on this database yet, the missing
+  // table must cost the paperclips, not the entire appointment list.
+  const attachmentsByAppointment = new Map<string, AppointmentAttachment[]>();
+  if (result.rows.length) {
+    try {
+      const files = await query<{
+        id: string;
+        appointment_id: string;
+        original_filename: string | null;
+        content_type: string | null;
+      }>(
+        `SELECT id, appointment_id, original_filename, content_type
+         FROM appointment_files
+         WHERE appointment_id = ANY($1::uuid[])
+         ORDER BY uploaded_at`,
+        [result.rows.map((r) => r.id)],
+      );
+      for (const f of files.rows) {
+        const list = attachmentsByAppointment.get(f.appointment_id) ?? [];
+        list.push({ id: f.id, filename: f.original_filename, contentType: f.content_type });
+        attachmentsByAppointment.set(f.appointment_id, list);
+      }
+    } catch (err) {
+      console.error("[booking-store] Could not load appointment attachments:", err);
+    }
+  }
+
   return result.rows.map((row) => ({
     id: row.id,
     organizationId: row.organization_id,
@@ -882,6 +920,7 @@ export async function getAppointmentsForOrg(
     coverageType: row.coverage_type,
     province: row.province,
     healthCardNumber: null, // not decrypted in list view
+    attachments: attachmentsByAppointment.get(row.id) ?? [],
     billingNote: row.billing_note,
     reason: row.reason,
     appointmentModality: row.appointment_modality,

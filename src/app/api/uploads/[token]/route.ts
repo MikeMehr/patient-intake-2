@@ -13,11 +13,9 @@ import { hashDocumentToken } from "@/lib/document-token";
 import { uploadDocumentBlob } from "@/lib/azure-blob-documents";
 import { consumeRateLimit } from "@/lib/invitation-security";
 import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
+import { sanitizeFilename, validatePatientUpload } from "@/lib/upload-validation";
 
 const MAX_FILES = 5;
-const MAX_FILE_BYTES = 10 * 1024 * 1024; // 10 MB each
-const ALLOWED_PREFIXES = ["image/"];
-const ALLOWED_EXACT = ["application/pdf"];
 
 interface RequestRow {
   id: string;
@@ -45,18 +43,6 @@ function requestState(req: RequestRow): "valid" | "revoked" | "expired" | "compl
   if (req.completed_at) return "completed";
   if (new Date(req.expires_at).getTime() < Date.now()) return "expired";
   return "valid";
-}
-
-function isAllowedType(type: string): boolean {
-  const t = (type || "").toLowerCase();
-  return ALLOWED_PREFIXES.some((p) => t.startsWith(p)) || ALLOWED_EXACT.includes(t);
-}
-
-function sanitizeFilename(name: string): string {
-  return (name || "file")
-    .replace(/[^a-zA-Z0-9._-]/g, "_")
-    .replace(/_{2,}/g, "_")
-    .slice(0, 120);
 }
 
 export async function GET(
@@ -153,19 +139,10 @@ export async function POST(
     }
 
     for (const file of files) {
-      if (file.size > MAX_FILE_BYTES) {
+      const rejection = validatePatientUpload(file);
+      if (rejection) {
         logRequestMeta("/api/uploads", requestId, 400, Date.now() - started);
-        return NextResponse.json(
-          { error: `"${file.name}" is larger than the 10 MB limit.` },
-          { status: 400 },
-        );
-      }
-      if (!isAllowedType(file.type)) {
-        logRequestMeta("/api/uploads", requestId, 400, Date.now() - started);
-        return NextResponse.json(
-          { error: `"${file.name}" is not an image or PDF.` },
-          { status: 400 },
-        );
+        return NextResponse.json({ error: rejection }, { status: 400 });
       }
     }
 

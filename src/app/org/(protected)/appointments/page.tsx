@@ -26,6 +26,8 @@ type Appointment = {
   doxyRoomUrl: string | null;
   /** null means the question wasn't asked (booked before it existed). */
   aiScribeConsent: boolean | null;
+  /** Photos/PDFs the patient attached while booking. */
+  attachments?: { id: string; filename: string | null; contentType: string | null }[];
 };
 
 type Physician = { id: string; firstName: string; lastName: string };
@@ -341,6 +343,17 @@ export default function AppointmentsPage() {
                       </td>
                       <td className="px-2 py-2 text-gray-700 min-w-[8rem]">
                         {appt.reason ?? <span className="text-gray-300">—</span>}
+                        {appt.attachments?.map((f) => (
+                          <a
+                            key={f.id}
+                            href={`/api/org/appointments/files/${f.id}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="block text-blue-600 hover:underline break-all mt-1"
+                          >
+                            📎 {f.filename ?? "Attachment"}
+                          </a>
+                        ))}
                       </td>
                       <td className="px-2 py-2 text-gray-600">
                         {COVERAGE_LABELS[appt.coverageType] ?? appt.coverageType}

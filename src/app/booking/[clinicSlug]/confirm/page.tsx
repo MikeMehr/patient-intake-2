@@ -28,6 +28,11 @@ const COVERAGE_OPTIONS = [
 // types is exactly what the physician sees on the day sheet — no truncation.
 const MAX_REASON_LEN = 80;
 
+// Mirrors the server limits in /api/booking/manage/[token]/attachment so the patient
+// is told here rather than by a 400 after their appointment is already booked.
+const MAX_ATTACHMENTS = 3;
+const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
+
 const PROVINCES = [
   "Alberta", "British Columbia", "Manitoba", "New Brunswick",
   "Newfoundland and Labrador", "Northwest Territories", "Nova Scotia",
@@ -84,6 +89,11 @@ export default function BookingConfirmPage({
 
   // Reason for visit — written to OSCAR's appointment.reason (varchar(80)).
   const [reason, setReason] = useState("");
+
+  // Optional photo/PDF of the complaint or a form. Uploaded after the booking is
+  // committed, so a problem here never costs the patient their slot.
+  const [attachments, setAttachments] = useState<File[]>([]);
+  const [attachmentError, setAttachmentError] = useState<string | null>(null);
 
   // Oscar result
   const [oscarDemographicNo, setOscarDemographicNo] = useState<string | null>(null);
@@ -334,6 +344,26 @@ export default function BookingConfirmPage({
       return;
     }
 
+    // Attachments go up separately, after the slot is secured. Deliberately never fails
+    // the booking: the patient keeps their appointment and is told to email the file
+    // instead. Uses the manage token the confirm response just returned — no new secret.
+    if (attachments.length && data.manageToken) {
+      try {
+        const form = new FormData();
+        for (const file of attachments) form.append("files", file);
+        const upRes = await fetch(`/api/booking/manage/${data.manageToken}/attachment`, {
+          method: "POST",
+          body: form,
+        });
+        if (!upRes.ok) {
+          const upData = await upRes.json().catch(() => ({}));
+          setAttachmentError(upData.error ?? "We couldn't upload your attachment.");
+        }
+      } catch {
+        setAttachmentError("We couldn't upload your attachment.");
+      }
+    }
+
     setSuccess({ manageUrl: data.manageUrl });
     setSubmitting(false);
   }
@@ -401,6 +431,12 @@ export default function BookingConfirmPage({
           <p className="text-gray-600 mb-1">{physicianName}</p>
           <p className="font-semibold text-gray-800 mb-4">{formatDateTime(startTime)}</p>
           <div className="mb-6">{modalityBanner}</div>
+          {attachmentError && (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-amber-800 text-sm text-left mb-6">
+              Your appointment is confirmed, but we couldn&apos;t upload your attachment. Please
+              email it to the clinic instead.
+            </div>
+          )}
           <p className="text-sm text-gray-500 mb-6">
             A confirmation email has been sent. Use the link below to view or cancel your appointment.
           </p>
@@ -472,6 +508,47 @@ export default function BookingConfirmPage({
       <p className="text-xs text-gray-400 mt-1">
         Briefly tell the physician why you&apos;re booking — e.g. sore throat, medication refill.
       </p>
+    </div>
+  );
+
+  function handleAttachmentChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const picked = Array.from(e.target.files ?? []);
+    if (picked.length > MAX_ATTACHMENTS) {
+      setAttachmentError(`You can attach at most ${MAX_ATTACHMENTS} files.`);
+      setAttachments([]);
+      e.target.value = "";
+      return;
+    }
+    const tooBig = picked.find((f) => f.size > MAX_ATTACHMENT_BYTES);
+    if (tooBig) {
+      setAttachmentError(`"${tooBig.name}" is larger than the 10 MB limit.`);
+      setAttachments([]);
+      e.target.value = "";
+      return;
+    }
+    setAttachmentError(null);
+    setAttachments(picked);
+  }
+
+  const attachmentField = (
+    <div>
+      <label className="block text-sm font-medium text-gray-700 mb-1">
+        Attach a photo or PDF (optional)
+      </label>
+      <input
+        type="file"
+        accept="image/*,application/pdf"
+        multiple
+        onChange={handleAttachmentChange}
+        className="w-full text-sm text-gray-700 file:mr-3 file:rounded-lg file:border-0 file:bg-blue-50 file:px-3 file:py-2 file:text-sm file:font-medium file:text-blue-700 hover:file:bg-blue-100"
+      />
+      <p className="text-xs text-gray-400 mt-1">
+        A form to bring to your visit, or a photo of your complaint. Up to {MAX_ATTACHMENTS} files,
+        10 MB each.
+      </p>
+      {attachmentError && (
+        <p className="text-xs text-red-600 mt-1">{attachmentError}</p>
+      )}
     </div>
   );
 
@@ -675,6 +752,7 @@ export default function BookingConfirmPage({
 
           <form onSubmit={handleSubmit} className="space-y-5">
             {reasonField}
+            {attachmentField}
             {modalityPicker}
             {modalityBanner}
             {aiScribeField}
@@ -748,6 +826,7 @@ export default function BookingConfirmPage({
 
         <form onSubmit={handleSubmit} className="space-y-5">
           {reasonField}
+          {attachmentField}
           {modalityPicker}
           {modalityBanner}
 
