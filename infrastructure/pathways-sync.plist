@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Monthly PathwaysBC -> production directory sync (scripts/pathways-sync-to-prod.js).
+
+  A macOS LaunchAgent, not a LaunchDaemon: it only runs while the installing user is logged in
+  (screen may be locked, Mac may not be fully signed out or asleep). That's a deliberate tradeoff,
+  not an oversight — see project memory: project_pathways_specialist_directory.md for why this
+  runs locally rather than in the cloud (PathwaysBC has no service-account login, only a real
+  browser session; the tradeoff was to keep that session on this machine rather than store it as
+  a CI secret).
+
+  No secrets live in this file — pathways-sync-to-prod.js loads CRON_SECRET/Twilio credentials
+  from .env.local itself at runtime.
+
+  Install:
+    cp infrastructure/pathways-sync.plist ~/Library/LaunchAgents/com.healthassist.pathways-sync.plist
+    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.healthassist.pathways-sync.plist
+
+  Prerequisite: a saved PathwaysBC login session must already exist at the WorkingDirectory below
+  (run `npm run pathways:login` once, interactively, before relying on the scheduled job — this
+  is a real login and can't be automated).
+
+  Logs: ~/Library/Logs/pathways-sync.log
+  Uninstall: launchctl bootout gui/$(id -u)/com.healthassist.pathways-sync
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.healthassist.pathways-sync</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/manuchermehraein/.nvm/versions/node/v20.20.0/bin/node</string>
+        <string>scripts/pathways-sync-to-prod.js</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/manuchermehraein/Documents/Cursor/patient-intake-2</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/Users/manuchermehraein/.nvm/versions/node/v20.20.0/bin:/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+
+    <!-- Monthly: the 1st of each month at 3:00 AM local time. -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Day</key>
+        <integer>1</integer>
+        <key>Hour</key>
+        <integer>3</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>/Users/manuchermehraein/Library/Logs/pathways-sync.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/manuchermehraein/Library/Logs/pathways-sync.log</string>
+
+    <key>RunAtLoad</key>
+    <false/>
+</dict>
+</plist>
