@@ -532,17 +532,24 @@ export default function BookingConfirmPage({
 
   const attachmentField = (
     <div>
-      <label className="block text-sm font-medium text-gray-700 mb-1">
-        Attach a photo or PDF (optional)
+      {/* The question leads and the instruction is secondary — two lines at the same
+          weight would compete, and the question is what gets an optional field used. */}
+      <label htmlFor="visitAttachments" className="block text-sm font-medium text-gray-700">
+        Is there something you want to show the doctor?
       </label>
+      <p className="text-xs text-gray-600 mb-1.5">Attach a photo or PDF (optional)</p>
       <input
+        id="visitAttachments"
         type="file"
         accept="image/*,application/pdf"
         multiple
         onChange={handleAttachmentChange}
         className="w-full text-sm text-gray-700 file:mr-3 file:rounded-lg file:border-0 file:bg-blue-50 file:px-3 file:py-2 file:text-sm file:font-medium file:text-blue-700 hover:file:bg-blue-100"
       />
-      <p className="text-xs text-gray-400 mt-1">
+      {/* gray-600 rather than the gray-400 used by the other hints on this form: at 12px,
+          gray-400 on white is about 2.8:1, under the 4.5:1 minimum for small text, and this
+          line is where the size and file-count limits are stated. */}
+      <p className="text-xs text-gray-600 mt-1">
         A form to bring to your visit, or a photo of your complaint. Up to {MAX_ATTACHMENTS} files,
         10 MB each.
       </p>
