@@ -89,6 +89,12 @@ const PUBLIC_EXCEPTIONS = new Set<string>([
   // a shared secret compared in constant time, and returns 404 when that secret is unconfigured,
   // so it is never reachable unauthenticated. Same reasoning as the OAuth callback above.
   "/api/emr/oscar/billing-dx",
+  // The eChart's "Chart Attachment" badge asks this how many files are waiting. The caller
+  // is a script on the OSCAR page — cross-site to us, so the SameSite=Strict session cookie
+  // is never sent and the prefix guard would 401 every request. It returns a bare count and
+  // nothing else, is restricted to allow-listed OSCAR origins, and is scoped to the
+  // organization that owns that OSCAR. Same structural reason as billing-dx above.
+  "/api/emr/oscar/attachment-count",
 ]);
 
 /**

@@ -181,6 +181,59 @@
     }
   }
 
+  /**
+   * Tell the doctor there is something waiting, without making them click to find out.
+   *
+   * The count comes from a public count-only endpoint because this page is cross-site to
+   * Health Assist and carries none of its cookies. Fails silently: if Health Assist is
+   * unreachable the button simply stays plain, which is the pre-badge behaviour.
+   */
+  function flagPendingAttachments(btn) {
+    var demo = currentDemographicNo();
+    if (!demo) return;
+
+    fetch(
+      APP_ORIGIN + "/api/emr/oscar/attachment-count?demographicNo=" + encodeURIComponent(demo),
+      { method: "GET", credentials: "omit", mode: "cors" },
+    )
+      .then(function (res) { return res.ok ? res.json() : null; })
+      .then(function (data) {
+        var count = data && typeof data.count === "number" ? data.count : 0;
+        if (count < 1) return;
+
+        btn.textContent = "Chart Attachment (" + count + ")";
+        btn.title =
+          count === 1
+            ? "1 file the patient attached when booking is waiting to be filed"
+            : count + " files the patient attached when booking are waiting to be filed";
+
+        // Amber rather than the resting purple: on a screen this dense, colour change
+        // reads before motion does. The pulse then catches the eye that is scanning past.
+        btn.style.background = "#b45309";
+        btn.style.borderColor = "#b45309";
+        btn.style.boxShadow = "0 0 0 0 rgba(180,83,9,0.7)";
+
+        if (!document.getElementById("haAttachPulseStyle")) {
+          var style = document.createElement("style");
+          style.id = "haAttachPulseStyle";
+          style.textContent =
+            "@keyframes haAttachPulse{" +
+            "0%{box-shadow:0 0 0 0 rgba(180,83,9,.7)}" +
+            "70%{box-shadow:0 0 0 7px rgba(180,83,9,0)}" +
+            "100%{box-shadow:0 0 0 0 rgba(180,83,9,0)}}" +
+            // Stops after ~8 pulses. A control that blinks forever stops being a
+            // signal and becomes wallpaper — and it is next to a note the doctor
+            // is trying to read.
+            "#haChartAttachmentBtn.ha-pulse{animation:haAttachPulse 1.4s ease-out 8}" +
+            "@media (prefers-reduced-motion:reduce){" +
+            "#haChartAttachmentBtn.ha-pulse{animation:none}}";
+          document.head.appendChild(style);
+        }
+        btn.className = "ha-pulse";
+      })
+      .catch(function () {});
+  }
+
   function makeHeaderButton(id, label, title, background, onClick) {
     var btn = document.createElement("button");
     btn.id = id;
@@ -219,6 +272,8 @@
       "#7c3aed",
       openAttachments,
     );
+
+    flagPendingAttachments(attachBtn);
 
     var nextAppt = findNextApptLink();
     if (nextAppt) {
