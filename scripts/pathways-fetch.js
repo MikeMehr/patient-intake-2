@@ -146,22 +146,34 @@ async function fetchPathwaysGlobalData(sessionStatePath) {
   try {
     const context = await browser.newContext({ storageState: sessionStatePath });
     const page = await context.newPage();
-
-    const responsePromise = page
-      .waitForResponse((res) => res.url().includes("global_data.json"), { timeout: 30_000 })
-      .catch(() => null);
-
     await page.goto("https://pathwaysbc.ca/", { waitUntil: "domcontentloaded", timeout: 30_000 });
-    const response = await responsePromise;
 
-    if (!response) {
-      throw new Error(
-        "Never saw the global-data response — PathwaysBC likely bounced to a login page because " +
-          "the saved session expired. Re-run 'node scripts/pathways-login.js'.",
-      );
-    }
-
-    return await response.json();
+    // Fetch the export from INSIDE the page, not via page.waitForResponse().json(). The response
+    // is ~37MB, and Playwright's network-body capture goes through CDP's Network.getResponseBody,
+    // which evicts large bodies from its inspector cache before they can be read — confirmed live
+    // 2026-08-11 ("Protocol error (Network.getResponseBody): Request content was evicted from
+    // inspector cache"). Running fetch() in-page and returning the parsed JSON via evaluate()'s
+    // Runtime.evaluate(returnByValue) path sidesteps that cache entirely.
+    return await page.evaluate(async () => {
+      const deadline = Date.now() + 30_000;
+      let url = null;
+      while (Date.now() < deadline) {
+        const entries = performance.getEntriesByType("resource").filter((e) => e.name.includes("global_data.json"));
+        if (entries.length) {
+          url = entries[0].name;
+          break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 200));
+      }
+      if (!url) {
+        throw new Error(
+          "Never saw the global-data response — PathwaysBC likely bounced to a login page because " +
+            "the saved session expired. Re-run 'node scripts/pathways-login.js'.",
+        );
+      }
+      const res = await fetch(url);
+      return res.json();
+    });
   } finally {
     await browser.close();
   }
