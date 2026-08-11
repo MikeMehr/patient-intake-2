@@ -1250,17 +1250,10 @@ export default function PhysicianTranscriptionPage() {
         return;
       }
       await finalizeAndRecordExport("oscar_echart_popup");
-      setActionSuccess("Sent to the OSCAR encounter note. Review and Save in OSCAR.");
+      setActionSuccess(
+        "Sent to the OSCAR encounter note. Review and Save in OSCAR. You can close this window or start another transcription.",
+      );
       await resetAfterExport();
-      // The window was script-opened, so close() is permitted. If a browser
-      // refuses, the success banner already tells the doctor they can close it.
-      window.setTimeout(() => {
-        try {
-          window.close();
-        } catch {
-          /* non-fatal */
-        }
-      }, 1800);
     } catch (err) {
       setActionError(
         err instanceof Error
@@ -1960,6 +1953,8 @@ export default function PhysicianTranscriptionPage() {
                     </button>
                   </div>
                 </div>
+                {actionError && <p className="text-sm text-red-700">{actionError}</p>}
+                {actionSuccess && <p className="text-sm text-green-700">{actionSuccess}</p>}
                 {activeWorkflowTab === "capture" && (
                   <>
                     <div className="flex items-center gap-3">
@@ -2387,8 +2382,6 @@ export default function PhysicianTranscriptionPage() {
                     <p className="text-xs text-slate-500">
                       Lifecycle: {lifecycleState || "—"} {encounterId ? `• Encounter ${encounterId}` : ""}
                     </p>
-                    {actionError && <p className="text-sm text-red-700">{actionError}</p>}
-                    {actionSuccess && <p className="text-sm text-green-700">{actionSuccess}</p>}
                   </>
                 )}
                 {activeWorkflowTab === "ask_ai" && (
