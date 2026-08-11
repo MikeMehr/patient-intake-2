@@ -17,7 +17,7 @@ When the transcript is in a non-English language, translate each symptom or comp
 Return plain text using EXACTLY these four labelled sections, in this order, each on its own line followed by its content:
 
 HPI:
-<a short history-of-present-illness paragraph — chief complaint, onset/duration/severity/character, associated symptoms, aggravating/relieving factors, and any relevant history mentioned>
+<one short "- " bulleted line per distinct clinical fact — chief complaint, onset/duration/severity/character, associated symptoms, aggravating/relieving factors, and any relevant history mentioned. Start each bullet directly with the clinical fact, never "Patient reports" or "She states." Omit filler negatives and anything not yet known.>
 
 Likely diagnosis:
 <the single most probable working diagnosis given the information so far>

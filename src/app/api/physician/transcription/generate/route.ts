@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentSession } from "@/lib/auth";
 import { getEffectivePhysicianId } from "@/lib/auth-helpers";
-import { getAzureSoapClient } from "@/lib/azure-openai";
+import { getAzureOpenAIClient } from "@/lib/azure-openai";
 import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
 import { getRequestIp } from "@/lib/invitation-security";
 import { logPhysicianPhiAudit } from "@/lib/phi-audit";
@@ -19,17 +19,21 @@ import { HEALTHASSIST_SNAPSHOT_LABEL } from "@/lib/transcription-policy";
 
 const systemPrompt = `You are a clinical documentation assistant.
 Analyze the physician-patient transcript and identify all distinct patient cases (separate patients or separate clinical encounters).
-For EACH distinct case, create a thorough SOAP note. Completeness takes priority over brevity — never omit clinically significant findings, red flags, or urgent context to save space.
-When the transcript is in a non-English language, first mentally translate each symptom or complaint into its precise clinical English equivalent before writing any field. Colloquial or culturally specific descriptions of bodily sensations must be mapped to standard clinical terminology (e.g. heat waves / sweating episodes → hot flashes / diaphoresis; racing heart → palpitations; feeling cold → chills). Then use those clinical terms to drive the diagnosis in the assessment field.
+For EACH distinct case, create a concise, point-form SOAP note that a physician can scan in seconds — not a narrative summary.
 Return valid JSON only: an array of objects, each with keys: label, subjective, objective, assessment, plan.
 - "label": brief case identifier (e.g. "Headache", "Left Elbow Pain")
-- "subjective": comprehensive patient history including chief complaint, symptom onset/duration/severity/character, associated symptoms, aggravating and relieving factors, relevant past medical history, current medications and recent changes, allergies if mentioned, family history, social history, and any other clinically relevant details the patient reported — exclude administrative details such as greetings, caller introductions, who called whom, office identification, and pharmacy/logistics coordination
-- "objective": exam findings and vitals (if documented)
-- "assessment": diagnosis and clinically meaningful differentials; include the reasoning when the clinical picture is complex or urgent (e.g. "migraine; r/o secondary headache given known intracranial mass, nocturnal pattern, and family history of brain tumors")
-- "plan": telegraphic actions — use 2–5 word phrases separated by semicolons; omit filler words like "prescribe", "recommend", "suggest", "advise"; use drug-name + route/frequency format (e.g. "clobetasol cream daily; Cetaphil prn; avoid irritants; f/u 4 wks"); only include what was explicitly discussed or decided in the transcript
+- "subjective": one short sentence per distinct clinical fact — chief complaint, onset/duration/severity/character, associated symptoms, aggravating and relieving factors, relevant past medical history, current medications and recent changes, allergies if mentioned, family history, social history, and any other clinically relevant details the patient reported. Exclude administrative details such as greetings, caller introductions, who called whom, office identification, and pharmacy/logistics coordination.
+- "objective": one short sentence per exam finding or vital actually documented; leave blank if nothing was examined. Do not restate facts already covered in Subjective.
+- "assessment": one short sentence for the working diagnosis, then — only if genuinely useful — one more sentence for the differential (e.g. "DDx: ..."). Start each directly with the clinical content.
+- "plan": one dense sentence of terse, telegraphic actions separated by semicolons — drug name + dose/route/frequency/duration, tests ordered, referrals, follow-up timing. Omit filler verbs ("prescribe", "recommend", "suggest", "advise") and pure logistics (which pharmacy, who picks up a requisition) unless clinically necessary. Only include what was explicitly discussed or decided in the transcript.
+Style rules for every field:
+- Start each sentence directly with the clinical fact — never lead with "Patient reports", "She states", "He notes", or similar throat-clearing.
+- One clinical point per sentence, each ending in a period — this is what turns into one bullet per line downstream, so never chain multiple facts into one long compound sentence.
+- Drop statements that add no clinical value: filler like "no other history was discussed," and anything already stated elsewhere in the note. Keep pertinent negatives that affect the differential (e.g. "denies fever").
+- Standard clinical abbreviations are fine (DDx, HTN, PMH, GP, f/u, etc.).
 If there is only one case, still return a single-element array.
 Do not include markdown, code fences, or extra keys.
-CRITICAL JSON RULE: Every field value must be plain prose on a single line. Do NOT use bullet points, numbered lists, or any line breaks (\\n) inside any string value. Literal newline characters inside JSON strings produce invalid JSON and will cause an error. Write all content as flowing sentences separated by spaces or semicolons.
+CRITICAL JSON RULE: Every field value must be plain text on a single line. Do NOT literally type bullet characters or line breaks (\\n) inside any string value — literal newline characters inside JSON strings produce invalid JSON and will cause an error. Separate sentences with a single space only; the app renders each sentence as its own bullet automatically.
 IMPORTANT: Always write the SOAP note entirely in English, regardless of the language used in the transcript.`;
 
 /**
@@ -158,7 +162,7 @@ export async function POST(request: NextRequest) {
       encounterId = encounter.encounterId;
     }
 
-    const azure = getAzureSoapClient();
+    const azure = getAzureOpenAIClient();
     const completion = await azure.client.chat.completions.create({
       model: azure.deployment,
       messages: [
