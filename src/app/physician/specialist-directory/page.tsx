@@ -74,6 +74,7 @@ export default function SpecialistDirectoryPage() {
   const [queueError, setQueueError] = useState<string | null>(null);
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const detailRef = useRef<HTMLDivElement | null>(null);
 
   const runSearch = useCallback(async () => {
     setLoading(true);
@@ -132,6 +133,15 @@ export default function SpecialistDirectoryPage() {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
   }, [specialty, city, sort, nameQuery]);
+
+  // The detail panel renders right above the results table, but with a long results list the
+  // physician may have scrolled well past it before clicking a row — scroll it into view so
+  // selecting a specialist never looks like nothing happened.
+  useEffect(() => {
+    if (selected) {
+      detailRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }, [selected]);
 
   const handleQueue = async (s: DirectorySpecialist) => {
     setQueueState("saving");
@@ -293,6 +303,83 @@ export default function SpecialistDirectoryPage() {
           </div>
         )}
 
+        {selected && (
+          <div ref={detailRef} className="bg-white rounded-lg shadow-sm border border-slate-200 p-5 scroll-mt-4">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <div className="text-base font-semibold text-slate-900">
+                  {selected.honorific ? `${selected.honorific} ` : ""}
+                  {selected.name}
+                </div>
+                <div className="text-sm text-slate-500">
+                  {selected.specialization}
+                  {selected.city ? ` · ${selected.city}` : ""}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelected(null)}
+                className="text-slate-400 hover:text-slate-600 text-lg leading-none"
+                aria-label="Close"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-4">
+              <div>
+                <div className="text-xs font-medium text-slate-500 uppercase tracking-wide">Avg. wait</div>
+                <div className="text-sm text-slate-900 mt-0.5">{selected.waitTime || "Not specified"}</div>
+              </div>
+              <div>
+                <div className="text-xs font-medium text-slate-500 uppercase tracking-wide">Accepts referrals via</div>
+                <div className="text-sm text-slate-900 mt-0.5">{referralMethods(selected)}</div>
+              </div>
+              <div>
+                <div className="text-xs font-medium text-slate-500 uppercase tracking-wide">MSP billing number</div>
+                <div className="text-sm text-slate-900 mt-0.5">{selected.billingNumber || "Not listed"}</div>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-500 mt-4">
+              Office phone, fax, and address aren&apos;t mirrored here yet — view the full profile on PathwaysBC for
+              contact details.
+            </p>
+
+            <div className="flex flex-wrap gap-2 mt-4">
+              <a
+                href={`https://pathwaysbc.ca/specialists/${selected.pathwaysId}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="rounded-lg px-4 py-2 text-sm font-medium bg-white border border-slate-300 text-slate-700 hover:bg-slate-50"
+              >
+                View full profile on PathwaysBC
+              </a>
+
+              {selected.oscarStatus === "LINKED" ? (
+                <span className="inline-flex items-center rounded-lg px-4 py-2 text-sm font-medium bg-emerald-50 text-emerald-800 border border-emerald-200">
+                  Already in OSCAR
+                </span>
+              ) : selected.oscarStatus === "QUEUED" ? (
+                <span className="inline-flex items-center rounded-lg px-4 py-2 text-sm font-medium bg-amber-50 text-amber-800 border border-amber-200">
+                  Queued — added to OSCAR in the next monthly sync
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  disabled={queueState === "saving"}
+                  onClick={() => handleQueue(selected)}
+                  className="rounded-lg px-4 py-2 text-sm font-medium bg-slate-900 hover:bg-slate-800 text-white disabled:opacity-70 disabled:cursor-not-allowed"
+                >
+                  {queueState === "saving" ? "Queuing…" : "Add to our OSCAR"}
+                </button>
+              )}
+            </div>
+
+            {queueError && <p className="text-sm text-red-700 mt-2">{queueError}</p>}
+          </div>
+        )}
+
         <div className="bg-white rounded-lg shadow-sm border border-slate-200 overflow-x-auto">
           <table className="min-w-full">
             <thead className="bg-slate-50">
@@ -374,83 +461,6 @@ export default function SpecialistDirectoryPage() {
             </tbody>
           </table>
         </div>
-
-        {selected && (
-          <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-5">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <div className="text-base font-semibold text-slate-900">
-                  {selected.honorific ? `${selected.honorific} ` : ""}
-                  {selected.name}
-                </div>
-                <div className="text-sm text-slate-500">
-                  {selected.specialization}
-                  {selected.city ? ` · ${selected.city}` : ""}
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setSelected(null)}
-                className="text-slate-400 hover:text-slate-600 text-lg leading-none"
-                aria-label="Close"
-              >
-                ×
-              </button>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-4">
-              <div>
-                <div className="text-xs font-medium text-slate-500 uppercase tracking-wide">Avg. wait</div>
-                <div className="text-sm text-slate-900 mt-0.5">{selected.waitTime || "Not specified"}</div>
-              </div>
-              <div>
-                <div className="text-xs font-medium text-slate-500 uppercase tracking-wide">Accepts referrals via</div>
-                <div className="text-sm text-slate-900 mt-0.5">{referralMethods(selected)}</div>
-              </div>
-              <div>
-                <div className="text-xs font-medium text-slate-500 uppercase tracking-wide">MSP billing number</div>
-                <div className="text-sm text-slate-900 mt-0.5">{selected.billingNumber || "Not listed"}</div>
-              </div>
-            </div>
-
-            <p className="text-xs text-slate-500 mt-4">
-              Office phone, fax, and address aren&apos;t mirrored here yet — view the full profile on PathwaysBC for
-              contact details.
-            </p>
-
-            <div className="flex flex-wrap gap-2 mt-4">
-              <a
-                href={`https://pathwaysbc.ca/specialists/${selected.pathwaysId}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="rounded-lg px-4 py-2 text-sm font-medium bg-white border border-slate-300 text-slate-700 hover:bg-slate-50"
-              >
-                View full profile on PathwaysBC
-              </a>
-
-              {selected.oscarStatus === "LINKED" ? (
-                <span className="inline-flex items-center rounded-lg px-4 py-2 text-sm font-medium bg-emerald-50 text-emerald-800 border border-emerald-200">
-                  Already in OSCAR
-                </span>
-              ) : selected.oscarStatus === "QUEUED" ? (
-                <span className="inline-flex items-center rounded-lg px-4 py-2 text-sm font-medium bg-amber-50 text-amber-800 border border-amber-200">
-                  Queued — added to OSCAR in the next monthly sync
-                </span>
-              ) : (
-                <button
-                  type="button"
-                  disabled={queueState === "saving"}
-                  onClick={() => handleQueue(selected)}
-                  className="rounded-lg px-4 py-2 text-sm font-medium bg-slate-900 hover:bg-slate-800 text-white disabled:opacity-70 disabled:cursor-not-allowed"
-                >
-                  {queueState === "saving" ? "Queuing…" : "Add to our OSCAR"}
-                </button>
-              )}
-            </div>
-
-            {queueError && <p className="text-sm text-red-700 mt-2">{queueError}</p>}
-          </div>
-        )}
       </div>
     </div>
   );
