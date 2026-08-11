@@ -1109,6 +1109,12 @@ function PhysicianDashboard() {
                     >
                       Summarizing
                     </a>
+                    <a
+                      href="/physician/specialist-directory"
+                      className="flex w-full items-center rounded-md px-2 py-2 text-sm text-slate-700 hover:bg-slate-50"
+                    >
+                      BC Specialist Directory
+                    </a>
                     {!isAssistantSession && (
                       <button
                         type="button"

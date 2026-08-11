@@ -11,7 +11,9 @@
     "lint:env": "node scripts/check-env-no-secrets.js",
     "test": "vitest run",
     "test:azure-openai": "node scripts/azure-sanity-test.js",
-    "audit:prod": "npm audit --omit=dev --audit-level=high"
+    "audit:prod": "npm audit --omit=dev --audit-level=high",
+    "pathways:login": "node scripts/pathways-login.js",
+    "pathways:sync": "node scripts/pathways-sync.js"
   },
   "dependencies": {
     "@azure/storage-blob": "^12.31.0",

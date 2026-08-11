@@ -33,6 +33,9 @@ yarn-error.log*
 # env files (can opt-in for committing if needed)
 .env*
 
+# PathwaysBC login session (scripts/pathways-login.js) — live session cookies, never commit
+pathways-session.json
+
 # vercel
 .vercel
 
