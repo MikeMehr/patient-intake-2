@@ -19,6 +19,12 @@
  * It deliberately does NOT save the encounter. The physician reviews the text
  * and clicks OSCAR's own Save, so OSCAR remains the system of record and no
  * OSCAR write API is involved.
+ *
+ * It also adds a Chart Attachment button, which files a photo or form the
+ * patient attached when booking into this patient's OSCAR Documents. That
+ * upload runs HERE rather than server-side: OSCAR publishes no document API,
+ * and its DMS form is authenticated by the session cookie that only this page
+ * holds. See docs/oscar/add-document-contract.md.
  */
 (function () {
   "use strict";
@@ -153,6 +159,28 @@
     }
   }
 
+  function openAttachments() {
+    // Same Strict-cookie bounce as Transcribe, and likewise WITHOUT "noopener":
+    // this popup posts the file bytes back through window.opener, and the upload
+    // below runs here, in the physician's authenticated OSCAR session.
+    var demo = currentDemographicNo();
+    if (!demo) {
+      window.alert("Could not determine which patient this chart is for.");
+      return;
+    }
+    var url =
+      APP_ORIGIN + LAUNCH_PATH + "?target=attachment&demographicNo=" +
+      encodeURIComponent(demo) +
+      "&origin=" + encodeURIComponent(window.location.origin);
+    var win = window.open(url, "healthassistAttachments");
+    if (!win) {
+      window.alert(
+        "Your browser blocked the Health Assist window.\n\n" +
+          "Allow pop-ups for this site, then click Chart Attachment again.",
+      );
+    }
+  }
+
   function makeHeaderButton(id, label, title, background, onClick) {
     var btn = document.createElement("button");
     btn.id = id;
@@ -184,6 +212,13 @@
       "#1d4ed8",
       openDocumentsPage,
     );
+    var attachBtn = makeHeaderButton(
+      "haChartAttachmentBtn",
+      "Chart Attachment",
+      "File a photo or form the patient attached when booking into this chart",
+      "#7c3aed",
+      openAttachments,
+    );
 
     var nextAppt = findNextApptLink();
     if (nextAppt) {
@@ -192,7 +227,10 @@
       nextAppt.style.fontSize = "11.4px";
       var span = nextAppt.querySelector("span");
       if (span) span.style.fontSize = "11.4px";
-      nextAppt.parentNode.insertBefore(docsBtn, nextAppt.nextSibling);
+      // Inserted back-to-front so the final order reads Transcribe, Request Docs,
+      // Chart Attachment.
+      nextAppt.parentNode.insertBefore(attachBtn, nextAppt.nextSibling);
+      nextAppt.parentNode.insertBefore(docsBtn, attachBtn);
       nextAppt.parentNode.insertBefore(transcribeBtn, docsBtn);
       return;
     }
@@ -206,12 +244,99 @@
     if (host) {
       host.appendChild(transcribeBtn);
       host.appendChild(docsBtn);
+      host.appendChild(attachBtn);
     } else {
       transcribeBtn.style.cssText += ";position:fixed;top:6px;right:8px;z-index:99999";
       docsBtn.style.cssText += ";position:fixed;top:6px;right:90px;z-index:99999";
+      attachBtn.style.cssText += ";position:fixed;top:6px;right:190px;z-index:99999";
       document.body.appendChild(transcribeBtn);
       document.body.appendChild(docsBtn);
+      document.body.appendChild(attachBtn);
     }
+  }
+
+  // ── File an attachment into this patient's chart ───────────────────────
+  // Runs HERE, on the OSCAR page, because only this context carries the
+  // physician's OSCAR session cookie. Health Assist has no OSCAR session and
+  // OSCAR publishes no document API, so driving the DMS module's own form is
+  // the only way in. Contract recorded in docs/oscar/add-document-contract.md.
+
+  function oscarContextPath() {
+    // The eChart defines `ctx` (e.g. "/oscar"). Fall back to the first path
+    // segment so this still works if that global ever disappears.
+    if (typeof window.ctx === "string" && window.ctx) return window.ctx;
+    var m = /^\/[^/]+/.exec(window.location.pathname);
+    return m ? m[0] : "";
+  }
+
+  function currentProviderNo() {
+    if (typeof window.providerNo === "string" && /^\d+$/.test(window.providerNo)) {
+      return window.providerNo;
+    }
+    return "";
+  }
+
+  function today() {
+    var d = new Date();
+    var p = function (n) { return (n < 10 ? "0" : "") + n; };
+    return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate());
+  }
+
+  /** Images file as "photo"; everything else (forms, PDFs) as "others". */
+  function docTypeFor(contentType) {
+    return /^image\//i.test(contentType || "") ? "photo" : "others";
+  }
+
+  function fileAttachmentToChart(data, demo) {
+    var providerNo = currentProviderNo();
+    if (!providerNo) {
+      return Promise.resolve({ ok: false, error: "Could not identify the logged-in provider." });
+    }
+
+    var form = new FormData();
+    // The DMS form posts the patient id under BOTH spellings; send both.
+    form.append("function", "demographic");
+    form.append("functionId", demo);
+    form.append("functionid", demo);
+    form.append("mode", "add");
+    form.append("Submit", "Add");
+    form.append("docType", docTypeFor(data.contentType));
+    form.append("docDesc", String(data.description || "Patient booking attachment").slice(0, 255));
+    form.append("docCreator", providerNo);
+    form.append("observationDate", today());
+    form.append("curUser", providerNo);
+    form.append("parentAjaxId", "");
+    form.append("appointmentNo", "");
+    form.append(
+      "docFile",
+      new File([data.buffer], String(data.filename || "attachment"), {
+        type: data.contentType || "application/octet-stream",
+      }),
+    );
+
+    return fetch(oscarContextPath() + "/dms/addEditDocument.do", {
+      method: "POST",
+      body: form,
+      credentials: "same-origin",
+    })
+      .then(function (res) {
+        if (!res.ok) return { ok: false, error: "OSCAR returned " + res.status + "." };
+        return res.text().then(function (html) {
+          // The action forwards to documentReport.jsp either way, so the status
+          // code alone proves nothing. It renders "Error: ..." on failure, and
+          // a securityError page if _edoc write rights are missing.
+          if (/securityError/i.test(res.url || "") || /_edoc/.test(html)) {
+            return { ok: false, error: "Your OSCAR account cannot add documents." };
+          }
+          if (/<font class="warning">\s*Error:/i.test(html)) {
+            return { ok: false, error: "OSCAR rejected the document." };
+          }
+          return { ok: true };
+        });
+      })
+      .catch(function () {
+        return { ok: false, error: "Could not reach OSCAR." };
+      });
   }
 
   // ── Receive the finished note ─────────────────────────────────────────
@@ -223,6 +348,38 @@
 
       var data = event.data;
       if (!data || data.source !== "healthassist") return;
+
+      // Attachment → the patient's OSCAR Documents.
+      if (data.type === "healthassist.document.insert") {
+        var attachDemo = currentDemographicNo();
+        var reply = function (payload) {
+          try {
+            payload.source = "oscar";
+            payload.type = "healthassist.document.ack";
+            payload.requestId = data.requestId;
+            event.source.postMessage(payload, event.origin);
+          } catch (e) {}
+        };
+
+        // Same wrong-patient guard as the note path: the doctor may have moved
+        // this window to another chart while the popup was open.
+        if (String(data.demographicNo || "") !== String(attachDemo)) {
+          reply({ ok: false, error: "The chart open here is for a different patient." });
+          return;
+        }
+        if (!attachDemo) {
+          reply({ ok: false, error: "Could not determine which patient this chart is for." });
+          return;
+        }
+        if (!data.buffer || typeof data.buffer.byteLength !== "number" || !data.buffer.byteLength) {
+          reply({ ok: false, error: "The file was empty." });
+          return;
+        }
+
+        fileAttachmentToChart(data, attachDemo).then(reply);
+        return;
+      }
+
       if (data.type !== "healthassist.soap.insert") return;
       if (typeof data.text !== "string" || !data.text) return;
       if (data.text.length > MAX_TEXT) return;

@@ -54,7 +54,16 @@ const ORIGIN_SHAPE_RE = /^https?:\/\/[a-z0-9.-]{1,253}(:[0-9]{1,5})?$/i;
 const TARGET_PATHS: Record<string, string> = {
   transcription: DESTINATION_PATH,
   documents: "/org/documents",
+  attachment: "/physician/oscar-attachments",
 };
+
+/**
+ * Targets that post something back into the OSCAR page and therefore need the
+ * opener's origin carried through. (`documents` is a one-way dashboard, so it
+ * doesn't.) The value is still only advisory — the server re-validates it
+ * against the allow-list before the browser is told where it may post PHI.
+ */
+const TARGETS_NEEDING_ORIGIN = new Set(["attachment"]);
 
 function buildDestination(search: string): string {
   const incoming = new URLSearchParams(search);
@@ -65,11 +74,22 @@ function buildDestination(search: string): string {
   // individually validated params are appended to a hard-coded path.
   const target = incoming.get("target") ?? "transcription";
   if (target !== "transcription" && TARGET_PATHS[target]) {
+    const out = new URLSearchParams();
+
     const demographicNo = incoming.get("demographicNo") ?? "";
     if (DEMOGRAPHIC_NO_RE.test(demographicNo)) {
-      return `${TARGET_PATHS[target]}?${new URLSearchParams({ demographicNo })}`;
+      out.set("demographicNo", demographicNo);
     }
-    return TARGET_PATHS[target];
+
+    if (TARGETS_NEEDING_ORIGIN.has(target)) {
+      const origin = incoming.get("origin") ?? "";
+      if (origin.length <= 253 && ORIGIN_SHAPE_RE.test(origin)) {
+        out.set("origin", origin);
+      }
+    }
+
+    const qs = out.toString();
+    return qs ? `${TARGET_PATHS[target]}?${qs}` : TARGET_PATHS[target];
   }
 
   const out = new URLSearchParams();
