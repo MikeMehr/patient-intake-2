@@ -8,11 +8,13 @@
  * parsed rows to /api/cron/pathways-directory-sync, which does the DB write through the app's own
  * already-working connection.
  *
- * Meant to run unattended from a scheduled job (see infrastructure/pathways-sync.plist) — on
- * failure it texts BOOKING_ISSUE_ALERT_PHONE via Twilio (same alert number the mail-alert cron
- * already uses) rather than failing silently, since a stale directory is easy to not notice.
- * The most likely failure mode is the saved PathwaysBC session expiring, which needs a human to
- * run `npm run pathways:login` again — no amount of retrying fixes that on its own.
+ * Meant to run unattended from a scheduled job (see infrastructure/pathways-sync.plist) — it texts
+ * BOOKING_ISSUE_ALERT_PHONE via Twilio (same alert number the mail-alert cron already uses) on
+ * EVERY run, success or failure, not just failure. This job has no other observer, so "no text
+ * this month" is ambiguous between "it succeeded quietly" and "launchd silently stopped firing" —
+ * only a confirmed-success text (or a confirmed-failure one) resolves that. The most likely
+ * failure mode is the saved PathwaysBC session expiring, which needs a human to run
+ * `npm run pathways:login` again — no amount of retrying fixes that on its own.
  *
  * Usage: node scripts/pathways-sync-to-prod.js
  *   Reads CRON_SECRET, TWILIO_*, BOOKING_ISSUE_ALERT_PHONE, PATHWAYS_SESSION_STATE_PATH,
@@ -69,10 +71,16 @@ function postJson(urlString, headers, body) {
   });
 }
 
-async function sendFailureAlert(message) {
+/**
+ * Texts BOOKING_ISSUE_ALERT_PHONE on every run, success or failure — this job has no other
+ * observer (it runs unattended via launchd on a machine nobody's watching), so "no news" can't
+ * mean "good news". A month of silence looks identical whether the sync is quietly succeeding or
+ * the launchd job silently stopped firing at all.
+ */
+async function sendAlert(message) {
   const { TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_PHONE_NUMBER, BOOKING_ISSUE_ALERT_PHONE } = process.env;
   if (!TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN || !TWILIO_PHONE_NUMBER || !BOOKING_ISSUE_ALERT_PHONE) {
-    console.error("Twilio not configured — cannot send failure SMS. Alert text was:", message);
+    console.error("Twilio not configured — cannot send SMS. Alert text was:", message);
     return;
   }
   try {
@@ -105,9 +113,9 @@ async function sendFailureAlert(message) {
       req.write(body);
       req.end();
     });
-    console.log(`Failure SMS sent to ${BOOKING_ISSUE_ALERT_PHONE}.`);
+    console.log(`SMS sent to ${BOOKING_ISSUE_ALERT_PHONE}.`);
   } catch (err) {
-    console.error("Failed to send failure SMS:", err instanceof Error ? err.message : err);
+    console.error("Failed to send SMS:", err instanceof Error ? err.message : err);
   }
 }
 
@@ -137,11 +145,12 @@ async function main() {
   }
 
   console.log(`Done: ${res.body}`);
+  await sendAlert(`PathwaysBC monthly sync OK: ${res.body}`.slice(0, 280));
 }
 
 main().catch(async (err) => {
   const message = err instanceof Error ? err.message : String(err);
   console.error("pathways-sync-to-prod failed:", message);
-  await sendFailureAlert(`PathwaysBC monthly sync failed: ${message}`.slice(0, 280));
+  await sendAlert(`PathwaysBC monthly sync FAILED: ${message}`.slice(0, 280));
   process.exit(1);
 });
