@@ -6,10 +6,11 @@
  * this module since both operate on the same two tables.
  *
  * bc_specialist_oscar_link tracks, per org, whether a directory specialist has actually been
- * queued/added to that org's own OSCAR — it does NOT auto-detect existing OSCAR specialists
- * (OSCAR has no read API for its own specialist list; see reference_oscar_specialist_migration.md
- * in project memory). Until a reconciliation pass exists, every specialist starts as "not linked"
- * even if a same-named entry already lives in OSCAR from the original manual migration.
+ * queued/added to that org's own OSCAR. Populated two ways: (1) a physician queues one through
+ * the directory UI (queueBcSpecialistForOscar), or (2) the reconciliation job
+ * (applyOscarReconciliationMatches, see src/lib/oscar/specialist-reconcile.ts) discovers a
+ * name+specialty match against OSCAR's existing roster — since OSCAR has no read API of its own,
+ * that roster has to be fetched live via an authenticated browser session and matched here.
  */
 
 import { getClient, query } from "@/lib/db";
@@ -460,5 +461,86 @@ export async function recordOscarSyncOutcome(linkId: string, outcome: OscarSyncO
        WHERE id = $1`,
       [linkId, outcome.errorMessage.slice(0, 500)],
     );
+  }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Reconciliation against OSCAR's existing (already-added) specialist roster
+// ---------------------------------------------------------------------------------------------
+
+export type ReconciliationCandidate = { bcSpecialistId: string; name: string; specialization: string };
+
+/**
+ * The full active directory, name-only shape, for the reconciliation job to match against a live
+ * OSCAR roster fetch. Not org-scoped by itself — reconciliation results are written per org by
+ * applyOscarReconciliationMatches, since OSCAR instances (and therefore specId spaces) are
+ * per-org, but the candidate list (what PathwaysBC calls each specialist) is the same for anyone.
+ */
+export async function getReconciliationCandidates(): Promise<ReconciliationCandidate[]> {
+  const res = await query<{ id: string; name: string; specialization: string }>(
+    `SELECT id, name, specialization FROM bc_specialist_directory WHERE active = TRUE`,
+  );
+  return res.rows.map((r) => ({ bcSpecialistId: r.id, name: r.name, specialization: r.specialization }));
+}
+
+export type ReconciliationMatchInput = {
+  bcSpecialistId: string;
+  oscarSpecId: string;
+  oscarServiceName: string;
+  address: string | null;
+  phone: string | null;
+  fax: string | null;
+};
+
+/**
+ * Marks each match LINKED for this org (upgrading QUEUED or creating a fresh row — never
+ * downgrades an existing LINKED row, and never touches rows reconciliation didn't match), and
+ * opportunistically backfills bc_specialist_contact_cache with the office info the OSCAR read
+ * turned up. Contact cache uses DO NOTHING on conflict — reconciliation fills a gap, it doesn't
+ * overwrite contact info from a source that might be more current (e.g. a future PathwaysBC
+ * profile scrape).
+ */
+export async function applyOscarReconciliationMatches(
+  organizationId: string,
+  matches: ReconciliationMatchInput[],
+): Promise<{ linked: number }> {
+  if (matches.length === 0) return { linked: 0 };
+
+  const client = await getClient();
+  try {
+    await client.query("BEGIN");
+
+    const linked = await client.query(
+      `INSERT INTO bc_specialist_oscar_link (organization_id, bc_specialist_id, status, oscar_spec_id, oscar_service_name, synced_at)
+       SELECT $1, t.bc_specialist_id, 'LINKED', t.oscar_spec_id, t.oscar_service_name, NOW()
+       FROM unnest($2::uuid[], $3::text[], $4::text[]) AS t(bc_specialist_id, oscar_spec_id, oscar_service_name)
+       ON CONFLICT (organization_id, bc_specialist_id) DO UPDATE SET
+         status              = 'LINKED',
+         oscar_spec_id       = EXCLUDED.oscar_spec_id,
+         oscar_service_name  = EXCLUDED.oscar_service_name,
+         synced_at           = NOW(),
+         error_message       = NULL`,
+      [organizationId, matches.map((m) => m.bcSpecialistId), matches.map((m) => m.oscarSpecId), matches.map((m) => m.oscarServiceName)],
+    );
+
+    await client.query(
+      `INSERT INTO bc_specialist_contact_cache (bc_specialist_id, clinic_address, phone, fax)
+       SELECT t.bc_specialist_id, t.address, t.phone, t.fax
+       FROM unnest($1::uuid[], $2::text[], $3::text[], $4::text[]) AS t(bc_specialist_id, address, phone, fax)
+       ON CONFLICT (bc_specialist_id) DO NOTHING`,
+      [matches.map((m) => m.bcSpecialistId), matches.map((m) => m.address), matches.map((m) => m.phone), matches.map((m) => m.fax)],
+    );
+
+    await client.query("COMMIT");
+    return { linked: linked.rowCount ?? 0 };
+  } catch (err) {
+    try {
+      await client.query("ROLLBACK");
+    } catch {
+      /* ignore */
+    }
+    throw err;
+  } finally {
+    client.release();
   }
 }
