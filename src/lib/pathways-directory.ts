@@ -544,3 +544,74 @@ export async function applyOscarReconciliationMatches(
     client.release();
   }
 }
+
+// ---------------------------------------------------------------------------------------------
+// Contact-info backfill: OSCAR requires phone+address to create a specialist (see
+// specialist-sync-plan.ts), so a QUEUED specialist can't actually be synced until
+// bc_specialist_contact_cache has something for them. This scrapes PathwaysBC's own profile page
+// (src/lib/pathways/profile-parse.ts) for whichever queued specialists are still missing it.
+// ---------------------------------------------------------------------------------------------
+
+export type ContactBackfillCandidate = { bcSpecialistId: string; pathwaysId: number };
+
+/**
+ * Queued (any org — contact info isn't org-scoped) specialists with no contact_cache row yet.
+ * Not "all 8,090 active specialists" on purpose — only ones someone actually asked to be added to
+ * OSCAR need this scrape run for them; the rest are reached fine via the PathwaysBC profile link
+ * already shown in the directory UI.
+ */
+export async function getContactBackfillCandidates(): Promise<ContactBackfillCandidate[]> {
+  const res = await query<{ bc_specialist_id: string; pathways_id: number }>(
+    `SELECT DISTINCT d.id AS bc_specialist_id, d.pathways_id
+     FROM bc_specialist_oscar_link l
+     JOIN bc_specialist_directory d ON d.id = l.bc_specialist_id
+     LEFT JOIN bc_specialist_contact_cache c ON c.bc_specialist_id = d.id
+     WHERE l.status = 'QUEUED' AND c.bc_specialist_id IS NULL`,
+  );
+  return res.rows.map((r) => ({ bcSpecialistId: r.bc_specialist_id, pathwaysId: r.pathways_id }));
+}
+
+export type ContactBackfillResult = {
+  bcSpecialistId: string;
+  phone: string | null;
+  fax: string | null;
+  email: string | null;
+  clinicAddress: string | null;
+  acceptedBy: string | null;
+  respondedBy: string | null;
+};
+
+/**
+ * Authoritative upsert (unlike the reconciliation job's opportunistic DO NOTHING) — this job's
+ * entire purpose is populating/refreshing contact info, so a re-run intentionally overwrites a
+ * stale row rather than leaving it.
+ */
+export async function applyContactBackfill(results: ContactBackfillResult[]): Promise<{ updated: number }> {
+  if (results.length === 0) return { updated: 0 };
+
+  const res = await query(
+    `INSERT INTO bc_specialist_contact_cache
+       (bc_specialist_id, phone, fax, email, clinic_address, accepted_by, responded_by, fetched_at)
+     SELECT t.bc_specialist_id, t.phone, t.fax, t.email, t.clinic_address, t.accepted_by, t.responded_by, NOW()
+     FROM unnest($1::uuid[], $2::text[], $3::text[], $4::text[], $5::text[], $6::text[], $7::text[])
+       AS t(bc_specialist_id, phone, fax, email, clinic_address, accepted_by, responded_by)
+     ON CONFLICT (bc_specialist_id) DO UPDATE SET
+       phone         = EXCLUDED.phone,
+       fax           = EXCLUDED.fax,
+       email         = EXCLUDED.email,
+       clinic_address = EXCLUDED.clinic_address,
+       accepted_by   = EXCLUDED.accepted_by,
+       responded_by  = EXCLUDED.responded_by,
+       fetched_at    = NOW()`,
+    [
+      results.map((r) => r.bcSpecialistId),
+      results.map((r) => r.phone),
+      results.map((r) => r.fax),
+      results.map((r) => r.email),
+      results.map((r) => r.clinicAddress),
+      results.map((r) => r.acceptedBy),
+      results.map((r) => r.respondedBy),
+    ],
+  );
+  return { updated: res.rowCount ?? 0 };
+}
