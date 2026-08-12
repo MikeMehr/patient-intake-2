@@ -133,8 +133,22 @@ function buildScript(apiBase: string, token: string): string {
       .filter(function (t) { return t; }).sort().join("|");
   }
 
+  /**
+   * OSCAR answers a request from a dead session with the login page rather than a 401, so a long
+   * run would otherwise sail on marking every remaining specialist FAILED — and FAILED rows are
+   * not retried, so an expiry would permanently poison hundreds of records. Detect it and abort.
+   */
+  function assertSession(html) {
+    if (/name=["']?(password|pin)["']?/i.test(html) && /login/i.test(html)) {
+      var e = new Error("SESSION_LOST");
+      e.sessionLost = true;
+      throw e;
+    }
+    return html;
+  }
+
   async function servicePage(id) {
-    var html = await fetch("/oscar/oscarEncounter/ShowAllServices.do?serviceId=" + encodeURIComponent(id), { credentials: "include" }).then(function (r) { return r.text(); });
+    var html = assertSession(await fetch("/oscar/oscarEncounter/ShowAllServices.do?serviceId=" + encodeURIComponent(id), { credentials: "include" }).then(function (r) { return r.text(); }));
     var doc = new DOMParser().parseFromString(html, "text/html");
     var boxes = Array.prototype.slice.call(doc.querySelectorAll('input[name="specialists"]'));
     return {
@@ -147,7 +161,7 @@ function buildScript(apiBase: string, token: string): string {
     };
   }
   async function verify(specId) {
-    var html = await fetch("/oscar/oscarEncounter/EditSpecialists.do?specId=" + specId, { credentials: "include" }).then(function (r) { return r.text(); });
+    var html = assertSession(await fetch("/oscar/oscarEncounter/EditSpecialists.do?specId=" + specId, { credentials: "include" }).then(function (r) { return r.text(); }));
     var doc = new DOMParser().parseFromString(html, "text/html");
     var el = doc.querySelector('[name="lastName"]');
     return el ? el.value : null;
@@ -273,7 +287,7 @@ function buildScript(apiBase: string, token: string): string {
     var existingNames = {};
     snapshot.names.forEach(function (n) { existingNames[nameKey(n)] = 1; });
 
-    var results = [], added = 0, skipped = 0, failed = 0, samples = [];
+    var results = [], added = 0, skipped = 0, failed = 0, samples = [], sessionLost = false;
     var membership = {};   // serviceId -> current member ids (loaded lazily, one fetch per service)
     var touched = {};      // serviceId -> service name, for the membership write at the end
 
@@ -349,6 +363,7 @@ function buildScript(apiBase: string, token: string): string {
         if (samples.length < 5) samples.push(c.name + " — " + target.name);
         results.push({ linkId: c.linkId, status: "LINKED", oscarSpecId: String(newId), oscarServiceName: target.name });
       } catch (e) {
+        if (e && e.sessionLost) { sessionLost = true; break; }
         failed++;
         results.push({ linkId: c.linkId, status: "FAILED", errorMessage: String(e && e.message || e) });
       }
@@ -373,7 +388,13 @@ function buildScript(apiBase: string, token: string): string {
 
     await flushResults();
 
-    var out = "<div><b>" + added + "</b> added to OSCAR.</div>";
+    var out = "";
+    if (sessionLost) {
+      out += '<div style="color:#b91c1c;font-weight:600">Your OSCAR session ended, so the run stopped here.</div>' +
+        '<div style="margin-top:6px">Everything below was saved. Log back into OSCAR, then click the bookmark ' +
+        "again — it picks up exactly where it left off.</div><div style=\\"margin-top:10px\\"></div>";
+    }
+    out += "<div><b>" + added + "</b> added to OSCAR.</div>";
     if (skipped) out += "<div>" + skipped + " already in OSCAR — skipped.</div>";
     if (failed) out += '<div style="color:#b91c1c">' + failed + " couldn\\'t be added.</div>";
     if (samples.length) out += '<div style="margin-top:8px;color:#475569">e.g. ' + samples.map(esc).join("; ") + "</div>";
