@@ -104,6 +104,16 @@ function buildScript(apiBase: string, token: string): string {
       return { id: u.searchParams.get("serviceId"), name: a.textContent.trim() };
     });
   }
+  /**
+   * Order- and punctuation-independent key for comparing a PathwaysBC name ("Naveed Malek")
+   * against OSCAR's rendering ("Malek Naveed", sometimes with a literal leading "*"). Mirrors
+   * normalizeNameTokens in src/lib/oscar/specialist-reconcile.ts.
+   */
+  function nameKey(raw) {
+    return String(raw || "").toLowerCase().replace(/[^a-z\\s]/g, " ").split(/\\s+/)
+      .filter(function (t) { return t; }).sort().join("|");
+  }
+
   async function servicePage(id) {
     var html = await fetch("/oscar/oscarEncounter/ShowAllServices.do?serviceId=" + encodeURIComponent(id), { credentials: "include" }).then(function (r) { return r.text(); });
     var doc = new DOMParser().parseFromString(html, "text/html");
@@ -111,6 +121,10 @@ function buildScript(apiBase: string, token: string): string {
     return {
       all: boxes.map(function (b) { return Number(b.value); }),
       checked: boxes.filter(function (b) { return b.checked || b.hasAttribute("checked"); }).map(function (b) { return Number(b.value); }),
+      names: boxes.map(function (b) {
+        var tr = b.closest("tr"), tds = tr ? tr.querySelectorAll("td") : null;
+        return tds && tds[1] ? tds[1].textContent.trim() : "";
+      }),
     };
   }
   async function verify(specId) {
@@ -225,69 +239,130 @@ function buildScript(apiBase: string, token: string): string {
       return;
     }
 
-    show("<div>Adding " + q.ready.length + " specialist(s) to OSCAR…</div>");
-    var results = [], lines = [];
+    // ---- batch write ----
+    // Built for thousands, not ones. The naive shape (re-read the full ~1,600-row roster before
+    // and after every single add) is 2 heavy fetches per specialist and simply doesn't finish at
+    // bulk scale. Instead: read the roster once, allocate specIds by increment (OSCAR assigns
+    // them sequentially), verify each add against the CHEAP per-specialist page, and replace each
+    // service's membership once at the end rather than per specialist.
+    show("<div>Reading OSCAR's current specialist list…</div>");
+    var snapshot = await servicePage(svc[0].id);
+    var maxId = snapshot.all.length ? Math.max.apply(null, snapshot.all) : 0;
+
+    // Names already in OSCAR, so a bulk run can't quietly create duplicates of specialists who
+    // are already there (from the original migration, or an earlier run).
+    var existingNames = {};
+    snapshot.names.forEach(function (n) { existingNames[nameKey(n)] = 1; });
+
+    var results = [], added = 0, skipped = 0, failed = 0, samples = [];
+    var membership = {};   // serviceId -> current member ids (loaded lazily, one fetch per service)
+    var touched = {};      // serviceId -> service name, for the membership write at the end
+
+    async function flushResults() {
+      if (!results.length) return;
+      var batch = results; results = [];
+      try {
+        await fetch(API + "/api/oscar-sync/result?t=" + encodeURIComponent(T), {
+          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ results: batch }),
+        });
+      } catch (e) { results = batch.concat(results); }  // keep them for the next attempt
+    }
 
     for (var i = 0; i < q.ready.length; i++) {
       var c = q.ready[i];
+      if (i % 10 === 0) {
+        show("<div>Adding specialists to OSCAR…</div><div style=\\"margin-top:6px\\">" + (i + 1) + " of " + q.ready.length +
+          " &middot; " + added + " added, " + skipped + " already there, " + failed + " failed</div>" +
+          '<div style="margin-top:8px;color:#475569">Leave this tab open until it finishes.</div>');
+      }
       try {
         var target = null;
         for (var j = 0; j < svc.length; j++) {
           if (svc[j].name.trim().toLowerCase() === String(c.specialization).trim().toLowerCase()) { target = svc[j]; break; }
         }
         if (!target) {
+          failed++;
           results.push({ linkId: c.linkId, status: "FAILED", errorMessage: 'No OSCAR service named "' + c.specialization + '"' });
-          lines.push("&#10007; " + esc(c.name) + " — no OSCAR service named &ldquo;" + esc(c.specialization) + "&rdquo;");
           continue;
         }
-        var before = await servicePage(target.id);
-        var beforeMax = before.all.length ? Math.max.apply(null, before.all) : 0;
+
+        if (existingNames[nameKey(c.name)]) {
+          skipped++;
+          results.push({ linkId: c.linkId, status: "FAILED", errorMessage: "Already in OSCAR under this name — skipped to avoid a duplicate." });
+          continue;
+        }
+
+        if (membership[target.id] === undefined) {
+          membership[target.id] = (await servicePage(target.id)).checked;
+          touched[target.id] = target.name;
+        }
 
         await fetch("/oscar/oscarEncounter/AddSpecialist.do", {
           method: "POST", credentials: "include",
-          headers: { "Content-Type": "application/x-www-form-urlencoded" },
-          body: form(payloadFor(c)),
+          headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: form(payloadFor(c)),
         });
 
-        var after = await servicePage(target.id);
-        var afterMax = after.all.length ? Math.max.apply(null, after.all) : 0;
-        if (afterMax <= beforeMax) {
-          results.push({ linkId: c.linkId, status: "FAILED", errorMessage: "OSCAR did not create the record (validation rejected it)." });
-          lines.push("&#10007; " + esc(c.name) + " — OSCAR rejected it");
-          continue;
-        }
-        var newId = afterMax, ln = await verify(newId);
+        // OSCAR hands out specIds sequentially, so the new one should be maxId+1 — but confirm it
+        // really is this person before recording it, because AddSpecialist.do fails by silently
+        // re-rendering the form rather than erroring.
+        var newId = maxId + 1;
+        var ln = await verify(newId);
         if (!ln || ln.toLowerCase() !== String(c.lastName).toLowerCase()) {
-          results.push({ linkId: c.linkId, status: "FAILED", errorMessage: "Couldn't verify new specId " + newId });
-          lines.push("&#10007; " + esc(c.name) + " — couldn't verify");
-          continue;
+          // Either the add was rejected, or the id drifted (someone else writing concurrently).
+          // Re-read the roster to resync rather than guessing again.
+          var re = await servicePage(target.id);
+          var reMax = re.all.length ? Math.max.apply(null, re.all) : maxId;
+          var reName = reMax > maxId ? await verify(reMax) : null;
+          if (reName && reName.toLowerCase() === String(c.lastName).toLowerCase()) {
+            newId = reMax;
+          } else {
+            maxId = reMax;
+            failed++;
+            results.push({ linkId: c.linkId, status: "FAILED", errorMessage: "OSCAR did not create the record (validation rejected it)." });
+            continue;
+          }
         }
-        var members = after.checked.slice();
-        if (members.indexOf(newId) === -1) members.push(newId);
-        var body = "serviceId=" + encodeURIComponent(target.id);
-        for (var k = 0; k < members.length; k++) body += "&specialists=" + encodeURIComponent(members[k]);
+
+        maxId = newId;
+        existingNames[nameKey(c.name)] = 1;
+        if (membership[target.id].indexOf(newId) === -1) membership[target.id].push(newId);
+        added++;
+        if (samples.length < 5) samples.push(c.name + " — " + target.name);
+        results.push({ linkId: c.linkId, status: "LINKED", oscarSpecId: String(newId), oscarServiceName: target.name });
+      } catch (e) {
+        failed++;
+        results.push({ linkId: c.linkId, status: "FAILED", errorMessage: String(e && e.message || e) });
+      }
+      if (results.length >= 25) await flushResults();
+    }
+
+    // UpdateServiceSpecialists REPLACES a service's whole membership, so this must post the full
+    // list — and doing it once per service instead of once per specialist is most of the speedup.
+    show("<div>Filing " + added + " specialist(s) under their consultation services…</div>");
+    var serviceErrors = [];
+    for (var sid in touched) {
+      try {
+        var body = "serviceId=" + encodeURIComponent(sid);
+        var mem = membership[sid];
+        for (var k = 0; k < mem.length; k++) body += "&specialists=" + encodeURIComponent(mem[k]);
         await fetch("/oscar/oscarEncounter/UpdateServiceSpecialists.do", {
           method: "POST", credentials: "include",
           headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: body,
         });
-
-        results.push({ linkId: c.linkId, status: "LINKED", oscarSpecId: String(newId), oscarServiceName: target.name });
-        lines.push("&#10003; " + esc(c.name) + " — added under " + esc(target.name));
-      } catch (e) {
-        results.push({ linkId: c.linkId, status: "FAILED", errorMessage: String(e && e.message || e) });
-        lines.push("&#10007; " + esc(c.name) + " — " + esc(e && e.message || e));
-      }
+      } catch (e) { serviceErrors.push(touched[sid] + " — " + (e && e.message || e)); }
     }
 
-    try {
-      await fetch(API + "/api/oscar-sync/result?t=" + encodeURIComponent(T), {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ results: results }),
-      });
-    } catch (e) { lines.push('<span style="color:#b91c1c">(Added in OSCAR, but couldn\\'t update Health Assist: ' + esc(e.message) + ")</span>"); }
+    await flushResults();
 
-    var out = "<div>" + lines.join("</div><div>") + "</div>";
+    var out = "<div><b>" + added + "</b> added to OSCAR.</div>";
+    if (skipped) out += "<div>" + skipped + " already in OSCAR — skipped.</div>";
+    if (failed) out += '<div style="color:#b91c1c">' + failed + " couldn\\'t be added.</div>";
+    if (samples.length) out += '<div style="margin-top:8px;color:#475569">e.g. ' + samples.map(esc).join("; ") + "</div>";
+    serviceErrors.forEach(function (se) { out += '<div style="color:#b91c1c">Service update failed: ' + esc(se) + "</div>"; });
+    if (results.length) out += '<div style="margin-top:8px;color:#b91c1c">' + results.length +
+      " result(s) couldn\\'t be saved back to Health Assist — re-click to retry those.</div>";
     if (pending.length) out += '<div style="margin-top:10px;color:#475569">' + pending.length +
-      " more waiting on contact info from PathwaysBC.</div>";
+      " still waiting on contact info from PathwaysBC.</div>";
     show(out);
   }
 
