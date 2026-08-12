@@ -13,7 +13,11 @@
  *     picks up whoever is still missing contact info
  *   - stops early rather than hammering PathwaysBC if it starts failing repeatedly
  *
- * Usage: node scripts/pathways-contact-backfill.js [--limit N] [--delay MS]
+ * Usage: node scripts/pathways-contact-backfill.js [--limit N] [--delay MS] [--ids 43,2472,...]
+ *   --ids re-fetches those PathwaysBC ids even though they already have cached contact info.
+ *   Needed to repair records saved by an earlier, buggier parse: the normal candidate list only
+ *   contains specialists with NO contact info, so a wrong-but-present row is invisible to it.
+ *
  *   Reads CRON_SECRET, PATHWAYS_SESSION_STATE_PATH, PATHWAYS_PROD_BASE from env/.env.local.
  */
 
@@ -91,10 +95,17 @@ async function main() {
     throw new Error(`No PathwaysBC session at ${sessionStatePath}. Run 'npm run pathways:login' first.`);
   }
 
-  console.log("Fetching the list of specialists still missing contact info…");
-  const listRes = await request("GET", `${base}/api/cron/oscar-contact-backfill-candidates`, { "x-cron-secret": cronSecret });
-  if (listRes.status !== 200) throw new Error(`Candidates endpoint returned HTTP ${listRes.status}: ${listRes.body.slice(0, 200)}`);
-  let candidates = JSON.parse(listRes.body).candidates || [];
+  const idsFlag = args.indexOf("--ids");
+  let candidates;
+  if (idsFlag !== -1 && args[idsFlag + 1]) {
+    candidates = args[idsFlag + 1].split(",").map((s) => ({ pathwaysId: Number(s.trim()) })).filter((c) => c.pathwaysId);
+    console.log(`Re-fetching ${candidates.length} specific PathwaysBC profile(s) to overwrite existing contact info.`);
+  } else {
+    console.log("Fetching the list of specialists still missing contact info…");
+    const listRes = await request("GET", `${base}/api/cron/oscar-contact-backfill-candidates`, { "x-cron-secret": cronSecret });
+    if (listRes.status !== 200) throw new Error(`Candidates endpoint returned HTTP ${listRes.status}: ${listRes.body.slice(0, 200)}`);
+    candidates = JSON.parse(listRes.body).candidates || [];
+  }
   if (candidates.length > limit) candidates = candidates.slice(0, limit);
 
   if (candidates.length === 0) {
