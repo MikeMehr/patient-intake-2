@@ -70,4 +70,47 @@ Referral Information and Requirements`;
     expect(result.phone).toBe("604-273-2502");
     expect(result.clinicAddress).toBeNull();
   });
+
+  // Real innerText captured from pathwaysbc.ca/specialists/5230 (Dr. "Has" Hassanain Toma)
+  // 2026-08-11 — a hospital-based specialist with NO "Office Information" heading at all; the
+  // contact details render under a clinic/program block instead.
+  const HOSPITAL_BASED_TEXT = `Dr. "Has" Hassanain Toma
+Neurology
+Man, MSP #67118
+Only works out of hospitals, clinics, and/or community and health authority programs.
+Incorrect Information? Let us know
+Referral Information and Requirements
+Wait Times
+Average non-urgent patient wait time from referral to appointment: 1-2 weeks
+Accepting consultative referrals.
+Limitations:
+The Stroke Prevention Clinic is a clinic for patients with recent onset of signs and symptoms of a TIA.
+604-520-4661
+Fax: 604-520-4188
+In Royal Columbian Hospital
+330 E Columbia Street, New Westminster, British Columbia, V3L 3W7
+Clinic is located on the basement level of Health Care Centre.`;
+
+  it("falls back to the clinic block for a hospital-based specialist with no Office Information", () => {
+    const result = parseSpecialistProfileText(HOSPITAL_BASED_TEXT);
+    expect(result.phone).toBe("604-520-4661");
+    expect(result.fax).toBe("604-520-4188");
+    expect(result.clinicAddress).toBe(
+      "In Royal Columbian Hospital, 330 E Columbia Street, New Westminster, British Columbia, V3L 3W7",
+    );
+  });
+
+  it("still prefers the Office Information block when both layouts could match", () => {
+    // Malek's page also contains a postal code, so the fallback must not override the real
+    // office block.
+    const result = parseSpecialistProfileText(MALEK_TEXT);
+    expect(result.phone).toBe("604-273-2502");
+    expect(result.clinicAddress).toContain("Terra Nova Brighouse Clinic");
+  });
+
+  it("returns no address when nothing on the page carries a postal code", () => {
+    const result = parseSpecialistProfileText("Dr. Nobody\nNeurology\nNo contact details here.");
+    expect(result.clinicAddress).toBeNull();
+    expect(result.phone).toBeNull();
+  });
 });

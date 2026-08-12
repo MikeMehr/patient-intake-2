@@ -36,6 +36,50 @@ function stripTrailingOthersSuffix(line: string): string {
   return line.replace(/\s+with\s+\d+\s+others?\.?$/i, "").trim();
 }
 
+/** Canadian postal code — the one high-confidence signal that a line is a street address. */
+const POSTAL_CODE_RE = /\b[A-Z]\d[A-Z]\s?\d[A-Z]\d\b/i;
+/** A line that is nothing but a phone number, i.e. how PathwaysBC renders a clinic's number. */
+const BARE_PHONE_LINE_RE = /^\(?\d{3}\)?[-.\s]?\d{3}[-.\s]\d{4}$/;
+
+/**
+ * Fallback for specialists with no "Office Information" heading at all — those who work only out
+ * of hospitals or health-authority programs, where PathwaysBC renders the contact details under a
+ * clinic/program block instead (confirmed live 2026-08-11 on specialist 5230, a hospital-based
+ * stroke clinic).
+ *
+ * Anchors on a postal code rather than trying to recognize an address generally: it's a specific,
+ * low-false-positive signal, which matters because a wrong address on a referral is worse than a
+ * missing one. Everything else is located relative to that line.
+ */
+function parseClinicBlockFallback(lines: string[]): { phone: string | null; fax: string | null; clinicAddress: string | null } {
+  const addressIdx = lines.findIndex((l) => POSTAL_CODE_RE.test(l));
+  if (addressIdx === -1) return { phone: null, fax: null, clinicAddress: null };
+
+  let clinicAddress = lines[addressIdx];
+  // PathwaysBC puts the venue on its own line above the street address ("In Royal Columbian
+  // Hospital"). Keep it — it's the part a referring physician actually recognizes.
+  const venue = lines[addressIdx - 1];
+  if (venue && venue.length <= 80 && !POSTAL_CODE_RE.test(venue) && !BARE_PHONE_LINE_RE.test(venue) && !FAX_LINE_RE.test(venue)) {
+    clinicAddress = `${venue}, ${clinicAddress}`;
+  }
+
+  // Phone/fax render just above the address; scan back a short window so a number belonging to a
+  // different clinic further up the page can't be picked up.
+  let phone: string | null = null;
+  let fax: string | null = null;
+  for (let i = addressIdx - 1; i >= 0 && i >= addressIdx - 6; i--) {
+    const line = lines[i];
+    const faxMatch = line.match(FAX_LINE_RE);
+    if (!fax && faxMatch) {
+      fax = faxMatch[1].trim();
+      continue;
+    }
+    if (!phone && BARE_PHONE_LINE_RE.test(line)) phone = line;
+  }
+
+  return { phone, fax, clinicAddress: stripTrailingOthersSuffix(clinicAddress) };
+}
+
 export function parseSpecialistProfileText(pageText: string): SpecialistContactInfo {
   const lines = pageText
     .split("\n")
@@ -79,6 +123,15 @@ export function parseSpecialistProfileText(pageText: string): SpecialistContactI
     if (!clinicAddress) {
       clinicAddress = stripTrailingOthersSuffix(line);
     }
+  }
+
+  // No "Office Information" section, or one that didn't yield the two fields OSCAR requires —
+  // try the hospital/clinic-block layout before giving up.
+  if (!phone || !clinicAddress) {
+    const fallback = parseClinicBlockFallback(lines);
+    phone = phone ?? fallback.phone;
+    fax = fax ?? fallback.fax;
+    clinicAddress = clinicAddress ?? fallback.clinicAddress;
   }
 
   // acceptedBy/respondedBy sit just after the office block but are scanned over the whole page
