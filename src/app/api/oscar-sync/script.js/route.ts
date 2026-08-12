@@ -212,12 +212,30 @@ function buildScript(apiBase: string, token: string): string {
 })();`;
 }
 
+/**
+ * The public origin to call back into — NOT request.nextUrl.origin, which behind Azure App
+ * Service's proxy resolves to the internal container address (e.g. https://b2e1181e325d:8080)
+ * and is unreachable from the physician's browser. Confirmed live: the first deploy baked that
+ * internal host into the script and every call died with "Failed to fetch".
+ */
+function resolveApiBase(request: NextRequest): string {
+  const configured = process.env.NEXT_PUBLIC_APP_URL?.trim();
+  if (configured) return configured.replace(/\/+$/, "");
+
+  const forwardedHost = request.headers.get("x-forwarded-host");
+  if (forwardedHost) {
+    const proto = request.headers.get("x-forwarded-proto") || "https";
+    return `${proto}://${forwardedHost}`;
+  }
+  return request.nextUrl.origin;
+}
+
 export async function GET(request: NextRequest) {
   if (!isAuthorized(request)) {
     return new NextResponse("// Unauthorized", { status: 401, headers: { "Content-Type": "application/javascript" } });
   }
   const token = request.nextUrl.searchParams.get("t") || "";
-  const apiBase = request.nextUrl.origin;
+  const apiBase = resolveApiBase(request);
   return new NextResponse(buildScript(apiBase, token), {
     headers: {
       "Content-Type": "application/javascript; charset=utf-8",
