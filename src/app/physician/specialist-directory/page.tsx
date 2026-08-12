@@ -341,6 +341,14 @@ export default function SpecialistDirectoryPage() {
               </div>
             </div>
 
+            {selected.oscarStatus !== "LINKED" && (
+              <div className="mt-4 rounded-lg bg-blue-50 border border-blue-200 px-3 py-2 text-xs text-blue-900">
+                <span className="font-medium">Referring a patient today?</span> You don&apos;t need to wait for
+                OSCAR — open their PathwaysBC profile below for the office phone/fax and refer directly, the same
+                way you would any specialist.
+              </div>
+            )}
+
             <p className="text-xs text-slate-500 mt-4">
               Office phone, fax, and address aren&apos;t mirrored here yet — view the full profile on PathwaysBC for
               contact details.
@@ -362,7 +370,7 @@ export default function SpecialistDirectoryPage() {
                 </span>
               ) : selected.oscarStatus === "QUEUED" ? (
                 <span className="inline-flex items-center rounded-lg px-4 py-2 text-sm font-medium bg-amber-50 text-amber-800 border border-amber-200">
-                  Queued — added to OSCAR in the next monthly sync
+                  Queued for OSCAR — our team will add them
                 </span>
               ) : (
                 <button
