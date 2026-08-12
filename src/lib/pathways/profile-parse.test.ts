@@ -108,6 +108,22 @@ Clinic is located on the basement level of Health Care Centre.`;
     expect(result.clinicAddress).toContain("Terra Nova Brighouse Clinic");
   });
 
+  // Live bug: OSCAR record 1620 got "Private email (for physician office use only): …" written
+  // into its address field, because only a "Public email" prefix was being skipped.
+  it("never treats an email line as the address, however it is labelled", () => {
+    const text = `Dr. Brendan O'Malley
+Internal Medicine
+Office Information
+250-748-1323
+Private email (for physician office use only): cowichaninternistgroup@gmail.com
+Cowichan District Hospital - 3045 Gibbins Road, Duncan, British Columbia, V9L 1E5
+Referral Information and Requirements`;
+    const r = parseSpecialistProfileText(text);
+    expect(r.email).toBe("cowichaninternistgroup@gmail.com");
+    expect(r.phone).toBe("250-748-1323");
+    expect(r.clinicAddress).toBe("Cowichan District Hospital - 3045 Gibbins Road, Duncan, British Columbia, V9L 1E5");
+  });
+
   it("returns no address when nothing on the page carries a postal code", () => {
     const result = parseSpecialistProfileText("Dr. Nobody\nNeurology\nNo contact details here.");
     expect(result.clinicAddress).toBeNull();

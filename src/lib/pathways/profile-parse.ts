@@ -24,7 +24,9 @@ export type SpecialistContactInfo = {
 
 const PHONE_RE = /\(?\d{3}\)?[-.\s]?\d{3}[-.\s]\d{4}\b/;
 const FAX_LINE_RE = /^Fax:\s*(.+)$/i;
-const EMAIL_LINE_RE = /^Public email[^:]*:\s*(.+)$/i;
+/** PathwaysBC labels these several ways ("Public email (okay for patient use):", "Private email
+ *  (for physician office use only):"), so match on the word rather than one exact prefix. */
+const EMAIL_LINE_RE = /^[^:]*\bemail\b[^:]*:\s*(.+)$/i;
 const EMAIL_ADDR_RE = /[\w.+-]+@[\w-]+\.[\w.-]+/;
 const ACCEPTED_BY_RE = /^Accepted by:\s*(.+)$/i;
 const RESPONDED_BY_RE = /^Responded to by:\s*(.+)$/i;
@@ -119,6 +121,10 @@ export function parseSpecialistProfileText(pageText: string): SpecialistContactI
     }
 
     if (FILLER_LINE_RE.test(line)) continue;
+    // Belt and braces: an email line must never become the address, however it's labelled.
+    // Seen live — "Private email (for physician office use only): …" was written into OSCAR
+    // record 1620's address field.
+    if (EMAIL_ADDR_RE.test(line)) continue;
 
     if (!clinicAddress) {
       clinicAddress = stripTrailingOthersSuffix(line);
