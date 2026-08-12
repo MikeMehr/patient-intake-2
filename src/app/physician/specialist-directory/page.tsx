@@ -370,7 +370,7 @@ export default function SpecialistDirectoryPage() {
                 </span>
               ) : selected.oscarStatus === "QUEUED" ? (
                 <span className="inline-flex items-center rounded-lg px-4 py-2 text-sm font-medium bg-amber-50 text-amber-800 border border-amber-200">
-                  Queued for OSCAR — our team will add them
+                  Queued — run the OSCAR bookmarklet to add them
                 </span>
               ) : (
                 <button

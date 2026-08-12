@@ -120,6 +120,47 @@ function buildScript(apiBase: string, token: string): string {
     return el ? el.value : null;
   }
 
+  var ADD_SERVICE_PAGE = "/oscar/oscarEncounter/oscarConsultationRequest/config/AddService.jsp";
+
+  /**
+   * Creates a consultation service by reading OSCAR's own Add Service form and replaying it,
+   * rather than hardcoding field names. AddSpecialist.do taught us that lesson: it silently
+   * no-ops if you miss a hidden dispatch field, so mirror whatever the live form actually has.
+   */
+  async function addService(name) {
+    var html = await fetch(ADD_SERVICE_PAGE, { credentials: "include" }).then(function (r) { return r.text(); });
+    var doc = new DOMParser().parseFromString(html, "text/html");
+    var f = doc.querySelector("form");
+    if (!f) throw new Error("Couldn't read OSCAR's Add Service form — is your OSCAR session still open?");
+
+    var params = new URLSearchParams(), namedField = false;
+    Array.prototype.forEach.call(f.elements, function (el) {
+      if (!el.name) return;
+      if (el.type === "text" || el.tagName === "TEXTAREA") { params.set(el.name, name); namedField = true; }
+      else if (el.type === "checkbox" || el.type === "radio") { if (el.checked) params.set(el.name, el.value); }
+      else params.set(el.name, el.value || "");
+    });
+    if (!namedField) throw new Error("OSCAR's Add Service form had no text field to put the name in");
+
+    var action = new URL(f.getAttribute("action") || ADD_SERVICE_PAGE, location.origin + ADD_SERVICE_PAGE).href;
+    await fetch(action, {
+      method: "POST", credentials: "include",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: params.toString(),
+    });
+  }
+
+  /** Specialties among the ready candidates that OSCAR has no exactly-matching service for. */
+  function missingServiceNames(ready, svc) {
+    var have = {};
+    svc.forEach(function (s) { have[s.name.trim().toLowerCase()] = 1; });
+    var missing = [], seen = {};
+    ready.forEach(function (c) {
+      var key = String(c.specialization).trim().toLowerCase();
+      if (!have[key] && !seen[key]) { seen[key] = 1; missing.push(c.specialization); }
+    });
+    return missing;
+  }
+
   async function runOscar() {
     // OSCAR's day sheet reloads itself on a timer (autoRefresh), which kills a run partway
     // through — confirmed live: the first real attempt died silently mid-write. Send them to a
@@ -149,8 +190,39 @@ function buildScript(apiBase: string, token: string): string {
       show(msg); return;
     }
 
+    var svc = await services();
+
+    // PathwaysBC and OSCAR use different words for the same specialty (PathwaysBC "Family
+    // Medicine" vs OSCAR "GP", and ~26 others). Rather than guess a mapping — filing a referral
+    // under the wrong specialty is worse than stopping — offer to create the missing service and
+    // let the physician decide.
+    var missing = missingServiceNames(q.ready, svc);
+    if (missing.length) {
+      show("<div>OSCAR has no consultation service matching " + (missing.length === 1 ? "this specialty" : "these specialties") + ":</div>" +
+        '<ul style="margin:6px 0 0 18px;padding:0">' + missing.map(function (m) { return "<li>" + esc(m) + "</li>"; }).join("") + "</ul>" +
+        '<div style="margin-top:10px"><button id="__mymd_addsvc" style="font:inherit;padding:6px 12px;border:0;background:#0f172a;' +
+        'color:#fff;border-radius:6px;cursor:pointer">Create ' + (missing.length === 1 ? "it" : "them") + " in OSCAR</button></div>" +
+        '<div style="margin-top:8px;color:#475569">Then click the bookmark again to add the specialist(s).</div>');
+      var btn = document.getElementById("__mymd_addsvc");
+      if (btn) btn.onclick = async function () {
+        show("<div>Creating " + missing.length + " service(s)…</div>");
+        var made = [], failed = [];
+        for (var m = 0; m < missing.length; m++) {
+          try { await addService(missing[m]); made.push(missing[m]); }
+          catch (e) { failed.push(missing[m] + " — " + (e && e.message || e)); }
+        }
+        var after = await services(), stillMissing = missingServiceNames(q.ready, after);
+        var out = made.length ? "<div>&#10003; Created: " + made.map(esc).join(", ") + "</div>" : "";
+        failed.forEach(function (fl) { out += '<div style="color:#b91c1c">&#10007; ' + esc(fl) + "</div>"; });
+        if (stillMissing.length) out += '<div style="margin-top:8px;color:#b91c1c">Still missing: ' + stillMissing.map(esc).join(", ") + "</div>";
+        else out += '<div style="margin-top:10px">Now click the bookmark again to add the specialist(s).</div>';
+        show(out);
+      };
+      return;
+    }
+
     show("<div>Adding " + q.ready.length + " specialist(s) to OSCAR…</div>");
-    var svc = await services(), results = [], lines = [];
+    var results = [], lines = [];
 
     for (var i = 0; i < q.ready.length; i++) {
       var c = q.ready[i];
