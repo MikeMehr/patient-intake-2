@@ -144,12 +144,55 @@ export function buildAddSpecialistPayload(candidate: OscarSyncCandidate): AddSpe
 export type OscarService = { id: string; name: string };
 
 /**
+ * PathwaysBC specialty name → the equivalent service name in THIS clinic's OSCAR.
+ *
+ * Exists because the two systems name the same specialty differently, and creating the
+ * PathwaysBC spelling as a new OSCAR service produces near-duplicates of services the clinic
+ * already uses — "Obstetrics / Gynecology" alongside the existing "Obstetrics and Gynecology",
+ * "Orthopedics" alongside "Orthopaedics". That happened for real and the physician's reaction
+ * was, fairly, "it gets confusing like this".
+ *
+ * Values here are specific to this OSCAR instance's service list, so this is a lookup table, not
+ * an algorithm — matching them by similarity would eventually file a referral under the wrong
+ * specialty, which is worse than not matching at all. Ambiguous pairs were chosen by the
+ * physician: Orthopedics→Orthopaedics (not Orthopaedic Surgery), Physical Medicine &
+ * Rehabilitation→Physical Medicine (not Physiatry), Pain Medicine→Pain Management & Prolotherapy.
+ *
+ * A PathwaysBC specialty absent from this map and absent from OSCAR is genuinely new
+ * (e.g. Nurse Practitioner, Laboratory / Pathology) and should be created, not mapped.
+ */
+export const OSCAR_SERVICE_ALIASES: Record<string, string> = {
+  "family medicine": "GP",
+  "orthopedics": "Orthopaedics",
+  "obstetrics / gynecology": "Obstetrics and Gynecology",
+  "physical medicine & rehabilitation": "Physical Medicine",
+  "pain medicine": "Pain Management & Prolotherapy",
+  "psychiatry: adult": "Psychiatry",
+  "psychiatry: child and youth": "Psychiatry - Child/Adol",
+  "psychiatry: geriatric": "Geriatrics- psychiatry",
+  "addiction medicine": "Mental Health & Addictions",
+  "midwifery": "Mid Wife",
+  "allergy & immunology": "Allergist",
+  "anesthesiology": "Anesthesiologist",
+  "genetics": "Geneticist",
+  "geriatric medicine": "Geriatrics",
+  "ent / otolaryngology": "ENT",
+  "medical imaging": "Imaging",
+  "oral & maxillofacial surgery": "Oral surgeon",
+};
+
+/** The OSCAR service name to look for, applying the alias table above. */
+export function oscarServiceNameFor(specialization: string): string {
+  return OSCAR_SERVICE_ALIASES[specialization.trim().toLowerCase()] ?? specialization;
+}
+
+/**
  * Case-insensitive exact match only — no fuzzy matching. OSCAR already has near-duplicate
  * services from years of manual entry (e.g. "Neurology" and "Neuro." both exist); guessing wrong
  * would silently assign a specialist to the wrong consultation category. A specialty with no
  * exact match is reported as unmatched rather than assigned to a guess.
  */
 export function matchOscarService(specialization: string, services: OscarService[]): OscarService | null {
-  const target = specialization.trim().toLowerCase();
+  const target = oscarServiceNameFor(specialization).trim().toLowerCase();
   return services.find((s) => s.name.trim().toLowerCase() === target) ?? null;
 }

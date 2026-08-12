@@ -200,14 +200,45 @@ function buildScript(apiBase: string, token: string): string {
     });
   }
 
-  /** Specialties among the ready candidates that OSCAR has no exactly-matching service for. */
+  /**
+   * PathwaysBC and OSCAR name the same specialty differently, and creating the PathwaysBC
+   * spelling as a new OSCAR service yields near-duplicates of services the clinic already uses
+   * ("Obstetrics / Gynecology" beside the existing "Obstetrics and Gynecology") — confusing at
+   * the point of referral. Keep in step with OSCAR_SERVICE_ALIASES in
+   * src/lib/oscar/specialist-sync-plan.ts.
+   */
+  var SERVICE_ALIASES = {
+    "family medicine": "GP",
+    "orthopedics": "Orthopaedics",
+    "obstetrics / gynecology": "Obstetrics and Gynecology",
+    "physical medicine & rehabilitation": "Physical Medicine",
+    "pain medicine": "Pain Management & Prolotherapy",
+    "psychiatry: adult": "Psychiatry",
+    "psychiatry: child and youth": "Psychiatry - Child/Adol",
+    "psychiatry: geriatric": "Geriatrics- psychiatry",
+    "addiction medicine": "Mental Health & Addictions",
+    "midwifery": "Mid Wife",
+    "allergy & immunology": "Allergist",
+    "anesthesiology": "Anesthesiologist",
+    "genetics": "Geneticist",
+    "geriatric medicine": "Geriatrics",
+    "ent / otolaryngology": "ENT",
+    "medical imaging": "Imaging",
+    "oral & maxillofacial surgery": "Oral surgeon"
+  };
+  function oscarServiceNameFor(spec) {
+    return SERVICE_ALIASES[String(spec).trim().toLowerCase()] || spec;
+  }
+
+  /** Specialties among the ready candidates that OSCAR has no service for, after aliasing. */
   function missingServiceNames(ready, svc) {
     var have = {};
     svc.forEach(function (s) { have[s.name.trim().toLowerCase()] = 1; });
     var missing = [], seen = {};
     ready.forEach(function (c) {
-      var key = String(c.specialization).trim().toLowerCase();
-      if (!have[key] && !seen[key]) { seen[key] = 1; missing.push(c.specialization); }
+      var wanted = oscarServiceNameFor(c.specialization);
+      var key = String(wanted).trim().toLowerCase();
+      if (!have[key] && !seen[key]) { seen[key] = 1; missing.push(wanted); }
     });
     return missing;
   }
@@ -311,7 +342,7 @@ function buildScript(apiBase: string, token: string): string {
       try {
         var target = null;
         for (var j = 0; j < svc.length; j++) {
-          if (svc[j].name.trim().toLowerCase() === String(c.specialization).trim().toLowerCase()) { target = svc[j]; break; }
+          if (svc[j].name.trim().toLowerCase() === String(oscarServiceNameFor(c.specialization)).trim().toLowerCase()) { target = svc[j]; break; }
         }
         if (!target) {
           failed++;

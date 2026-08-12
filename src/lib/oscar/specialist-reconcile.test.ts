@@ -7,6 +7,29 @@ import {
   type OscarRosterEntry,
 } from "./specialist-reconcile";
 
+describe("OSCAR service aliases", () => {
+  it("maps PathwaysBC names onto the clinic's existing OSCAR services", async () => {
+    const { matchOscarService } = await import("./specialist-sync-plan");
+    const services = [
+      { id: "1", name: "GP" },
+      { id: "2", name: "Orthopaedics" },
+      { id: "3", name: "Obstetrics and Gynecology" },
+      { id: "4", name: "Mid Wife" },
+      { id: "5", name: "Psychiatry" },
+    ];
+    expect(matchOscarService("Family Medicine", services)?.name).toBe("GP");
+    expect(matchOscarService("Orthopedics", services)?.name).toBe("Orthopaedics");
+    expect(matchOscarService("Obstetrics / Gynecology", services)?.name).toBe("Obstetrics and Gynecology");
+    expect(matchOscarService("Midwifery", services)?.name).toBe("Mid Wife");
+    expect(matchOscarService("Psychiatry: Adult", services)?.name).toBe("Psychiatry");
+  });
+
+  it("still returns null for a specialty the clinic genuinely has no service for", async () => {
+    const { matchOscarService } = await import("./specialist-sync-plan");
+    expect(matchOscarService("Nurse Practitioner", [{ id: "1", name: "GP" }])).toBeNull();
+  });
+});
+
 describe("normalizeNameTokens", () => {
   it("strips a leading asterisk (real OSCAR data, e.g. lastName '*Jung')", () => {
     expect(normalizeNameTokens("*Jung Gordon")).toEqual(new Set(["jung", "gordon"]));

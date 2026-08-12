@@ -31,8 +31,12 @@ const EMAIL_ADDR_RE = /[\w.+-]+@[\w-]+\.[\w.-]+/;
 const ACCEPTED_BY_RE = /^Accepted by:\s*(.+)$/i;
 const RESPONDED_BY_RE = /^Responded to by:\s*(.+)$/i;
 // Lines that appear in the office block but aren't a phone/fax/email/address — skip, don't
-// mistake one for the address.
-const FILLER_LINE_RE = /^(phone lines?|.*is spoken by the consultant\.?$|.*language.*spoken.*)/i;
+// mistake one for the address. The labelled ones (Website/Hours/Parking/…) and anything holding
+// a URL are all things that were, or would be, written into OSCAR's address field verbatim:
+// "Website: https://cranbrookpeds.ca/" landed in OSCAR record 1623's address before this.
+const FILLER_LINE_RE =
+  /^(phone lines?|website\b|hours\b|parking\b|wheelchair|this practice|.*is spoken by the consultant\.?$|.*language.*spoken.*)/i;
+const URL_RE = /\bhttps?:\/\/|\bwww\./i;
 
 function stripTrailingOthersSuffix(line: string): string {
   return line.replace(/\s+with\s+\d+\s+others?\.?$/i, "").trim();
