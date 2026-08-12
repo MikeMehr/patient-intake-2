@@ -98,12 +98,20 @@
         return out;
     }
 
-    /** Never auto-selected -- only ever offered for a click. */
+    /**
+     * Never auto-selected -- only ever offered for a click.
+     *
+     * The first name the fax gave is sorted to the top rather than used to filter: this clinic has
+     * six charts surnamed TEST, and burying the obvious one alphabetically costs the physician the
+     * time the feature was meant to save. Ranking is a hint; choosing is still theirs.
+     */
     static List<Demo> findCandidates(Connection c, String last, String first) throws SQLException {
         List<Demo> out = new ArrayList<Demo>();
         if (nz(last).isEmpty()) return out;
         PreparedStatement ps = c.prepareStatement(
-            DEMO_COLS + "WHERE LOWER(last_name)=LOWER(?) ORDER BY last_name, first_name LIMIT 8");
+            DEMO_COLS + "WHERE LOWER(last_name)=LOWER(?) "
+            + "ORDER BY (LOWER(first_name)=LOWER(?)) DESC, first_name LIMIT 8");
+        ps.setString(2, nz(first));
         ps.setString(1, last);
         ResultSet rs = ps.executeQuery();
         while (rs.next()) out.add(readDemo(rs));

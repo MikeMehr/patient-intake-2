@@ -9,6 +9,46 @@ editing any JSP, delete its compiled copy under
 `/opt/tomcat9/work/Catalina/localhost/oscar/org/apache/jsp/...` to force a recompile — no Tomcat
 restart is needed.
 
+## Fax triage — AI pre-fill for Incoming Docs (added 2026-08-11)
+
+Opening a fax in **Incoming Docs** now fills in the type, class, description, observation date,
+patient and reviewing provider. Suggestions only: filled fields are tinted, the tint clears when you
+edit, and the physician still presses Save & Next.
+
+Full install steps, the matching rules and the verification procedure live in
+`docs/oscar/fax-triage-install.md`. Sources in `docs/oscar/fax-triage/`. On the box:
+
+| File | What |
+|---|---|
+| `mymd/faxSuggest.jsp` | New. Session guard, path confinement, per-fax cache, HTTPS call, patient/provider resolution. |
+| `mymd/aiPrefill.js` | New. Fills the form and draws the suggestion banner. |
+| `dms/incomingDocs.jsp` | Patched — one `<script src>`, plus a guard inside `addflagprovider()`. |
+| `/var/lib/OscarDocument/oscar/mymd_fax.properties` | New. URL, shared secret, `enabled` flag. `600 tomcat:tomcat`, outside the web root. |
+| `oscar_db.mymd_fax_triage` | New table. Per-fax cache and audit trail. |
+
+### Three things that will cost time if forgotten
+
+- **Faxes have no text layer.** SRFax PDFs are raster scans; `pdftotext` returns zero characters and
+  `LabPdfParser` reads nothing from them. OCR (Azure Document Intelligence, in the app) is the only
+  way to read one — which is also why the reading happens off the box, keeping clinical documents on
+  the one road out of the clinic that `HIPAA_MODE` and the PHI audit log cover.
+- **`/api/emr/` is a protected prefix.** The caller is Tomcat with no session cookie, so without the
+  `PUBLIC_EXCEPTIONS` entry in `src/proxy.ts` the first live call returns
+  `{"error":"Authentication required"}` — the proxy's message, not the route's. Day billing hit this
+  first. `{"error":"Unauthorized"}` instead means the route ran and the shared secret is wrong.
+- **The model never picks a chart.** It returns a name/DOB/PHN and the JSP resolves them here.
+  A patient is preselected only on a unique PHN or a unique exact name+DOB; anything else offers
+  candidates. Six charts here are surnamed `TEST`, which is why name-only never auto-selects.
+
+### Also fixed here
+
+`addflagprovider()` gained a guard against the **string** `"undefined"`, which is what a chart with
+no MRP puts in `MRPNo.value`. Both call sites only tested `length>0`, so 9 characters sailed through
+and was POSTed as `flagproviders=undefined`; with no strict mode, MySQL truncated that into a
+`providerLabRouting` row for `provider_no='undefi'` — a review request addressed to nobody. It was
+invisible until 2026-08-11 only because every routing insert was failing anyway
+(`explicit_defaults_for_timestamp`).
+
 ## Patient email inbox (added 2026-08-09)
 
 "Patient Email" in the top nav, immediately right of Bill Day. Mirrors the
