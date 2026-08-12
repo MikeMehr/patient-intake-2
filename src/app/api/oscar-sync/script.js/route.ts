@@ -121,6 +121,15 @@ function buildScript(apiBase: string, token: string): string {
   }
 
   async function runOscar() {
+    // OSCAR's day sheet reloads itself on a timer (autoRefresh), which kills a run partway
+    // through — confirmed live: the first real attempt died silently mid-write. Send them to a
+    // static page instead of letting it fail.
+    if (/providercontrol\\.jsp/i.test(location.pathname)) {
+      show('<div>This page reloads itself on a timer, which would interrupt the sync.</div>' +
+        '<div style="margin-top:8px">Open <a href="/oscar/oscarEncounter/oscarConsultationRequest/config/ShowAllServices.jsp">' +
+        'Consultation settings</a>, then click this bookmark there.</div>');
+      return;
+    }
     show("<div>Checking the queue…</div>");
     var q;
     try {
