@@ -77,12 +77,31 @@ function buildScript(apiBase: string, token: string): string {
     return "";
   }
   function firstName(full, last) {
-    var n = String(full).trim(), l = String(last).trim();
+    // Drop a trailing practice name — PathwaysBC appends it to some entries
+    // ("Golmehr Sajjady (Aspire Bariatric & Lifestyle Clinic)") and it otherwise defeats the
+    // suffix match, dumping the whole string into OSCAR's first-name field.
+    var n = String(full).trim().replace(/\\s*\\([^)]*\\)\\s*$/, "").trim() || String(full).trim();
+    var l = String(last).trim();
     if (l && n.toLowerCase().slice(-l.length) === l.toLowerCase()) {
       var f = n.slice(0, n.length - l.length).trim();
       if (f) return f;
     }
     return n;
+  }
+
+  /**
+   * Did the record at specId turn out to be the person we just posted?
+   *
+   * Tolerant on purpose: OSCAR truncates long values, and a too-strict comparison marks a
+   * successfully-created record as failed — which leaves it orphaned (present in OSCAR, recorded
+   * as failed here). Seen live: a 29-specialist run created 27 records but only recorded 26.
+   */
+  function lastNameMatches(oscarLastName, expected) {
+    if (!oscarLastName) return false;
+    var a = String(oscarLastName).toLowerCase().replace(/[^a-z]/g, "");
+    var b = String(expected).toLowerCase().replace(/[^a-z]/g, "");
+    if (!a || !b) return false;
+    return a === b || a.indexOf(b) === 0 || b.indexOf(a) === 0;
   }
   function payloadFor(c) {
     return {
@@ -307,13 +326,13 @@ function buildScript(apiBase: string, token: string): string {
         // re-rendering the form rather than erroring.
         var newId = maxId + 1;
         var ln = await verify(newId);
-        if (!ln || ln.toLowerCase() !== String(c.lastName).toLowerCase()) {
+        if (!lastNameMatches(ln, c.lastName)) {
           // Either the add was rejected, or the id drifted (someone else writing concurrently).
           // Re-read the roster to resync rather than guessing again.
           var re = await servicePage(target.id);
           var reMax = re.all.length ? Math.max.apply(null, re.all) : maxId;
           var reName = reMax > maxId ? await verify(reMax) : null;
-          if (reName && reName.toLowerCase() === String(c.lastName).toLowerCase()) {
+          if (lastNameMatches(reName, c.lastName)) {
             newId = reMax;
           } else {
             maxId = reMax;

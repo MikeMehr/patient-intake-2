@@ -39,6 +39,18 @@ describe("deriveFirstName", () => {
   it("falls back to the full name when the last name isn't a suffix", () => {
     expect(deriveFirstName("Naveed Malek", "Smith")).toBe("Naveed Malek");
   });
+
+  // PathwaysBC appends the practice to some names; without stripping it the suffix match fails
+  // and the whole string lands in OSCAR's first-name field (seen live in OSCAR record 1611).
+  it("drops a trailing practice name before splitting", () => {
+    expect(deriveFirstName("Golmehr Sajjady (Aspire Bariatric & Lifestyle Clinic)", "Sajjady")).toBe("Golmehr");
+    expect(deriveFirstName("Arjun Sangha (Alta Health Clinic)", "Sangha")).toBe("Arjun");
+    expect(deriveFirstName("Claire Campion Wright (New Branch Medical)", "Campion Wright")).toBe("Claire");
+  });
+
+  it("keeps a nickname in quotes, which is part of the name proper", () => {
+    expect(deriveFirstName('"Gill" Gillian Lauder (myoA For Youth)', "Lauder")).toBe('"Gill" Gillian');
+  });
 });
 
 describe("buildAnnotation", () => {

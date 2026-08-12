@@ -37,9 +37,14 @@ export function normalizeReferralNo(billingNumber: string | null): string {
  * PathwaysBC gives a full display name plus a separate last name; OSCAR wants them split.
  * Strips the known last name off the end of the full name rather than splitting on whitespace,
  * since some last names are themselves multi-word (e.g. "von Kleist").
+ *
+ * A trailing parenthetical is dropped first: PathwaysBC appends the practice to some names
+ * ("Golmehr Sajjady (Aspire Bariatric & Lifestyle Clinic)"), which otherwise defeats the
+ * suffix match and dumps the whole string into OSCAR's first-name field — seen live in OSCAR
+ * record 1611 before this was fixed.
  */
 export function deriveFirstName(fullName: string, lastName: string): string {
-  const trimmedName = fullName.trim();
+  const trimmedName = fullName.trim().replace(/\s*\([^)]*\)\s*$/, "").trim() || fullName.trim();
   const trimmedLast = lastName.trim();
   if (trimmedLast && trimmedName.toLowerCase().endsWith(trimmedLast.toLowerCase())) {
     const firstName = trimmedName.slice(0, trimmedName.length - trimmedLast.length).trim();
