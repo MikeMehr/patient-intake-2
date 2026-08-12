@@ -130,15 +130,19 @@ function buildScript(apiBase: string, token: string): string {
   async function addService(name) {
     var html = await fetch(ADD_SERVICE_PAGE, { credentials: "include" }).then(function (r) { return r.text(); });
     var doc = new DOMParser().parseFromString(html, "text/html");
-    var f = doc.querySelector("form");
+    var f = doc.querySelector('form[action*="AddService"]') || doc.querySelector("form");
     if (!f) throw new Error("Couldn't read OSCAR's Add Service form — is your OSCAR session still open?");
 
+    // Collect fields from the DOCUMENT, not the form. OSCAR's markup leaves the <form> element
+    // empty with its inputs as siblings, and form.elements is empty on a DOMParser document
+    // regardless — verified live 2026-08-11: both f.elements and f.querySelectorAll returned
+    // nothing while the same page rendered the field fine in the browser.
     var params = new URLSearchParams(), namedField = false;
-    Array.prototype.forEach.call(f.elements, function (el) {
+    Array.prototype.forEach.call(doc.querySelectorAll("input, select, textarea"), function (el) {
       if (!el.name) return;
       if (el.type === "text" || el.tagName === "TEXTAREA") { params.set(el.name, name); namedField = true; }
       else if (el.type === "checkbox" || el.type === "radio") { if (el.checked) params.set(el.name, el.value); }
-      else params.set(el.name, el.value || "");
+      else if (el.type !== "submit" && el.type !== "button") { params.set(el.name, el.value || ""); }
     });
     if (!namedField) throw new Error("OSCAR's Add Service form had no text field to put the name in");
 
