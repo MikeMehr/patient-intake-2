@@ -95,6 +95,11 @@ const PUBLIC_EXCEPTIONS = new Set<string>([
   // nothing else, is restricted to allow-listed OSCAR origins, and is scoped to the
   // organization that owns that OSCAR. Same structural reason as billing-dx above.
   "/api/emr/oscar/attachment-count",
+  // Incoming Docs asks this what an arriving fax says, so the boxes can be pre-filled. The caller
+  // is mymd/faxSuggest.jsp on the OSCAR server, not a browser, so there is no physician_session
+  // cookie and the prefix guard would 401 it. Shared secret in constant time, 404 when that secret
+  // is unconfigured. Same reasoning as billing-dx above.
+  "/api/emr/oscar/fax-triage",
 ]);
 
 /**

@@ -200,6 +200,9 @@ describe("middleware", () => {
     // cookie to present. It guards itself with a shared secret. Without this exception the
     // /api/emr/ prefix guard 401s it and every visit falls back to a hand-typed code.
     "/api/emr/oscar/billing-dx",
+    // Fax triage — same story: called by the OSCAR server from Incoming Docs, no session cookie,
+    // guarded by its own shared secret. Without this exception every fax falls back to hand entry.
+    "/api/emr/oscar/fax-triage",
   ])("does not block public route %s", (path) => {
     const res = proxy(makeRequest(path)); // no cookie
     expect(res.status).toBe(200);
