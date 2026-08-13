@@ -39,6 +39,24 @@ export type BookingCardGate =
 const PASS: BookingCardGate = { ok: true };
 
 /**
+ * The coverage half of the gate, on its own: can this kind of coverage self-book at all?
+ *
+ * Split out because the form has to answer it the moment the patient picks a coverage type, with no
+ * card number in hand — and a check that wants a number will call every MSP patient "card missing"
+ * and bar the one path that is meant to work. Says nothing about the number itself; that is
+ * {@link checkBookingHealthCard}, run against the field on submit.
+ */
+export function checkBookingCoverageType(coverageType: string): BookingCardGate {
+  if (coverageType === "EXISTING_OSCAR_PATIENT") return PASS;
+  if (coverageType === "CANADIAN_HEALTH_CARD") return PASS;
+  return {
+    ok: false,
+    problem: "non-msp",
+    reason: "Online booking is for patients with valid BC MSP coverage.",
+  };
+}
+
+/**
  * Decide whether a booking's stated coverage is good enough to let the patient book themselves.
  *
  * Self-booking is for MSP-covered patients. Private pay, travel insurance and uninsured all mean
@@ -53,15 +71,9 @@ export function checkBookingHealthCard(input: {
   province?: string | null;
   healthCardNumber?: string | null;
 }): BookingCardGate {
-  if (input.coverageType === "EXISTING_OSCAR_PATIENT") return PASS;
-
-  if (input.coverageType !== "CANADIAN_HEALTH_CARD") {
-    return {
-      ok: false,
-      problem: "non-msp",
-      reason: "Online booking is for patients with valid BC MSP coverage.",
-    };
-  }
+  const coverage = checkBookingCoverageType(input.coverageType);
+  if (!coverage.ok) return coverage;
+  if (input.coverageType !== "CANADIAN_HEALTH_CARD") return PASS;
 
   const card = normalizeCard(input.healthCardNumber || "");
   if (!card) {

@@ -7,6 +7,7 @@ import {
   BOOKING_CARD_FIX_HINT,
   bookingCardAdvice,
   bookingCardMessage,
+  checkBookingCoverageType,
   checkBookingHealthCard,
   type BookingCardAdvice,
 } from "@/lib/billing/booking-msp-gate";
@@ -430,10 +431,12 @@ export default function BookingConfirmPage({
    * they choose a coverage type rather than at submit: there is no point letting someone fill in a
    * whole form for a booking that cannot be taken online.
    */
+  // Only ever about the coverage they picked. Anything wrong with the number itself belongs to the
+  // card field, checked on submit.
   const coverageBlock =
     step !== "found" && settings?.healthCardRequired
       ? (() => {
-          const gate = checkBookingHealthCard({ coverageType: coverage.coverageType });
+          const gate = checkBookingCoverageType(coverage.coverageType);
           return gate.ok ? null : bookingCardAdvice(gate);
         })()
       : null;

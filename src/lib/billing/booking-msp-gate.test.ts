@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { bookingCardMessage, checkBookingHealthCard } from "@/lib/billing/booking-msp-gate";
+import {
+  bookingCardMessage,
+  checkBookingCoverageType,
+  checkBookingHealthCard,
+} from "@/lib/billing/booking-msp-gate";
 
 // A PHN that passes the BC check digit (mod 11 over digits 2..9), and the same number with the
 // last digit bumped so it fails. Both are synthetic.
@@ -93,6 +97,26 @@ describe("checkBookingHealthCard", () => {
   it("never gets in the way of a patient who is already on the chart", () => {
     // Their coverage is whatever the clinic recorded, and the booking form does not re-ask.
     expect(checkBookingHealthCard({ coverageType: "EXISTING_OSCAR_PATIENT" }).ok).toBe(true);
+  });
+});
+
+describe("checkBookingCoverageType", () => {
+  // The form asks this the moment a coverage type is picked, before any number is typed. It must
+  // stay silent about the card — reporting "card missing" here barred every MSP patient from
+  // booking, which is the one path that has to work.
+  it("passes MSP coverage even though no card has been entered yet", () => {
+    expect(checkBookingCoverageType("CANADIAN_HEALTH_CARD")).toEqual({ ok: true });
+  });
+
+  it("passes a patient already on the chart", () => {
+    expect(checkBookingCoverageType("EXISTING_OSCAR_PATIENT")).toEqual({ ok: true });
+  });
+
+  it("stops the coverage types that cannot self-book", () => {
+    for (const coverageType of ["PRIVATE_PAY", "TRAVEL_INSURANCE", "UNINSURED"]) {
+      const gate = checkBookingCoverageType(coverageType);
+      expect(gate.ok === false && gate.problem).toBe("non-msp");
+    }
   });
 });
 
