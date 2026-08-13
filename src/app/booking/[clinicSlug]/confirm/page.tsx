@@ -6,6 +6,7 @@ import PharmacyPicker from "@/components/PharmacyPicker";
 import {
   BOOKING_CARD_FIX_HINT,
   bookingCardAdvice,
+  bookingCardMessage,
   checkBookingHealthCard,
   type BookingCardAdvice,
 } from "@/lib/billing/booking-msp-gate";
@@ -291,8 +292,14 @@ export default function BookingConfirmPage({
         healthCardNumber: coverage.healthCardNumber,
       });
       if (!gate.ok) {
-        setCardError(bookingCardAdvice(gate));
-        setError(null);
+        if (gate.problem === "non-msp") {
+          // The coverage panel already says this and the button is disabled, so this is only
+          // reachable by a stale form. It has no card field to sit under — say it at the top.
+          setError(bookingCardMessage(gate, clinicEmail));
+        } else {
+          setCardError(bookingCardAdvice(gate));
+          setError(null);
+        }
         return;
       }
     }
@@ -418,6 +425,49 @@ export default function BookingConfirmPage({
   // The clinic setting is the default; the patient may move off it only when the clinic has
   // switched that on. The server clamps this again — a public form's choice is a request, not a
   // decision.
+  /**
+   * The clinic's coverage rule, applied to what the patient has picked so far. Rendered the moment
+   * they choose a coverage type rather than at submit: there is no point letting someone fill in a
+   * whole form for a booking that cannot be taken online.
+   */
+  const coverageBlock =
+    step !== "found" && settings?.healthCardRequired
+      ? (() => {
+          const gate = checkBookingHealthCard({ coverageType: coverage.coverageType });
+          return gate.ok ? null : bookingCardAdvice(gate);
+        })()
+      : null;
+
+  /** The card message and the coverage message are the same two sentences, so they render alike. */
+  function cardAdvicePanel(advice: BookingCardAdvice, id: string) {
+    return (
+      <div
+        id={id}
+        role="alert"
+        className="mt-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800"
+      >
+        <p className="font-medium">{advice.reason}</p>
+        {(advice.showFixHint || advice.showContact) && (
+          <p className="mt-1">
+            {advice.showFixHint && <>{BOOKING_CARD_FIX_HINT} </>}
+            {advice.showContact &&
+              (clinicEmail ? (
+                <>
+                  {advice.contactLeadIn} email the clinic at{" "}
+                  <a href={`mailto:${clinicEmail}`} className="underline font-medium">
+                    {clinicEmail}
+                  </a>{" "}
+                  to book this appointment.
+                </>
+              ) : (
+                <>{advice.contactLeadIn} contact the clinic to book this appointment.</>
+              ))}
+          </p>
+        )}
+      </div>
+    );
+  }
+
   const clinicDefault = normalizeModality(settings?.appointmentModality);
   const mayChoose = Boolean(settings?.patientMayChooseModality && settings?.videoVisitsEnabled);
   const modality = mayChoose ? chosenModality : clinicDefault;
@@ -998,6 +1048,8 @@ export default function BookingConfirmPage({
                 </label>
               ))}
             </div>
+            {/* Anything other than MSP is a conversation with the clinic, not a public form. */}
+            {coverageBlock && cardAdvicePanel(coverageBlock, "coverage-not-msp")}
           </div>
 
           {/* Province for health card */}
@@ -1043,32 +1095,7 @@ export default function BookingConfirmPage({
               )}
               {/* The card didn't check out. Lead with the fix — nearly every failure here is a
                   mistyped digit — and give the clinic's address for the ones that aren't. */}
-              {cardError && (
-                <div
-                  id="health-card-error"
-                  role="alert"
-                  className="mt-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800"
-                >
-                  <p className="font-medium">{cardError.reason}</p>
-                  {(cardError.showFixHint || cardError.showContact) && (
-                    <p className="mt-1">
-                      {cardError.showFixHint && <>{BOOKING_CARD_FIX_HINT} </>}
-                      {cardError.showContact &&
-                        (clinicEmail ? (
-                          <>
-                            {cardError.contactLeadIn} email the clinic at{" "}
-                            <a href={`mailto:${clinicEmail}`} className="underline font-medium">
-                              {clinicEmail}
-                            </a>{" "}
-                            to book this appointment.
-                          </>
-                        ) : (
-                          <>{cardError.contactLeadIn} contact the clinic to book this appointment.</>
-                        ))}
-                    </p>
-                  )}
-                </div>
-              )}
+              {cardError && cardAdvicePanel(cardError, "health-card-error")}
             </div>
           )}
 
@@ -1094,8 +1121,9 @@ export default function BookingConfirmPage({
             </div>
           )}
 
-          {/* Billing note */}
-          {["PRIVATE_PAY", "TRAVEL_INSURANCE", "UNINSURED"].includes(coverage.coverageType) && (
+          {/* Billing note — pointless while this coverage cannot be booked online at all. */}
+          {!coverageBlock &&
+            ["PRIVATE_PAY", "TRAVEL_INSURANCE", "UNINSURED"].includes(coverage.coverageType) && (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Billing note (optional)
@@ -1137,7 +1165,7 @@ export default function BookingConfirmPage({
 
           <button
             type="submit"
-            disabled={submitting || !consentGiven || aiScribeConsent === null}
+            disabled={submitting || !consentGiven || aiScribeConsent === null || Boolean(coverageBlock)}
             className="w-full bg-blue-600 text-white py-3 rounded-lg font-semibold hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition"
           >
             {submitting

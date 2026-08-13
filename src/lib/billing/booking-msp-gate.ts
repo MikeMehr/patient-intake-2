@@ -13,9 +13,9 @@
  * browser (before the OSCAR chart is created) and again on the server (so a hand-rolled request
  * cannot skip it), which is why it stays pure — no database, no OSCAR client.
  *
- * Only a valid BC PHN passes. An out-of-province card is a real card but not MSP coverage, and this
- * is a BC clinic billing BC MSP — those patients are sent to the clinic by email rather than being
- * booked into a visit nobody can bill.
+ * Only a valid BC PHN passes. An out-of-province card is a real card but not MSP coverage, and
+ * private pay, travel insurance and uninsured are not MSP at all — every one of those goes to the
+ * clinic by email rather than into a slot on the strength of a public form.
  *
  * `reason` is written for the patient, not for staff: it says what to do about it, and it never
  * echoes the number back.
@@ -25,7 +25,12 @@ import { isValidBcPhn, normalizeCard } from "./health-card";
 import { toProvinceCode } from "@/lib/province-code";
 
 /** Why a card was turned away — the caller picks the wording around it, not the verdict. */
-export type BookingCardProblem = "missing" | "province" | "out-of-province" | "invalid";
+export type BookingCardProblem =
+  | "non-msp"
+  | "missing"
+  | "province"
+  | "out-of-province"
+  | "invalid";
 
 export type BookingCardGate =
   | { ok: true }
@@ -36,15 +41,27 @@ const PASS: BookingCardGate = { ok: true };
 /**
  * Decide whether a booking's stated coverage is good enough to let the patient book themselves.
  *
- * Only applies to the "Canadian health card" path: a patient who has told the clinic they are
- * private pay, insured, or uninsured has no MSP number to check and is not this gate's business.
+ * Self-booking is for MSP-covered patients. Private pay, travel insurance and uninsured all mean
+ * money changes hands, which is a conversation with the clinic rather than something to settle by
+ * filling in a public form — those go to the clinic by email, same as a card that doesn't check out.
+ *
+ * A patient already on the chart is never this gate's business: whatever coverage the clinic
+ * recorded stands, and the booking form does not re-ask.
  */
 export function checkBookingHealthCard(input: {
   coverageType: string;
   province?: string | null;
   healthCardNumber?: string | null;
 }): BookingCardGate {
-  if (input.coverageType !== "CANADIAN_HEALTH_CARD") return PASS;
+  if (input.coverageType === "EXISTING_OSCAR_PATIENT") return PASS;
+
+  if (input.coverageType !== "CANADIAN_HEALTH_CARD") {
+    return {
+      ok: false,
+      problem: "non-msp",
+      reason: "Online booking is for patients with valid BC MSP coverage.",
+    };
+  }
 
   const card = normalizeCard(input.healthCardNumber || "");
   if (!card) {
@@ -124,7 +141,8 @@ export function bookingCardAdvice(gate: {
         contactLeadIn: "If the number is correct, please",
       };
     case "out-of-province":
-      // A real card, just not one this clinic can bill. Nothing to retype — the clinic decides.
+    case "non-msp":
+      // A real card, or none at all — either way nothing to retype. The clinic decides.
       return {
         reason: gate.reason,
         showFixHint: false,

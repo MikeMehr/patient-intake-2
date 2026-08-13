@@ -83,10 +83,16 @@ describe("checkBookingHealthCard", () => {
     expect(gate.ok === false && gate.problem).toBe("missing");
   });
 
-  it("leaves the non-MSP coverage types alone — they have no card to check", () => {
-    for (const coverageType of ["PRIVATE_PAY", "TRAVEL_INSURANCE", "UNINSURED", "EXISTING_OSCAR_PATIENT"]) {
-      expect(checkBookingHealthCard({ coverageType }).ok).toBe(true);
+  it("sends every non-MSP coverage type to the clinic instead of booking it", () => {
+    for (const coverageType of ["PRIVATE_PAY", "TRAVEL_INSURANCE", "UNINSURED"]) {
+      const gate = checkBookingHealthCard({ coverageType });
+      expect(gate.ok === false && gate.problem).toBe("non-msp");
     }
+  });
+
+  it("never gets in the way of a patient who is already on the chart", () => {
+    // Their coverage is whatever the clinic recorded, and the booking form does not re-ask.
+    expect(checkBookingHealthCard({ coverageType: "EXISTING_OSCAR_PATIENT" }).ok).toBe(true);
   });
 });
 
@@ -123,5 +129,14 @@ describe("bookingCardMessage", () => {
   it("stays generic when the clinic has no address on file", () => {
     const msg = bookingCardMessage({ problem: "out-of-province", reason: "Out of province." }, null);
     expect(msg).toBe("Out of province. Please contact the clinic to book this appointment.");
+  });
+
+  it("points a private-pay patient at the clinic", () => {
+    const gate = checkBookingHealthCard({ coverageType: "PRIVATE_PAY" });
+    expect(gate.ok).toBe(false);
+    expect(gate.ok === false && bookingCardMessage(gate, "info@mymdonline.ca")).toBe(
+      "Online booking is for patients with valid BC MSP coverage. " +
+        "Please email the clinic at info@mymdonline.ca to book this appointment.",
+    );
   });
 });
