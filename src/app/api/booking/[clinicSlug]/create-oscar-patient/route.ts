@@ -22,6 +22,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getClinicBySlug } from "@/lib/booking-store";
 import { query } from "@/lib/db";
 import { createOscarDemographic } from "@/lib/oscar/self-serve";
+import { bookingCardMessage, checkBookingHealthCard } from "@/lib/billing/booking-msp-gate";
 
 export const runtime = "nodejs";
 
@@ -71,6 +72,24 @@ export async function POST(
         { error: "Hold not found or expired. Please select a time slot again." },
         { status: 403 }
       );
+    }
+
+    // A card that can't be billed must not become a chart. Checked only when one was actually
+    // given: a private-pay or uninsured patient submits no card at all, and their chart is still
+    // created — /confirm is what decides whether the coverage they chose needs one.
+    const submittedCard = body.healthCardNumber != null ? String(body.healthCardNumber) : "";
+    if (submittedCard.trim()) {
+      const gate = checkBookingHealthCard({
+        coverageType: "CANADIAN_HEALTH_CARD",
+        province: body.healthCardProvince != null ? String(body.healthCardProvince) : null,
+        healthCardNumber: submittedCard,
+      });
+      if (!gate.ok) {
+        return NextResponse.json(
+          { error: bookingCardMessage(gate, clinic.email) },
+          { status: 400 },
+        );
+      }
     }
 
     const result = await createOscarDemographic(clinic.id, {

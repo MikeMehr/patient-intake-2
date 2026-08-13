@@ -311,24 +311,27 @@ export default function ClinicBookingPage({
           )}
         </div>
 
-        {/* Physician selector */}
-        <div className="bg-white border border-gray-200 rounded-xl p-4 mb-6">
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Select physician
-          </label>
-          <select
-            value={selectedPhysicianId}
-            onChange={(e) => setSelectedPhysicianId(e.target.value)}
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-          >
-            <option value="any">Any available doctor</option>
-            {physicians.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.displayName}
-              </option>
-            ))}
-          </select>
-        </div>
+        {/* Physician selector — a one-doctor clinic has nothing to choose between, so the picker
+            is skipped and the patient goes straight to the times. */}
+        {physicians.length > 1 && (
+          <div className="bg-white border border-gray-200 rounded-xl p-4 mb-6">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Select physician
+            </label>
+            <select
+              value={selectedPhysicianId}
+              onChange={(e) => setSelectedPhysicianId(e.target.value)}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="any">Any available doctor</option>
+              {physicians.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.displayName}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
 
         {/* Booking window closed */}
         {bookingClosed && (

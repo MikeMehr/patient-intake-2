@@ -4,6 +4,12 @@ import { use, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import PharmacyPicker from "@/components/PharmacyPicker";
 import {
+  BOOKING_CARD_FIX_HINT,
+  bookingCardAdvice,
+  checkBookingHealthCard,
+  type BookingCardAdvice,
+} from "@/lib/billing/booking-msp-gate";
+import {
   MODALITY_ICON,
   MODALITY_LABEL,
   MODALITY_NOTE,
@@ -80,6 +86,7 @@ export default function BookingConfirmPage({
 
   const [settings, setSettings]     = useState<ClinicSettings | null>(null);
   const [clinicName, setClinicName] = useState("");
+  const [clinicEmail, setClinicEmail] = useState<string | null>(null);
   const [step, setStep]             = useState<Step>("identity");
 
   // Identity (Step 1)
@@ -125,6 +132,10 @@ export default function BookingConfirmPage({
     billingNote: "",
   });
 
+  // Why the health card was turned away, if it was. Held apart from `error` so it renders against
+  // the field the patient has to fix rather than at the top of a long form.
+  const [cardError, setCardError] = useState<BookingCardAdvice | null>(null);
+
   const [consentGiven, setConsentGiven] = useState(false);
   // Tri-state: null = not yet answered. The patient must pick one; "No" books fine.
   const [aiScribeConsent, setAiScribeConsent] = useState<boolean | null>(null);
@@ -147,9 +158,19 @@ export default function BookingConfirmPage({
         // format the clinic expects.
         setChosenModality(normalizeModality(data.settings?.appointmentModality));
         setClinicName(data.clinic?.name ?? "");
+        setClinicEmail(data.clinic?.email ?? null);
       })
       .catch(() => {});
   }, [clinicSlug, slotId, router]);
+
+  // The card message renders beside the field, which on a phone sits well above the button that was
+  // just pressed. Without this the form looks like it did nothing.
+  useEffect(() => {
+    if (!cardError) return;
+    document
+      .getElementById("health-card-error")
+      ?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [cardError]);
 
   // ---------------------------------------------------------------------------
   // Helpers
@@ -171,6 +192,11 @@ export default function BookingConfirmPage({
   }
 
   function setCov(field: string, value: string) {
+    // Touching anything the card check looked at clears its verdict — leaving a stale "that number
+    // isn't valid" under a number the patient has since corrected reads as a dead end.
+    if (field === "healthCardNumber" || field === "province" || field === "coverageType") {
+      setCardError(null);
+    }
     setCoverage((p) => ({ ...p, [field]: value }));
   }
 
@@ -254,6 +280,23 @@ export default function BookingConfirmPage({
     e.preventDefault();
     if (!consentGiven) { setError("You must consent to proceed."); return; }
     if (aiScribeConsent === null) { setError("Please answer the question about the AI scribe."); return; }
+
+    // Check the health card before anything is written anywhere. A patient already on the chart is
+    // exempt: their card is whatever the clinic recorded, and this form never re-asks for it.
+    // Runs only where the clinic asks for a card at all — the server applies the same condition.
+    if (step !== "found" && settings?.healthCardRequired) {
+      const gate = checkBookingHealthCard({
+        coverageType: coverage.coverageType,
+        province: coverage.province,
+        healthCardNumber: coverage.healthCardNumber,
+      });
+      if (!gate.ok) {
+        setCardError(bookingCardAdvice(gate));
+        setError(null);
+        return;
+      }
+    }
+
     setSubmitting(true);
     setError(null);
 
@@ -981,10 +1024,51 @@ export default function BookingConfirmPage({
               <input
                 required
                 type="text"
+                inputMode="numeric"
+                autoComplete="off"
                 value={coverage.healthCardNumber}
                 onChange={(e) => setCov("healthCardNumber", e.target.value)}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                aria-invalid={cardError ? true : undefined}
+                aria-describedby={cardError ? "health-card-error" : undefined}
+                className={`w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 ${
+                  cardError
+                    ? "border-red-400 focus:ring-red-500"
+                    : "border-gray-300 focus:ring-blue-500"
+                }`}
               />
+              {coverage.province === "British Columbia" && !cardError && (
+                <p className="mt-1 text-xs text-gray-500">
+                  The 10-digit number on your BC Services Card.
+                </p>
+              )}
+              {/* The card didn't check out. Lead with the fix — nearly every failure here is a
+                  mistyped digit — and give the clinic's address for the ones that aren't. */}
+              {cardError && (
+                <div
+                  id="health-card-error"
+                  role="alert"
+                  className="mt-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800"
+                >
+                  <p className="font-medium">{cardError.reason}</p>
+                  {(cardError.showFixHint || cardError.showContact) && (
+                    <p className="mt-1">
+                      {cardError.showFixHint && <>{BOOKING_CARD_FIX_HINT} </>}
+                      {cardError.showContact &&
+                        (clinicEmail ? (
+                          <>
+                            {cardError.contactLeadIn} email the clinic at{" "}
+                            <a href={`mailto:${clinicEmail}`} className="underline font-medium">
+                              {clinicEmail}
+                            </a>{" "}
+                            to book this appointment.
+                          </>
+                        ) : (
+                          <>{cardError.contactLeadIn} contact the clinic to book this appointment.</>
+                        ))}
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
           )}
 

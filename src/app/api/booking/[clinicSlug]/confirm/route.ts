@@ -14,6 +14,7 @@ import { generateManageToken } from "@/lib/booking-token";
 import { sendBookingConfirmation } from "@/lib/booking-email";
 import { sendBookingAlertSMS, toE164 } from "@/lib/sms";
 import { describeMspEligibility } from "@/lib/billing/msp-eligibility";
+import { bookingCardMessage, checkBookingHealthCard } from "@/lib/billing/booking-msp-gate";
 import {
   normalizeModality,
   type AppointmentModality,
@@ -161,13 +162,25 @@ async function handleConfirm(
   const patientPhone = phone ? toE164(String(phone)) : null;
   const storedPhone = patientPhone && /^\+\d{10,15}$/.test(patientPhone) ? patientPhone : null;
 
-  // Enforce health card requirement (not applicable to existing Oscar patients)
-  if (
-    clinic.settings.healthCardRequired &&
-    coverageType === "CANADIAN_HEALTH_CARD" &&
-    !healthCardNumber
-  ) {
-    return NextResponse.json({ error: "Health card number is required for this clinic" }, { status: 400 });
+  // Enforce the health card requirement (not applicable to existing Oscar patients, who book with
+  // coverageType EXISTING_OSCAR_PATIENT and whose card is whatever the chart already says).
+  //
+  // The number has to be a card the clinic can actually bill, not merely present: this form is
+  // anonymous and public, so a booking that reaches here with an unbillable PHN is a visit nobody
+  // gets paid for and a chart someone has to clean up. The browser runs the same check before the
+  // OSCAR chart is created — this is the copy that a hand-rolled request cannot skip.
+  if (clinic.settings.healthCardRequired) {
+    const gate = checkBookingHealthCard({
+      coverageType: String(coverageType),
+      province: province != null ? String(province) : null,
+      healthCardNumber: healthCardNumber != null ? String(healthCardNumber) : null,
+    });
+    if (!gate.ok) {
+      return NextResponse.json(
+        { error: bookingCardMessage(gate, clinic.email) },
+        { status: 400 },
+      );
+    }
   }
 
   const { raw: manageTokenRaw, hash: manageTokenHash, expiresAt: manageTokenExpiresAt } =

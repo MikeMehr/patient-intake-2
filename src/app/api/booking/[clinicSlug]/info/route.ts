@@ -30,6 +30,9 @@ export async function GET(
       slug: clinic.slug,
       address: clinic.address,
       phone: clinic.phone,
+      // Where a patient the form has to turn away is told to write. Already public — it is on the
+      // confirmation emails and in the "contact the clinic" message on an ambiguous lookup.
+      email: clinic.email,
       websiteUrl: clinic.websiteUrl,
     },
     settings: clinic.settings,
