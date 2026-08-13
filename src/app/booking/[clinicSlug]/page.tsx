@@ -43,6 +43,7 @@ type ClinicInfo = {
   slug: string;
   address: string | null;
   phone: string | null;
+  email: string | null;
   websiteUrl: string | null;
 };
 
@@ -304,6 +305,28 @@ export default function ClinicBookingPage({
               <p className="text-xs text-blue-800 mt-0.5">{MODALITY_NOTE[modality]}</p>
             </div>
           </div>
+          {/* Say the coverage rule before they pick a time, not after they've filled in a form.
+              Only where the clinic actually requires a card — that setting is what turns the
+              check on. */}
+          {settings?.healthCardRequired && (
+            <div className="mt-2 bg-amber-50 border border-amber-200 rounded-lg p-3">
+              <p className="text-sm font-semibold text-amber-900">
+                Booking online needs a valid BC health card (MSP)
+              </p>
+              <p className="text-xs text-amber-800 mt-0.5">
+                If you don&apos;t have one — or your card is from another province — email us
+                {clinic?.email ? (
+                  <>
+                    {" at "}
+                    <a href={`mailto:${clinic.email}`} className="underline font-medium">
+                      {clinic.email}
+                    </a>
+                  </>
+                ) : null}{" "}
+                and we&apos;ll book your appointment for you.
+              </p>
+            </div>
+          )}
           {settings?.bookingInstructions && (
             <p className="text-gray-600 text-sm mt-2 bg-blue-50 border border-blue-100 rounded-lg p-3">
               {settings.bookingInstructions}
