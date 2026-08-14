@@ -275,6 +275,12 @@
 
     flagPendingAttachments(attachBtn);
 
+    // The clinic's own "Email Patient" link is emitted by OSCAR's header JSP
+    // (casemgmt/newEncounterHeader.jsp, styled there to match these buttons).
+    // It belongs with this group, so move it in alongside them — it stays put
+    // in its stock header position if this script never loads.
+    var emailBtn = document.getElementById("mymdEmailPatientBtn");
+
     var nextAppt = findNextApptLink();
     if (nextAppt) {
       // Shrink the Next Appt link by ~20% (inline 14.3px → 11.4px), then put
@@ -282,11 +288,12 @@
       nextAppt.style.fontSize = "11.4px";
       var span = nextAppt.querySelector("span");
       if (span) span.style.fontSize = "11.4px";
-      // Inserted back-to-front so the final order reads Transcribe, Request Docs,
-      // Chart Attachment.
+      // Inserted back-to-front so the final order reads Email Patient,
+      // Transcribe, Request Docs, Chart Attachment.
       nextAppt.parentNode.insertBefore(attachBtn, nextAppt.nextSibling);
       nextAppt.parentNode.insertBefore(docsBtn, attachBtn);
       nextAppt.parentNode.insertBefore(transcribeBtn, docsBtn);
+      if (emailBtn) nextAppt.parentNode.insertBefore(emailBtn, transcribeBtn);
       return;
     }
 
@@ -297,6 +304,7 @@
       document.querySelector(".EncounterTitleBar") ||
       document.getElementById("topBar");
     if (host) {
+      if (emailBtn) host.appendChild(emailBtn);
       host.appendChild(transcribeBtn);
       host.appendChild(docsBtn);
       host.appendChild(attachBtn);

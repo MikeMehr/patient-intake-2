@@ -309,10 +309,17 @@ Inserted after the `showEmailIndicator` block (~line 215). Deliberately **outsid
 the link still appears when no address is on file — the page then explains how to add one.
 
 ```jsp
-<a href="javascript:void(0)" title="Email this patient"
-   onclick="popupPage(700,820,'EmailPatient','<c:out value="${ctx}"/>/mymd/emailPatient.jsp?demographicNo=<%=bean.demographicNo%>')">Email</a>
+<a id="mymdEmailPatientBtn" href="javascript:void(0)" title="Email this patient"
+   style="display:inline-block;margin:0 0 0 6px;padding:2px 8px;cursor:pointer;font:10px sans-serif;border:1px solid #0891b2;background:#0891b2;color:#fff;border-radius:4px;vertical-align:middle;text-decoration:none"
+   onclick="popupPage(700,820,'EmailPatient','<c:out value="${ctx}"/>/mymd/emailPatient.jsp?demographicNo=<%=bean.demographicNo%>')">Email Patient</a>
 &nbsp;
 ```
+
+The inline style matches `makeHeaderButton()` in `public/oscar/echart-transcribe.js` so the link
+reads as one of the Transcribe / Request Docs / Chart Attachment buttons. The `id` is what that
+script looks for: it moves this anchor to sit just left of Transcribe. Keep the id if the style is
+ever changed — without it the link stays in its stock header position (still functional, just not
+grouped with the buttons).
 
 ### Patch to `appointment/editappointment.jsp`
 
