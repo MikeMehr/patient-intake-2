@@ -1,8 +1,32 @@
-<%@ page import="java.util.*,java.io.*,java.sql.*,java.sql.Connection,java.sql.PreparedStatement,java.sql.DriverManager,org.apache.commons.fileupload.servlet.ServletFileUpload,org.apache.commons.fileupload.disk.DiskFileItemFactory,org.apache.commons.fileupload.FileItem,org.oscarehr.util.LoggedInInfo,oscar.OscarProperties,com.itextpdf.text.Document,com.itextpdf.text.Paragraph,com.itextpdf.text.Chunk,com.itextpdf.text.Font,com.itextpdf.text.PageSize,com.itextpdf.text.pdf.PdfWriter,com.itextpdf.text.pdf.PdfReader,com.itextpdf.text.pdf.PdfCopy" contentType="text/html;charset=UTF-8" %>
+<%--
+  The Send Fax page. Not stock OSCAR.
+
+  Faxes a PDF - uploaded from disk, and/or picked from a patient's chart Documents -
+  by writing it into DOCUMENT_DIR and queueing a row in `faxes`; srfax_bridge.py drains
+  status='SENT' AND jobId IS NULL every 30s.
+
+  Params: docNo         - a single chart document, pre-ticked (kept for the Fax button in
+                          dms/MultiPageDocDisplay.jsp and dms/saveAnnotatedDocument.jsp)
+          docNos         - CSV of chart documents to pre-tick (from the Documents list)
+          demographicNo  - whose chart to offer; resolved from docNo when not given
+
+  Opened from the scheduler nav there is no patient, so it stays upload-only.
+
+  Repo copy: infrastructure/oscar-patches/fax/newFax.jsp
+--%>
+<%@ page import="java.util.*,java.io.*,java.sql.*,java.sql.Connection,java.sql.PreparedStatement,java.sql.DriverManager,org.apache.commons.fileupload.servlet.ServletFileUpload,org.apache.commons.fileupload.disk.DiskFileItemFactory,org.apache.commons.fileupload.FileItem,org.oscarehr.util.LoggedInInfo,org.oscarehr.util.SpringUtils,org.oscarehr.managers.SecurityInfoManager,org.oscarehr.common.dao.DocumentDao,org.oscarehr.common.dao.DemographicDao,org.oscarehr.common.model.Demographic,org.owasp.encoder.Encode,oscar.OscarProperties,org.apache.pdfbox.pdmodel.PDDocument,org.apache.pdfbox.pdmodel.PDPage,org.apache.pdfbox.pdmodel.PDPageContentStream,org.apache.pdfbox.pdmodel.common.PDRectangle,org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject,org.apache.pdfbox.multipdf.PDFMergerUtility,com.itextpdf.text.Document,com.itextpdf.text.Paragraph,com.itextpdf.text.Chunk,com.itextpdf.text.Font,com.itextpdf.text.PageSize,com.itextpdf.text.pdf.PdfWriter" contentType="text/html;charset=UTF-8" %>
 <%!
   // Address book stored as TSV (group <tab> name <tab> 10-digit-fax) outside the web root.
   static final String AB_FILE = "/var/lib/OscarDocument/oscar/fax_addressbook.tsv";
   static final Object AB_LOCK = new Object();
+
+  // A 20-document fax of large scans can exhaust the heap long before the assembled-size
+  // check at the end of the merge, so the sources are capped as they are read too.
+  static final long MAX_UPLOAD_BYTES   = 25L * 1024 * 1024;
+  static final long MAX_REQUEST_BYTES  = 30L * 1024 * 1024;
+  static final long MAX_SOURCE_BYTES   = 40L * 1024 * 1024;
+  static final long MAX_ASSEMBLED_BYTES = 20L * 1024 * 1024;
+  static final int  MAX_DOCS = 20;
 
   static List<String[]> readAddressBook(){
     List<String[]> rows = new ArrayList<String[]>();
@@ -40,22 +64,58 @@
 
   static String esc(String s){ if(s==null) return ""; return s.replace("&","&amp;").replace("<","&lt;").replace(">","&gt;").replace("\"","&quot;"); }
 
-  // Read a PDF straight out of the chart so a document can be faxed without a
-  // download/re-upload round trip. Fully-qualified names: the bare "Document"
-  // in this page is com.itextpdf.text.Document.
-  static byte[] readChartDoc(String docNo) throws Exception {
-    if(docNo==null || !docNo.matches("[0-9]+")) return null;
-    org.oscarehr.common.dao.DocumentDao dao =
-        org.oscarehr.util.SpringUtils.getBean(org.oscarehr.common.dao.DocumentDao.class);
-    org.oscarehr.common.model.Document d = dao.getDocument(docNo);
-    if(d==null) throw new Exception("Document "+docNo+" was not found");
-    if(d.getContenttype()==null || !d.getContenttype().toLowerCase().startsWith("application/pdf"))
-      throw new Exception("Document "+docNo+" is not a PDF");
+  static String docDir(){
     String dir=OscarProperties.getInstance().getProperty("DOCUMENT_DIR","/var/lib/OscarDocument/oscar/document");
     if(!dir.endsWith("/")) dir+="/";
-    // Basename only, so a crafted docfilename cannot walk out of the document dir.
-    File f=new File(dir, new File(d.getDocfilename()).getName());
-    if(!f.isFile()) throw new Exception("The document file is missing: "+f.getName());
+    return dir;
+  }
+
+  // Every chart document goes through DocumentDao.findByDemographicId, which is already
+  // scoped through ctl_document and already excludes status='D'. This replaces the old
+  // readChartDoc(), which looked a raw id up with getDocument(docNo) and no scoping at
+  // all: any logged-in provider could fax any document in the instance by guessing a
+  // number, including one belonging to another patient.
+  // Fully-qualified: the bare "Document" on this page is com.itextpdf.text.Document.
+  static LinkedHashMap<String,org.oscarehr.common.model.Document> chartDocsById(String demographicNo){
+    LinkedHashMap<String,org.oscarehr.common.model.Document> m =
+        new LinkedHashMap<String,org.oscarehr.common.model.Document>();
+    if(demographicNo==null || !demographicNo.matches("[0-9]+")) return m;
+    try{
+      DocumentDao dao=SpringUtils.getBean(DocumentDao.class);
+      List<org.oscarehr.common.model.Document> list=dao.findByDemographicId(demographicNo);
+      if(list==null) return m;
+      // Newest first. Observation date is what a clinician thinks of as the document's
+      // date; fall back to the upload time when it was never set.
+      Collections.sort(list,new Comparator<org.oscarehr.common.model.Document>(){
+        public int compare(org.oscarehr.common.model.Document a,org.oscarehr.common.model.Document b){
+          java.util.Date da=a.getObservationdate()!=null?a.getObservationdate():a.getUpdatedatetime();
+          java.util.Date db=b.getObservationdate()!=null?b.getObservationdate():b.getUpdatedatetime();
+          if(da==null && db==null) return 0;
+          if(da==null) return 1;
+          if(db==null) return -1;
+          return db.compareTo(da);
+        }
+      });
+      for(org.oscarehr.common.model.Document d:list) m.put(String.valueOf(d.getDocumentNo()),d);
+    }catch(Exception e){}
+    return m;
+  }
+
+  static boolean faxable(org.oscarehr.common.model.Document d){
+    String ct=d.getContenttype()==null?"":d.getContenttype().toLowerCase();
+    return ct.startsWith("application/pdf") || ct.startsWith("image/");
+  }
+
+  // Basename only, so a crafted docfilename cannot walk out of the document dir.
+  static File chartFile(org.oscarehr.common.model.Document d) throws Exception {
+    if(d.getDocfilename()==null || d.getDocfilename().trim().length()==0)
+      throw new Exception("\""+d.getDocdesc()+"\" has no file on disk");
+    File f=new File(docDir(), new File(d.getDocfilename()).getName());
+    if(!f.isFile()) throw new Exception("The file for \""+d.getDocdesc()+"\" is missing from the document store");
+    return f;
+  }
+
+  static byte[] readAll(File f) throws Exception {
     ByteArrayOutputStream bo=new ByteArrayOutputStream();
     InputStream in=null;
     try{
@@ -66,16 +126,26 @@
     return bo.toByteArray();
   }
 
-  static String chartDocDesc(String docNo){
-    try{
-      if(docNo==null || !docNo.matches("[0-9]+")) return null;
-      org.oscarehr.common.dao.DocumentDao dao =
-          org.oscarehr.util.SpringUtils.getBean(org.oscarehr.common.dao.DocumentDao.class);
-      org.oscarehr.common.model.Document d = dao.getDocument(docNo);
-      if(d==null || d.getContenttype()==null
-         || !d.getContenttype().toLowerCase().startsWith("application/pdf")) return null;
-      return d.getDocdesc()==null ? ("Document "+docNo) : d.getDocdesc();
-    }catch(Exception e){ return null; }
+  // The merge is PDFBox throughout, with iText kept only for the cover page. iText 5's
+  // PdfCopy cannot take a JPEG at all, and the picker offers images; it also throws on
+  // AcroForm and tagged-PDF conflicts, which inbound SRFax scans and lab exports produce.
+  static void appendPdf(PDDocument merged, byte[] pdf) throws Exception {
+    PDDocument src=PDDocument.load(pdf);
+    try{ new PDFMergerUtility().appendDocument(merged,src); } finally { src.close(); }
+  }
+
+  // One image, one page, scaled to fit inside a half-inch margin, never upscaled.
+  static void appendImagePage(PDDocument merged, File img) throws Exception {
+    PDPage ip=new PDPage(PDRectangle.LETTER);
+    merged.addPage(ip);
+    PDImageXObject x=PDImageXObject.createFromFile(img.getAbsolutePath(),merged);
+    float mw=PDRectangle.LETTER.getWidth()-72f, mh=PDRectangle.LETTER.getHeight()-72f;
+    float sc=Math.min(mw/x.getWidth(), mh/x.getHeight());
+    if(sc>1f) sc=1f;
+    float iw=x.getWidth()*sc, ih=x.getHeight()*sc;
+    PDPageContentStream cs=new PDPageContentStream(merged,ip);
+    try{ cs.drawImage(x,(PDRectangle.LETTER.getWidth()-iw)/2f,(PDRectangle.LETTER.getHeight()-ih)/2f,iw,ih); }
+    finally{ cs.close(); }
   }
 
   // Build a one-page fax cover sheet PDF (To + From + date, MyMD Telehealth letterhead).
@@ -121,59 +191,121 @@ LoggedInInfo loggedInInfo=LoggedInInfo.getLoggedInInfoFromSession(request);
 String msg="", faxNumber="";
 if(loggedInInfo==null){response.sendRedirect("../logout.jsp"); return;}
 String providerNo=loggedInInfo.getLoggedInProviderNo();
-String faxDocNo="";
+
+// Gated per-feature rather than per-page: without _edoc a provider can still fax a file
+// from disk, they just cannot reach into a chart.
+boolean canReadChart=false;
+try{
+  // SpringUtils.getBean is declared <T> T getBean(Class<?>) - T is not tied to the
+  // argument, so it only infers from an assignment target. Chain the call and it
+  // silently becomes Object and will not compile.
+  SecurityInfoManager sim=SpringUtils.getBean(SecurityInfoManager.class);
+  canReadChart=sim.hasPrivilege(loggedInInfo,"_edoc","r",null);
+}catch(Exception e){}
+
+String demographicNo="";
+Set<String> preTicked=new LinkedHashSet<String>();
+
 if(ServletFileUpload.isMultipartContent(request)){
   try{
-    ServletFileUpload upload=new ServletFileUpload(new DiskFileItemFactory());
+    DiskFileItemFactory factory=new DiskFileItemFactory();
+    ServletFileUpload upload=new ServletFileUpload(factory);
+    upload.setFileSizeMax(MAX_UPLOAD_BYTES);
+    upload.setSizeMax(MAX_REQUEST_BYTES);
     List<FileItem> items=upload.parseRequest(request);
     FileItem pdf=null; boolean coverPage=false; String toName=""; String coverMsg="";
+    List<String> docIds=new ArrayList<String>();
     for(FileItem it:items){
       if(it.isFormField() && "faxNumber".equals(it.getFieldName())) faxNumber=it.getString().replaceAll("[^0-9]","");
       else if(it.isFormField() && "coverPage".equals(it.getFieldName())) coverPage=true;
       else if(it.isFormField() && "toName".equals(it.getFieldName())) toName=it.getString("UTF-8");
       else if(it.isFormField() && "coverMsg".equals(it.getFieldName())) coverMsg=it.getString("UTF-8");
-      else if(it.isFormField() && "docNo".equals(it.getFieldName())) faxDocNo=it.getString().replaceAll("[^0-9]","");
+      else if(it.isFormField() && "demographicNo".equals(it.getFieldName())) demographicNo=it.getString().replaceAll("[^0-9]","");
+      else if(it.isFormField() && "docNos".equals(it.getFieldName())){
+        String v=it.getString().replaceAll("[^0-9]","");
+        if(v.length()>0 && !docIds.contains(v)) docIds.add(v);
+      }
       else if(!it.isFormField() && "pdfFile".equals(it.getFieldName())) pdf=it;
     }
+    preTicked.addAll(docIds);
     boolean wantCover = coverPage || (coverMsg!=null && coverMsg.trim().length()>0);
-    if(faxNumber.length()<10) throw new Exception("Fax number must be 10 digits");
-    // The PDF is either uploaded here or pulled from the chart document this
-    // page was opened for (?docNo=). An upload always wins.
-    byte[] docBytes=null;
-    if(pdf!=null && pdf.getSize()>0) docBytes=pdf.get();
-    else if(faxDocNo.length()>0) docBytes=readChartDoc(faxDocNo);
-    if(docBytes==null || docBytes.length==0) throw new Exception("PDF file required");
-    String docDir=OscarProperties.getInstance().getProperty("DOCUMENT_DIR","/var/lib/OscarDocument/oscar/document");
-    if(!docDir.endsWith("/")) docDir+="/";
-    String filename="manualfax_"+System.currentTimeMillis()+".pdf";
-    File outFile=new File(docDir+filename);
-    byte[] finalBytes=docBytes;
-    if(wantCover){
-      byte[] coverBytes=buildCoverPage(toName, faxNumber, loggedInInfo.getLoggedInProvider().getFormattedName(), coverMsg);
-      ByteArrayOutputStream mergedBaos=new ByteArrayOutputStream();
-      Document mdoc=new Document();
-      PdfCopy copy=new PdfCopy(mdoc, mergedBaos);
-      mdoc.open();
-      PdfReader cr=new PdfReader(coverBytes); copy.addDocument(cr); cr.close();
-      PdfReader dr=new PdfReader(docBytes); copy.addDocument(dr); dr.close();
-      mdoc.close();
-      finalBytes=mergedBaos.toByteArray();
-    }
-    FileOutputStream fos=new FileOutputStream(outFile); fos.write(finalBytes); fos.close();
-    int numPages=1;
-    try{ PdfReader pr=new PdfReader(finalBytes); numPages=pr.getNumberOfPages(); pr.close(); }catch(Exception ig){}
-    Class.forName("com.mysql.cj.jdbc.Driver");
-    // Credentials come from OSCAR's own config rather than being copied in here: this file
-    // sits in the web root and is kept in the repo, and it should not be a second place the
-    // database password has to be changed.
-    Connection c=DriverManager.getConnection("jdbc:mysql://127.0.0.1:3306/oscar_db?useSSL=false",
-        OscarProperties.getInstance().getProperty("db_username","oscar"),
-        OscarProperties.getInstance().getProperty("db_password",""));
-    PreparedStatement ps=c.prepareStatement("INSERT INTO faxes (filename,faxline,destination,status,numPages,stamp,user,oscarUser) VALUES (?,?,?,'SENT',?,NOW(),?,?)");
-    ps.setString(1,filename); ps.setString(2,"6046283830"); ps.setString(3,faxNumber); ps.setInt(4,numPages); ps.setString(5,loggedInInfo.getLoggedInProvider().getFormattedName()); ps.setString(6,providerNo);
-    ps.executeUpdate(); ps.close(); c.close();
-    msg="<div style='color:green;padding:10px;background:#efe;border:1px solid #090'>Fax queued to "+faxNumber+(wantCover?" (with cover page)":"")+" — it will send within 30 seconds.</div>";
-  } catch(Exception e){ msg="<div style='color:red;padding:10px;background:#fee;border:1px solid #900'>Error: "+e.getMessage()+"</div>"; }
+
+    // faxes.destination is varchar(11) and this MySQL has no strict mode, so a 12-digit
+    // typo used to truncate silently and the fax went somewhere else.
+    if(faxNumber.length()==11 && faxNumber.startsWith("1")) faxNumber=faxNumber.substring(1);
+    if(faxNumber.length()!=10) throw new Exception("Fax number must be 10 digits");
+
+    if(docIds.size()>MAX_DOCS) throw new Exception("Fax at most "+MAX_DOCS+" chart documents at a time");
+    if(!docIds.isEmpty() && !canReadChart) throw new Exception("You do not have permission to fax chart documents");
+    if(!docIds.isEmpty() && demographicNo.length()==0) throw new Exception("No patient - reopen this page from the patient's chart");
+
+    byte[] uploadBytes=null;
+    if(pdf!=null && pdf.getSize()>0) uploadBytes=pdf.get();
+    if(uploadBytes==null && docIds.isEmpty()) throw new Exception("Choose a PDF to upload, or tick at least one document");
+
+    LinkedHashMap<String,org.oscarehr.common.model.Document> byId=chartDocsById(demographicNo);
+
+    File tmp=File.createTempFile("faxout_",".pdf");
+    int numPages; long srcBytes=0;
+    try{
+      PDDocument merged=new PDDocument();
+      try{
+        if(wantCover){
+          appendPdf(merged, buildCoverPage(toName, faxNumber, loggedInInfo.getLoggedInProvider().getFormattedName(), coverMsg));
+        }
+        if(uploadBytes!=null){ srcBytes+=uploadBytes.length; appendPdf(merged, uploadBytes); }
+        for(String id:docIds){
+          org.oscarehr.common.model.Document d=byId.get(id);
+          // Not in this patient's chart, or soft-deleted: refuse, never send.
+          if(d==null) throw new Exception("Document "+id+" is not in this patient's chart");
+          if(!faxable(d)) throw new Exception("\""+d.getDocdesc()+"\" is a "+d.getContenttype()+" - only PDFs and images can be faxed");
+          File src=chartFile(d);
+          srcBytes+=src.length();
+          if(srcBytes>MAX_SOURCE_BYTES) throw new Exception("Those documents total more than "+(MAX_SOURCE_BYTES/1024/1024)+" MB - send fewer at a time");
+          if(d.getContenttype().toLowerCase().startsWith("application/pdf")) appendPdf(merged, readAll(src));
+          else appendImagePage(merged, src);
+        }
+        numPages=merged.getNumberOfPages();
+        if(numPages==0) throw new Exception("Nothing to fax");
+        merged.save(tmp);
+      } finally { merged.close(); }
+
+      if(tmp.length()>MAX_ASSEMBLED_BYTES)
+        throw new Exception("The assembled fax is over "+(MAX_ASSEMBLED_BYTES/1024/1024)+" MB - send fewer documents");
+
+      String filename="manualfax_"+System.currentTimeMillis()+".pdf";
+      File outFile=new File(docDir()+filename);
+      FileOutputStream fos=new FileOutputStream(outFile);
+      try{ fos.write(readAll(tmp)); } finally { fos.close(); }
+
+      Class.forName("com.mysql.cj.jdbc.Driver");
+      // Credentials come from OSCAR's own config rather than being copied in here: this
+      // file sits in the web root and is kept in the repo, and it should not be a second
+      // place the database password has to be changed.
+      Connection c=DriverManager.getConnection("jdbc:mysql://127.0.0.1:3306/oscar_db?useSSL=false",
+          OscarProperties.getInstance().getProperty("db_username","oscar"),
+          OscarProperties.getInstance().getProperty("db_password",""));
+      // demographicNo used to be left NULL here, so manual faxes could not be tied back
+      // to a patient even when they came straight out of a chart.
+      PreparedStatement ps=c.prepareStatement("INSERT INTO faxes (filename,faxline,destination,status,numPages,stamp,user,oscarUser,demographicNo) VALUES (?,?,?,'SENT',?,NOW(),?,?,?)");
+      ps.setString(1,filename); ps.setString(2,"6046283830"); ps.setString(3,faxNumber);
+      ps.setInt(4,numPages);
+      ps.setString(5,loggedInInfo.getLoggedInProvider().getFormattedName());
+      ps.setString(6,providerNo);
+      if(demographicNo.length()>0) ps.setInt(7,Integer.parseInt(demographicNo)); else ps.setNull(7,java.sql.Types.INTEGER);
+      ps.executeUpdate(); ps.close(); c.close();
+    } finally { try{ tmp.delete(); }catch(Exception ig){} }
+
+    msg="<div style='color:green;padding:10px;background:#efe;border:1px solid #090'>Fax queued to "+esc(faxNumber)
+       +" &mdash; "+numPages+" page"+(numPages==1?"":"s")
+       +(docIds.isEmpty()?"":", including "+docIds.size()+" chart document"+(docIds.size()==1?"":"s"))
+       +(wantCover?", with a cover page":"")
+       +". It will send within 30 seconds.</div>";
+    preTicked.clear();
+  } catch(Exception e){
+    // e.getMessage() can carry a filename that came out of the database.
+    msg="<div style='color:red;padding:10px;background:#fee;border:1px solid #900'>Error: "+Encode.forHtml(String.valueOf(e.getMessage()))+"</div>";
+  }
 } else if("addContact".equals(request.getParameter("action"))){
   try{
     String cname=request.getParameter("cname")==null?"":request.getParameter("cname").trim();
@@ -186,16 +318,48 @@ if(ServletFileUpload.isMultipartContent(request)){
     if(!ok) throw new Exception("Please choose an existing group");
     appendContact(cgroup,cname,cfax);
     msg="<div style='color:green;padding:10px;background:#efe;border:1px solid #090'>Added &quot;"+esc(cname)+"&quot; ("+cfax+") to "+esc(cgroup)+".</div>";
-  } catch(Exception e){ msg="<div style='color:red;padding:10px;background:#fee;border:1px solid #900'>Error: "+esc(e.getMessage())+"</div>"; }
+  } catch(Exception e){ msg="<div style='color:red;padding:10px;background:#fee;border:1px solid #900'>Error: "+Encode.forHtml(String.valueOf(e.getMessage()))+"</div>"; }
 }
+
+// ---- which chart is being offered ----
+if(demographicNo.length()==0){
+  String q=request.getParameter("demographicNo");
+  if(q!=null && q.matches("[0-9]{1,9}")) demographicNo=q;
+}
+if(preTicked.isEmpty()){
+  String one=request.getParameter("docNo");
+  if(one!=null && one.matches("[0-9]{1,9}")) preTicked.add(one);
+  String many=request.getParameter("docNos");
+  if(many!=null){
+    for(String t:many.split(",")){
+      t=t.trim();
+      if(t.matches("[0-9]{1,9}") && preTicked.size()<MAX_DOCS) preTicked.add(t);
+    }
+  }
+}
+// Opened straight from the document viewer, which knows the document but not the chart.
+if(demographicNo.length()==0 && !preTicked.isEmpty() && canReadChart){
+  try{
+    DocumentDao ddao=SpringUtils.getBean(DocumentDao.class);
+    Demographic dm=ddao.getDemoFromDocNo(preTicked.iterator().next());
+    if(dm!=null) demographicNo=String.valueOf(dm.getDemographicNo());
+  }catch(Exception e){}
+}
+
+LinkedHashMap<String,org.oscarehr.common.model.Document> chartDocs =
+    canReadChart ? chartDocsById(demographicNo) : new LinkedHashMap<String,org.oscarehr.common.model.Document>();
+String patientName="";
+if(demographicNo.length()>0){
+  try{
+    DemographicDao demoDao=SpringUtils.getBean(DemographicDao.class);
+    Demographic dm=demoDao.getDemographicById(Integer.parseInt(demographicNo));
+    if(dm!=null) patientName=dm.getLastName()+", "+dm.getFirstName();
+  }catch(Exception e){}
+  if(patientName.length()==0) patientName="#"+demographicNo;
+}
+
 List<String[]> ab=readAddressBook();
 StringBuilder opts=new StringBuilder();
-if(faxDocNo.length()==0){
-  String q=request.getParameter("docNo");
-  if(q!=null && q.matches("[0-9]+")) faxDocNo=q;
-}
-String faxDocDesc = faxDocNo.length()>0 ? chartDocDesc(faxDocNo) : null;
-if(faxDocDesc==null) faxDocNo="";
 String curG=null;
 TreeSet<String> groups=new TreeSet<String>(String.CASE_INSENSITIVE_ORDER);
 for(String[] r:ab) groups.add(r[0]);
@@ -211,13 +375,26 @@ for(String[] r:ab){
 if(curG!=null) opts.append("    </optgroup>\n");
 StringBuilder grpOpts=new StringBuilder();
 for(String g:groups) grpOpts.append("<option value=\""+esc(g)+"\">"+esc(g)+"</option>");
+java.text.SimpleDateFormat dfmt=new java.text.SimpleDateFormat("yyyy-MM-dd");
 %>
-<html><head><title>New Fax</title><style>body{font-family:sans-serif;max-width:600px;margin:30px auto;padding:20px}label{display:block;margin:12px 0 4px;font-weight:bold}input[type=text],input[type=file],select,textarea{width:100%;padding:6px;font-size:14px;box-sizing:border-box}textarea{font-family:sans-serif;resize:vertical}button{margin-top:16px;padding:10px 20px;background:#336;color:#fff;border:0;border-radius:4px;cursor:pointer;font-size:14px}button:hover{background:#558}details{margin-top:24px;border:1px solid #ddd;border-radius:4px;padding:8px 12px}summary{cursor:pointer;font-weight:bold;color:#336}#abChosen{margin:6px 0 4px;color:#336;font-size:13px;min-height:18px}.hint{font-weight:normal;color:#888;font-size:12px}.chk{font-weight:normal;margin-top:14px}.chk input{width:auto;margin-right:6px;vertical-align:middle}</style></head>
+<html><head><title>New Fax</title><style>body{font-family:sans-serif;max-width:640px;margin:30px auto;padding:20px}label{display:block;margin:12px 0 4px;font-weight:bold}input[type=text],input[type=file],select,textarea{width:100%;padding:6px;font-size:14px;box-sizing:border-box}textarea{font-family:sans-serif;resize:vertical}button{margin-top:16px;padding:10px 20px;background:#336;color:#fff;border:0;border-radius:4px;cursor:pointer;font-size:14px}button:hover{background:#558}details{margin-top:24px;border:1px solid #ddd;border-radius:4px;padding:8px 12px}summary{cursor:pointer;font-weight:bold;color:#336}#abChosen{margin:6px 0 4px;color:#336;font-size:13px;min-height:18px}.hint{font-weight:normal;color:#888;font-size:12px}.chk{font-weight:normal;margin-top:14px}.chk input{width:auto;margin-right:6px;vertical-align:middle}
+#docwrap{max-height:260px;overflow-y:auto;border:1px solid #ccd;border-radius:4px;margin-top:6px}
+#docwrap table{border-collapse:collapse;width:100%;font-size:13px}
+#docwrap th{position:sticky;top:0;background:#eef;text-align:left;padding:5px 6px;font-size:12px;border-bottom:1px solid #ccd}
+#docwrap td{padding:5px 6px;border-bottom:1px solid #eee;vertical-align:top}
+#docwrap tr.off{color:#999}
+#docwrap input[type=checkbox]{width:auto}
+#docwrap .type{color:#888;font-size:11px}
+.patient{background:#eef;border:1px solid #99c;border-radius:4px;padding:6px 8px;margin-top:4px;font-size:13px}
+</style></head>
 <body>
 <h2>Send a New Fax</h2>
 <%= msg %>
 <form method="POST" enctype="multipart/form-data">
   <input type="hidden" name="toName" />
+<% if(demographicNo.length()>0){ %>
+  <input type="hidden" name="demographicNo" value="<%= esc(demographicNo) %>" />
+<% } %>
   <label>Address Book <span class="hint">(<%= ab.size() %> contacts — type to search, click to fill the number below)</span></label>
   <input type="text" id="abSearch" placeholder="Search by name, hospital, lab, doctor…" autocomplete="off" oninput="abFilter()" style="margin-bottom:6px" />
   <select id="abSelect" size="10" onchange="abPick()" onkeyup="if(event.key==='Enter')abPick()">
@@ -225,17 +402,48 @@ for(String g:groups) grpOpts.append("<option value=\""+esc(g)+"\">"+esc(g)+"</op
   </select>
   <div id="abChosen"></div>
   <label>Destination Fax Number (10 digits, North America only)</label>
-  <input type="text" name="faxNumber" placeholder="604-398-6518 or (604) 398-6518 or 6043986518" oninput="this.setCustomValidity('');var t=document.getElementsByName('toName');if(t.length)t[0].value=''" value="<%= faxNumber %>" required />
-<% if(faxDocNo.length()>0){ %>
-  <input type="hidden" name="docNo" value="<%= faxDocNo %>" />
-  <label>Document to Fax</label>
-  <div style="padding:8px;background:#eef;border:1px solid #99c;border-radius:4px">&#128196; <b><%= esc(faxDocDesc) %></b> <span class="hint">(from the patient's chart)</span></div>
-  <label class="hint" style="font-weight:normal">Or upload a different PDF instead</label>
+  <input type="text" name="faxNumber" placeholder="604-398-6518 or (604) 398-6518 or 6043986518" oninput="this.setCustomValidity('');var t=document.getElementsByName('toName');if(t.length)t[0].value=''" value="<%= esc(faxNumber) %>" required />
+
+  <label>PDF File to Fax <span class="hint">(optional if you tick documents below)</span></label>
   <input type="file" name="pdfFile" accept="application/pdf" />
+
+<% if(demographicNo.length()>0 && canReadChart){ %>
+  <label>Documents from this patient's chart</label>
+  <div class="patient">&#128100; <b><%= esc(patientName) %></b></div>
+  <% if(chartDocs.isEmpty()){ %>
+    <div class="hint" style="margin-top:6px">This chart has no documents.</div>
+  <% } else { %>
+  <input type="text" id="filter" placeholder="Filter by description or type" oninput="applyFilter()" style="margin-top:6px" />
+  <span class="hint">Ticked documents are faxed after the uploaded file, in the order shown.</span>
+  <div id="docwrap">
+    <table>
+      <tr><th style="width:24px"></th><th style="width:88px">Date</th><th>Description</th><th style="width:52px">View</th></tr>
+<%    for(Map.Entry<String,org.oscarehr.common.model.Document> en : chartDocs.entrySet()){
+        org.oscarehr.common.model.Document d=en.getValue();
+        boolean ok=faxable(d);
+        java.util.Date dt=d.getObservationdate()!=null?d.getObservationdate():d.getUpdatedatetime();
+        String dateStr=dt==null?"":dfmt.format(dt);
+        String desc=d.getDocdesc()==null?("Document "+en.getKey()):d.getDocdesc();
+        String dtype=d.getDoctype()==null?"":d.getDoctype();
+        String ct=d.getContenttype()==null?"":d.getContenttype();
+        String hay=(desc+" "+dtype+" "+dateStr).toLowerCase();
+%>
+      <tr class="<%= ok?"":"off" %>" data-hay="<%= Encode.forHtmlAttribute(hay) %>">
+        <td><% if(ok){ %><input type="checkbox" class="docbox" name="docNos" value="<%= Encode.forHtmlAttribute(en.getKey()) %>"<%= preTicked.contains(en.getKey())?" checked":"" %>><% } %></td>
+        <td><%= Encode.forHtml(dateStr) %></td>
+        <td><%= Encode.forHtml(desc) %>
+            <div class="type"><%= Encode.forHtml(dtype) %><%= ok?"":" - cannot be faxed ("+Encode.forHtml(ct)+")" %></div></td>
+        <td><a href="../dms/ManageDocument.do?method=display&amp;doc_no=<%= Encode.forUriComponent(en.getKey()) %>&amp;providerNo=<%= Encode.forUriComponent(providerNo) %>" target="_blank">view</a></td>
+      </tr>
+<%    } %>
+    </table>
+  </div>
+  <% } %>
 <% } else { %>
-  <label>PDF File to Fax</label>
-  <input type="file" name="pdfFile" accept="application/pdf" required />
+  <div class="hint" style="margin-top:8px">Opened without a patient, so only an uploaded file can be sent.
+    To fax documents out of a chart, tick them in the patient's Documents list and use <b>Fax Selected</b>.</div>
 <% } %>
+
   <label class="chk"><input type="checkbox" name="coverPage" value="1" id="coverChk" onchange="toggleCover()" />Include a fax cover page (MyMD Telehealth letterhead, To/From, date)</label>
   <div id="coverMsgWrap" style="display:none">
     <label>Message / comments to recipient <span class="hint">(printed on the cover page)</span></label>
@@ -274,6 +482,13 @@ function abFilter(){
       if(hit) vis=true;
     }
     og.style.display = vis ? '' : 'none';
+  }
+}
+function applyFilter(){
+  var q=document.getElementById('filter').value.toLowerCase().trim();
+  var rows=document.querySelectorAll('#docwrap tr[data-hay]');
+  for(var i=0;i<rows.length;i++){
+    rows[i].style.display = (q==='' || rows[i].getAttribute('data-hay').indexOf(q)>-1) ? '' : 'none';
   }
 }
 function toggleCover(){

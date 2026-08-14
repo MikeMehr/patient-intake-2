@@ -9,6 +9,67 @@ editing any JSP, delete its compiled copy under
 `/opt/tomcat9/work/Catalina/localhost/oscar/org/apache/jsp/...` to force a recompile — no Tomcat
 restart is needed.
 
+## Requisitions into the chart, and multi-document Send Fax (added 2026-08-14)
+
+Requisitions generated from the eChart used to be downloaded to a Windows/macOS desktop and
+re-uploaded to fax them, leaving nothing in the patient's record. Now they can be filed straight
+into the patient's **Documents**, and Send Fax can take several chart documents at once.
+
+**The "folder".** OSCAR has no folders — `dms/documentReport.jsp` hardcodes exactly one bucket per
+patient chart, and the only content filter is the **View:** dropdown, built from
+`EDocUtil.getActiveDocTypes(module)`. So a doctype *is* the folder:
+`dms/documentReport.jsp?function=demographic&functionid=<demoNo>&view=requisition`.
+
+| File | What |
+|---|---|
+| `sql/requisition_doctype.sql` | Adds the `requisition` doctype (idempotent). |
+| `eform/saveEformToChart.jsp` | **New.** Renders the saved eForm and files it into Documents. POST-only, `_edoc`/`w`. |
+| `eform/faxEformReq.jsp` | `saveToChart=1` files the requisition (alone) after the fax is queued. |
+| `eform/faxEformSend.jsp` | "Also keep a copy in the patient's Documents", ticked by default. |
+| `eform-fax/patch_eform_savetochart.py` | Adds the **Save to chart** button; generic on fid. |
+| `fax/newFax.jsp` | Multi-document: `demographicNo` + `docNos`, chart picker, PDFBox merge, security fixes. |
+| `dms/patch_documentreport_faxselected.py` | Adds **Fax Selected** next to Combine PDF. |
+
+Things that will cost time if forgotten:
+
+- `EDocUtil.attachDocEForm` is **`(providerNo, documentNo, fdid)`** and the link table is
+  **`EFormDocs`** (CamelCase — no `@Table` annotation, so JPA defaulted to the class name), not
+  `eform_docs`. `doctype` in that table is hardcoded `'D'`.
+- Build the `EDoc` with **`new EDoc()`**, never a multi-arg constructor. Those call
+  `preliminaryProcessing()`, which silently prefixes your filename with `yyyyMMddHHmmss` — the row
+  then points at a name that is not the file you wrote.
+- Files written into `DOCUMENT_DIR` must be **owned by tomcat**, not merely readable:
+  `ManageDocumentAction.createCacheVersion2` opens them read-write to rasterise page 1, and the only
+  symptom of getting it wrong is a broken-image thumbnail.
+- A `ctl_doctype` row whose `status` is NULL will **not** appear in the View dropdown —
+  `getActiveDocTypes` filters on `'A'`. Insert the status explicitly.
+- `faxes.destination` is **`varchar(11)`** and this MySQL has no strict mode, so an over-long fax
+  number used to truncate silently and the fax went somewhere else. Normalise to exactly 10 digits.
+- `SpringUtils.getBean` is declared `<T> T getBean(Class<?>)` — `T` is **not** tied to the argument,
+  so it only infers from an assignment target. Chain the call (`SpringUtils.getBean(X.class).foo()`)
+  and it resolves to `Object` and will not compile. Always assign to a typed local first.
+- `form_html` is a **latin-1** byte blob. A literal `✓` (or any non-latin-1 character) in injected
+  JS cannot be written back — use a `\uXXXX` escape.
+- eForm hex backups now go to `/var/lib/OscarDocument/oscar/mymd_eform_backups/`, not `/tmp`, which
+  does not survive a reboot.
+- The fax spool files (`eformfax_*`, `manualfax_*`) are orphans by design — `srfax_bridge.py` reads
+  them by bare basename out of `DOCUMENT_DIR` and never deletes them. ~45 files, ~10 MB. A
+  `find -mtime +90 -delete` cron would be reasonable; not done.
+- **Still outstanding:** `faxEformReq.jsp` is a GET that will fax to an arbitrary number using
+  cookies the browser attaches automatically. Making it POST-only has to land together with
+  `faxEformSend.jsp` and the four eForms that call it directly (fid 5, 52, 62, 74), or faxing breaks
+  on those forms.
+
+Compile-check any JSP before deploying (the classpath needs OSCAR's **exploded** `WEB-INF/classes`,
+not just the jars, and `javac` "Note:" lines are not failures):
+
+```
+W=/opt/tomcat9/webapps/oscar
+CP=$(ls $W/WEB-INF/lib/*.jar /opt/tomcat9/lib/*.jar /opt/tomcat9/bin/*.jar | tr '\n' ':')$W/WEB-INF/classes
+cd $W && java -cp "$CP" org.apache.jasper.JspC -webapp $W -d /tmp/jspc_out eform/saveEformToChart.jsp
+javac -nowarn -cp "$CP" -d /tmp/jspc_cls /tmp/jspc_out/org/apache/jsp/eform/saveEformToChart_jsp.java
+```
+
 ## Fax the MRI requisition, with attachments (added 2026-08-14)
 
 The **LM MRI Requisition** eForm (fid=39) now has a **Fax to MRI Central** button. It saves the
