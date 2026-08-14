@@ -9,6 +9,46 @@ editing any JSP, delete its compiled copy under
 `/opt/tomcat9/work/Catalina/localhost/oscar/org/apache/jsp/...` to force a recompile — no Tomcat
 restart is needed.
 
+## Move an appointment to another provider (added 2026-08-14)
+
+The Edit Appointment window now has a **Provider** dropdown, so an appointment can be moved onto
+another physician's day sheet in place. Stock OSCAR only offers Cut + Paste for this: the edit form
+showed the appointment's provider in the window title alone, and `appointmentupdatearecord.jsp`
+never wrote `provider_no` back.
+
+| File | What |
+|---|---|
+| `appointment/editappointment.jsp` | Patched — Provider dropdown above the read-only Doctor field, plus a confirm on submit when it changed. |
+| `appointment/appointmentupdatearecord.jsp` | Patched — writes `appt.setProviderNo()` on a normal update. |
+
+Backups: `.oscarbak.20260814100747` on both. Reapply after a WAR redeploy with the patcher kept
+here — it carries the exact before/after text and refuses to run if the stock file has moved on:
+
+```bash
+ssh -i ~/.ssh/oscar_server manucher@10.9.0.1 'sudo -n python3 -' < infrastructure/oscar-patches/patch_appointment_provider.py
+```
+
+### Three things that will cost time if forgotten
+
+- **"Doctor" on that form is NOT the appointment's provider.** It is the patient's family doctor
+  (MRP), read from `demographic.provider_no` and rendered read-only into `name="doctorNo"`. The new
+  field is `name="appt_provider_no"` and is the only one that moves an appointment. Both now carry a
+  `title` saying which is which.
+- The update page **ignores a blank or missing `appt_provider_no`**, and checks the value against
+  `ProviderDataDao.findByProviderNo` before writing. That is what keeps the page's other callers
+  (Cancel Appt, No Show, Group Action) behaving exactly as before, and stops a tampered form from
+  parking an appointment on a provider that does not exist.
+- On the patient-search round trip the form is redisplayed with `bFirstDisp=false` and `appt` is
+  **null**, so the dropdown re-reads the appointment from the DB instead of defaulting to blank.
+  Same trap as the `Email Reminder` button, which is why that one is guarded on `demono`.
+
+The dropdown lists active `provider_type='doctor'` records, minus OSCAR's built-in accounts
+(`999998`, `-1`). If the appointment sits on a provider outside that list — there is one legacy row
+on `provider_no=29328`, a billing number written where an internal provider number belonged — that
+value is kept as the selected option rather than silently re-pointed on save.
+
+Not propagated back to the booking app: its `appointments` row still names the original provider.
+
 ## Fax triage — AI pre-fill for Incoming Docs (added 2026-08-11)
 
 Opening a fax in **Incoming Docs** now fills in the type, class, description, observation date,
