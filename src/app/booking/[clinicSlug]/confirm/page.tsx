@@ -85,6 +85,9 @@ export default function BookingConfirmPage({
   const slotId       = searchParams.get("slotId")    ?? "";
   const startTime    = searchParams.get("startTime")  ?? "";
   const physicianName = searchParams.get("physician") ?? "";
+  // Set by the slot picker when this slot's physician has no Doxy waiting room. The confirm
+  // endpoint enforces the same rule against the database, so this only decides what is shown.
+  const slotVideoAvailable = searchParams.get("video") !== "0";
 
   const [settings, setSettings]     = useState<ClinicSettings | null>(null);
   const [clinicName, setClinicName] = useState("");
@@ -471,14 +474,21 @@ export default function BookingConfirmPage({
     );
   }
 
-  const clinicDefault = normalizeModality(settings?.appointmentModality);
-  const mayChoose = Boolean(settings?.patientMayChooseModality && settings?.videoVisitsEnabled);
+  // A clinic-default of VIDEO cannot stand for a physician who has no room to hold it in; the
+  // server makes the same substitution, and the banner must not promise what the booking won't be.
+  const clinicDefault = slotVideoAvailable
+    ? normalizeModality(settings?.appointmentModality)
+    : "PHONE";
+  const mayChoose = Boolean(
+    settings?.patientMayChooseModality && settings?.videoVisitsEnabled && slotVideoAvailable,
+  );
   const modality = mayChoose ? chosenModality : clinicDefault;
 
   /**
-   * Format picker. Only rendered when the clinic both allows a choice and has video switched on,
-   * so a clinic that hasn't set up video never shows an option that would fail. The banner below
-   * reacts to the selection, which is the point — the patient sees what they've just chosen means.
+   * Format picker. Only rendered when the clinic allows a choice, has video switched on, and this
+   * slot's physician actually has a waiting room — so an option that would silently downgrade to a
+   * phone call is never shown. The banner below reacts to the selection, which is the point: the
+   * patient sees what they've just chosen means.
    */
   const modalityPicker = mayChoose ? (
     <fieldset className="text-left">

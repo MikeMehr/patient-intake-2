@@ -25,6 +25,8 @@ type Slot = {
   startTime: string;
   endTime: string;
   status: "OPEN" | "BLOCKED" | "HELD" | "BOOKED";
+  /** False when this slot's physician has no Doxy room, so video can't be offered for it. */
+  videoAvailable?: boolean;
 };
 
 type ClinicSettings = {
@@ -238,7 +240,10 @@ export default function ClinicBookingPage({
         return;
       }
 
-      router.push(`/booking/${clinicSlug}/confirm?slotId=${slot.id}&startTime=${encodeURIComponent(slot.startTime)}&physician=${encodeURIComponent(slot.physicianName)}`);
+      // video=0 hides the format picker for a physician with no Doxy room. Only a UI hint — the
+      // confirm endpoint re-checks the slot's physician, so editing it in the URL changes nothing.
+      const videoParam = slot.videoAvailable === false ? "&video=0" : "";
+      router.push(`/booking/${clinicSlug}/confirm?slotId=${slot.id}&startTime=${encodeURIComponent(slot.startTime)}&physician=${encodeURIComponent(slot.physicianName)}${videoParam}`);
     } catch {
       setError("Something went wrong. Please try again.");
       setHoldingSlotId(null);

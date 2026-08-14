@@ -58,6 +58,14 @@ export type AppointmentSlot = {
   startTime: string; // ISO string
   endTime: string;   // ISO string
   status: "OPEN" | "BLOCKED" | "HELD" | "BOOKED";
+  /**
+   * Whether this slot's physician can actually hold a video visit — i.e. they have a Doxy
+   * waiting room. Doxy rooms are per-provider and cannot be created on demand, so a provider
+   * without one has nowhere to send the patient: the booking succeeds, the confirmation email
+   * promises a link, and no link exists. Offering the choice per slot rather than per clinic is
+   * what keeps that promise honest in a practice where only some providers do video.
+   */
+  videoAvailable: boolean;
 };
 
 export type AppointmentRow = {
@@ -423,10 +431,12 @@ export async function getSlots(
     start_time: Date;
     end_time: Date;
     status: string;
+    video_available: boolean;
   }>(
     `SELECT s.id, s.organization_id, s.physician_id,
             p.first_name, p.last_name,
-            s.start_time, s.end_time, s.status
+            s.start_time, s.end_time, s.status,
+            (p.doxy_room_url IS NOT NULL AND p.doxy_room_url <> '') AS video_available
      FROM appointment_slots s
      JOIN physicians p ON p.id = s.physician_id
      WHERE ${conditions.join(" AND ")}
@@ -442,7 +452,35 @@ export async function getSlots(
     startTime: r.start_time instanceof Date ? r.start_time.toISOString() : String(r.start_time),
     endTime: r.end_time instanceof Date ? r.end_time.toISOString() : String(r.end_time),
     status: r.status as AppointmentSlot["status"],
+    videoAvailable: r.video_available === true,
   }));
+}
+
+/**
+ * Can this physician hold a video visit? True only when they have a Doxy waiting room.
+ *
+ * Read in the booking confirm path to clamp the requested modality, so the check runs against
+ * the physician who actually owns the slot rather than the clinic-wide video setting.
+ */
+export async function physicianSupportsVideo(physicianId: string): Promise<boolean> {
+  const res = await query<{ video_available: boolean }>(
+    `SELECT (doxy_room_url IS NOT NULL AND doxy_room_url <> '') AS video_available
+       FROM physicians WHERE id = $1`,
+    [physicianId],
+  );
+  return res.rows[0]?.video_available === true;
+}
+
+/** The physician who owns a slot, scoped to the clinic. Null when the slot isn't theirs. */
+export async function getSlotPhysicianId(
+  slotId: string,
+  organizationId: string,
+): Promise<string | null> {
+  const res = await query<{ physician_id: string }>(
+    `SELECT physician_id FROM appointment_slots WHERE id = $1 AND organization_id = $2`,
+    [slotId, organizationId],
+  );
+  return res.rows[0]?.physician_id ?? null;
 }
 
 /**

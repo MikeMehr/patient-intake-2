@@ -9,7 +9,13 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { getClinicBySlug, getPhysiciansForBooking, confirmAppointment } from "@/lib/booking-store";
+import {
+  getClinicBySlug,
+  getPhysiciansForBooking,
+  confirmAppointment,
+  getSlotPhysicianId,
+  physicianSupportsVideo,
+} from "@/lib/booking-store";
 import { generateManageToken } from "@/lib/booking-token";
 import { sendBookingConfirmation } from "@/lib/booking-email";
 import { sendBookingAlertSMS, toE164 } from "@/lib/sms";
@@ -149,12 +155,28 @@ async function handleConfirm(
   // off it when the clinic has actually turned that on. Clamped server-side rather than trusted:
   // this is an anonymous public form, and without the clamp anyone could book a video visit at a
   // clinic that doesn't do them, or that has video switched off pending a Daily account.
+  //
+  // The clinic-wide check is not enough on its own. Doxy rooms belong to a provider and cannot be
+  // created on demand, so a provider without one has nowhere to put the patient — the booking
+  // succeeds, the confirmation email says a waiting-room link is coming, and none ever arrives.
+  // That happened to a real patient on 2026-08-08. So the slot's own physician gets the final say.
   const requestedModality = normalizeModality(appointmentModality);
-  const effectiveModality: AppointmentModality =
+  const clinicAllowsRequested =
     clinic.settings.patientMayChooseModality &&
-    (requestedModality !== "VIDEO" || clinic.settings.videoVisitsEnabled)
+    (requestedModality !== "VIDEO" || clinic.settings.videoVisitsEnabled);
+  const slotPhysicianId = await getSlotPhysicianId(String(slotId), clinic.id);
+  const physicianAllowsRequested =
+    requestedModality !== "VIDEO" ||
+    (slotPhysicianId !== null && (await physicianSupportsVideo(slotPhysicianId)));
+  const effectiveModality: AppointmentModality =
+    clinicAllowsRequested && physicianAllowsRequested
       ? requestedModality
-      : clinic.settings.appointmentModality;
+      // Falling back to the clinic default would re-select VIDEO at a clinic whose default is
+      // video, which is the case being guarded against. PHONE is the only always-deliverable
+      // format: every booking already collects a phone number.
+      : requestedModality === "VIDEO" && !physicianAllowsRequested
+        ? "PHONE"
+        : clinic.settings.appointmentModality;
 
   // The patient's phone was previously collected only on the "not found in OSCAR" branch and
   // forwarded to demographic creation without ever being kept. A video visit needs it to text a
