@@ -94,6 +94,52 @@ describe("checkBookingHealthCard", () => {
     }
   });
 
+  it("lets a test booking through a PHN that would otherwise fail", () => {
+    // No real PHN exists to type, and the check digit makes one impossible to invent — so the
+    // reserved surname is how the flow gets exercised end to end.
+    for (const lastName of ["Test", " test ", "TEST"]) {
+      expect(
+        checkBookingHealthCard({
+          coverageType: "CANADIAN_HEALTH_CARD",
+          province: "British Columbia",
+          healthCardNumber: BAD_CHECKDIGIT,
+          lastName,
+        }).ok,
+      ).toBe(true);
+    }
+  });
+
+  it("keeps the test exemption to the check digit alone", () => {
+    // A blank number and an out-of-province card are still turned away: the exemption is about a
+    // number nobody can produce, not about skipping the form.
+    expect(
+      checkBookingHealthCard({
+        coverageType: "CANADIAN_HEALTH_CARD",
+        province: "British Columbia",
+        healthCardNumber: "",
+        lastName: "Test",
+      }).ok,
+    ).toBe(false);
+    expect(
+      checkBookingHealthCard({
+        coverageType: "CANADIAN_HEALTH_CARD",
+        province: "Ontario",
+        healthCardNumber: BAD_CHECKDIGIT,
+        lastName: "Test",
+      }).ok,
+    ).toBe(false);
+  });
+
+  it("does not exempt a surname that merely contains the word", () => {
+    const gate = checkBookingHealthCard({
+      coverageType: "CANADIAN_HEALTH_CARD",
+      province: "British Columbia",
+      healthCardNumber: BAD_CHECKDIGIT,
+      lastName: "Testerman",
+    });
+    expect(gate.ok === false && gate.problem).toBe("invalid");
+  });
+
   it("never gets in the way of a patient who is already on the chart", () => {
     // Their coverage is whatever the clinic recorded, and the booking form does not re-ask.
     expect(checkBookingHealthCard({ coverageType: "EXISTING_OSCAR_PATIENT" }).ok).toBe(true);

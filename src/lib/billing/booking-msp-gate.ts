@@ -24,6 +24,18 @@
 import { isValidBcPhn, normalizeCard } from "./health-card";
 import { toProvinceCode } from "@/lib/province-code";
 
+/**
+ * The surname reserved for end-to-end test bookings.
+ *
+ * A tester has no real PHN to type, and the mod-11 check digit makes it impossible to invent one
+ * that passes — so without an escape hatch the booking flow cannot be exercised end to end against
+ * a real clinic. Keyed on the surname because that is a field the form already collects and the
+ * booking that results is obviously fake on the day sheet.
+ */
+export function isTestBookingPatient(lastName?: string | null): boolean {
+  return (lastName || "").trim().toLowerCase() === "test";
+}
+
 /** Why a card was turned away — the caller picks the wording around it, not the verdict. */
 export type BookingCardProblem =
   | "non-msp"
@@ -70,6 +82,8 @@ export function checkBookingHealthCard(input: {
   coverageType: string;
   province?: string | null;
   healthCardNumber?: string | null;
+  /** Surname, only so a test booking can be recognized — see {@link isTestBookingPatient}. */
+  lastName?: string | null;
 }): BookingCardGate {
   const coverage = checkBookingCoverageType(input.coverageType);
   if (!coverage.ok) return coverage;
@@ -105,6 +119,11 @@ export function checkBookingHealthCard(input: {
   }
 
   if (!isValidBcPhn(card)) {
+    // Test bookings are let through on the number alone. Deliberately the narrowest possible
+    // exemption: a number must still be typed, and it must still be a BC card — only the check
+    // digit is waived, and only for the reserved surname.
+    if (isTestBookingPatient(input.lastName)) return PASS;
+
     return {
       ok: false,
       problem: "invalid",

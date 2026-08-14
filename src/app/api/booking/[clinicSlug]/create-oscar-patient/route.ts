@@ -83,6 +83,7 @@ export async function POST(
         coverageType: "CANADIAN_HEALTH_CARD",
         province: body.healthCardProvince != null ? String(body.healthCardProvince) : null,
         healthCardNumber: submittedCard,
+        lastName: body.lastName != null ? String(body.lastName) : null,
       });
       if (!gate.ok) {
         return NextResponse.json(

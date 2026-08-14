@@ -294,6 +294,7 @@ export default function BookingConfirmPage({
         coverageType: coverage.coverageType,
         province: coverage.province,
         healthCardNumber: coverage.healthCardNumber,
+        lastName: identity.lastName,
       });
       if (!gate.ok) {
         if (gate.problem === "non-msp") {

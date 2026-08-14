@@ -196,6 +196,7 @@ async function handleConfirm(
       coverageType: String(coverageType),
       province: province != null ? String(province) : null,
       healthCardNumber: healthCardNumber != null ? String(healthCardNumber) : null,
+      lastName: lastName != null ? String(lastName) : null,
     });
     if (!gate.ok) {
       return NextResponse.json(
