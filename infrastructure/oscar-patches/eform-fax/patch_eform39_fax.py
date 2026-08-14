@@ -60,15 +60,38 @@ FAX_JS = crlf(r'''
 		var exam = document.getElementById("ExamRequested");
 		var needChecklist = /\b(knee|knees|hip|hips|lumbar|l\-sp|l\-spine)\b/i.test(exam ? exam.value : "");
 
-		function _eqp(n){var m=window.location.search.match(new RegExp("[?&]"+n+"=([^&]*)"));return m?decodeURIComponent(m[1]):"";}
-		var demo = _eqp("demographic_no");
-		var theFid = _eqp("fid");
-		if (!demo) { var d0=document.getElementsByName("efmdemographic_no")[0]; if(d0){demo=d0.value;} }
-		if (!theFid) { var f0=document.getElementsByName("efmfid")[0]; if(f0){theFid=f0.value;} }
+		function _qp(src, n) { var m = String(src).match(new RegExp("[?&]" + n + "=([^&]*)")); return m ? decodeURIComponent(m[1]) : ""; }
+		var f = document.FormName;
+		// The page URL carries these while the form is being created. Once it is saved it
+		// is viewed as efmshowform_data.jsp?fdid=N and neither is in the URL - but OSCAR
+		// always rewrites the form action to addEForm.do?efmfid=..&efmdemographic_no=..
+		var demo = _qp(window.location.search, "demographic_no") || _qp(f.action, "efmdemographic_no");
+		var theFid = _qp(window.location.search, "fid") || _qp(f.action, "efmfid");
 		if (!demo || !theFid) { alert("Cannot tell which patient or form this is - open the form from the chart and try again."); return; }
+
+		// origin + directory of this page: building the base off href would break on
+		// any query string that contains a slash.
+		var url = window.location.origin + window.location.pathname.replace(/[^\/]*$/, "")
+			+ "faxEformSend.jsp?demographicNo=" + encodeURIComponent(demo)
+			+ "&fid=" + encodeURIComponent(theFid)
+			+ "&faxNumber=" + encodeURIComponent(dest)
+			+ "&label=" + encodeURIComponent("MRI requisition")
+			+ "&pageChoice=1&defaultPages=" + (needChecklist ? "all" : "1");
+
+		// Opened HERE, on the click. Waiting until the save finishes means calling
+		// window.open from an async callback, which the browser blocks outright - that
+		// is exactly what happened the first time this button shipped.
+		var win = window.open("", "faxEformSend", "width=780,height=800,scrollbars=yes,resizable=yes");
+		if (!win) { alert("Your browser blocked the fax window. Allow pop-ups for this site, then click Fax to MRI Central again."); return; }
+		function say(msg) { try { win.document.body.innerHTML = msg; } catch (e) {} }
+		try {
+			win.document.write("<html><body style=\"font:14px sans-serif;padding:24px;color:#333\">Saving the requisition...</body></html>");
+			win.document.close();
+		} catch (e) {}
 
 		var btn = document.getElementById("FaxButton");
 		if (btn) { btn.disabled = true; btn.value = "Saving..."; }
+		function restore() { if (btn) { btn.disabled = false; btn.value = "Fax to MRI Central"; } }
 
 		var ifr = document.getElementById("faxSaveFrame");
 		if (!ifr) {
@@ -76,22 +99,23 @@ FAX_JS = crlf(r'''
 			ifr.name = "faxSaveFrame"; ifr.id = "faxSaveFrame"; ifr.style.display = "none";
 			document.body.appendChild(ifr);
 		}
-		var f = document.FormName;
 		var prevTarget = f.target;
 		var submitted = false, done = false;
+		var timer = setTimeout(function () {
+			if (done) { return; }
+			done = true;
+			restore();
+			say("<span style=\"font:14px sans-serif;color:#8a1616\">The requisition did not finish saving, so there is nothing to fax yet. Close this window and try again.</span>");
+		}, 20000);
 		ifr.onload = function () {
 			// fires once the requisition is in the chart - only then is there a saved
 			// copy for the fax page to render
 			if (!submitted || done) { return; }
 			done = true;
+			clearTimeout(timer);
 			f.target = prevTarget;
-			if (btn) { btn.disabled = false; btn.value = "Fax to MRI Central"; }
-			window.open("faxEformSend.jsp?demographicNo=" + encodeURIComponent(demo)
-				+ "&fid=" + encodeURIComponent(theFid)
-				+ "&faxNumber=" + encodeURIComponent(dest)
-				+ "&label=" + encodeURIComponent("MRI requisition")
-				+ "&pageChoice=1&defaultPages=" + (needChecklist ? "all" : "1"),
-				"faxEformSend", "width=780,height=800,scrollbars=yes,resizable=yes");
+			restore();
+			try { win.location.replace(url); } catch (e) { window.open(url, "faxEformSend"); }
 		};
 		setFlag();
 		try { releaseDirtyFlag(); } catch (e) {}

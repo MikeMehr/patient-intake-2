@@ -44,6 +44,18 @@ Backups: `faxEformReq.jsp.oscarbak.20260814105626` (pre-attachments) and `.20260
 - **The page default is computed, not asked.** `faxMRIReq()` runs the same
   `/\b(knee|hip|lumbar|l-sp)\b/i` test the form uses for its own checklist warning, and preselects
   "requisition + checklist" only when that matches.
+- **The fax window must be opened on the click, not after the save.** The first version called
+  `window.open` from the hidden iframe's `onload` — an async callback, which the browser blocks
+  outright. It failed silently: the form saved, no window appeared, and the access log showed the
+  `addEForm.do` POST with zero requests for `faxEformSend.jsp`. It now opens a blank window on the
+  click, writes "Saving the requisition..." into it, and redirects it once the save lands (20s
+  timeout, and a "allow pop-ups" message when the open itself is refused).
+- **A saved eForm is `efmshowform_data.jsp?fdid=N`** — no `demographic_no` or `fid` in the URL, so
+  reading them from the query string only worked while the form was being created. Both are always
+  on the form's action, which OSCAR rewrites to
+  `../eform/addEForm.do?efmfid=..&efmdemographic_no=..` (`EForm.setAction()`); the button reads the
+  URL first and falls back to the action. Note there are no `efmdemographic_no`/`efmfid` hidden
+  *inputs* anywhere — they only ever exist as action query parameters.
 
 `faxEformReq.jsp` now reads `db_username`/`db_password` from `oscar_mcmaster.properties` instead of
 carrying a copy of the database password — that is what makes it safe to keep in this repo.
