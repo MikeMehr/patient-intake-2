@@ -9,6 +9,9 @@
           label       - what to call the form in the confirm text ("MRI requisition")
           pageChoice  - "1" to offer the page-1-only choice (multi-page forms)
           defaultPages- "1" to preselect page 1 only, anything else = all pages
+  Also offers "keep a copy in the patient's Documents", ticked by default - the whole
+  point of the feature is that requisitions stop living on somebody's desktop, so an
+  opt-in checkbox would just reproduce that for anyone who does not notice it.
 
   Reads nothing sensitive of its own: the document list comes from OSCAR's DocumentDao,
   which is already scoped to this patient's chart, and faxEformReq.jsp re-checks every
@@ -118,6 +121,12 @@ SimpleDateFormat dfmt = new SimpleDateFormat("yyyy-MM-dd");
 </div>
 <% } %>
 
+<div class="box">
+  <label><input type="checkbox" id="saveCopy" checked> Also keep a copy in the patient's Documents</label>
+  <div class="note">Files the <%=Encode.forHtml(label)%> on its own &mdash; not the attachments &mdash; under
+    Documents &rarr; <b>requisition</b>. Skipped automatically if this copy is already there.</div>
+</div>
+
 <div class="box" style="background:#fff;">
   <label class="hdr">Attach documents from this patient's chart</label>
   <input type="text" id="filter" size="30" placeholder="Filter by description or type" oninput="applyFilter()">
@@ -202,10 +211,12 @@ function sendFax() {
     btn.disabled = true;
     btn.textContent = "Sending...";
 
+    var save = document.getElementById("saveCopy");
     var url = "faxEformReq.jsp?demographicNo=" + encodeURIComponent(DEMO)
             + "&fid=" + encodeURIComponent(FID)
             + "&faxNumber=" + encodeURIComponent(num)
             + "&pages=" + encodeURIComponent(pages)
+            + (save && save.checked ? "&saveToChart=1" : "")
             + (ids.length ? "&docNos=" + encodeURIComponent(ids.join(",")) : "");
 
     fetch(url, { credentials: "same-origin" })
