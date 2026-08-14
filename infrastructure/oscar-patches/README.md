@@ -9,6 +9,47 @@ editing any JSP, delete its compiled copy under
 `/opt/tomcat9/work/Catalina/localhost/oscar/org/apache/jsp/...` to force a recompile — no Tomcat
 restart is needed.
 
+## Fax the MRI requisition, with attachments (added 2026-08-14)
+
+The **LM MRI Requisition** eForm (fid=39) now has a **Fax to MRI Central** button. It saves the
+requisition, then opens a window where the destination (prefilled 1-866-588-6955, the number printed
+on the form), the page choice, and any documents from the patient's chart are confirmed before
+anything is sent. The fax goes out through the same `faxes` queue the New Fax page uses.
+
+| File | What |
+|---|---|
+| `eform/faxEformSend.jsp` | New. The confirm-and-attach window. Generic on `fid`, so any requisition eForm can point its Fax button at it. Kept here as `eform-fax/faxEformSend.jsp`. |
+| `eform/faxEformReq.jsp` | Extended — `docNos` attachments, `pages=1`, blank-page trim. Kept here as `eform-fax/faxEformReq.jsp`. |
+| `eform.form_html` (fid=39) | Patched in the DB — the Fax button, `faxMRIReq()`, and a print fix. Reapply with `eform-fax/patch_eform39_fax.py`. |
+
+Backups: `faxEformReq.jsp.oscarbak.20260814105626` (pre-attachments) and `.20260814110011`
+(pre-credentials move); eForm blob hex at `/tmp/eform_fid39_20260814105810.hex` on the box.
+
+### Four things that will cost time if forgotten
+
+- **Attachments are re-checked server-side.** `faxEformReq.jsp` resolves every `docNos` id through
+  `ctl_document` for *that* demographic before it touches a file, and reads by basename only. The
+  picker window is convenience; this is the control. Only `application/pdf` and `image/*` are
+  accepted — images become one scaled page each, PDFs are appended with PDFBox.
+- **The rendered eForm has a trailing blank page.** wkhtmltopdf leaves one behind on any form whose
+  last page div carries `page-break-after:always` — every MRI req does. The fax now drops trailing
+  pages that have no text and no XObject. A blank sheet at the far end reads as a transmission fault,
+  so this is worth keeping.
+- **`.DoNotPrint` needed `!important` on this form.** The two "CHECKLIST items required / not needed"
+  banners were printing *and* faxing on page 2, overlapping in red and green. The form has no
+  doctype, so it renders in quirks mode, where the class selector `.show` on those spans matches the
+  form's own `.Show { display:inline }` rule — and that rule sits later in source order than the
+  print block. Verified before and after by rendering the blob offline with the same wkhtmltopdf
+  line the JSP uses (substitute `${oscar_image_path}` → empty, drop it in the eform images dir).
+- **The page default is computed, not asked.** `faxMRIReq()` runs the same
+  `/\b(knee|hip|lumbar|l-sp)\b/i` test the form uses for its own checklist warning, and preselects
+  "requisition + checklist" only when that matches.
+
+`faxEformReq.jsp` now reads `db_username`/`db_password` from `oscar_mcmaster.properties` instead of
+carrying a copy of the database password — that is what makes it safe to keep in this repo.
+
+Not covered: faxing a file from disk. That is what `fax/newFax.jsp` (New Fax) is for.
+
 ## Move an appointment to another provider (added 2026-08-14)
 
 The Edit Appointment window now has a **Provider** dropdown, so an appointment can be moved onto
