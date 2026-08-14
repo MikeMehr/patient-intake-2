@@ -436,7 +436,8 @@ export async function getSlots(
     `SELECT s.id, s.organization_id, s.physician_id,
             p.first_name, p.last_name,
             s.start_time, s.end_time, s.status,
-            (p.doxy_room_url IS NOT NULL AND p.doxy_room_url <> '') AS video_available
+            (p.doxy_room_url IS NOT NULL AND p.doxy_room_url <> ''
+              AND NOT p.video_visits_disabled) AS video_available
      FROM appointment_slots s
      JOIN physicians p ON p.id = s.physician_id
      WHERE ${conditions.join(" AND ")}
@@ -457,14 +458,18 @@ export async function getSlots(
 }
 
 /**
- * Can this physician hold a video visit? True only when they have a Doxy waiting room.
+ * Can this physician hold a video visit? Two conditions, and both must hold: they have a Doxy
+ * waiting room (*can*), and video has not been switched off for them (*will*). Keeping the two
+ * apart matters — a room pasted onto the wrong provider must not re-enable video for someone who
+ * doesn't do them, and a provider who does can still be paused without deleting their room.
  *
  * Read in the booking confirm path to clamp the requested modality, so the check runs against
  * the physician who actually owns the slot rather than the clinic-wide video setting.
  */
 export async function physicianSupportsVideo(physicianId: string): Promise<boolean> {
   const res = await query<{ video_available: boolean }>(
-    `SELECT (doxy_room_url IS NOT NULL AND doxy_room_url <> '') AS video_available
+    `SELECT (doxy_room_url IS NOT NULL AND doxy_room_url <> ''
+             AND NOT video_visits_disabled) AS video_available
        FROM physicians WHERE id = $1`,
     [physicianId],
   );

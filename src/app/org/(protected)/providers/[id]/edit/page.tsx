@@ -21,6 +21,7 @@ export default function EditOrgProviderPage() {
     email: "",
     phone: "",
     doxyRoomUrl: "",
+    videoVisitsDisabled: false,
     oscarProviderNo: "",
     password: "",
     confirmPassword: "",
@@ -58,6 +59,7 @@ export default function EditOrgProviderPage() {
           email: provider.email || "",
           phone: provider.phone || "",
           doxyRoomUrl: provider.doxyRoomUrl || "",
+          videoVisitsDisabled: provider.videoVisitsDisabled === true,
           oscarProviderNo: provider.oscarProviderNo || "",
           password: "",
           confirmPassword: "",
@@ -157,6 +159,7 @@ export default function EditOrgProviderPage() {
         email: formData.email || null,
         phone: formData.phone || null,
         doxyRoomUrl: formData.doxyRoomUrl.trim() || null,
+        videoVisitsDisabled: formData.videoVisitsDisabled,
         oscarProviderNo: formData.oscarProviderNo || null,
         mfaEnabled: formData.mfaEnabled,
         managesOrgBooking: formData.managesOrgBooking,
@@ -476,6 +479,25 @@ export default function EditOrgProviderPage() {
                 confirmation email, and it goes on the OSCAR appointment note. This is not the
                 address you sign in at.
               </p>
+
+              <label className="mt-3 flex items-start gap-2">
+                <input
+                  type="checkbox"
+                  checked={formData.videoVisitsDisabled}
+                  onChange={(e) =>
+                    setFormData({ ...formData, videoVisitsDisabled: e.target.checked })
+                  }
+                  disabled={saving}
+                  className="mt-0.5 h-4 w-4 rounded border-slate-300"
+                />
+                <span className="text-sm text-slate-700">
+                  This provider does not do video visits
+                  <span className="mt-0.5 block text-xs text-slate-500">
+                    Their appointments stay phone-only even if a check-in link is filled in above,
+                    including when a patient books through &ldquo;Any available doctor&rdquo;.
+                  </span>
+                </span>
+              </label>
             </div>
 
             <div>

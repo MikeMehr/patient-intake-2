@@ -64,8 +64,9 @@ export async function GET(
       manages_org_booking: boolean;
       oscar_provider_no: string | null;
       doxy_room_url: string | null;
+      video_visits_disabled: boolean;
     }>(
-      `SELECT id, first_name, last_name, clinic_name, username, email, phone, unique_slug, organization_id, mfa_enabled, manages_org_booking, oscar_provider_no, doxy_room_url
+      `SELECT id, first_name, last_name, clinic_name, username, email, phone, unique_slug, organization_id, mfa_enabled, manages_org_booking, oscar_provider_no, doxy_room_url, video_visits_disabled
        FROM physicians
        WHERE id = $1 AND organization_id = $2`,
       [id, orgContext.organizationId]
@@ -98,6 +99,7 @@ export async function GET(
         managesOrgBooking: provider.manages_org_booking,
         oscarProviderNo: provider.oscar_provider_no,
         doxyRoomUrl: provider.doxy_room_url,
+        videoVisitsDisabled: provider.video_visits_disabled === true,
       },
     });
     logRequestMeta("/api/org/providers/[id]", requestId, status, Date.now() - started);
@@ -137,7 +139,7 @@ export async function PUT(
 
     const { id } = await params;
     const body = await request.json();
-    const { firstName, lastName, clinicName, email, phone, password, mfaEnabled, managesOrgBooking, oscarProviderNo, doxyRoomUrl } = body;
+    const { firstName, lastName, clinicName, email, phone, password, mfaEnabled, managesOrgBooking, oscarProviderNo, doxyRoomUrl, videoVisitsDisabled } = body;
 
     // Verify provider belongs to organization
     const existingProvider = await query<{ id: string; organization_id: string | null }>(
@@ -297,6 +299,14 @@ export async function PUT(
       }
       updates.push(`doxy_room_url = $${paramIndex++}`);
       values.push(cleaned);
+    }
+
+    if (videoVisitsDisabled !== undefined) {
+      // Deliberately independent of doxy_room_url. Clearing the room would also stop video, but
+      // it would erase the address rather than record the decision, and a room pasted back later
+      // would silently undo it.
+      updates.push(`video_visits_disabled = $${paramIndex++}`);
+      values.push(Boolean(videoVisitsDisabled));
     }
 
     if (updates.length === 0) {

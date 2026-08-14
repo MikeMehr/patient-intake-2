@@ -25,10 +25,15 @@ function resolveModality(args: {
   patientMayChoose: boolean;
   clinicVideoEnabled: boolean;
   physicianHasRoom: boolean;
+  /** The explicit per-provider opt-out (physicians.video_visits_disabled). */
+  physicianVideoDisabled?: boolean;
 }): Modality {
+  // Mirrors physicianSupportsVideo(): a room says they *can*, the flag says they *will*.
+  const physicianSupportsVideo = args.physicianHasRoom && !args.physicianVideoDisabled;
+
   const clinicAllowsRequested =
     args.patientMayChoose && (args.requested !== "VIDEO" || args.clinicVideoEnabled);
-  const physicianAllowsRequested = args.requested !== "VIDEO" || args.physicianHasRoom;
+  const physicianAllowsRequested = args.requested !== "VIDEO" || physicianSupportsVideo;
 
   return clinicAllowsRequested && physicianAllowsRequested
     ? args.requested
@@ -88,6 +93,30 @@ describe("modality clamp", () => {
         resolveModality({ ...clinicDoesVideo, requested: "PHONE", physicianHasRoom }),
       ).toBe("PHONE");
     }
+  });
+
+  it("honours the explicit opt-out even when the physician has a room", () => {
+    // The whole point of the flag: a room pasted onto the wrong provider (two providers here
+    // share a surname) must not re-enable video for someone who doesn't do them.
+    expect(
+      resolveModality({
+        ...clinicDoesVideo,
+        requested: "VIDEO",
+        physicianHasRoom: true,
+        physicianVideoDisabled: true,
+      }),
+    ).toBe("PHONE");
+  });
+
+  it("leaves a room-holding provider on video when the opt-out is off", () => {
+    expect(
+      resolveModality({
+        ...clinicDoesVideo,
+        requested: "VIDEO",
+        physicianHasRoom: true,
+        physicianVideoDisabled: false,
+      }),
+    ).toBe("VIDEO");
   });
 
   it("ignores a requested modality when the clinic doesn't let patients choose", () => {
