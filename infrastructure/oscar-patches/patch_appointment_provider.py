@@ -59,7 +59,8 @@ DOCTOR_ROW_NEW = '''        <tr>
         // On the patient-search round trip the form comes back with
         // bFirstDisp=false and `appt` null, so re-read the appointment rather
         // than falling back to a blank - a blank would read as "no provider".
-        Appointment apptForProvider = bFirstDisp ? appt : appointmentDao.find(Integer.parseInt(appointment_no));
+        Appointment apptForProvider = bFirstDisp ? appt
+                : (StringUtils.isNumeric(appointment_no) ? appointmentDao.find(Integer.parseInt(appointment_no)) : null);
         apptProviderNo = apptForProvider == null ? "" : StringUtils.trimToEmpty(apptForProvider.getProviderNo());
     }
     List<ProviderData> apptProviderChoices = new ArrayList<ProviderData>();
