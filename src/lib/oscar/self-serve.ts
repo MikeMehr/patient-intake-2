@@ -362,23 +362,46 @@ export async function findChartByNameAndHealthCard(
     )
   );
 
-  const demographicNos = new Set<string>();
+  // This deployment's quickSearch items already carry hin/firstName/lastName, which is
+  // everything the comparison needs. Worth using: a full demographic record from this
+  // OSCAR is ~1.2 MB, so fetching one per candidate would move tens of megabytes off
+  // the clinic's server on every new-patient booking. Candidates whose search item has
+  // no card field fall back to the full record, for builds that don't return it.
+  const seen = new Set<string>();
+  const candidates: DuplicateCandidate[] = [];
+  const needDetail: string[] = [];
   for (const res of searches) {
     if (!res.ok) continue;
     for (const item of tryPickArrayDeep(res.json)) {
       const match = normalizeMatch(item);
-      if (match) demographicNos.add(match.demographicNo);
+      if (!match || seen.has(match.demographicNo)) continue;
+      seen.add(match.demographicNo);
+      // Presence of the field is what decides, not whether it holds a card. A chart with
+      // a blank hin has no card to collide with, so re-fetching it in full would buy
+      // nothing; only a build that omits the field entirely needs the detour.
+      if (item && typeof item === "object" && "hin" in item) {
+        candidates.push({
+          demographicNo: match.demographicNo,
+          firstName: item.firstName ?? null,
+          lastName: item.lastName ?? null,
+          healthCardNumber: String(item.hin ?? "").trim(),
+        });
+      } else {
+        needDetail.push(match.demographicNo);
+      }
     }
   }
 
-  const candidates = await Promise.all(
-    [...demographicNos].slice(0, 15).map((no) => fetchIdentityForDemographic(no, creds))
+  const fetched = await Promise.all(
+    needDetail.slice(0, 15).map((no) => fetchIdentityForDemographic(no, creds))
   );
+  candidates.push(...(fetched.filter(Boolean) as DuplicateCandidate[]));
 
-  const duplicate = findDuplicateChart(
-    candidates.filter(Boolean) as DuplicateCandidate[],
-    { firstName: input.firstName, lastName: input.lastName, healthCardNumber: input.healthCardNumber }
-  );
+  const duplicate = findDuplicateChart(candidates, {
+    firstName: input.firstName,
+    lastName: input.lastName,
+    healthCardNumber: input.healthCardNumber,
+  });
   return duplicate?.demographicNo ?? null;
 }
 
