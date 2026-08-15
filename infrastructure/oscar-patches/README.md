@@ -27,8 +27,34 @@ patient chart, and the only content filter is the **View:** dropdown, built from
 | `eform/faxEformReq.jsp` | `saveToChart=1` files the requisition (alone) after the fax is queued. |
 | `eform/faxEformSend.jsp` | "Also keep a copy in the patient's Documents", ticked by default. |
 | `eform-fax/patch_eform_savetochart.py` | Adds the **Save to chart** button; generic on fid. |
+| `eform-fax/patch_eform_faxsaves.py` | Adds `saveToChart=1` to the forms that call `faxEformReq.jsp` directly. |
 | `fax/newFax.jsp` | Multi-document: `demographicNo` + `docNos`, chart picker, PDFBox merge, security fixes. |
 | `dms/patch_documentreport_faxselected.py` | Adds **Fax Selected** next to Combine PDF. |
+
+**Forms wired** (all carry **Save to chart**):
+
+| fid | Form | Files under | Also files when faxed |
+|---|---|---|---|
+| 3 | 1.1 Lab Requisition | `requisition` | — (email button only) |
+| 4 | 1- Brooke X-ray | `requisition` | — |
+| 5 | 1 Brooke US | `requisition` | yes, direct |
+| 6 | 2.1 Imaging FHA | `requisition` | — |
+| 7 | 2 - CT/XR/US Req - FHA | `requisition` | — |
+| 11 | Bone Density Requisition | `requisition` | — |
+| 33 | Imaging Vancouver | `requisition` | — |
+| 39 | MRI LM central | `requisition` | yes, via the picker checkbox |
+| 52 | Plan G | `insurance` | yes, direct |
+| 62 | Special Authority 2015 | `insurance` | yes, direct |
+| 70 | West Coast Medical Imaging | `requisition` | — |
+| 74 | *Coastal Sleep HSAT Requisition | `requisition` | yes, direct |
+
+**fid 16 "CT/XR/US/Echo Req - VCH" could not be wired: its `form_html` is NULL.** The eForm is
+`status=1` (active) but has no HTML at all, so there is nothing to patch and presumably nothing that
+renders. Worth deleting or restoring separately.
+
+Per-form facts that had to be looked up rather than assumed: fid 5 closes its head with `</HEAD>`;
+fid 7's form element is named `MedicalImagingForm`, not `FormName`; fids 4, 5, 70 and 74 define no
+`setFlag()`, so the call is wrapped in try/catch.
 
 Things that will cost time if forgotten:
 

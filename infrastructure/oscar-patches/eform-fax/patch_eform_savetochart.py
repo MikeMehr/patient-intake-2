@@ -30,7 +30,16 @@ STAMP = time.strftime('%Y%m%d%H%M%S')
 #   anchor  - the button the Save button is appended after; must appear exactly once
 #   pages   - JS expression returning "1" for page-1-only, "" for the whole form.
 #             fid 39 reuses the form's own checklist test so the filed copy matches
-#             what gets faxed.
+#             what gets faxed. Everything else files the whole form; the trailing blank
+#             page wkhtmltopdf leaves is trimmed server-side.
+#   form    - the <form> element's name. Nearly every eForm uses FormName, but fid 7
+#             calls its form MedicalImagingForm, and document.FormName would be
+#             undefined there.
+#
+# Not listed: fid 16 "CT/XR/US/Echo Req - VCH" is active but its form_html is NULL,
+# so there is nothing to patch.
+DEFAULT_FORM = 'FormName'
+
 FORMS = {
     39: {
         'head': '</head>',
@@ -54,6 +63,69 @@ FORMS = {
         'pages': '""',
         'title': 'bone density requisition',
     },
+    3: {
+        'head': '</head>',
+        'anchor': '<input value="Email to Patient" name="EmailButton" id="EmailButton" type="button" onclick="emailLabReq();">',
+        'pages': '""',
+        'title': 'lab requisition',
+    },
+    4: {
+        'head': '</head>',
+        'anchor': ('<input value="Print & Submit" name="PrintSubmitButton" id="PrintSubmitButton" type="button"'
+                   ' onclick="formPrint();releaseDirtyFlag();setTimeout(\'SubmitButton.click()\',1000);">'),
+        'pages': '""',
+        'title': 'X-ray requisition',
+    },
+    6: {
+        'head': '</head>',
+        'anchor': '<input value="Print and Submit" name="PrintSubmitButton" type="button" onClick="addSubject(); printSubmit();">',
+        'pages': '""',
+        'title': 'imaging requisition',
+    },
+    7: {
+        'head': '</head>',
+        'anchor': '<input value="Print and Submit" name="PrintSubmitButton" type="button" onClick="printSubmit()">',
+        'pages': '""',
+        'title': 'imaging requisition',
+        'form': 'MedicalImagingForm',
+    },
+    33: {
+        'head': '</head>',
+        'anchor': ('<input value="Print & Submit" name="PrintSubmitButton" id="PrintSubmitButton" type="button"'
+                   ' onclick="document.FormName.subject.value = subject.value += ExamRequestedText.value; printSubmit();">'),
+        'pages': '""',
+        'title': 'imaging requisition',
+    },
+    70: {
+        'head': '</head>',
+        'anchor': ('<input value="Print and Submit" name="PrintSubmitButton" id="PrintSubmitButton" type="button"'
+                   ' onclick="formPrint();releaseDirtyFlag();setTimeout(\'SubmitButton.click()\',1000);">'),
+        'pages': '""',
+        'title': 'imaging requisition',
+    },
+    74: {
+        'head': '</head>',
+        'anchor': ('<input value="Fax" name="FaxButton" id="FaxButton" type="button"'
+                   ' style="background-color:#c6f0c6; font-weight:bold;" onclick="faxHSATReq();">'),
+        'pages': '""',
+        'title': 'sleep study requisition',
+    },
+    # Coverage requests rather than requisitions: saveEformToChart.jsp files these under
+    # `insurance`, so the request lands next to the decision that comes back by fax.
+    52: {
+        'head': '</head>',
+        'anchor': ('<input value="Fax to MHSUC" name="FaxButton" id="FaxButton" type="button"'
+                   ' style="background-color:#c6f0c6; font-weight:bold;" onclick="faxPlanG();">'),
+        'pages': '""',
+        'title': 'Plan G request',
+    },
+    62: {
+        'head': '</head>',
+        'anchor': ('<input value="Fax to PharmaCare" name="FaxButton" id="FaxButton" type="button"'
+                   ' style="background-color:#c6f0c6; font-weight:bold;" onClick="faxSpecialAuthority();">'),
+        'pages': '""',
+        'title': 'Special Authority request',
+    },
 }
 
 
@@ -73,10 +145,10 @@ def save_js(cfg):
 
 	function saveReqToChart() {
 		function _qp(src, n) { var m = String(src).match(new RegExp("[?&]" + n + "=([^&]*)")); return m ? decodeURIComponent(m[1]) : ""; }
-		// On the add page the form is named FormName. Once saved, EForm.setAction()
-		// renames it to saveEForm (keeping id=FormName where the form has an id, which
-		// this one may not), so resolve both ways before giving up.
-		var f = document.FormName || document.saveEForm || document.getElementById("FormName");
+		// On the add page the form carries its own name. Once saved, EForm.setAction()
+		// renames it to saveEForm (keeping id where the form has one, which some of
+		// these do not), so resolve every way before giving up.
+		var f = document.%(form)s || document.saveEForm || document.getElementById("%(form)s");
 		if (!f) { alert("Cannot find this form on the page."); return; }
 		// The page URL carries these while the form is being created. Once it is saved it
 		// is viewed as efmshowform_data.jsp?fdid=N and neither is in the URL - but OSCAR
@@ -174,6 +246,8 @@ def patch(fid):
     cfg = FORMS.get(fid)
     if cfg is None:
         raise SystemExit('fid %d is not configured - add its head tag, anchor and pages rule to FORMS' % fid)
+    cfg = dict(cfg)
+    cfg.setdefault('form', DEFAULT_FORM)
 
     hexs = mysql_scalar('SELECT HEX(form_html) FROM eform WHERE fid=%d' % fid)
     assert len(hexs) > 1000, 'form_html looks empty for fid %d' % fid
