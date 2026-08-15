@@ -8,6 +8,7 @@ import { getCurrentSession } from "@/lib/auth";
 import { getOrgAdminContext } from "@/lib/auth-helpers";
 import { getSlots, createSlot, getBookingSettingsByOrgId, findOverlappingSlots } from "@/lib/booking-store";
 import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
+import { checkBusinessHours, partsInZone } from "@/lib/business-hours";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const ISO_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/;
@@ -114,6 +115,22 @@ export async function POST(request: NextRequest) {
       }
     } else {
       ranges.push({ start: new Date(String(startTime)), end: new Date(String(endTime)) });
+    }
+
+    // Keep every slot inside clinic hours, evaluated in the clinic's own
+    // timezone (the wire format is UTC). Mirrors the check the Add Slot form
+    // does, so an AM/PM slip can't reach the database via a direct POST either.
+    const settings = await getBookingSettingsByOrgId(orgContext.organizationId);
+    const tz = settings?.timezone || "America/Vancouver";
+    const hoursError = checkBusinessHours(
+      partsInZone(ranges[0]!.start, tz),
+      partsInZone(ranges[ranges.length - 1]!.end, tz),
+    );
+    if (hoursError) {
+      status = 400;
+      const res = NextResponse.json({ error: hoursError }, { status });
+      logRequestMeta("/api/org/slots", requestId, status, Date.now() - started);
+      return res;
     }
 
     // Unless the caller explicitly overrides, warn about overlaps with existing

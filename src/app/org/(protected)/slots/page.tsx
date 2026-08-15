@@ -4,6 +4,13 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import DateTimeField from "./DateTimeField";
 import { localDateString } from "@/lib/localDate";
+import {
+  BUSINESS_HOURS_LABEL,
+  DAY_START_MINUTES,
+  LAST_START_MINUTES,
+  checkBusinessHours,
+  partsFromLocalString,
+} from "@/lib/business-hours";
 
 type Physician = { id: string; firstName: string; lastName: string };
 type Slot = {
@@ -188,6 +195,12 @@ export default function SlotsPage() {
     // on any other day, put the same clock time on that day.
     let start = day === today ? now : new Date(`${day}T${localDateTimeString(now).slice(11)}`);
     if (Number.isNaN(start.getTime())) start = now;
+    // Never prefill a time outside the booking window (e.g. opening the modal
+    // at 9 PM) — fall back to the start of the day instead.
+    const startMinutes = start.getHours() * 60 + start.getMinutes();
+    if (startMinutes < DAY_START_MINUTES || startMinutes > LAST_START_MINUTES) {
+      start.setHours(Math.floor(DAY_START_MINUTES / 60), DAY_START_MINUTES % 60, 0, 0);
+    }
     const end = new Date(start.getTime() + 30 * 60 * 1000);
     setNewSlot((prev) => ({
       ...prev,
@@ -233,6 +246,17 @@ export default function SlotsPage() {
     if (end.getTime() <= start.getTime()) {
       setAddError("End time must be after start time.");
       return;
+    }
+    // Keep the whole block inside clinic hours. Catches the common AM/PM slip
+    // (8 PM entered for 8 AM) before it becomes an unbookable evening slot.
+    const startParts = partsFromLocalString(newSlot.startTime);
+    const endParts = partsFromLocalString(newSlot.endTime);
+    if (startParts && endParts) {
+      const hoursError = checkBusinessHours(startParts, endParts);
+      if (hoursError) {
+        setAddError(hoursError);
+        return;
+      }
     }
 
     setAdding(true);
@@ -422,7 +446,10 @@ export default function SlotsPage() {
       {showAdd && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
-            <h2 className="text-lg font-bold text-gray-900 mb-4">Add Slot</h2>
+            <h2 className="text-lg font-bold text-gray-900 mb-1">Add Slot</h2>
+            <p className="text-xs text-gray-500 mb-4">
+              Appointment hours: {BUSINESS_HOURS_LABEL}
+            </p>
             {addError && (
               <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-red-700 text-sm mb-4">
                 {addError}
