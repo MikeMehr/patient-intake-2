@@ -36,8 +36,8 @@ STAMP = time.strftime('%Y%m%d%H%M%S')
 #             calls its form MedicalImagingForm, and document.FormName would be
 #             undefined there.
 #
-# Not listed: fid 16 "CT/XR/US/Echo Req - VCH" is active but its form_html is NULL,
-# so there is nothing to patch.
+# fid 16 is only patchable after restore_eform16_html.py has put its HTML back; its
+# form_html was NULL from a misfiled 2026-06-17 upload.
 DEFAULT_FORM = 'FormName'
 
 FORMS = {
@@ -88,6 +88,14 @@ FORMS = {
         'pages': '""',
         'title': 'imaging requisition',
         'form': 'MedicalImagingForm',
+    },
+    16: {
+        # Same submit bar as fid 4 and 70, byte for byte.
+        'head': '</head>',
+        'anchor': ('<input value="Print & Submit" name="PrintSubmitButton" id="PrintSubmitButton" type="button"'
+                   ' onclick="formPrint();releaseDirtyFlag();setTimeout(\'SubmitButton.click()\',1000);">'),
+        'pages': '""',
+        'title': 'imaging requisition',
     },
     33: {
         'head': '</head>',

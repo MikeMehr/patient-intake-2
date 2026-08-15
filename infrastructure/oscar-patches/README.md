@@ -28,6 +28,7 @@ patient chart, and the only content filter is the **View:** dropdown, built from
 | `eform/faxEformSend.jsp` | "Also keep a copy in the patient's Documents", ticked by default. |
 | `eform-fax/patch_eform_savetochart.py` | Adds the **Save to chart** button; generic on fid. |
 | `eform-fax/patch_eform_faxsaves.py` | Adds `saveToChart=1` to the forms that call `faxEformReq.jsp` directly. |
+| `eform-fax/restore_eform16_html.py` | Puts back fid 16's HTML, which a misfiled upload lost. |
 | `fax/newFax.jsp` | Multi-document: `demographicNo` + `docNos`, chart picker, PDFBox merge, security fixes. |
 | `dms/patch_documentreport_faxselected.py` | Adds **Fax Selected** next to Combine PDF. |
 
@@ -41,6 +42,7 @@ patient chart, and the only content filter is the **View:** dropdown, built from
 | 6 | 2.1 Imaging FHA | `requisition` | — |
 | 7 | 2 - CT/XR/US Req - FHA | `requisition` | — |
 | 11 | Bone Density Requisition | `requisition` | — |
+| 16 | CT/XR/US/Echo Req - VCH | `requisition` | — |
 | 33 | Imaging Vancouver | `requisition` | — |
 | 39 | MRI LM central | `requisition` | yes, via the picker checkbox |
 | 52 | Plan G | `insurance` | yes, direct |
@@ -48,9 +50,27 @@ patient chart, and the only content filter is the **View:** dropdown, built from
 | 70 | West Coast Medical Imaging | `requisition` | — |
 | 74 | *Coastal Sleep HSAT Requisition | `requisition` | yes, direct |
 
-**fid 16 "CT/XR/US/Echo Req - VCH" could not be wired: its `form_html` is NULL.** The eForm is
-`status=1` (active) but has no HTML at all, so there is nothing to patch and presumably nothing that
-renders. Worth deleting or restoring separately.
+**fid 16 was broken and is now repaired** (`restore_eform16_html.py`). Its `form_html` had been NULL
+since it was uploaded on 2026-06-17, and it had never been used once. Not data loss — the upload
+misfiled itself. The evidence is in the row: `file_name` was `CT/XR/US/EchoReq-VCH.html`, so the
+slashes in the form *name* were taken as a path and the HTML was written into the eForm **images**
+directory under its basename while `form_html` stayed NULL:
+
+```
+/var/lib/OscarDocument/oscar/eform/images/EchoReq-VCH.html
+```
+
+The restore reads that file as **bytes** (it is CRLF; text mode would silently rewrite the line
+endings), loads it through HEX/UNHEX, and corrects `file_name` to the basename. `form_name` is left
+alone — the slashes there are the root cause, but the name is what shows in the eForm list, so
+renaming it is a clinical call. **If that form is ever re-uploaded under the same name it will break
+the same way.** Verified after restore by rendering it with the same wkhtmltopdf line the fax path
+uses: a valid 1-page PDF with `vch-medical_imaging_requisition.png` embedded.
+
+**fid 44 "Olive" is still broken and is not recoverable here** — `form_html` NULL, `file_name` and
+`subject` both empty, 0 saved instances, and no orphaned HTML left on disk. It looks like an empty
+shell created the same day. Deactivating it (`UPDATE eform SET status=0 WHERE fid=44`) would take it
+out of the eForm list; not done, since that is a user-facing change.
 
 Per-form facts that had to be looked up rather than assumed: fid 5 closes its head with `</HEAD>`;
 fid 7's form element is named `MedicalImagingForm`, not `FormName`; fids 4, 5, 70 and 74 define no
