@@ -7,6 +7,9 @@
  *  - Requires an active booking hold cookie (same gate as lookup-patient).
  *  - Validates all inputs strictly before sending to Oscar.
  *  - Returns only the demographicNo — no Oscar PHI echoed back.
+ *  - Refuses to create a second chart for a name + health card the clinic already
+ *    has (409). Lookup matches on date of birth, so a mistyped birthday reaches here
+ *    looking like a brand-new patient; see @/lib/oscar/duplicate-patient.
  *
  * The OSCAR write logic lives in @/lib/oscar/self-serve (shared with the
  * self-serve guided-interview intake flow).
@@ -110,6 +113,20 @@ export async function POST(
     });
 
     if ("error" in result) {
+      // A blocked duplicate is the one error the patient can act on, so point them at
+      // a person: the chart it collides with can only be reconciled by the clinic.
+      if (result.code === "DUPLICATE_PATIENT") {
+        return NextResponse.json(
+          {
+            error: result.error,
+            duplicatePatient: true,
+            // Same shape as lookup-patient's ambiguous/lookupError responses, which the
+            // booking UI already renders as a mailto link on its "blocked" screen.
+            clinicEmail: clinic.email ?? null,
+          },
+          { status: result.status },
+        );
+      }
       return NextResponse.json({ error: result.error }, { status: result.status });
     }
 

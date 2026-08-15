@@ -344,6 +344,17 @@ export default function BookingConfirmPage({
       });
       const createData = await createRes.json();
       if (!createRes.ok) {
+        // The clinic already has this name + health card, so the date of birth is what
+        // disagrees. That field lives on the identity step, and the blocked screen is
+        // the one that offers a way back to it — a message above this form could not
+        // be acted on.
+        if (createData.duplicatePatient) {
+          setBlockMessage(createData.error);
+          setBlockClinicEmail(createData.clinicEmail ?? clinicEmail);
+          setStep("blocked");
+          setSubmitting(false);
+          return;
+        }
         setError(createData.error ?? "Failed to create patient record. Please try again.");
         setSubmitting(false);
         return;

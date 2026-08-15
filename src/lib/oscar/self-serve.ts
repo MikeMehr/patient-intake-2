@@ -15,6 +15,11 @@ import { decryptString } from "@/lib/encrypted-field";
 import { getOscarRestBase, oscarFetch } from "@/lib/oscar/client";
 import { signOAuth1Request } from "@/lib/oscar/oauth1";
 import { extractOscarDob, normalizeOscarDob } from "@/lib/oscar/dob";
+import {
+  duplicateChartMessage,
+  findDuplicateChart,
+  type DuplicateCandidate,
+} from "@/lib/oscar/duplicate-patient";
 import { toProvinceCode } from "@/lib/province-code";
 
 export type OscarCreds = {
@@ -201,6 +206,29 @@ async function fetchEmailForDemographic(demographicNo: string, creds: OscarCreds
   return typeof raw === "string" ? raw.trim().toLowerCase() || null : null;
 }
 
+/** Name + health card as OSCAR holds them, for the duplicate-chart check. */
+async function fetchIdentityForDemographic(
+  demographicNo: string,
+  creds: OscarCreds
+): Promise<DuplicateCandidate | null> {
+  const res = await oscarGet(
+    `${creds.restBase}/demographics/${encodeURIComponent(demographicNo)}`,
+    creds
+  );
+  if (!res.ok) return null;
+  const obj = res.json as any;
+  const target = obj?.content ?? obj?.demographic ?? obj;
+  return {
+    demographicNo,
+    firstName: String(target?.firstName ?? target?.first_name ?? target?.givenName ?? "") || null,
+    lastName: String(target?.lastName ?? target?.last_name ?? target?.surname ?? "") || null,
+    healthCardNumber:
+      String(
+        target?.hin ?? target?.healthInsuranceNumber ?? target?.insuranceNumber ?? target?.hcNumber ?? ""
+      ) || null,
+  };
+}
+
 function buildSearchQueries(firstName: string, lastName: string): string[] {
   const out: string[] = [];
   const push = (s: string) => {
@@ -307,6 +335,53 @@ export async function lookupOscarPatient(
   return { oscarConnected: true, ambiguous: true };
 }
 
+/**
+ * Find an existing chart for the same person by name + health card, ignoring date
+ * of birth. This is the guard that stops a patient who mistypes their birthday from
+ * getting a second chart — see @/lib/oscar/duplicate-patient for why a card match is
+ * treated as conclusive.
+ *
+ * Returns null when nothing matches AND when OSCAR can't be searched: the caller has
+ * already committed a slot hold by this point, and no clinic wants bookings to stop
+ * because a search endpoint blipped. The lookup that precedes creation hits the same
+ * endpoint moments earlier and blocks the patient on its own errors, so a failure
+ * here is both rare and already-surfaced.
+ */
+export async function findChartByNameAndHealthCard(
+  creds: OscarCreds,
+  input: { firstName: string; lastName: string; healthCardNumber: string }
+): Promise<string | null> {
+  // Searched by name only, never by the card number: a match has to agree on the
+  // surname anyway, and a quickSearch by HIN would write patients' health card
+  // numbers into the OSCAR web server's access log for no extra coverage.
+  const queries = buildSearchQueries(input.firstName, input.lastName);
+
+  const searches = await Promise.all(
+    queries.map((q) =>
+      oscarGet(`${creds.restBase}/demographics/quickSearch?query=${encodeURIComponent(q)}`, creds)
+    )
+  );
+
+  const demographicNos = new Set<string>();
+  for (const res of searches) {
+    if (!res.ok) continue;
+    for (const item of tryPickArrayDeep(res.json)) {
+      const match = normalizeMatch(item);
+      if (match) demographicNos.add(match.demographicNo);
+    }
+  }
+
+  const candidates = await Promise.all(
+    [...demographicNos].slice(0, 15).map((no) => fetchIdentityForDemographic(no, creds))
+  );
+
+  const duplicate = findDuplicateChart(
+    candidates.filter(Boolean) as DuplicateCandidate[],
+    { firstName: input.firstName, lastName: input.lastName, healthCardNumber: input.healthCardNumber }
+  );
+  return duplicate?.demographicNo ?? null;
+}
+
 // ---------------------------------------------------------------------------
 // Demographic creation
 // ---------------------------------------------------------------------------
@@ -408,7 +483,7 @@ const toHcType = toProvinceCode;
 
 export type CreateDemographicResult =
   | { demographicNo: string }
-  | { error: string; status: number };
+  | { error: string; status: number; code?: "DUPLICATE_PATIENT" };
 
 /**
  * Create a new demographic record in OSCAR. Validates inputs, returns only the
@@ -448,6 +523,27 @@ export async function createOscarDemographic(
   const creds = await getOscarCredsForOrg(orgId);
   if (!creds) {
     return { error: "Oscar EMR is not connected for this clinic", status: 503 };
+  }
+
+  // The caller only gets here because a name + date-of-birth lookup found nobody. If
+  // the clinic already holds this name and health card, the date of birth is what
+  // disagrees, and creating a chart would split one patient's record in two.
+  if (hin) {
+    const existing = await findChartByNameAndHealthCard(creds, {
+      firstName,
+      lastName,
+      healthCardNumber: hin,
+    });
+    if (existing) {
+      console.error(
+        `[oscar/self-serve] Blocked duplicate chart for org ${orgId} — health card already on demographic ${existing}`
+      );
+      return {
+        error: duplicateChartMessage(),
+        status: 409,
+        code: "DUPLICATE_PATIENT",
+      };
+    }
   }
 
   const [dobYear, dobMonth, dobDay] = dateOfBirth.split("-");
