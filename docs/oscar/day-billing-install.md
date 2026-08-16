@@ -1,7 +1,7 @@
 # Day billing: AI diagnostic coding for MSP telehealth claims
 
 A **Bill Day** item in the OSCAR top nav, immediately right of Lab Import. One click sweeps the
-logged-in provider's day sheet for visits marked Done with no claim, reads the diagnosis out of
+logged-in provider's day sheet for visits marked Done or To Do with no claim, reads the diagnosis out of
 each eChart note, picks the diagnostic code, and writes the MSP claim.
 
 Clean BC cases bill without asking. Everything else is prepared and listed for a tick.
@@ -322,8 +322,10 @@ instead of inserting rows. Form properties come from `billingBC.jsp` (`service`,
 - **`billingmaster.phn` is `varchar(10)`** — this is the concrete reason Ontario's 2-letter version
   code cannot ride along on a claim.
 - `billingstatus_types`: `O` = Bill MSP – Not Submitted, `B` = Submitted, `D` = Deleted.
-- `appointment.status`: `F`/`FS` = Done (billable), `B`/`BS` = Billed, `C` = Cancelled, `N` = No
-  Show, `t`/`tS` = To Do. OSCAR appends `S` when the appointment is signed off.
+- `appointment.status`: `F`/`FS` = Done and `t`/`tS` = To Do (both billable since 2026-08-16 —
+  virtual visits often sit at the default To Do status even after they happen; the note/signature
+  checks still gate the claim), `B`/`BS` = Billed, `C` = Cancelled, `N` = No Show. OSCAR appends
+  `S` when the appointment is signed off.
 - `casemgmt_note.appointmentNo` (camelCase) is **100% populated** here — 93 of 93 notes over 90
   days — so notes scope to a visit exactly. Those 93 notes span 84 `uuid`s, so note versioning is
   real and the "latest row per uuid" grouping is required, not defensive.

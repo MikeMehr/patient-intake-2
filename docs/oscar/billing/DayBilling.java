@@ -53,8 +53,13 @@ public class DayBilling {
     static final List<String> VISIT_FEE_CODES =
             Arrays.asList("13237", "13437", "13537", "13637", "13737", "13837");
 
-    /** Appointment statuses that mean the visit happened. OSCAR appends 'S' when signed off. */
-    private static final Set<String> DONE_STATUSES = new HashSet<String>(Arrays.asList("F", "FS"));
+    /**
+     * Appointment statuses the sweep treats as billable. OSCAR appends 'S' when signed off.
+     * 'F' is Done; 't' (To Do) is included because virtual visits often sit at the default
+     * status even after the visit happened — the note/signature checks still gate the claim.
+     */
+    private static final Set<String> DONE_STATUSES =
+            new HashSet<String>(Arrays.asList("F", "FS", "t", "tS"));
 
     /** OSCAR's placeholder for "no PHN recorded". */
     private static final String PLACEHOLDER_HIN = "0000000000";

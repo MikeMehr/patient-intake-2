@@ -1,8 +1,8 @@
 <%--
   MyMD: bill a day's virtual visits.
 
-  Sweeps the logged-in provider's day sheet for visits marked Done that have no claim yet, reads
-  the diagnosis out of each eChart note, and writes the MSP claim.
+  Sweeps the logged-in provider's day sheet for visits marked Done or To Do that have no claim
+  yet, reads the diagnosis out of each eChart note, and writes the MSP claim.
 
   Clean BC cases bill without asking: a BC card that passes its check digit, a signed note, a fee
   code that matches the patient's age, and a diagnostic code that exists in OSCAR's own table.
@@ -82,7 +82,7 @@
 </head>
 <body>
 <h2>Bill day &mdash; <%=Encode.forHtml(date)%></h2>
-<div class="note">Provider <%=Encode.forHtml(providerNo)%> &middot; visits marked Done with no claim yet</div>
+<div class="note">Provider <%=Encode.forHtml(providerNo)%> &middot; visits marked Done or To&nbsp;Do with no claim yet</div>
 
 <%-- Notes are often signed a day or two after the visit, so billing "today" is the exception
      rather than the rule. Without this the only way to reach another day is editing the URL. --%>
@@ -258,7 +258,7 @@
     }
     if (rows.isEmpty()) {
 %>
-    <tr><td colspan="7" class="note">Nothing to bill &mdash; no visits marked Done without a claim
+    <tr><td colspan="7" class="note">Nothing to bill &mdash; no visits marked Done or To&nbsp;Do without a claim
         on this day.</td></tr>
 <%
     }
