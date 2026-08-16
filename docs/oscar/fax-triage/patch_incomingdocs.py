@@ -29,13 +29,17 @@ assert s.count(anchor_a) == 1, "addflagprovider anchor count=%d" % s.count(ancho
 s = s.replace(anchor_a, guard)
 
 # (B) Load the AI prefill script alongside the other page scripts.
+# The URL is stamped with the file's own mtime so every redeploy of aiPrefill.js busts browser
+# caches by itself. Without this, an updated script silently keeps running its OLD cached version
+# in every browser that has visited the page before -- which cost a debugging round on 2026-08-15.
 anchor_b = '        <script src="<%= request.getContextPath() %>/js/demographicProviderAutocomplete.js"></script>'
 assert s.count(anchor_b) == 1, "script anchor count=%d" % s.count(anchor_b)
 s = s.replace(
     anchor_b,
     anchor_b
     + "\n        <!-- MyMD: AI pre-fill for incoming faxes. Inert unless mymd_fax.properties enables it. -->"
-    + '\n        <script src="<%= request.getContextPath() %>/mymd/aiPrefill.js"></script>',
+    + '\n        <script src="<%= request.getContextPath() %>/mymd/aiPrefill.js?v=<%= new java.io.File('
+    + 'application.getRealPath("/mymd/aiPrefill.js")).lastModified() %>"></script>',
 )
 
 assert s != orig
