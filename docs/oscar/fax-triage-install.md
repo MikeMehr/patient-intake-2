@@ -210,8 +210,15 @@ This was invisible until 2026-08-11, because until then *every* routing insert w
 ## Cost and latency
 
 One Document Intelligence read plus one model call per fax, about 4 s. `mymd_fax_triage` caches by a
-SHA-256 of `queueId|pdfDir|pdfName`, which matters because Incoming Docs reloads the entire page on
-every Next/Previous — without it, paging back and forth would re-OCR the same fax repeatedly.
+SHA-256 of `queueId|pdfDir|pdfName|mtime|size`, which matters because Incoming Docs reloads the
+entire page on every Next/Previous — without it, paging back and forth would re-OCR the same fax
+repeatedly.
+
+mtime and size are in the key because **Extract Page rewrites the original file under its unchanged
+name**: a 3-patient fax split apart leaves a 1-patient file that would otherwise keep replaying its
+stale multi-patient refusal from cache (found live, 2026-08-15). Any in-place edit — extract,
+delete a page, rotate — now reads as a new document, and superseded rows for the same name are
+pruned when the fresh verdict is stored.
 
 ## Rollback
 

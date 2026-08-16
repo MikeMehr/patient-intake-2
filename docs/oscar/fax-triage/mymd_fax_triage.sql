@@ -5,8 +5,9 @@
 -- repeatedly. `payload` is the raw response from Health Assist; a row with a NULL payload records
 -- a call that failed.
 --
--- fax_ref is a SHA-256 prefix of queueId|pdfDir|pdfName, not the filename, so the sender's fax
--- number does not become the cache key.
+-- fax_ref is a SHA-256 prefix of queueId|pdfDir|pdfName|mtime|size, not the filename, so the
+-- sender's fax number does not become the cache key — and an in-place edit (Extract Page, Delete
+-- Page, rotate) changes the ref and forces a fresh analysis instead of replaying a stale verdict.
 
 CREATE TABLE IF NOT EXISTS mymd_fax_triage (
   id          INT AUTO_INCREMENT PRIMARY KEY,
