@@ -18,10 +18,12 @@ export const generateSoapFromTranscriptRequestSchema = z.object({
   transcript: z.string().trim().min(10).max(80000),
   chiefComplaint: z.string().trim().max(1000).optional(),
   encounterId: z.string().uuid().optional(),
+  detailLevel: z.union([z.literal(1), z.literal(2), z.literal(3)]).optional(),
 });
 
 export const generateHpiFromTranscriptRequestSchema = z.object({
   transcript: z.string().trim().min(10).max(80000),
+  detailLevel: z.union([z.literal(1), z.literal(2), z.literal(3)]).optional(),
 });
 
 export const transcriptionRecommendationsRequestSchema = z.object({

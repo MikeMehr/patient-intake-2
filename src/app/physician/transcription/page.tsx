@@ -405,6 +405,19 @@ export default function PhysicianTranscriptionPage() {
     if (saved) setLanguage(saved);
   }, []);
 
+  // SOAP note detail level: 1 = concise/point-form, 2 = balanced (default), 3 = max detail.
+  // Persisted per-browser so the physician only has to pick it once.
+  const [detailLevel, setDetailLevel] = useState<1 | 2 | 3>(2);
+  useEffect(() => {
+    const saved = localStorage.getItem("soapDetailLevel");
+    const parsed = saved ? parseInt(saved, 10) : NaN;
+    if (parsed === 1 || parsed === 2 || parsed === 3) setDetailLevel(parsed);
+  }, []);
+  function updateDetailLevel(level: 1 | 2 | 3) {
+    setDetailLevel(level);
+    localStorage.setItem("soapDetailLevel", String(level));
+  }
+
   // Offer to restore a transcript left behind by a reload or crash. Never
   // restore silently: the recovered text may belong to a different encounter
   // than the one the physician is about to start.
@@ -868,7 +881,7 @@ export default function PhysicianTranscriptionPage() {
       const res = await fetch("/api/physician/transcription/generate-hpi", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ transcript: current }),
+        body: JSON.stringify({ transcript: current, detailLevel }),
       });
       if (handleAuthFailure(res)) return;
       const data = await res.json().catch(() => ({}));
@@ -911,6 +924,7 @@ export default function PhysicianTranscriptionPage() {
           transcript: effectiveTranscript,
           chiefComplaint: chiefComplaint.trim() || undefined,
           encounterId: encounterId || undefined,
+          detailLevel,
         }),
       });
       if (handleAuthFailure(res)) {
@@ -2169,6 +2183,31 @@ export default function PhysicianTranscriptionPage() {
                           </label>
                         )}
                         <p className="text-xs text-slate-400">PDF or image, max 5 MB. Used as context when generating the Wound Care Note.</p>
+                      </div>
+                    )}
+                    {!orgWoundCare && (
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-medium text-slate-600">Detail level:</span>
+                        <div className="inline-flex flex-wrap gap-0.5 rounded-lg border border-slate-200 bg-slate-50 p-1">
+                          {([
+                            { level: 1 as const, label: "1 · Concise" },
+                            { level: 2 as const, label: "2 · Balanced" },
+                            { level: 3 as const, label: "3 · Detailed" },
+                          ]).map(({ level, label }) => (
+                            <button
+                              key={level}
+                              type="button"
+                              onClick={() => updateDetailLevel(level)}
+                              className={`px-3 py-1.5 text-xs font-medium rounded-md ${
+                                detailLevel === level
+                                  ? "bg-white text-slate-900 shadow-sm"
+                                  : "text-slate-600 hover:text-slate-900"
+                              }`}
+                            >
+                              {label}
+                            </button>
+                          ))}
+                        </div>
                       </div>
                     )}
                     <button

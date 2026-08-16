@@ -10,14 +10,22 @@ const ROUTE = "/api/physician/transcription/generate-hpi";
 
 // Mid-visit working note. Produced from the IN-PROGRESS transcript so the
 // physician can gauge direction without stopping. Nothing is persisted.
-const systemPrompt = `You are a clinical documentation assistant helping a physician during a live patient encounter.
+const HPI_SECTION_BY_LEVEL: Record<1 | 2 | 3, string> = {
+  1: `<one short "- " bulleted line per distinct clinical fact — chief complaint, onset/duration/severity/character, associated symptoms, aggravating/relieving factors, and any relevant history mentioned. Start each bullet directly with the clinical fact, never "Patient reports" or "She states." Omit filler negatives and anything not yet known.>`,
+  2: `<one "- " bulleted line per clinical theme — chief complaint, onset/duration/severity/character, associated symptoms, aggravating/relieving factors, and any relevant history mentioned; combine tightly-related facts into one bullet when it reads naturally. Start each bullet directly with the clinical fact, never "Patient reports" or "She states." Favor completeness over trimming — keep a detail if it could matter, even if a bullet runs a bit longer.>`,
+  3: `<a thorough history-of-present-illness paragraph — chief complaint, onset/duration/severity/character, associated symptoms, aggravating/relieving factors, relevant past medical history, current medications, allergies if mentioned, and any other relevant history mentioned. Completeness takes priority over brevity — do not omit a clinically relevant detail to save space.>`,
+};
+
+function buildSystemPrompt(level: unknown): string {
+  const lvl = level === 1 || level === 2 || level === 3 ? level : 2;
+  return `You are a clinical documentation assistant helping a physician during a live patient encounter.
 You will receive an IN-PROGRESS transcript — the conversation so far, which may be incomplete.
 From only what has been said, produce a concise preliminary working note. Do not invent facts; if a detail is missing, omit it.
 When the transcript is in a non-English language, translate each symptom or complaint into its precise clinical English equivalent, and write the entire note in English.
 Return plain text using EXACTLY these four labelled sections, in this order, each on its own line followed by its content:
 
 HPI:
-<one short "- " bulleted line per distinct clinical fact — chief complaint, onset/duration/severity/character, associated symptoms, aggravating/relieving factors, and any relevant history mentioned. Start each bullet directly with the clinical fact, never "Patient reports" or "She states." Omit filler negatives and anything not yet known.>
+${HPI_SECTION_BY_LEVEL[lvl]}
 
 Likely diagnosis:
 <the single most probable working diagnosis given the information so far>
@@ -29,6 +37,7 @@ Suggested plan:
 <pragmatic next steps to consider — workup, treatment, or what to ask next — separated by semicolons>
 
 This is a preliminary aid based on a partial conversation, not a final note. Do not add disclaimers, markdown, or extra sections.`;
+}
 
 export async function POST(request: NextRequest) {
   const requestId = getRequestId(request.headers);
@@ -84,7 +93,7 @@ export async function POST(request: NextRequest) {
     const completion = await azure.client.chat.completions.create({
       model: azure.deployment,
       messages: [
-        { role: "system", content: systemPrompt },
+        { role: "system", content: buildSystemPrompt(parsed.data.detailLevel) },
         { role: "user", content: parsed.data.transcript },
       ],
       max_completion_tokens: 900,
