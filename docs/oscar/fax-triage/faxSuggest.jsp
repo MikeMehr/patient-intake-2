@@ -46,10 +46,18 @@
         return o.getAsJsonObject(k);
     }
 
-    /** Opaque per-file handle. Sent off the box in place of the filename, which names the sender. */
-    static String faxRef(String queueId, String dir, String name) throws Exception {
+    /**
+     * Opaque per-file handle. Sent off the box in place of the filename, which names the sender.
+     *
+     * mtime and size are part of the key because Extract Page and Delete Page rewrite the ORIGINAL
+     * file under its unchanged name -- a 3-patient fax split apart leaves a 1-patient file that
+     * would otherwise keep replaying its stale multi-patient verdict from cache. Any in-place edit
+     * (extract, delete a page, rotate) now reads as a new document and gets re-analysed.
+     */
+    static String faxRef(String queueId, String dir, String name, File pdf) throws Exception {
         MessageDigest md = MessageDigest.getInstance("SHA-256");
-        byte[] d = md.digest((queueId + "|" + dir + "|" + name).getBytes("UTF-8"));
+        String key = queueId + "|" + dir + "|" + name + "|" + pdf.lastModified() + "|" + pdf.length();
+        byte[] d = md.digest(key.getBytes("UTF-8"));
         StringBuilder sb = new StringBuilder();
         for (int i = 0; i < 16; i++) sb.append(String.format("%02x", d[i]));
         return sb.toString();
@@ -192,7 +200,7 @@
             return;
         }
 
-        String ref = faxRef(queueId, pdfDir, pdfName);
+        String ref = faxRef(queueId, pdfDir, pdfName, pdf);
         Connection conn = DbConnectionFilter.getThreadLocalDbConnection();
 
         // --- cache: one OCR+model call per physical fax ------------------------------------------
@@ -290,6 +298,13 @@
 
             JsonElement parsed = JsonParser.parseString(sb.toString());
             ai = parsed.isJsonObject() ? parsed.getAsJsonObject() : new JsonObject();
+
+            // The file was edited since its last analysis (the ref includes mtime+size), so any
+            // older verdicts for this name are superseded -- drop them rather than let them pile up.
+            PreparedStatement prune = conn.prepareStatement(
+                "DELETE FROM mymd_fax_triage WHERE pdf_name=? AND fax_ref<>?");
+            prune.setString(1, pdfName); prune.setString(2, ref);
+            prune.executeUpdate(); prune.close();
 
             PreparedStatement ins = conn.prepareStatement(
                 "INSERT INTO mymd_fax_triage (fax_ref,pdf_name,provider_no,reason,payload) VALUES (?,?,?,?,?)");
