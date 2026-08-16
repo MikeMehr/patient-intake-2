@@ -239,6 +239,10 @@ Full install steps, the matching rules and the verification procedure live in
 - **The model never picks a chart.** It returns a name/DOB/PHN and the JSP resolves them here.
   A patient is preselected only on a unique PHN or a unique exact name+DOB; anything else offers
   candidates. Six charts here are surnamed `TEST`, which is why name-only never auto-selects.
+- **A fax covering several patients fills nothing.** The model reports every identity with its page
+  range; more than one and the screen refuses and says where to split. Flush `mymd_fax_triage`
+  after changing how patients are read — a cached answer is replayed verbatim, so a fax judged
+  under older rules keeps its old verdict.
 
 ### Also fixed here
 

@@ -40,7 +40,38 @@ useless.
 
 Provider is resolved in order: the addressee's MSP number (`provider.ohip_no`), then a **unique**
 surname match among active providers, then the matched patient's MRP (`demographic.provider_no`).
-Two providers sharing a surname resolves to nobody rather than to a guess.
+Two providers sharing a surname resolves to nobody rather than to a guess. That guard fired on the
+very first real page: on a cover sheet with an empty `To:` field the model read `From: Dr. M.
+Mehraein` as the addressee, and only the two-Mehraein ambiguity stopped it flagging someone.
+
+## A fax covering several patients
+
+One transmission routinely carries documents for several people — a batch of lab results, a stack of
+letters. This is the single most dangerous case in the feature, because it does not look dangerous:
+the model names one of them, that person has a clean unique PHN, the match rule fires, and one Save
+files everyone's results into one chart. That misfiles the rest **and** puts their records in a
+stranger's chart.
+
+So the model is asked for **every** distinct identity with its page range, deduped on health number
+(one person whose name is spelled two ways across two pages is still one person). More than one and
+the screen **fills nothing, offers nothing to click**, and says where to split:
+
+> This fax covers 3 patients — do not file it as one document.
+> Split it with Extract Page, then file each part separately.
+> p. 1 · Prince, Dakota Danette · DOB 1992-03-10 · PHN 9135945977
+> p. 2 · Semilla, Krizelle · …
+
+This is why OCR keeps page boundaries (`src/lib/fax/ocr.ts` reads `analyzeResult.pages` rather than
+the flat `content` the shared helper returns) — without them the warning could raise an alarm but
+not say where to cut.
+
+Verified 2026-08-15 against a synthetic three-patient lab fax: all three found, pages 1/2/3 correct,
+`multiPatient: true`, single-patient field empty. Before the guard, the same fax returned
+"Prince, Dakota Danette", confidence **high** — exactly the confident wrong answer described above.
+
+**Flush `mymd_fax_triage` after changing anything about how patients are read.** A cached answer is
+replayed verbatim, so a fax evaluated under older rules would keep its pre-guard verdict:
+`DELETE FROM mymd_fax_triage;` — everything regenerates on next view at roughly 5 s a fax.
 
 ## Files installed on the OSCAR box
 
