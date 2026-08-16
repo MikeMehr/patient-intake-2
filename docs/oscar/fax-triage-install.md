@@ -196,6 +196,34 @@ Then, in the browser: open Incoming Docs and confirm the boxes fill; check
 and confirm `providerLabRouting` gained a row for it (that is the failure this whole area is prone
 to — see `reference_oscar_document_inbox_routing`).
 
+## The unflagged-save hard block
+
+Clinic rule (2026-08-15): **a fax must be flagged to a provider, or it will be overlooked** — an
+unflagged document reaches no inbox at all. Stock OSCAR only *confirms* ("save without flagging?"),
+which is one reflexive click from a lost result. `patch_incomingdocs.py` therefore upgrades that
+confirm to a **hard block** for the Fax/Mail/Refile queues: Save refuses until a provider is
+flagged. The AI pre-flag means the block rarely bites — and under this clinic's MRP model (MRP only
+for accepted patients; walk-ins have none, and that is correct data — see
+`reference_oscar_empty_mrp_routing`) the addressee line is the usual auto-flag source.
+
+## The nightly routing guard
+
+`mymd_routing_check.sh` (installed at `/usr/local/bin/`, root cron `15 7 * * *`) is the backstop
+for everything the screen cannot see. Four checks, PHI-free output, and it emails
+`info@mymdonline.ca` — whose SMS bridge pages the phone — **only when something is wrong**:
+
+1. `explicit_defaults_for_timestamp` flipped back ON (the regression that silently broke ALL
+   routing inserts until 2026-08-11; a WAR redeploy or MySQL upgrade can reintroduce it).
+2. `providerLabRouting` rows addressed to nobody (empty or nonexistent provider).
+3. Charts spelling "no MRP" as `''` instead of `NULL` — the spelling OSCAR's lab router does not
+   guard, which mints category-2 rows on every Lab Import.
+4. Externally-sourced documents (`lab/consult/radiology/pathology/insurance/legal/oldchart`) filed
+   to a chart in the last 7 days with **no** routing row.
+
+Live-fired 2026-08-15: checks 1–3 clean, check 4 correctly listed the four known unrouted test/
+self-generated documents. Reinstall = copy the script, `chmod 755`, re-add the cron line (it is
+marker-commented `mymd_routing_check`).
+
 ## The `addflagprovider` guard shipped with this
 
 Not cosmetic. A chart with no MRP puts the **string** `"undefined"` into `MRPNo.value`, and both call

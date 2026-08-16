@@ -42,6 +42,21 @@ s = s.replace(
     + 'application.getRealPath("/mymd/aiPrefill.js")).lastModified() %>"></script>',
 )
 
+# (C) Upgrade the save-without-flagging CONFIRM to a hard BLOCK (Fax/Mail/Refile queues).
+# Clinic rule (2026-08-15): a document with no flagproviders row reaches no inbox and is
+# overlooked; one reflexive OK on a confirm dialog is exactly how that happens. The File queue
+# keeps its stock behaviour (no prompt), matching the surrounding pdfDir!="File" condition.
+anchor_c = '''                        if (!confirm("<bean:message key="dms.incomingDocs.saveWithoutFlagging" />"))
+                        {
+                            return false;
+                        }'''
+block_c = '''                        // MyMD: hard stop, not a confirm -- an unflagged document reaches
+                        // no inbox and gets overlooked (clinic rule, 2026-08-15).
+                        alert("Flag a provider to review this document.\\nIt will not appear in any inbox otherwise.");
+                        return false;'''
+assert s.count(anchor_c) == 1, "confirm block count=%d" % s.count(anchor_c)
+s = s.replace(anchor_c, block_c)
+
 assert s != orig
 open(p, "w", encoding="utf-8", errors="surrogateescape").write(s)
 print("patched OK")
