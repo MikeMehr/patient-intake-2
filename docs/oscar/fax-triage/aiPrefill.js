@@ -16,6 +16,8 @@
   "use strict";
 
   var TINT = "#fff6d5";
+  var ALARM_BG = "#fdecea";
+  var ALARM_BORDER = "#c0392b";
   var banner, statusLine;
 
   function byId(id) { return document.getElementById(id); }
@@ -144,6 +146,34 @@
     banner.appendChild(wrap);
   }
 
+  /**
+   * A fax carrying several patients is not a filing job, it is a splitting job.
+   *
+   * Nothing is filled and nothing is offered for a click: preselecting one of them would misfile
+   * the other documents and put those patients' records in a stranger's chart. The pages are named
+   * so the split can be done straight away with Extract Page.
+   */
+  function renderMultiPatient(list) {
+    if (!ensureBanner()) return;
+    banner.style.background = ALARM_BG;
+    banner.style.borderColor = ALARM_BORDER;
+    var n = (list && list.length) || 0;
+    say("This fax covers " + (n || "several") + " patients — do not file it as one document.");
+    addLine("Split it with Extract Page, then file each part separately.",
+            "font-weight:normal;color:#7b241c;");
+    if (!n) return;
+    var wrap = el("div", "margin-top:4px;");
+    list.forEach(function (p) {
+      var bits = [];
+      if (p.pages) bits.push("p. " + p.pages);
+      if (p.name) bits.push(p.name);
+      if (p.dob) bits.push("DOB " + p.dob);
+      if (p.phn) bits.push("PHN " + p.phn);
+      wrap.appendChild(el("div", "color:#7b241c;", bits.join("  ·  ")));
+    });
+    banner.appendChild(wrap);
+  }
+
   function render(data) {
     var s = data.suggestion || {};
     var filled = [];
@@ -212,6 +242,8 @@
         return;                                  // switched off: leave the screen untouched
       }
       if (data.reason === "no_text") { say("This fax scanned too poorly to read."); return; }
+      // Checked before anything else: this path must fill nothing at all.
+      if (data.multiPatient) { renderMultiPatient(data.patients); return; }
       if (!data.suggestion) { say("AI suggestion unavailable."); return; }
       render(data);
     };

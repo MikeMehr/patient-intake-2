@@ -26,7 +26,7 @@ import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
 import { getRequestIp } from "@/lib/invitation-security";
 import { logPhysicianPhiAudit } from "@/lib/phi-audit";
 import { parseJsonValue } from "@/lib/safe-json";
-import { extractPdfTextWithAzureDocumentIntelligence } from "@/lib/invitation-pdf-summary";
+import { extractFaxPages, pagesToPrompt } from "@/lib/fax/ocr";
 import { query } from "@/lib/db";
 import {
   buildFaxMessages,
@@ -50,6 +50,9 @@ const MAX_PDF_BYTES = 10 * 1024 * 1024;
  * to read. Calling the model on it invites confident nonsense, so we don't.
  */
 const MIN_OCR_CHARS = 40;
+
+/** Bound on what is sent to the model, page markers included. */
+const MAX_PROMPT_CHARS = 30_000;
 
 const requestSchema = z.object({
   /** Opaque per-file handle for logs and caching. Deliberately not a patient identifier. */
@@ -138,11 +141,14 @@ export async function POST(request: NextRequest) {
   const ipAddress = getRequestIp(request.headers);
   const userAgent = request.headers.get("user-agent");
 
-  // --- OCR -------------------------------------------------------------------------------------
+  // --- OCR, page by page -------------------------------------------------------------------------
+  // Page boundaries are kept so the model can cite where each patient appears; a fax carrying five
+  // patients is only actionable if the physician is told where to split it.
+  let pages: string[];
   let ocrText: string;
   try {
-    const file = new File([new Uint8Array(pdfBytes)], "fax.pdf", { type: "application/pdf" });
-    ocrText = await extractPdfTextWithAzureDocumentIntelligence(file);
+    pages = await extractFaxPages(pdfBytes);
+    ocrText = pagesToPrompt(pages, MAX_PROMPT_CHARS);
   } catch (err) {
     console.error(`[${ROUTE}] ${requestId} OCR failed:`, err instanceof Error ? err.message : err);
     return noSuggestion("ocr_error");
@@ -217,6 +223,9 @@ export async function POST(request: NextRequest) {
       documentClass: suggestion.documentClass,
       confidence: suggestion.confidence,
       ocrChars: ocrText.length,
+      pageCount: pages.length,
+      patientCount: suggestion.patients.length,
+      multiPatient: suggestion.multiPatient,
       hasPhn: Boolean(suggestion.patient.phn),
       hasDob: Boolean(suggestion.patient.dateOfBirth),
       hasAddressee: Boolean(suggestion.addressedTo.name || suggestion.addressedTo.mspNumber),

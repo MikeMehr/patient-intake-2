@@ -300,6 +300,34 @@
             ins.close();
         }
 
+        // --- a fax covering several people is a split-it-first, not a filing --------------------
+        // Preselecting one of them would misfile the rest AND put their documents in a stranger
+        // chart, so nothing is resolved and nothing is offered. The physician splits it with
+        // Extract Page and files each part separately.
+        boolean multiPatient = ai.has("multiPatient") && !ai.get("multiPatient").isJsonNull()
+                               && ai.get("multiPatient").getAsBoolean();
+        if (multiPatient) {
+            JsonArray read = new JsonArray();
+            if (ai.has("patients") && ai.get("patients").isJsonArray()) {
+                JsonArray src = ai.getAsJsonArray("patients");
+                for (int i = 0; i < src.size(); i++) {
+                    if (!src.get(i).isJsonObject()) continue;
+                    JsonObject p = src.get(i).getAsJsonObject();
+                    JsonObject o = new JsonObject();
+                    o.addProperty("name", (str(p, "lastName") + ", " + str(p, "firstName")).trim());
+                    o.addProperty("dob", str(p, "dateOfBirth"));
+                    o.addProperty("phn", str(p, "phn"));
+                    o.addProperty("pages", str(p, "pages"));
+                    read.add(o);
+                }
+            }
+            outJson.addProperty("reason", cached != null ? "cached" : str(ai, "reason"));
+            outJson.addProperty("multiPatient", true);
+            outJson.add("patients", read);
+            out.print(gson.toJson(outJson));
+            return;
+        }
+
         // --- resolve the identifiers against THIS OSCAR ------------------------------------------
         JsonObject patientIn = obj(ai, "patient");
         String pLast = str(patientIn, "lastName");

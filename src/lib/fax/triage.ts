@@ -30,6 +30,8 @@ export type FaxPatientHint = {
   dateOfBirth: string;
   /** Digits only, province suffix stripped, or "". */
   phn: string;
+  /** Where this person appears, e.g. "1" or "3-5". Blank when the model could not say. */
+  pages: string;
 };
 
 export type FaxAddressee = {
@@ -46,6 +48,17 @@ export type FaxTriageSuggestion = {
   description: string;
   /** Date the study/report was performed, ISO `YYYY-MM-DD`, or "". Not the fax transmission date. */
   observationDate: string;
+  /** Every distinct person the fax is about, in page order. Usually one; occasionally many. */
+  patients: FaxPatientHint[];
+  /**
+   * True when the fax carries documents for more than one person.
+   *
+   * One transmission holding five patients' results is the one case where a confident match is
+   * actively dangerous: filing it to the first patient misfiles the other four AND puts their
+   * results in a stranger's chart. The caller must refuse to preselect anything when this is set.
+   */
+  multiPatient: boolean;
+  /** The single patient, when there is exactly one. Empty fields otherwise — never a "best guess". */
   patient: FaxPatientHint;
   addressedTo: FaxAddressee;
   /** Clinic/hospital that sent the fax. Context for the physician; not used for matching. */
@@ -55,6 +68,10 @@ export type FaxTriageSuggestion = {
   evidence: string;
 };
 
+export function emptyPatient(): FaxPatientHint {
+  return { lastName: "", firstName: "", dateOfBirth: "", phn: "", pages: "" };
+}
+
 /** Returned whenever there is nothing usable — bad OCR, model error, kill switch. */
 export function emptySuggestion(): FaxTriageSuggestion {
   return {
@@ -62,7 +79,9 @@ export function emptySuggestion(): FaxTriageSuggestion {
     documentClass: UNKNOWN,
     description: "",
     observationDate: "",
-    patient: { lastName: "", firstName: "", dateOfBirth: "", phn: "" },
+    patients: [],
+    multiPatient: false,
+    patient: emptyPatient(),
     addressedTo: { name: "", mspNumber: "" },
     senderFacility: "",
     confidence: "low",
@@ -76,6 +95,9 @@ const MAX_DESCRIPTION = 60;
 /** Faxes are a page or three. Well past any real one, and a bound on prompt size. */
 const MAX_OCR_CHARS = 30_000;
 
+/** A batch fax of this size is already a "split this by hand" answer; the exact count stops mattering. */
+const MAX_PATIENTS = 20;
+
 const SYSTEM_PROMPT = [
   "You are triaging a fax that has arrived at a British Columbia family medicine clinic, so that it",
   "can be filed into the correct patient's chart in an EMR.",
@@ -87,9 +109,18 @@ const SYSTEM_PROMPT = [
   "physician a moment of typing; a confident wrong one files a medical document into a stranger's",
   "chart. When two readings are possible, leave the field empty.",
   "",
+  "The text is marked up with --- PAGE n --- separators. Use them to say which pages each person",
+  "appears on.",
+  "",
   "Rules:",
-  "- patient: the person the document is ABOUT. Not the sender, not the addressee, not a next of kin.",
-  "  A fax cover sheet often names clinic staff and doctors — none of those is the patient.",
+  "- patients: EVERY distinct person the fax is about, in page order. Not the sender, not the",
+  "  addressee, not a next of kin. A fax cover sheet often names clinic staff and doctors — none of",
+  "  those is a patient.",
+  "  One transmission often carries documents for several people (a batch of lab results, a stack of",
+  "  letters). List them all. Do not merge two people, and do not list the same person twice because",
+  "  their name is spelled differently on two pages — same health number means the same person.",
+  "  Return an empty list if no patient is named.",
+  "- pages: where that person appears, as '2' or '3-5'. Leave empty if you cannot tell.",
   "- phn: the BC Personal Health Number of that patient (also printed as PHN, Health #, MSP, or Care",
   "  Card). Digits only; drop any trailing province code. Never invent or complete a partial number.",
   "- dateOfBirth: the patient's date of birth. Do not confuse it with the collection date, the report",
@@ -132,7 +163,7 @@ export function buildFaxSchema(docTypes: string[], docClasses: string[]) {
           "documentClass",
           "description",
           "observationDate",
-          "patient",
+          "patients",
           "addressedTo",
           "senderFacility",
           "confidence",
@@ -143,15 +174,19 @@ export function buildFaxSchema(docTypes: string[], docClasses: string[]) {
           documentClass: { type: "string", enum: [...docClasses, UNKNOWN] },
           description: str,
           observationDate: str,
-          patient: {
-            type: "object",
-            additionalProperties: false,
-            required: ["lastName", "firstName", "dateOfBirth", "phn"],
-            properties: {
-              lastName: str,
-              firstName: str,
-              dateOfBirth: str,
-              phn: str,
+          patients: {
+            type: "array",
+            items: {
+              type: "object",
+              additionalProperties: false,
+              required: ["lastName", "firstName", "dateOfBirth", "phn", "pages"],
+              properties: {
+                lastName: str,
+                firstName: str,
+                dateOfBirth: str,
+                phn: str,
+                pages: str,
+              },
             },
           },
           addressedTo: {
@@ -246,8 +281,32 @@ export function validateFaxResponse(
   const documentType = cleanText(obj.documentType, 40);
   const documentClass = cleanText(obj.documentClass, 60);
 
-  const patientRaw = (obj.patient ?? {}) as Record<string, unknown>;
   const addressedRaw = (obj.addressedTo ?? {}) as Record<string, unknown>;
+
+  // A health number identifies a person; a name spelled two ways across two pages does not make two
+  // people. Dedupe on the strongest identifier present so "3 patients" means three actual patients.
+  const rawList = Array.isArray(obj.patients) ? obj.patients.slice(0, MAX_PATIENTS) : [];
+  const seen = new Set<string>();
+  const patients: FaxPatientHint[] = [];
+  for (const entry of rawList) {
+    const p = (entry ?? {}) as Record<string, unknown>;
+    const hint: FaxPatientHint = {
+      lastName: cleanText(p.lastName, 30),
+      firstName: cleanText(p.firstName, 30),
+      dateOfBirth: cleanDate(p.dateOfBirth),
+      // Digits only. A PHN with a letter in it is an OCR artefact, and a partial one must not be
+      // sent to the box as if it were a health number.
+      phn: cleanText(p.phn, 20).replace(/[^0-9]/g, ""),
+      pages: cleanText(p.pages, 20),
+    };
+    if (!hint.lastName && !hint.firstName && !hint.phn) continue;   // nothing to identify anyone by
+    const key = hint.phn
+      ? "phn:" + hint.phn
+      : ["name:", hint.lastName, hint.firstName, hint.dateOfBirth].join("|").toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    patients.push(hint);
+  }
 
   const confidence: FaxConfidence =
     obj.confidence === "high" || obj.confidence === "medium" || obj.confidence === "low"
@@ -259,14 +318,11 @@ export function validateFaxResponse(
     documentClass: classAllowed.has(documentClass) ? documentClass : UNKNOWN,
     description: cleanText(obj.description, MAX_DESCRIPTION),
     observationDate: cleanDate(obj.observationDate),
-    patient: {
-      lastName: cleanText(patientRaw.lastName, 30),
-      firstName: cleanText(patientRaw.firstName, 30),
-      dateOfBirth: cleanDate(patientRaw.dateOfBirth),
-      // Digits only. A PHN with a letter in it is an OCR artefact, and a partial one must not be
-      // sent to the box as if it were a health number.
-      phn: cleanText(patientRaw.phn, 20).replace(/[^0-9]/g, ""),
-    },
+    patients,
+    multiPatient: patients.length > 1,
+    // Only ever populated for a single-patient fax. With several, there is no "the" patient, and
+    // handing one back would be exactly the confident wrong answer this guard exists to prevent.
+    patient: patients.length === 1 ? patients[0] : emptyPatient(),
     addressedTo: {
       name: cleanText(addressedRaw.name, 80),
       mspNumber: cleanText(addressedRaw.mspNumber, 12).replace(/[^0-9]/g, ""),
