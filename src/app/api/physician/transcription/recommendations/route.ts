@@ -6,6 +6,12 @@ import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
 import { resolveWorkforceScope } from "@/lib/transcription-store";
 import { transcriptionRecommendationsRequestSchema } from "@/lib/transcription-schema";
 import { parseJsonValue } from "@/lib/safe-json";
+import {
+  buildContentFilterPayload,
+  categoriesFromApiError,
+  categoriesFromChoice,
+  isContentFilterError,
+} from "@/lib/content-filter";
 
 const ROUTE = "/api/physician/transcription/recommendations";
 
@@ -125,10 +131,12 @@ export async function POST(request: NextRequest) {
     const choice = completion.choices?.[0];
     if (choice?.finish_reason === "content_filter") {
       status = 422;
-      const res = NextResponse.json(
-        { error: "The transcript was blocked by the content filter. Please review the content and try again." },
-        { status },
-      );
+      // Background enhancement — report categories but skip passage probing.
+      const payload = await buildContentFilterPayload({
+        transcript: parsed.data.transcript,
+        categories: categoriesFromChoice(choice),
+      });
+      const res = NextResponse.json(payload, { status });
       logRequestMeta(ROUTE, requestId, status, Date.now() - started);
       return res;
     }
@@ -169,24 +177,17 @@ export async function POST(request: NextRequest) {
       logRequestMeta(ROUTE, requestId, status, Date.now() - started);
       return res;
     }
-    if (apiStatus === 400) {
-      const errBody = (error as Record<string, unknown>)?.error as Record<string, unknown> | undefined;
-      const code = errBody?.code as string | undefined;
-      const innerCode = (errBody?.innererror as Record<string, unknown>)?.code as string | undefined;
-      const isContentFilter =
-        code === "content_filter" ||
-        innerCode === "ResponsibleAIPolicyViolation" ||
-        (error instanceof Error && error.message.toLowerCase().includes("content_filter"));
-      if (isContentFilter) {
-        status = 422;
-        console.warn("[physician/transcription/recommendations] Azure content filter blocked input:", error);
-        const res = NextResponse.json(
-          { error: "The transcript was blocked by the content filter. Please review the content and try again." },
-          { status },
-        );
-        logRequestMeta(ROUTE, requestId, status, Date.now() - started);
-        return res;
-      }
+    if (apiStatus === 400 && isContentFilterError(error)) {
+      status = 422;
+      console.error("[physician/transcription/recommendations] Azure content filter blocked input:", error);
+      // Background enhancement — report categories but skip passage probing.
+      const payload = await buildContentFilterPayload({
+        transcript: "",
+        categories: categoriesFromApiError(error),
+      });
+      const res = NextResponse.json(payload, { status });
+      logRequestMeta(ROUTE, requestId, status, Date.now() - started);
+      return res;
     }
     if (apiStatus && apiStatus >= 500) {
       console.error("[physician/transcription/recommendations] Azure OpenAI service error:", error);

@@ -289,6 +289,14 @@ export default function PhysicianTranscriptionPage() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [showInsufficientContentDialog, setShowInsufficientContentDialog] = useState(false);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
+  // Content-filter block detail: the specific message, the flagged passages
+  // (when the server could pinpoint them), and the transcript that was blocked
+  // so "Generate anyway" can resubmit it with the flagged passages omitted.
+  const [filterBlock, setFilterBlock] = useState<{
+    message: string;
+    segments: Array<{ text: string }>;
+    transcript: string;
+  } | null>(null);
   const [copyFeedbackState, setCopyFeedbackState] = useState<"idle" | "copied">("idle");
   const copyFeedbackTimeoutRef = useRef<number | null>(null);
 
@@ -885,7 +893,15 @@ export default function PhysicianTranscriptionPage() {
       });
       if (handleAuthFailure(res)) return;
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.error || "Failed to generate HPI");
+      if (!res.ok) {
+        const flagged = Array.isArray(data?.contentFilter?.segments)
+          ? data.contentFilter.segments
+              .filter((s: { text?: unknown }) => typeof s?.text === "string" && s.text)
+              .map((s: { text: string }) => `“${s.text}”`)
+              .join("\n")
+          : "";
+        throw new Error(`${data?.error || "Failed to generate HPI"}${flagged ? `\n\nFlagged passage(s):\n${flagged}` : ""}`);
+      }
       setHpiText(typeof data?.result === "string" ? data.result : "");
     } catch (err) {
       setHpiError(err instanceof Error ? err.message : "Failed to generate HPI");
@@ -904,6 +920,7 @@ export default function PhysicianTranscriptionPage() {
     setActionLoading(true);
     setActionError(null);
     setActionSuccess(null);
+    setFilterBlock(null);
     setRecommendations(null);
     setShowLabs(false);
     setShowReferrals(false);
@@ -934,7 +951,19 @@ export default function PhysicianTranscriptionPage() {
         return;
       }
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.error || "Failed to generate SOAP");
+      if (!res.ok) {
+        if (res.status === 422 && data?.contentFilter) {
+          setFilterBlock({
+            message: data.error || "The transcript was blocked by the AI safety filter.",
+            segments: Array.isArray(data.contentFilter.segments)
+              ? data.contentFilter.segments.filter((s: { text?: unknown }) => typeof s?.text === "string" && s.text)
+              : [],
+            transcript: effectiveTranscript,
+          });
+          return;
+        }
+        throw new Error(data?.error || "Failed to generate SOAP");
+      }
       const hasPatient = Boolean(data.patientName);
       const cases: SoapCase[] = Array.isArray(data.cases) && data.cases.length > 0
         ? data.cases.map((c: { label?: string; soapVersionId: string; encounterId: string; lifecycleState: string; draft: Partial<SoapDraft> }, i: number) => {
@@ -1058,6 +1087,19 @@ export default function PhysicianTranscriptionPage() {
     } finally {
       setActionLoading(false);
     }
+  }
+
+  // Resubmit the blocked transcript with the flagged passages removed. The
+  // physician has seen exactly what is being omitted before choosing this.
+  function generateAnywayWithoutFlagged() {
+    if (!filterBlock || filterBlock.segments.length === 0) return;
+    let redacted = filterBlock.transcript;
+    for (const segment of filterBlock.segments) {
+      redacted = redacted.replace(segment.text, "[passage omitted by physician]");
+    }
+    redacted = redacted.replace(/\n{3,}/g, "\n\n").trim();
+    setFilterBlock(null);
+    void generateSoap(redacted);
   }
 
   function switchCase(newIndex: number) {
@@ -1401,6 +1443,7 @@ export default function PhysicianTranscriptionPage() {
     setWoundCareNoteError(null);
     setBgFile(null);
     setBgFileText("");
+    setFilterBlock(null);
     // Reset HPI + recommendations state
     setShowHpi(false);
     setHpiText("");
@@ -1968,6 +2011,52 @@ export default function PhysicianTranscriptionPage() {
                   </div>
                 </div>
                 {actionError && <p className="text-sm text-red-700">{actionError}</p>}
+                {filterBlock && (
+                  <div className="space-y-2 rounded-lg border border-amber-300 bg-amber-50 p-3">
+                    <p className="text-sm font-semibold text-amber-900">AI safety filter blocked this transcript</p>
+                    <p className="text-sm text-amber-800">{filterBlock.message}</p>
+                    {filterBlock.segments.length > 0 && (
+                      <ul className="space-y-1">
+                        {filterBlock.segments.map((segment, i) => (
+                          <li key={i} className="rounded border border-amber-200 bg-white px-2.5 py-1.5 text-sm italic text-slate-700">
+                            “{segment.text}”
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    <div className="flex flex-wrap gap-2 pt-1">
+                      {filterBlock.segments.length > 0 ? (
+                        <button
+                          type="button"
+                          onClick={generateAnywayWithoutFlagged}
+                          disabled={actionLoading}
+                          className="rounded-lg bg-amber-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-amber-700 disabled:cursor-not-allowed disabled:bg-slate-400"
+                        >
+                          Generate anyway (omit flagged text)
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setFilterBlock(null);
+                            void generateSoap();
+                          }}
+                          disabled={actionLoading}
+                          className="rounded-lg bg-amber-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-amber-700 disabled:cursor-not-allowed disabled:bg-slate-400"
+                        >
+                          Try again
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setFilterBlock(null)}
+                        className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                      >
+                        Edit transcript instead
+                      </button>
+                    </div>
+                  </div>
+                )}
                 {actionSuccess && <p className="text-sm text-green-700">{actionSuccess}</p>}
                 {activeWorkflowTab === "capture" && (
                   <>
@@ -2942,7 +3031,7 @@ export default function PhysicianTranscriptionPage() {
               {hpiLoading ? (
                 <p className="text-sm text-slate-500">Generating from the transcript so far…</p>
               ) : hpiError ? (
-                <p className="text-sm text-red-700">{hpiError}</p>
+                <p className="whitespace-pre-wrap text-sm text-red-700">{hpiError}</p>
               ) : (
                 <pre className="whitespace-pre-wrap font-sans text-sm text-slate-800">{hpiText}</pre>
               )}

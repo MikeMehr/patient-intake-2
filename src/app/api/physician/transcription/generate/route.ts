@@ -14,6 +14,12 @@ import {
   upsertTranscriptionSessionPointer,
 } from "@/lib/transcription-store";
 import { generateSoapFromTranscriptRequestSchema, soapDraftSchema } from "@/lib/transcription-schema";
+import {
+  buildContentFilterPayload,
+  categoriesFromApiError,
+  categoriesFromChoice,
+  isContentFilterError,
+} from "@/lib/content-filter";
 import { parseJsonValue } from "@/lib/safe-json";
 import { HEALTHASSIST_SNAPSHOT_LABEL } from "@/lib/transcription-policy";
 
@@ -132,6 +138,9 @@ export async function POST(request: NextRequest) {
     return res;
   }
 
+  // Kept outside try so the catch block can pinpoint content-filter blocks.
+  let transcriptForFilter: string | null = null;
+
   try {
     const auth = await getCurrentSession();
     if (!auth) {
@@ -166,6 +175,8 @@ export async function POST(request: NextRequest) {
       logRequestMeta("/api/physician/transcription/generate", requestId, status, Date.now() - started);
       return res;
     }
+
+    transcriptForFilter = parsed.data.transcript;
 
     const physicianId = getEffectivePhysicianId(auth);
     let patientId: string | null = parsed.data.patientId || null;
@@ -214,10 +225,13 @@ export async function POST(request: NextRequest) {
     const choice = completion.choices?.[0];
     if (choice?.finish_reason === "content_filter") {
       status = 422;
-      const res = NextResponse.json(
-        { error: "The transcript was blocked by the content filter. Please review the content and try again." },
-        { status },
-      );
+      const payload = await buildContentFilterPayload({
+        transcript: parsed.data.transcript,
+        categories: categoriesFromChoice(choice),
+        client: azure.client,
+        deployment: azure.deployment,
+      });
+      const res = NextResponse.json(payload, { status });
       logRequestMeta("/api/physician/transcription/generate", requestId, status, Date.now() - started);
       return res;
     }
@@ -360,24 +374,19 @@ export async function POST(request: NextRequest) {
       logRequestMeta("/api/physician/transcription/generate", requestId, status, Date.now() - started);
       return res;
     }
-    if (apiStatus === 400) {
-      const errBody = (error as Record<string, unknown>)?.error as Record<string, unknown> | undefined;
-      const code = errBody?.code as string | undefined;
-      const innerCode = (errBody?.innererror as Record<string, unknown>)?.code as string | undefined;
-      const isContentFilter =
-        code === "content_filter" ||
-        innerCode === "ResponsibleAIPolicyViolation" ||
-        (error instanceof Error && error.message.toLowerCase().includes("content_filter"));
-      if (isContentFilter) {
-        status = 422;
-        console.warn("[physician/transcription/generate] Azure content filter blocked input:", error);
-        const res = NextResponse.json(
-          { error: "The transcript was blocked by the content filter. Please review the content and try again." },
-          { status },
-        );
-        logRequestMeta("/api/physician/transcription/generate", requestId, status, Date.now() - started);
-        return res;
-      }
+    if (apiStatus === 400 && isContentFilterError(error)) {
+      status = 422;
+      console.error("[physician/transcription/generate] Azure content filter blocked input:", error);
+      const azure = getAzureOpenAIClient();
+      const payload = await buildContentFilterPayload({
+        transcript: transcriptForFilter ?? "",
+        categories: categoriesFromApiError(error),
+        client: transcriptForFilter ? azure.client : undefined,
+        deployment: azure.deployment,
+      });
+      const res = NextResponse.json(payload, { status });
+      logRequestMeta("/api/physician/transcription/generate", requestId, status, Date.now() - started);
+      return res;
     }
     if (apiStatus && apiStatus >= 500) {
       console.error("[physician/transcription/generate] Azure OpenAI service error:", error);
