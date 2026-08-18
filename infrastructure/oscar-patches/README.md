@@ -29,7 +29,8 @@ patient chart, and the only content filter is the **View:** dropdown, built from
 | `eform-fax/patch_eform_savetochart.py` | Adds the **Save to chart** button; generic on fid. |
 | `eform-fax/patch_eform_faxsaves.py` | Adds `saveToChart=1` to the forms that call `faxEformReq.jsp` directly. |
 | `eform-fax/restore_eform16_html.py` | Puts back fid 16's HTML, which a misfiled upload lost. |
-| `fax/newFax.jsp` | Multi-document: `demographicNo` + `docNos`, chart picker, PDFBox merge, security fixes. |
+| `fax/newFax.jsp` | Multi-document: `demographicNo` + `docNos`, chart picker, PDFBox merge, security fixes. Detected-sender banner (2026-08-17). |
+| `fax/faxDestSuggest.jsp` | **New.** JSON pre-flight: reads the chosen PDF, finds the sender's fax number (PDFBox text layer, or fax-triage OCR for scans), reverse-matches the address book, renders the page as PNG. See `docs/oscar/fax-triage-install.md`. |
 | `dms/patch_documentreport_faxselected.py` | Adds **Fax Selected** next to Combine PDF. |
 
 **Forms wired** (all carry **Save to chart**):

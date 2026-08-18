@@ -406,6 +406,9 @@ java.text.SimpleDateFormat dfmt=new java.text.SimpleDateFormat("yyyy-MM-dd");
 
   <label>PDF File to Fax <span class="hint">(optional if you tick documents below)</span></label>
   <input type="file" name="pdfFile" accept="application/pdf" />
+  <%-- Detected-sender banner: filled by faxDestSuggest.jsp when a PDF is chosen. Fails soft:
+       if that endpoint is missing or errors, this div simply never shows. --%>
+  <div id="destSuggest" style="display:none;margin:8px 0 0;padding:8px 10px;border:1px solid #99c;background:#eef;border-radius:4px;font-size:13px"></div>
 
 <% if(demographicNo.length()>0 && canReadChart){ %>
   <label>Documents from this patient's chart</label>
@@ -504,5 +507,169 @@ function abPick(){
   var t=document.getElementsByName('toName'); if(t.length) t[0].value=o.text;
   document.getElementById('abChosen').textContent='✓ Selected: '+o.text+'  —  '+o.value;
 }
+
+// ---- detected sender: read the chosen PDF and suggest who to fax back to ----
+// Calls faxDestSuggest.jsp (same dir). Only ever SUGGESTS - nothing here submits the form,
+// and any error just leaves the page exactly as it was.
+var dsSeq=0, dsAbort=null;
+function dsBox(){ return document.getElementById('destSuggest'); }
+function dsClear(){ var b=dsBox(); b.style.display='none'; b.innerHTML=''; }
+function dsStart(body,isForm){
+  var seq=++dsSeq;
+  if(dsAbort){ try{dsAbort.abort();}catch(e){} }
+  dsAbort=(typeof AbortController!=='undefined')?new AbortController():null;
+  var b=dsBox();
+  b.style.display=''; b.style.background='#eef'; b.style.borderColor='#99c'; b.style.color='#336';
+  b.textContent='🔍 Reading PDF…';
+  // Scanned faxes have no text layer and go through OCR, which takes a while.
+  var slowTimer=window.setTimeout(function(){
+    if(seq===dsSeq) b.textContent='🔍 Reading PDF… (scanned fax — running OCR, up to a minute)';
+  },6000);
+  var opts={method:'POST',body:body};
+  if(isForm) opts.headers={'Content-Type':'application/x-www-form-urlencoded'};
+  if(dsAbort) opts.signal=dsAbort.signal;
+  fetch('faxDestSuggest.jsp',opts).then(function(r){return r.json();}).then(function(j){
+    window.clearTimeout(slowTimer);
+    if(seq===dsSeq) dsRender(j);
+  }).catch(function(){
+    window.clearTimeout(slowTimer);
+    if(seq===dsSeq) dsClear();
+  });
+}
+function dsMuted(text){
+  var b=dsBox();
+  b.style.display=''; b.style.background='#f4f4f4'; b.style.borderColor='#ccc'; b.style.color='#888';
+  b.textContent=text;
+  var seq=dsSeq;
+  window.setTimeout(function(){ if(seq===dsSeq) dsClear(); },8000);
+}
+function dsOpenPreview(b64){
+  var bin=atob(b64), arr=new Uint8Array(bin.length);
+  for(var i=0;i<bin.length;i++) arr[i]=bin.charCodeAt(i);
+  // A blob URL, because Chrome blocks data: URLs as top-level navigations.
+  var url=URL.createObjectURL(new Blob([arr],{type:'image/png'}));
+  window.open(url,'_blank');
+  window.setTimeout(function(){ try{URL.revokeObjectURL(url);}catch(e){} },60000);
+}
+function dsRender(j){
+  if(j && (j.reason==='no_number' || j.reason==='no_text_no_ocr')){
+    dsMuted('No sender fax number detected in this PDF.');
+    return;
+  }
+  if(!j || j.reason || !j.faxNumber){ dsClear(); return; }
+  var b=dsBox();
+  var warn=!j.senderName || j.source==='ocr-name';
+  b.style.display='';
+  b.style.background=warn?'#fff6e6':'#eef';
+  b.style.borderColor=warn?'#d90':'#99c';
+  b.style.color='#333';
+  b.innerHTML='';
+  // Everything below came off a fax - textContent only, never markup.
+  var head=document.createElement('div');
+  head.style.fontWeight='bold';
+  var t='📠 ';
+  if(j.source==='ocr-name'){
+    t+='Sender looks like: '+j.senderName+' — '+j.faxNumberFormatted
+      +' (matched by name from the address book; number NOT read off the page)';
+  } else if(j.senderName){
+    t+='Detected sender: '+j.senderName+(j.senderGroup?' ('+j.senderGroup+')':'')+' — '+j.faxNumberFormatted;
+    if(j.page>0) t+=', found on page '+j.page;
+  } else {
+    t+='Detected sender fax: '+j.faxNumberFormatted+' — not in the address book';
+    if(j.page>0) t+=', found on page '+j.page;
+  }
+  var fx=document.getElementsByName('faxNumber')[0];
+  var cur=fx.value.replace(/[^0-9]/g,'');
+  if(cur.length===11&&cur.charAt(0)==='1') cur=cur.substring(1);
+  var differs=cur.length>0 && cur!==j.faxNumber;
+  if(differs) t+=' (differs from the destination currently entered)';
+  head.textContent=t;
+  b.appendChild(head);
+  if(j.alsoListedAs && j.alsoListedAs.length){
+    var names=[];
+    for(var i=0;i<j.alsoListedAs.length;i++) names.push(j.alsoListedAs[i].name+' ('+j.alsoListedAs[i].group+')');
+    var al=document.createElement('div');
+    al.style.marginTop='4px';
+    al.textContent='Also listed as: '+names.join(', ');
+    b.appendChild(al);
+  }
+  if(j.senderFacility && j.senderFacility.toLowerCase()!==(j.senderName||'').toLowerCase()){
+    var pr=document.createElement('div');
+    pr.style.marginTop='4px'; pr.style.color='#666';
+    pr.textContent='Page reads: '+j.senderFacility;
+    b.appendChild(pr);
+  }
+  var row=document.createElement('div');
+  row.style.marginTop='6px';
+  var btn=document.createElement('button');
+  btn.type='button';
+  btn.style.margin='0'; btn.style.padding='6px 12px';
+  function fill(){
+    fx.value=j.faxNumber;
+    fx.setCustomValidity('');
+    var tn=document.getElementsByName('toName'); if(tn.length) tn[0].value=j.senderName||'';
+    document.getElementById('abChosen').textContent='✓ Selected: '+(j.senderName||j.faxNumberFormatted)+'  —  '+j.faxNumber;
+    btn.textContent='✓ Filled — click to re-apply';
+  }
+  btn.textContent='Use this number';
+  btn.onclick=fill;
+  row.appendChild(btn);
+  b.appendChild(row);
+  // Auto-fill ONLY an empty destination; a number someone already typed is never touched.
+  if(cur.length===0) fill();
+  if(j.previewPng){
+    var wrap=document.createElement('div');
+    wrap.style.marginTop='6px';
+    var img=document.createElement('img');
+    img.src='data:image/png;base64,'+j.previewPng;
+    img.style.maxHeight='140px'; img.style.maxWidth='100%'; img.style.display='block';
+    img.style.border='1px solid #99c'; img.style.cursor='zoom-in';
+    img.title='Click to enlarge';
+    img.onclick=function(){ dsOpenPreview(j.previewPng); };
+    wrap.appendChild(img);
+    var cap=document.createElement('div');
+    cap.style.color='#888'; cap.style.fontSize='11px';
+    cap.textContent='page '+j.page+' of '+j.pageCount+' — click to enlarge';
+    wrap.appendChild(cap);
+    b.appendChild(wrap);
+  }
+}
+function dsFromDoc(docNo){
+  var demoEl=document.getElementsByName('demographicNo');
+  var demo=demoEl.length?demoEl[0].value:'';
+  if(!demo){ dsClear(); return; }
+  dsStart('docNo='+encodeURIComponent(docNo)+'&demographicNo='+encodeURIComponent(demo),true);
+}
+function dsFromDocs(){
+  var boxes=document.querySelectorAll('.docbox');
+  for(var i=0;i<boxes.length;i++){
+    if(boxes[i].checked){ dsFromDoc(boxes[i].value); return; }
+  }
+  dsSeq++; dsClear();
+}
+(function(){
+  var pf=document.getElementsByName('pdfFile')[0];
+  if(pf) pf.addEventListener('change',function(){
+    if(pf.files && pf.files.length>0){
+      var fd=new FormData();
+      fd.append('pdfFile',pf.files[0]);
+      dsStart(fd,false);
+    } else {
+      dsFromDocs();
+    }
+  });
+  // Delegated so it survives the filter box re-rendering nothing (rows only ever hide).
+  var dw=document.getElementById('docwrap');
+  if(dw) dw.addEventListener('change',function(ev){
+    var t=ev.target;
+    if(!t || !t.className || (' '+t.className+' ').indexOf(' docbox ')<0) return;
+    if(pf && pf.files && pf.files.length>0) return;   // the upload wins; keep its banner
+    if(t.checked){ dsFromDoc(t.value); return; }
+    dsFromDocs();
+  });
+  // Opened from a document's Fax button (docNo pre-ticked): suggest right away - this is the
+  // pharmacy-refill path the feature exists for.
+  if(!(pf && pf.files && pf.files.length>0)) dsFromDocs();
+})();
 </script>
 </body></html>

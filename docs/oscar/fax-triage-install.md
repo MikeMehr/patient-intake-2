@@ -248,6 +248,61 @@ stale multi-patient refusal from cache (found live, 2026-08-15). Any in-place ed
 delete a page, rotate — now reads as a new document, and superseded rows for the same name are
 pruned when the fresh verdict is stored.
 
+## Send-fax destination suggestion (faxDestSuggest.jsp, added 2026-08-17)
+
+The reverse direction of the same road: when the operator chooses a PDF on **Send a New Fax**
+(`fax/newFax.jsp` — upload or chart-doc tick), `fax/faxDestSuggest.jsp` reads it, finds the
+**sender's own fax number** (a pharmacy's fax on a refill request), reverse-matches it against
+`fax_addressbook.tsv`, and returns a banner payload plus a PDFBox-rendered PNG of the page the
+number was read from. newFax.jsp shows "📠 Detected sender: Grace Pharmacy (Pharmacies) —
+604-909-1722, found on page 2" with the page image, auto-fills an EMPTY destination field, and
+offers `[Use this number]` otherwise. Nothing is ever auto-sent; every failure is
+`{"reason":"..."}` and the page behaves as before.
+
+Two tiers inside the endpoint:
+
+1. **Local text layer** — per-page `PDFTextStripper`, then a label-proximity heuristic: NANP regex
+   (`area and exchange both [2-9]xx`, digit lookarounds so a PHN's digit-run can't donate ten
+   digits), +4 when `Fax|Facsimile|Fx` ends within the 25 chars before the match, −3 for
+   `Tel|Phone|Cell|PHN|MSP|Health #`. Labelled wins; an unlabelled number is accepted only when it
+   is the single distinct number in the document; Tel-labelled alone is never accepted. The
+   clinic's own numbers (`6046283830`, `6048807919`) are excluded — the cover page prints the
+   clinic fax **twice**, so a re-uploaded outbound fax leads with it.
+2. **OCR fallback** — when total extracted text < 40 chars (an inbound SRFax raster), the same
+   `/api/emr/oscar/fax-triage` call as above, now with `clinicFaxNumbers` in the request; the
+   schema gained additive `senderFaxNumber` (full NANP or "") and `senderFaxPage` (1-based, 0
+   unknown) fields. If the model reads a facility name but no number, a **unique** case-insensitive
+   name match in the address book yields the number as `source:"ocr-name"`, visually flagged as
+   weaker evidence (number came from the book, not the page).
+
+Cache: the same `mymd_fax_triage` table, refs = `sha256("dest|" + sha256(bytes))[0..32]` —
+content-addressed, so they never go stale and **no flush is needed for this feature**; a cached
+payload lacking the `senderFaxNumber` key is treated as a miss and replaced. `pdf_name` holds the
+constant `faxdest` (no sender-identifying filename).
+
+Address-book reverse lookup is one-to-many (66 numbers sit on multiple TSV rows): a single
+`Pharmacies` row wins the headline, the rest render as "Also listed as: …"; no match at all shows
+the raw number with a "not in the address book" warning tint.
+
+Files: `fax/faxDestSuggest.jsp` (new) and `fax/newFax.jsp` (banner div + JS). Repo copies under
+`infrastructure/oscar-patches/fax/`. Install like the others:
+
+```bash
+W=/opt/tomcat9/webapps/oscar
+sudo cp $W/fax/newFax.jsp $W/fax/newFax.jsp.oscarbak
+sudo cp newFax.jsp faxDestSuggest.jsp $W/fax/
+sudo chown tomcat:tomcat $W/fax/newFax.jsp $W/fax/faxDestSuggest.jsp
+sudo sh -c 'rm -f /opt/tomcat9/work/Catalina/localhost/oscar/org/apache/jsp/fax/newFax_jsp.* /opt/tomcat9/work/Catalina/localhost/oscar/org/apache/jsp/fax/faxDestSuggest_jsp.*'
+```
+
+Rollback: `sudo mv $W/fax/newFax.jsp.oscarbak $W/fax/newFax.jsp && sudo rm $W/fax/faxDestSuggest.jsp`.
+
+Heuristic spot-check (jshell, paste `NUM`/`FAX_LABEL`/`ANTI_LABEL`/`distinctCandidates`/
+`pickFaxNumber` from the JSP): `"Fax: (604) 909-1722"` → hit p1 labeled;
+`"Tel: 604-909-1722"` alone → null; `"Tel: 604-111-2222  Fax: 604-909-1722"` → picks the fax;
+`"PHN 9790813535"` → null (exchange digit); `"Fax: 604-628-3830"` (clinic) → null;
+bare `"604-909-1722"` as the only number → hit ("only").
+
 ## Rollback
 
 ```bash
