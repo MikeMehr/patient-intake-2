@@ -70,6 +70,8 @@ const requestSchema = z.object({
     .array(z.object({ name: z.string().min(1).max(80), mspNumber: z.string().max(12) }))
     .max(50)
     .default([]),
+  /** The receiving clinic's own fax/phone numbers — never a valid senderFaxNumber. */
+  clinicFaxNumbers: z.array(z.string().regex(/^\d{10}$/)).max(5).default([]),
 });
 
 /** Constant-time compare that tolerates unequal lengths without leaking them. */
@@ -122,7 +124,8 @@ export async function POST(request: NextRequest) {
   if (!parsed.success) {
     return finish(400, { error: "Invalid request", detail: parsed.error.issues[0]?.message });
   }
-  const { faxRef, pdfBase64, providerNo, docTypes, docClasses, knownProviders } = parsed.data;
+  const { faxRef, pdfBase64, providerNo, docTypes, docClasses, knownProviders, clinicFaxNumbers } =
+    parsed.data;
 
   let pdfBytes: Buffer;
   try {
@@ -171,7 +174,7 @@ export async function POST(request: NextRequest) {
     const azure = getAzureOpenAIClient();
     const completion = await azure.client.chat.completions.create({
       model: azure.deployment,
-      messages: buildFaxMessages(ocrText, docTypes, docClasses, knownProviders),
+      messages: buildFaxMessages(ocrText, docTypes, docClasses, knownProviders, clinicFaxNumbers),
       // Pinned rather than inherited: an api-version without json_schema would silently drop the
       // enum constraint and let an off-list document type through.
       response_format: buildFaxSchema(docTypes, docClasses),
@@ -229,6 +232,7 @@ export async function POST(request: NextRequest) {
       hasPhn: Boolean(suggestion.patient.phn),
       hasDob: Boolean(suggestion.patient.dateOfBirth),
       hasAddressee: Boolean(suggestion.addressedTo.name || suggestion.addressedTo.mspNumber),
+      hasSenderFax: Boolean(suggestion.senderFaxNumber),
       physicianResolved: Boolean(physicianId),
     },
   });

@@ -55,6 +55,14 @@ describe("buildFaxSchema", () => {
     expect(item.additionalProperties).toBe(false);
     expect(item.required).toEqual(["lastName", "firstName", "dateOfBirth", "phn", "pages"]);
   });
+
+  it("declares the sender fax fields as required so strict mode always returns them", () => {
+    const schema = buildFaxSchema(DOC_TYPES, DOC_CLASSES);
+    expect(schema.json_schema.schema.required).toContain("senderFaxNumber");
+    expect(schema.json_schema.schema.required).toContain("senderFaxPage");
+    expect(schema.json_schema.schema.properties.senderFaxNumber).toEqual({ type: "string" });
+    expect(schema.json_schema.schema.properties.senderFaxPage).toEqual({ type: "integer" });
+  });
 });
 
 describe("buildFaxMessages", () => {
@@ -67,6 +75,20 @@ describe("buildFaxMessages", () => {
   it("survives a clinic with no providers on file", () => {
     const [, user] = buildFaxMessages("OCR TEXT", DOC_TYPES, DOC_CLASSES, []);
     expect(user.content).toContain("(none on file)");
+  });
+
+  it("lists the receiving clinic's own numbers when supplied", () => {
+    const [, user] = buildFaxMessages("OCR TEXT", DOC_TYPES, DOC_CLASSES, PROVIDERS, [
+      "6046283830",
+      "6048807919",
+    ]);
+    expect(user.content).toContain("belong to the RECEIVING clinic");
+    expect(user.content).toContain("6046283830, 6048807919");
+  });
+
+  it("omits the clinic-numbers block when none are supplied", () => {
+    const [, user] = buildFaxMessages("OCR TEXT", DOC_TYPES, DOC_CLASSES, PROVIDERS);
+    expect(user.content).not.toContain("RECEIVING clinic");
   });
 });
 
@@ -102,6 +124,47 @@ describe("validateFaxResponse", () => {
       DOC_CLASSES,
     );
     expect(out.patient.phn).toBe("9809250242");
+  });
+
+  it("normalizes a formatted sender fax number to ten digits", () => {
+    let out = validateFaxResponse(
+      goodResponse({ senderFaxNumber: "(604) 909-1722", senderFaxPage: 2 }),
+      DOC_TYPES,
+      DOC_CLASSES,
+    );
+    expect(out.senderFaxNumber).toBe("6049091722");
+    expect(out.senderFaxPage).toBe(2);
+
+    out = validateFaxResponse(
+      goodResponse({ senderFaxNumber: "1-604-909-1722", senderFaxPage: 1 }),
+      DOC_TYPES,
+      DOC_CLASSES,
+    );
+    expect(out.senderFaxNumber).toBe("6049091722");
+  });
+
+  it("rejects impossible sender fax numbers and zeroes the page with them", () => {
+    for (const bad of ["604-909-172", "no fax here", "0604909172", "9790813535 BC x"]) {
+      const out = validateFaxResponse(
+        goodResponse({ senderFaxNumber: bad, senderFaxPage: 2 }),
+        DOC_TYPES,
+        DOC_CLASSES,
+      );
+      expect(out.senderFaxNumber, bad).toBe("");
+      expect(out.senderFaxPage, bad).toBe(0);
+    }
+  });
+
+  it("clamps a nonsense sender fax page to 0", () => {
+    for (const page of [-1, 9999, "2", null]) {
+      const out = validateFaxResponse(
+        goodResponse({ senderFaxNumber: "6049091722", senderFaxPage: page }),
+        DOC_TYPES,
+        DOC_CLASSES,
+      );
+      expect(out.senderFaxNumber).toBe("6049091722");
+      expect(out.senderFaxPage, String(page)).toBe(0);
+    }
   });
 
   it("returns an empty suggestion for junk", () => {

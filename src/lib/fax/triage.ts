@@ -63,6 +63,13 @@ export type FaxTriageSuggestion = {
   addressedTo: FaxAddressee;
   /** Clinic/hospital that sent the fax. Context for the physician; not used for matching. */
   senderFacility: string;
+  /**
+   * The sender's own fax number as read off the page — the number a reply would be faxed back to.
+   * 10 digits, or "". Never one of the receiving clinic's own numbers (supplied in the request).
+   */
+  senderFaxNumber: string;
+  /** 1-based page where that number was read, or 0 when unknown. */
+  senderFaxPage: number;
   confidence: FaxConfidence;
   /** Short quote from the fax supporting the reading. Shown on screen; never logged. */
   evidence: string;
@@ -84,6 +91,8 @@ export function emptySuggestion(): FaxTriageSuggestion {
     patient: emptyPatient(),
     addressedTo: { name: "", mspNumber: "" },
     senderFacility: "",
+    senderFaxNumber: "",
+    senderFaxPage: 0,
     confidence: "low",
     evidence: "",
   };
@@ -128,6 +137,13 @@ const SYSTEM_PROMPT = [
   "- addressedTo: the doctor the fax is directed to — the 'To:', 'Attention:' or 'Dear Dr ...' line.",
   "  This is a doctor at the receiving clinic. The sending doctor is not the addressee.",
   "- senderFacility: the hospital, lab or clinic the fax came from.",
+  "- senderFaxNumber: the fax number to reach the SENDER back — a pharmacy's fax on a refill",
+  "  request, the 'From' fax on a cover sheet, the fax line in the sender's letterhead or footer.",
+  "  Prefer a number explicitly labelled 'Fax', 'Fax #' or 'Facsimile'. Never a number labelled",
+  "  Phone, Tel or Cell, never the patient's PHN, and NEVER any number listed in the user message as",
+  "  belonging to the RECEIVING clinic. 10 digits, drop a leading 1. Leave empty when unsure.",
+  "- senderFaxPage: the page (per the --- PAGE n --- markers) where senderFaxNumber was read, as a",
+  "  number. 0 when unknown or when senderFaxNumber is empty.",
   "- documentType and documentClass: choose from the supplied lists. Answer 'unknown' if none fits.",
   "- description: a short title a physician would recognise on a chart list, naming the study or",
   "  letter — 'Renal Ultrasound', 'Chest X-Ray', 'Cardiology Consultation'. Include the body part or",
@@ -166,6 +182,8 @@ export function buildFaxSchema(docTypes: string[], docClasses: string[]) {
           "patients",
           "addressedTo",
           "senderFacility",
+          "senderFaxNumber",
+          "senderFaxPage",
           "confidence",
           "evidence",
         ],
@@ -196,6 +214,8 @@ export function buildFaxSchema(docTypes: string[], docClasses: string[]) {
             properties: { name: str, mspNumber: str },
           },
           senderFacility: str,
+          senderFaxNumber: str,
+          senderFaxPage: { type: "integer" },
           confidence: { type: "string", enum: ["high", "medium", "low"] },
           evidence: str,
         },
@@ -209,10 +229,19 @@ export function buildFaxMessages(
   docTypes: string[],
   docClasses: string[],
   providers: FaxProvider[],
+  clinicFaxNumbers: string[] = [],
 ): ChatCompletionMessageParam[] {
   const roster = providers.length
     ? providers.map((p) => (p.mspNumber ? `${p.name} (MSP ${p.mspNumber})` : p.name)).join("\n")
     : "(none on file)";
+
+  const clinicNumbersBlock = clinicFaxNumbers.length
+    ? [
+        "",
+        "Numbers that belong to the RECEIVING clinic (these are never the sender's):",
+        clinicFaxNumbers.join(", "),
+      ]
+    : [];
 
   return [
     { role: "system", content: SYSTEM_PROMPT },
@@ -227,6 +256,7 @@ export function buildFaxMessages(
         "",
         "Doctors at this clinic (a fax addressed to one of these is for them):",
         roster,
+        ...clinicNumbersBlock,
         "",
         "OCR text of the fax:",
         ocrText.slice(0, MAX_OCR_CHARS),
@@ -313,6 +343,15 @@ export function validateFaxResponse(
       ? obj.confidence
       : "low";
 
+  // The number a reply gets faxed to. A full NANP shape (area code and exchange both [2-9]xx) or
+  // nothing — the exchange rule also rejects most PHNs misread as fax numbers, and a truncated or
+  // padded number here would send PHI to a stranger's machine.
+  let fax = cleanText(obj.senderFaxNumber, 20).replace(/[^0-9]/g, "");
+  if (fax.length === 11 && fax.startsWith("1")) fax = fax.slice(1);
+  const senderFaxNumber = /^[2-9]\d{2}[2-9]\d{6}$/.test(fax) ? fax : "";
+  const pg = typeof obj.senderFaxPage === "number" ? Math.trunc(obj.senderFaxPage) : 0;
+  const senderFaxPage = senderFaxNumber && pg >= 1 && pg <= 500 ? pg : 0;
+
   return {
     documentType: typeAllowed.has(documentType) ? documentType : UNKNOWN,
     documentClass: classAllowed.has(documentClass) ? documentClass : UNKNOWN,
@@ -328,6 +367,8 @@ export function validateFaxResponse(
       mspNumber: cleanText(addressedRaw.mspNumber, 12).replace(/[^0-9]/g, ""),
     },
     senderFacility: cleanText(obj.senderFacility, 120),
+    senderFaxNumber,
+    senderFaxPage,
     confidence,
     evidence: cleanText(obj.evidence, 200),
   };
