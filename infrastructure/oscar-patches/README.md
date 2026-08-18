@@ -9,6 +9,24 @@ editing any JSP, delete its compiled copy under
 `/opt/tomcat9/work/Catalina/localhost/oscar/org/apache/jsp/...` to force a recompile — no Tomcat
 restart is needed.
 
+## Add Specialist — PathwaysBC paste into the consultation list (added 2026-08-17)
+
+An **Add Specialist** nav item (right of Specialist Directory) opens `mymd/addSpecialist.jsp`:
+paste a PathwaysBC profile, AI extracts the fields into a review form, the physician picks the
+consultation service and clicks Add. The write runs client-side in the physician's own session
+(`AddSpecialist.do` → verify → `UpdateServiceSpecialists.do`, same guards as the bulk sync
+bookmarklet); the extraction goes through the app with a shared secret. Public directory data, not
+PHI — the app route deliberately has no PHI audit or `HIPAA_MODE` gate.
+
+Full install steps and verification live in `docs/oscar/add-specialist-install.md`. Sources in
+`docs/oscar/add-specialist/`. On the box:
+
+| File | What |
+|---|---|
+| `mymd/addSpecialist.jsp` | New. The page + server-side extraction relay (fails soft to manual entry). |
+| `provider/appointmentprovideradminday.jsp` | Patched — Specialist Directory `<li>` (retroactive patcher) + Add Specialist `<li>` after it. |
+| `/var/lib/OscarDocument/oscar/mymd_specialist.properties` | New. URL, shared secret, `enabled` flag. `600 tomcat:tomcat`, outside the web root. |
+
 ## Requisitions into the chart, and multi-document Send Fax (added 2026-08-14)
 
 Requisitions generated from the eChart used to be downloaded to a Windows/macOS desktop and
