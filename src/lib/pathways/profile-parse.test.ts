@@ -129,4 +129,31 @@ Referral Information and Requirements`;
     expect(result.clinicAddress).toBeNull();
     expect(result.phone).toBeNull();
   });
+
+  // Live bug found 2026-08-17 during the bulk PathwaysBC import: fax and email were being
+  // overwritten by every subsequent office instead of keeping the first, so a specialist with
+  // multiple offices got the first office's phone/address paired with a LATER office's fax —
+  // a wrong number for a referral to reach the right office by.
+  const MULTI_OFFICE_TEXT = `Dr. Bahar Bahrani
+Dermatology
+Woman, MSP #36952
+Office Information
+604-336-7462
+Fax: 604-336-7463
+Public email (okay for patient use): med@mysina.ca
+Sina Medical and Aesthetic Clinic - 505 Smithe Street, Vancouver, British Columbia, V6B 6H1 with 3 others
+604-243-5869
+Fax: 604-305-0051
+Lonsdale Square Medical Clinic - 122 E 21st Street, North Vancouver, British Columbia, V7L 0J2 with 3 others
+Referral Information and Requirements`;
+
+  it("keeps the first office's phone, fax, email and address together for a multi-office specialist", () => {
+    const result = parseSpecialistProfileText(MULTI_OFFICE_TEXT);
+    expect(result.phone).toBe("604-336-7462");
+    expect(result.fax).toBe("604-336-7463");
+    expect(result.email).toBe("med@mysina.ca");
+    expect(result.clinicAddress).toBe(
+      "Sina Medical and Aesthetic Clinic - 505 Smithe Street, Vancouver, British Columbia, V6B 6H1",
+    );
+  });
 });

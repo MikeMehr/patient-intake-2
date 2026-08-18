@@ -105,14 +105,19 @@ export function parseSpecialistProfileText(pageText: string): SpecialistContactI
   let clinicAddress: string | null = null;
 
   for (const line of officeBlock) {
+    // First match wins, same as phone/clinicAddress below — a specialist with several offices
+    // listed would otherwise pair the FIRST office's phone/address with the LAST office's fax/
+    // email. Seen live 2026-08-17 during the bulk PathwaysBC import: Dr. Bahar Bahrani's profile
+    // lists two clinics, and an unguarded overwrite here paired Sina Medical's phone/address with
+    // Lonsdale Square's fax — a wrong number for a referral to reach the right office by.
     const faxMatch = line.match(FAX_LINE_RE);
-    if (faxMatch) {
+    if (!fax && faxMatch) {
       fax = faxMatch[1].trim();
       continue;
     }
 
     const emailLineMatch = line.match(EMAIL_LINE_RE);
-    if (emailLineMatch) {
+    if (!email && emailLineMatch) {
       const addr = emailLineMatch[1].match(EMAIL_ADDR_RE);
       email = addr ? addr[0] : emailLineMatch[1].trim();
       continue;
