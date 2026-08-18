@@ -885,6 +885,33 @@ export default function PhysicianTranscriptionPage() {
       return;
     }
     setHpiLoading(true);
+    setRecommendations(null);
+    // Pre-compute recommended labs alongside the HPI so they can be shown in
+    // the same popup — never awaited, must not delay or risk the HPI path.
+    if (!orgWoundCare) {
+      setRecommendationsLoading(true);
+      void (async () => {
+        try {
+          const recRes = await fetch("/api/physician/transcription/recommendations", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ transcript: current }),
+          });
+          const recData = await recRes.json().catch(() => ({}));
+          if (recRes.ok) {
+            setRecommendations({
+              labs: typeof recData?.labs === "string" ? recData.labs : "",
+              referrals: typeof recData?.referrals === "string" ? recData.referrals : "",
+              imaging: typeof recData?.imaging === "string" ? recData.imaging : "",
+            });
+          }
+        } catch {
+          // Non-blocking enhancement — leave recommendations unset on failure.
+        } finally {
+          setRecommendationsLoading(false);
+        }
+      })();
+    }
     try {
       const res = await fetch("/api/physician/transcription/generate-hpi", {
         method: "POST",
@@ -3033,7 +3060,32 @@ export default function PhysicianTranscriptionPage() {
               ) : hpiError ? (
                 <p className="whitespace-pre-wrap text-sm text-red-700">{hpiError}</p>
               ) : (
-                <pre className="whitespace-pre-wrap font-sans text-sm text-slate-800">{hpiText}</pre>
+                <>
+                  <pre className="whitespace-pre-wrap font-sans text-sm text-slate-800">{hpiText}</pre>
+                  {!orgWoundCare && (
+                    <div className="mt-4 rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-xs font-semibold text-slate-700">Recommended labs</span>
+                        {recommendationsLoading && <span className="text-xs text-slate-500">Analysing encounter…</span>}
+                        {!recommendationsLoading && recommendations?.labs && (
+                          <button
+                            type="button"
+                            onClick={() => void copyText(recommendations.labs, "hpi-labs")}
+                            className="text-xs text-slate-500 hover:text-slate-700"
+                          >
+                            {copiedKey === "hpi-labs" ? "Copied!" : "Copy"}
+                          </button>
+                        )}
+                      </div>
+                      {!recommendationsLoading && recommendations && !recommendations.labs && (
+                        <p className="text-xs text-slate-500">No lab recommendations for this encounter yet.</p>
+                      )}
+                      {recommendations?.labs && (
+                        <pre className="whitespace-pre-wrap font-sans text-sm text-slate-800">{recommendations.labs}</pre>
+                      )}
+                    </div>
+                  )}
+                </>
               )}
             </div>
             <div className="flex items-center justify-end gap-2 border-t border-slate-200 px-5 py-3">
