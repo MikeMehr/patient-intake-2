@@ -181,6 +181,26 @@ Adds `&replyTo=<id>` prefill, `In-Reply-To`/`References` threading, and a two-wa
 history. The history probes for `mymd_inbox_message` and silently falls back to outbound-only if
 the table is missing, so this file is safe to deploy before step 1.
 
+### 8b. Compose mode (added 2026-08-17)
+
+`emailPatient.jsp?compose=1` is a free-form compose window: an editable To box (strict
+RFC-822 validation, up to 5 comma-separated recipients) instead of a readonly address pulled
+from a demographic row, no patient context, same SMTP path, footer, and
+`mymd_patient_email_log` row (with `demographic_no = NULL`). `&replyTo=<id>` additionally
+pre-fills the recipient/subject/quote from a mirrored message and threads the reply — this is
+how "Reply" works on *unlinked* inbox messages, whose senders have no chart to anchor a reply
+to. The inbox list view gained a "Compose" button that opens this mode blank.
+
+Requires one schema change (applied to production 2026-08-17):
+
+```bash
+sudo mysql oscar_db < mymd_compose.sql   # demographic_no NULLable in mymd_patient_email_log
+```
+
+The compose-mode `replyTo` lookup is deliberately *not* scoped by demographic — unlinked
+messages have none. That is the same access level as inbox.jsp itself, where any
+authenticated provider sees every mirrored message and views are audited.
+
 ### 9. Nav link — last, so it never points at a half-built page
 
 ```bash

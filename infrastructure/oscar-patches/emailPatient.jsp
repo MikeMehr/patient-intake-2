@@ -12,6 +12,11 @@
     &documentNo=5        - from the eChart Documents list ("Email to patient" icon);
                            the stored document is pre-attached after verifying via
                            ctl_document that it belongs to this demographic.
+    ?compose=1           - from the Patient Email inbox ("Compose" button): free-form
+                           recipient with no patient context, for mail that is not tied
+                           to a chart. &replyTo=123 pre-fills the recipient, subject and
+                           quoted text from a mirrored inbound message and threads the
+                           reply (used to answer senders who are not patients).
 
   Sends as info@mymdonline.ca via the GoDaddy SMTP account. Credentials live in
   /var/lib/OscarDocument/oscar/mymd_mail.properties (tomcat:tomcat 600, outside the web
@@ -146,6 +151,9 @@
     String demoParam = request.getParameter("demographicNo");
     String apptParam = request.getParameter("appointmentNo");
     boolean isPost = "POST".equalsIgnoreCase(request.getMethod());
+    // Compose mode: no patient context at all. The recipient is typed by the clinician
+    // instead of being read from a demographic row, so it is validated hard before send.
+    boolean composeMode = "1".equals(request.getParameter("compose"));
 
     int demoNo = 0;
     int apptNo = 0;
@@ -164,7 +172,7 @@
     // ---- multipart parsing (attachments) ------------------------------------------------
     // A multipart POST hides the ordinary fields from request.getParameter(), so the fields
     // AND the files are both pulled out here with commons-fileupload (already in WEB-INF/lib).
-    String mpSubject = null, mpBody = null, mpDocumentNo = null;
+    String mpSubject = null, mpBody = null, mpDocumentNo = null, mpTo = null;
     List<Attach> attachments = new ArrayList<Attach>();
     String attachError = null;
     if (isPost && ServletFileUpload.isMultipartContent(request)) {
@@ -183,6 +191,7 @@
                     if ("subject".equals(item.getFieldName())) mpSubject = item.getString("UTF-8");
                     else if ("body".equals(item.getFieldName())) mpBody = item.getString("UTF-8");
                     else if ("documentNo".equals(item.getFieldName())) mpDocumentNo = item.getString("UTF-8");
+                    else if ("to".equals(item.getFieldName())) mpTo = item.getString("UTF-8");
                 } else {
                     String name = baseName(item.getName());
                     // An untouched <input type=file> still posts one empty part - skip it.
@@ -213,7 +222,11 @@
     Connection conn = DriverManager.getConnection(DB_URL, DB_USER, DB_PASS);
     try {
         // ---- resolve the appointment (appointment mode) --------------------------------
-        if (apptParam != null && apptParam.trim().length() > 0) {
+        // Compose mode deliberately ignores demographicNo/appointmentNo: it must never
+        // half-adopt a patient context it will not show in the UI.
+        if (composeMode) {
+            // no patient to resolve
+        } else if (apptParam != null && apptParam.trim().length() > 0) {
             try { apptNo = Integer.parseInt(apptParam.trim()); } catch (NumberFormatException nfe) { apptNo = 0; }
             if (apptNo > 0) {
                 PreparedStatement ps = conn.prepareStatement(
@@ -270,19 +283,32 @@
         // resolves to nothing.
         int replyToId = 0;
         String replySubject = null, replyQuote = null, replyMessageId = null, replyRefs = null;
+        String replyFromEmail = null;
         try { replyToId = Integer.parseInt(request.getParameter("replyTo")); }
         catch (Exception nfe) { replyToId = 0; }
-        if (replyToId > 0 && demoNo > 0) {
+        if (replyToId > 0 && (demoNo > 0 || composeMode)) {
             // Wrapped so this page keeps working when mymd_inbox_message does not exist -
             // which is the state during a partial rollout, or after a WAR redeploy when the
             // schema has not been reapplied yet.
             try {
-                PreparedStatement ps = conn.prepareStatement(
-                    "SELECT subject, body_text, from_name, from_email, sent_datetime, "
-                  + "       message_id, thread_refs "
-                  + "  FROM mymd_inbox_message WHERE id = ? AND demographic_no = ?");
-                ps.setInt(1, replyToId);
-                ps.setInt(2, demoNo);
+                PreparedStatement ps;
+                if (composeMode) {
+                    // Compose mode has no patient to scope by. Unscoped is acceptable here
+                    // for the same reason inbox.jsp shows every message to any authenticated
+                    // provider: the mirror is clinic-wide, and views are audited there.
+                    ps = conn.prepareStatement(
+                        "SELECT subject, body_text, from_name, from_email, sent_datetime, "
+                      + "       message_id, thread_refs "
+                      + "  FROM mymd_inbox_message WHERE id = ?");
+                    ps.setInt(1, replyToId);
+                } else {
+                    ps = conn.prepareStatement(
+                        "SELECT subject, body_text, from_name, from_email, sent_datetime, "
+                      + "       message_id, thread_refs "
+                      + "  FROM mymd_inbox_message WHERE id = ? AND demographic_no = ?");
+                    ps.setInt(1, replyToId);
+                    ps.setInt(2, demoNo);
+                }
                 ResultSet rs = ps.executeQuery();
                 if (rs.next()) {
                     String origSubject = rs.getString("subject");
@@ -316,6 +342,7 @@
                     replyQuote = q.toString();
                     replyMessageId = rs.getString("message_id");
                     replyRefs = rs.getString("thread_refs");
+                    replyFromEmail = rs.getString("from_email");
                 } else {
                     replyToId = 0;   // not this patient's message, or gone
                 }
@@ -373,8 +400,37 @@
             }
         }
 
+        // ---- validate the compose-mode recipient ----------------------------------------
+        // Strict RFC-822 parse plus per-address validate(). Anything that does not parse is
+        // rejected outright rather than "repaired" - a mistyped address must fail loudly, not
+        // deliver somewhere surprising.
+        String composeTo = "";
+        String composeToError = null;
+        if (composeMode && isPost) {
+            composeTo = mpTo != null ? mpTo : request.getParameter("to");
+            if (composeTo == null) composeTo = "";
+            composeTo = composeTo.trim();
+            if (composeTo.length() == 0) {
+                composeToError = "A recipient email address is required - nothing was sent.";
+            } else {
+                try {
+                    InternetAddress[] rcpts = InternetAddress.parse(composeTo, true);
+                    if (rcpts.length == 0) throw new Exception("no address");
+                    if (rcpts.length > 5) {
+                        composeToError = "At most 5 recipients per message - nothing was sent.";
+                    } else {
+                        for (InternetAddress a : rcpts) a.validate();
+                    }
+                } catch (Exception addrEx) {
+                    composeToError = "The recipient does not look like a valid email address "
+                                   + "- nothing was sent. Use name@example.com, commas between "
+                                   + "multiple addresses.";
+                }
+            }
+        }
+
         // ---- send ----------------------------------------------------------------------
-        if (isPost && found && patientEmail.length() > 0) {
+        if (isPost && (composeMode || (found && patientEmail.length() > 0))) {
             postedSubject = mpSubject != null ? mpSubject : request.getParameter("subject");
             postedBody = mpBody != null ? mpBody : request.getParameter("body");
             if (postedSubject == null) postedSubject = "";
@@ -382,7 +438,9 @@
             postedSubject = postedSubject.trim();
             postedBody = postedBody.trim();
 
-            if (attachError != null) {
+            if (composeToError != null) {
+                resultMsg = composeToError;
+            } else if (attachError != null) {
                 resultMsg = attachError;
             } else if (postedSubject.length() == 0 || postedBody.length() == 0) {
                 resultMsg = "Subject and message are both required - nothing was sent.";
@@ -414,8 +472,11 @@
                 String from = mp.getProperty("mail.from", user);
                 String fromName = mp.getProperty("mail.fromName", "MyMD Telehealth");
 
-                // NOTE: the recipient comes from the database row loaded above, never from the
-                // posted form, so a tampered form cannot redirect the message elsewhere.
+                // NOTE: in the patient modes the recipient comes from the database row loaded
+                // above, never from the posted form, so a tampered form cannot redirect the
+                // message elsewhere. Compose mode is the exception by design: the clinician
+                // types the recipient, and it has passed the strict validation above.
+                String sendTo = composeMode ? composeTo : patientEmail;
                 String fullBody = postedBody + footer();
 
                 String attachNames = null;
@@ -453,7 +514,7 @@
                     MimeMessage msg = new MimeMessage(mailSession);
                     msg.setFrom(new InternetAddress(from, fromName));
                     msg.setReplyTo(new InternetAddress[]{ new InternetAddress(from, fromName) });
-                    msg.setRecipients(javax.mail.Message.RecipientType.TO, InternetAddress.parse(patientEmail, false));
+                    msg.setRecipients(javax.mail.Message.RecipientType.TO, InternetAddress.parse(sendTo, false));
                     msg.setSubject(postedSubject, "UTF-8");
                     if (attachments.isEmpty()) {
                         msg.setText(fullBody, "UTF-8");
@@ -508,7 +569,7 @@
 
                     status = "SENT";
                     resultOk = true;
-                    resultMsg = "Email sent to " + patientEmail
+                    resultMsg = "Email sent to " + sendTo
                               + (attachments.isEmpty() ? "" : " with " + attachments.size()
                                  + (attachments.size() == 1 ? " attachment" : " attachments")) + ".";
                 } catch (Exception mailEx) {
@@ -525,10 +586,11 @@
                         "INSERT INTO mymd_patient_email_log "
                       + "(demographic_no, appointment_no, provider_no, to_email, subject, body, attachments, status, error_msg, sent_datetime, message_id, in_reply_to_id) "
                       + "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)");
-                    lp.setInt(1, demoNo);
+                    // Compose mode has no patient; the column was relaxed to NULLable for it.
+                    if (demoNo > 0) lp.setInt(1, demoNo); else lp.setNull(1, java.sql.Types.INTEGER);
                     if (apptNo > 0) lp.setInt(2, apptNo); else lp.setNull(2, java.sql.Types.INTEGER);
                     lp.setString(3, providerNo);
-                    lp.setString(4, patientEmail);
+                    lp.setString(4, sendTo);
                     lp.setString(5, postedSubject);
                     lp.setString(6, fullBody);
                     lp.setString(7, attachNames);
@@ -578,10 +640,15 @@
                         + (docDesc != null && docDesc.trim().length() > 0 ? docDesc.trim() : "your document")
                         + ".\n\nThank you,\n" + signature;
         }
+
+        // Compose mode's To box: keep what was typed on a failed POST; otherwise pre-fill
+        // the sender of the message being replied to (straight from our own DB row).
+        String composeToPrefill = !composeMode ? ""
+            : (isPost ? composeTo : (replyFromEmail != null ? replyFromEmail : ""));
 %>
 <html>
 <head>
-<title>Email Patient</title>
+<title><%= composeMode ? "Compose Email" : "Email Patient" %></title>
 <style>
   body { font-family: Helvetica, Arial, sans-serif; font-size: 13px; margin: 0; padding: 16px;
          background: #f6f7f9; color: #222; }
@@ -612,20 +679,26 @@
 </head>
 <body>
 
-<% if (!found) { %>
+<% if (!found && !composeMode) { %>
     <div class="danger"><b>Patient not found.</b> No demographic record matched this request.</div>
     <button class="btn" onclick="window.close()">Close</button>
 
 <% } else { %>
 
+    <% if (composeMode) { %>
+    <h2>Compose Email</h2>
+    <div class="sub">Sends as info@mymdonline.ca &middot; not linked to a patient chart<%=
+        replyToId > 0 ? " &middot; replying to an inbox message" : "" %></div>
+    <% } else { %>
     <h2>Email <%= esc(patientFirst + " " + patientLast) %></h2>
     <div class="sub">Demographic #<%= demoNo %><%= apptNo > 0 ? " &middot; appointment #" + apptNo : "" %></div>
+    <% } %>
 
     <% if (resultMsg != null) { %>
         <div class="<%= resultOk ? "ok" : "danger" %>"><%= esc(resultMsg) %></div>
     <% } %>
 
-    <% if (patientEmail.length() == 0) { %>
+    <% if (!composeMode && patientEmail.length() == 0) { %>
         <div class="card">
             <div class="danger"><b>No email address on file for this patient.</b></div>
             <p>Add one in the Master Demographic record, then reopen this window.</p>
@@ -636,14 +709,15 @@
 
     <% } else if (resultOk) { %>
         <div class="card">
-            <p>The message has been sent and recorded in this patient's email history.</p>
+            <p><%= composeMode ? "The message has been sent and logged."
+                               : "The message has been sent and recorded in this patient's email history." %></p>
             <button class="btn btn-primary" onclick="window.close()">Close</button>
             <button class="btn" onclick="window.location.reload()">Send another</button>
         </div>
 
     <% } else { %>
 
-        <% if (!consent) { %>
+        <% if (!composeMode && !consent) { %>
             <div class="warn">
                 <b>No recorded consent to use email for care.</b>
                 This patient's record does not have "consent to use email for care" set.
@@ -657,9 +731,19 @@
         </div>
 
         <form method="post" enctype="multipart/form-data" class="card" onsubmit="return confirmSend();">
+            <% if (composeMode) { %>
+            <label for="to">To</label>
+            <input type="text" id="to" name="to" maxlength="500"
+                   value="<%= esc(composeToPrefill) %>"
+                   placeholder="name@example.com">
+            <div class="foot-note">Up to 5 recipients, separated by commas. This message is
+                not linked to any patient chart &mdash; to email a patient, use the
+                &ldquo;Email&rdquo; link in their eChart so it lands in their history.</div>
+            <% } else { %>
             <label>To</label>
             <input type="text" class="ro" value="<%= esc(patientEmail) %>" readonly>
             <div class="foot-note">Taken from the patient's record. To change it, edit the Master Demographic record.</div>
+            <% } %>
 
             <label>From</label>
             <input type="text" class="ro" value="MyMD Telehealth &lt;info@mymdonline.ca&gt;" readonly>
@@ -755,13 +839,21 @@
                 }
                 var what = n === 0 ? 'this email'
                          : 'this email with ' + n + (n === 1 ? ' attachment' : ' attachments');
-                return confirm('Send ' + what + ' to <%= Encode.forJavaScriptBlock(patientEmail) %>?');
+<% if (composeMode) { %>
+                var toAddr = document.getElementById('to').value.replace(/^\s+|\s+$/g, '');
+                if (!toAddr) { alert('Please enter a recipient email address.'); return false; }
+<% } else { %>
+                var toAddr = "<%= Encode.forJavaScriptBlock(patientEmail) %>";
+<% } %>
+                return confirm('Send ' + what + ' to ' + toAddr + '?');
             }
         </script>
 
     <% } %>
 
     <%-- ---- history: both directions, one conversation ---------------------------- --%>
+    <%-- Compose mode has no patient, so there is no per-patient conversation to show. --%>
+    <% if (!composeMode) { %>
     <div class="card">
         <b>Email conversation with this patient</b>
         <%
@@ -873,6 +965,7 @@
             not installed on this server.</div>
         <% } %>
     </div>
+    <% } %>
 
 <% } %>
 

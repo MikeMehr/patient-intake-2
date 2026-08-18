@@ -5,8 +5,9 @@
   kept in the repo because a WAR redeploy wipes the webapp directory.
 
   Shows the info@mymdonline.ca mailbox mirrored into oscar_db by mymd_mail_sync.py, linked to
-  the chart where the sender's address matches exactly one patient. Reply hands off to
-  mymd/emailPatient.jsp, which already owns the send path and the audit log.
+  the chart where the sender's address matches exactly one patient. Reply and Compose hand off
+  to mymd/emailPatient.jsp, which already owns the send path and the audit log: patient mode
+  for linked messages, ?compose=1 (free-form recipient) for unlinked ones and for new mail.
 
   Views:
     (no params)            - list, defaulting to the "Needs attention" tab
@@ -468,6 +469,12 @@
       <a class="btn" target="_blank"
          href="<%= ctx %>/mymd/emailPatient.jsp?demographicNo=<%= demoNo %>&replyTo=<%= detailId %>"
          >Reply</a>
+<%      } else { %>
+      <%-- No chart to anchor to, so reply in compose mode: free-form recipient
+           pre-filled with the sender, threaded off this message. --%>
+      <a class="btn" target="_blank"
+         href="<%= ctx %>/mymd/emailPatient.jsp?compose=1&replyTo=<%= detailId %>"
+         >Reply</a>
 <%      } %>
 <%      if (rawPath != null) { %>
       <a class="btn sec" href="<%= ctx %>/mymd/inboxAttachment.jsp?msg=<%= detailId %>&raw=1"
@@ -570,6 +577,8 @@
     } catch (Exception ignored) {}
 %>
   <div class="tabs">
+    <a class="btn" style="float:right" target="_blank"
+       href="<%= ctx %>/mymd/emailPatient.jsp?compose=1">&#9998; Compose</a>
     <a class="<%= "new".equals(tab) ? "on" : "" %>"        href="?tab=new">Needs attention (<%= cNew %>)</a>
     <a class="<%= "unassigned".equals(tab) ? "on" : "" %>" href="?tab=unassigned">Not linked (<%= cUnassigned %>)</a>
     <a class="<%= "handled".equals(tab) ? "on" : "" %>"    href="?tab=handled">Handled (<%= cHandled %>)</a>
