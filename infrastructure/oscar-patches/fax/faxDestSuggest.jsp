@@ -42,8 +42,11 @@
 
     // The clinic's own numbers, never a valid destination suggestion. The cover page prints the
     // clinic fax TWICE, so a previously-sent fax that gets re-uploaded leads with 6046283830.
+    // 6043986518 is the SRFax inbound DID (fax_config.faxNumber holds only the 6046283830
+    // caller ID): senders hand-write it in a cover sheet's To block, which is exactly where the
+    // picker found it on an inbound Fraser Health cover (2026-08-18).
     static final Set<String> CLINIC_NUMBERS =
-        new HashSet<String>(Arrays.asList("6046283830", "6048807919"));
+        new HashSet<String>(Arrays.asList("6046283830", "6048807919", "6043986518"));
 
     static String nz(String s) { return s == null ? "" : s.trim(); }
 
@@ -137,6 +140,15 @@
     static final java.util.regex.Pattern ANTI_LABEL = java.util.regex.Pattern.compile(
         "(?i)(?:\\btel(?:ephone)?\\b|\\bphone\\b|\\bph\\b|\\bcell\\b|\\bmobile\\b|\\bvoice\\b|"
         + "\\bphn\\b|\\bmsp\\b|health\\s*(?:no|number|#))\\s*[:.\\-]?\\s*\\(?$");
+    // Cover sheets label BOTH numbers "Fax": "To ... Fax <ours>" then "From ... (FAX: <theirs>)".
+    // These two look at a wider window than the label patterns (which are anchored right before
+    // the number) so they can see the To/From on the line above, and they break that tie: the
+    // sender's number outranks the recipient's. Weights are below the +4 label bonus on purpose —
+    // context alone never beats an explicit "Fax:" label, it only orders equally-labelled rivals.
+    static final java.util.regex.Pattern SENDER_CTX = java.util.regex.Pattern.compile(
+        "(?i)\\b(?:from|sender|reply\\s*to|return\\s*fax)\\b");
+    static final java.util.regex.Pattern RECIPIENT_CTX = java.util.regex.Pattern.compile(
+        "(?i)\\b(?:to|attn|attention|recipient|deliver)\\b");
 
     /** Distinct candidate numbers across all pages, exclusions applied. */
     static Set<String> distinctCandidates(List<String> pages, Set<String> exclude) {
@@ -155,10 +167,13 @@
      * Best fax-number candidate across pages, or null.
      * Returns { tenDigits, "1"-based page, "labeled"|"only" }.
      *
-     * A "Fax:"-labelled number wins outright. An unlabelled number is accepted only when it is the
-     * single distinct number in the whole document (nothing to confuse it with). A number labelled
-     * Tel/Phone/PHN is never accepted on its own. Earliest page wins ties (strict > keeps the
-     * first best).
+     * A "Fax:"-labelled number wins outright — but when several numbers are labelled "Fax" (a
+     * cover sheet labels the recipient's AND the sender's), nearby From/To context orders them:
+     * sender context outranks recipient context. A number in a To block is also no longer
+     * "labelled" on its own (4-2=2), so it can only be suggested as the document's single
+     * distinct number. An unlabelled number is accepted only when it is the single distinct
+     * number in the whole document (nothing to confuse it with). A number labelled Tel/Phone/PHN
+     * is never accepted on its own. Earliest page wins ties (strict > keeps the first best).
      */
     static String[] pickFaxNumber(List<String> pages, Set<String> exclude) {
         int bestScore = Integer.MIN_VALUE; String bestNum = null; int bestPage = 0;
@@ -168,9 +183,12 @@
                 String digits = m.group(1) + m.group(2) + m.group(3);
                 if (exclude.contains(digits)) continue;
                 String before = pages.get(p).substring(Math.max(0, m.start() - 25), m.start());
+                String context = pages.get(p).substring(Math.max(0, m.start() - 80), m.start());
                 int score = 0;
                 if (FAX_LABEL.matcher(before).find())  score += 4;   // "Fax: " right before it
                 if (ANTI_LABEL.matcher(before).find()) score -= 3;   // "Tel: " / "PHN " right before it
+                if (SENDER_CTX.matcher(context).find())    score += 2;   // "From ..." nearby
+                if (RECIPIENT_CTX.matcher(context).find()) score -= 2;   // "To ..." nearby
                 if (score > bestScore) { bestScore = score; bestNum = digits; bestPage = p + 1; }
             }
         }
