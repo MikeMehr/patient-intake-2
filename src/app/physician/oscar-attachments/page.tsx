@@ -3,10 +3,11 @@
 /**
  * Popup opened by the OSCAR eChart "Chart Attachment" button.
  *
- * Lists the files a patient attached when booking, and hands one at a time back
- * to the OSCAR page via window.opener.postMessage. The OSCAR page does the actual
- * upload, because it — and only it — holds the physician's OSCAR session. This
- * page never talks to OSCAR.
+ * Lists files waiting to be filed for this patient — attached during booking, or
+ * uploaded through a "Request Documents" link sent from this chart — and hands
+ * one at a time back to the OSCAR page via window.opener.postMessage. The OSCAR
+ * page does the actual upload, because it — and only it — holds the physician's
+ * OSCAR session. This page never talks to OSCAR.
  *
  * The origin posted to comes from the server (allowedOpenerOrigin), never from
  * the URL, and is never "*".
@@ -21,6 +22,7 @@ const ACK_TIMEOUT_MS = 30000;
 
 type PendingFile = {
   id: string;
+  source: "booking" | "document_request";
   filename: string | null;
   contentType: string | null;
   sizeBytes: number | null;
@@ -169,7 +171,11 @@ function OscarAttachmentsInner() {
                 demographicNo,
                 filename: file.filename || "attachment",
                 contentType: file.contentType || "application/octet-stream",
-                description: file.reason || "Patient booking attachment",
+                description:
+                  file.reason ||
+                  (file.source === "document_request"
+                    ? "Patient-uploaded document"
+                    : "Patient booking attachment"),
                 buffer,
               },
               targetOrigin,
@@ -204,10 +210,10 @@ function OscarAttachmentsInner() {
   return (
     <main className="min-h-screen bg-slate-50 p-6">
       <div className="mx-auto max-w-2xl">
-        <h1 className="text-lg font-semibold text-slate-900">Booking attachments</h1>
+        <h1 className="text-lg font-semibold text-slate-900">Patient attachments</h1>
         <p className="mt-1 text-sm text-slate-600">
-          Files this patient attached when they booked. Filing one adds it to their OSCAR chart
-          under Documents.
+          Files this patient attached when booking, or uploaded through a Request Documents
+          link. Filing one adds it to their OSCAR chart under Documents.
         </p>
 
         {loading && <p className="mt-6 text-sm text-slate-500">Loading…</p>}
@@ -239,6 +245,7 @@ function OscarAttachmentsInner() {
                     </p>
                     <p className="mt-0.5 text-xs text-slate-500">
                       {[
+                        file.source === "document_request" ? "Requested" : "Booking",
                         formatBytes(file.sizeBytes),
                         file.appointmentAt ? `booked ${formatDate(file.appointmentAt)}` : "",
                         file.reason ?? "",

@@ -6,7 +6,8 @@
  * that its own upload succeeded.
  *
  * Idempotent: a second call leaves the original timestamp alone, so a double-click
- * can't rewrite history.
+ * can't rewrite history. Tries both source tables (booking attachment, document-
+ * request upload) — the id only ever matches a row in one of them.
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -46,7 +47,7 @@ export async function POST(
         ? body.oscarDocumentNo
         : null;
 
-    const result = await query<{ id: string; oscar_demographic_no: string | null }>(
+    let result = await query<{ id: string; oscar_demographic_no: string | null }>(
       `UPDATE appointment_files f
        SET imported_to_oscar_at = COALESCE(f.imported_to_oscar_at, NOW())
        FROM appointments a
@@ -56,6 +57,19 @@ export async function POST(
        RETURNING f.id, a.oscar_demographic_no`,
       [fileId, session.organizationId],
     );
+
+    if (!result.rows.length) {
+      result = await query<{ id: string; oscar_demographic_no: string | null }>(
+        `UPDATE patient_document_files f
+         SET imported_to_oscar_at = COALESCE(f.imported_to_oscar_at, NOW())
+         FROM patient_document_requests r
+         WHERE f.request_id = r.id
+           AND f.id = $1
+           AND r.organization_id = $2
+         RETURNING f.id, r.oscar_demographic_no`,
+        [fileId, session.organizationId],
+      );
+    }
 
     if (!result.rows.length) {
       logRequestMeta(ROUTE, requestId, 404, Date.now() - started);

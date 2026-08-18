@@ -1,13 +1,15 @@
 /**
  * GET /api/physician/oscar-attachments/[fileId]
  *
- * The raw bytes of one booking attachment, for the physician popup to hand to
- * the OSCAR page. Bytes rather than the SAS redirect used elsewhere: the popup
- * has to put the actual content into a postMessage payload, and a redirect to
- * blob storage can't be read cross-origin.
+ * The raw bytes of one pending attachment (booking or document-request upload,
+ * see the list route), for the physician popup to hand to the OSCAR page. Bytes
+ * rather than the SAS redirect used elsewhere: the popup has to put the actual
+ * content into a postMessage payload, and a redirect to blob storage can't be
+ * read cross-origin.
  *
  * Scoped to the caller's organization, so a guessed file id from another clinic
- * is a 404.
+ * is a 404. Checked against both source tables — the id is a UUID from
+ * whichever table it came from, so there is no ambiguity.
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -51,7 +53,16 @@ export async function GET(
       `SELECT f.blob_path, f.original_filename, f.content_type, a.oscar_demographic_no
        FROM appointment_files f
        JOIN appointments a ON a.id = f.appointment_id
-       WHERE f.id = $1 AND a.organization_id = $2`,
+       WHERE f.id = $1 AND a.organization_id = $2
+
+       UNION ALL
+
+       SELECT f.blob_path, f.original_filename, f.content_type, r.oscar_demographic_no
+       FROM patient_document_files f
+       JOIN patient_document_requests r ON r.id = f.request_id
+       WHERE f.id = $1 AND r.organization_id = $2
+
+       LIMIT 1`,
       [fileId, session.organizationId],
     );
 

@@ -234,6 +234,10 @@ export default function OrgDocumentsPage() {
   const [patientEmail, setPatientEmail] = useState("");
   const [requestNote, setRequestNote] = useState("");
   const [sending, setSending] = useState(false);
+  // Set only when this page was opened from the OSCAR eChart's "Request Docs"
+  // button, so the files the patient uploads can later be filed into that same
+  // chart from the eChart "Chart Attachment" popup.
+  const [oscarDemographicNo, setOscarDemographicNo] = useState<string | null>(null);
 
   // Send files (outbound)
   const [recipientName, setRecipientName] = useState("");
@@ -258,6 +262,9 @@ export default function OrgDocumentsPage() {
   useEffect(() => {
     const demographicNo = new URLSearchParams(window.location.search).get("demographicNo") ?? "";
     if (!/^[0-9]{1,12}$/.test(demographicNo)) return;
+    // Captured regardless of whether the name/email resolve below succeeds, so the
+    // request can still be linked to the chart even if the patient lookup fails.
+    setOscarDemographicNo(demographicNo);
     // Strip the identifier from the address bar and history once captured.
     try {
       window.history.replaceState({}, "", "/org/documents");
@@ -347,7 +354,12 @@ export default function OrgDocumentsPage() {
       const res = await fetch("/api/org/documents/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ patientName, patientEmail, requestNote: requestNote || undefined }),
+        body: JSON.stringify({
+          patientName,
+          patientEmail,
+          requestNote: requestNote || undefined,
+          oscarDemographicNo: oscarDemographicNo || undefined,
+        }),
       });
       const data = await res.json().catch(() => ({}));
       if (res.status === 401) {
@@ -370,6 +382,7 @@ export default function OrgDocumentsPage() {
       setPatientName("");
       setPatientEmail("");
       setRequestNote("");
+      setOscarDemographicNo(null);
       await load();
     } catch (err) {
       showError(
@@ -604,8 +617,14 @@ export default function OrgDocumentsPage() {
 
         {/* Request documents (inbound) */}
         <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-6 mb-8">
-          <h2 className="text-lg font-semibold text-slate-900 mb-4">Request documents</h2>
-          <form onSubmit={sendRequest} className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <h2 className="text-lg font-semibold text-slate-900 mb-1">Request documents</h2>
+          {oscarDemographicNo && (
+            <p className="text-xs text-green-700 mb-3">
+              Linked to this patient&rsquo;s OSCAR chart — uploaded files will be offered for
+              filing under Chart Attachment.
+            </p>
+          )}
+          <form onSubmit={sendRequest} className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-3">
             <div className="sm:col-span-1">
               <label className="block text-sm font-medium text-slate-600 mb-1">
                 Patient name

@@ -1,9 +1,13 @@
 /**
  * GET /api/physician/oscar-attachments?demographicNo=123&openerOrigin=https://oscar.example
  *
- * Files patients attached when booking, for one OSCAR chart, that have not yet
- * been filed into that chart. Backs the popup the eChart "Chart Attachment"
- * button opens.
+ * Files waiting to be filed into one OSCAR chart — from two sources: a patient
+ * attaching a file when booking (appointment_files), and a patient uploading
+ * through a "Request Documents" link the physician sent from that patient's
+ * eChart (patient_document_files, linked via patient_document_requests.
+ * oscar_demographic_no — only set when the request was started from the
+ * eChart's "Request Docs" button). Backs the popup the eChart "Chart
+ * Attachment" button opens.
  *
  * Like the transcription resolve route, the response carries
  * `allowedOpenerOrigin` — the ONLY way the browser learns which origin it may
@@ -54,26 +58,42 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Scoped by organization AND by the OSCAR chart the patient booked against, so a
-    // physician can only ever see files belonging to their own clinic's bookings.
+    // Scoped by organization AND by the OSCAR chart, so a physician can only ever see
+    // files belonging to their own clinic's patients. UNION ALL of the two source
+    // tables — ids are UUIDs from separate tables so collision isn't a concern, and
+    // each branch carries its own "source" so the fileId routes below know which
+    // table to read/update.
     const result = await query<{
       id: string;
+      source: "booking" | "document_request";
       original_filename: string | null;
       content_type: string | null;
       size_bytes: string | null;
       uploaded_at: Date;
       reason: string | null;
-      slot_start_time: Date | null;
+      appointment_at: Date | null;
     }>(
-      `SELECT f.id, f.original_filename, f.content_type, f.size_bytes, f.uploaded_at,
-              a.reason, s.start_time AS slot_start_time
+      `SELECT f.id, 'booking' AS source, f.original_filename, f.content_type, f.size_bytes,
+              f.uploaded_at, a.reason, s.start_time AS appointment_at
        FROM appointment_files f
        JOIN appointments a ON a.id = f.appointment_id
        LEFT JOIN appointment_slots s ON s.id = a.slot_id
        WHERE a.organization_id = $1
          AND a.oscar_demographic_no = $2
          AND f.imported_to_oscar_at IS NULL
-       ORDER BY f.uploaded_at`,
+
+       UNION ALL
+
+       SELECT f.id, 'document_request' AS source, f.original_filename, f.content_type, f.size_bytes,
+              f.uploaded_at, r.request_note AS reason, NULL::timestamptz AS appointment_at
+       FROM patient_document_files f
+       JOIN patient_document_requests r ON r.id = f.request_id
+       WHERE r.organization_id = $1
+         AND r.oscar_demographic_no = $2
+         AND f.imported_to_oscar_at IS NULL
+         AND f.deleted_at IS NULL
+
+       ORDER BY uploaded_at`,
       [organizationId, demographicNo],
     );
 
@@ -85,12 +105,13 @@ export async function GET(request: NextRequest) {
       allowedOpenerOrigin,
       files: result.rows.map((r) => ({
         id: r.id,
+        source: r.source,
         filename: r.original_filename,
         contentType: r.content_type,
         sizeBytes: r.size_bytes === null ? null : Number(r.size_bytes),
         uploadedAt: toIso(r.uploaded_at),
         reason: r.reason,
-        appointmentAt: toIso(r.slot_start_time),
+        appointmentAt: toIso(r.appointment_at),
       })),
     });
   } catch (error) {

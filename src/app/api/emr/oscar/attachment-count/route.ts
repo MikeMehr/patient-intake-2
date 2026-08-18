@@ -1,8 +1,9 @@
 /**
  * GET /api/emr/oscar/attachment-count?demographicNo=123
  *
- * How many booking attachments are waiting to be filed into one OSCAR chart.
- * Drives the badge on the eChart's "Chart Attachment" button.
+ * How many attachments — from a booking or a "Request Documents" upload — are
+ * waiting to be filed into one OSCAR chart. Drives the badge on the eChart's
+ * "Chart Attachment" button.
  *
  * PUBLIC BY NECESSITY. The caller is a script running on the OSCAR page, which is
  * cross-site to us, so `physician_session` (SameSite=Strict) is never sent and any
@@ -118,12 +119,22 @@ export async function GET(request: NextRequest) {
     }
 
     const result = await query<{ count: string }>(
-      `SELECT COUNT(*)::text AS count
-       FROM appointment_files f
-       JOIN appointments a ON a.id = f.appointment_id
-       WHERE a.organization_id = ANY($1::uuid[])
-         AND a.oscar_demographic_no = $2
-         AND f.imported_to_oscar_at IS NULL`,
+      `SELECT (
+         (SELECT COUNT(*)
+          FROM appointment_files f
+          JOIN appointments a ON a.id = f.appointment_id
+          WHERE a.organization_id = ANY($1::uuid[])
+            AND a.oscar_demographic_no = $2
+            AND f.imported_to_oscar_at IS NULL)
+         +
+         (SELECT COUNT(*)
+          FROM patient_document_files f
+          JOIN patient_document_requests r ON r.id = f.request_id
+          WHERE r.organization_id = ANY($1::uuid[])
+            AND r.oscar_demographic_no = $2
+            AND f.imported_to_oscar_at IS NULL
+            AND f.deleted_at IS NULL)
+       )::text AS count`,
       [orgIds, demographicNo],
     );
 

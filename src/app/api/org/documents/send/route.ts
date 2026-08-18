@@ -16,6 +16,7 @@ import { resolveAppUrl } from "@/lib/app-url";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MAX_NOTE_LENGTH = 500;
+const DEMOGRAPHIC_NO_RE = /^[0-9]{1,12}$/;
 
 export async function POST(request: NextRequest) {
   const requestId = getRequestId(request.headers);
@@ -50,6 +51,10 @@ export async function POST(request: NextRequest) {
     const patientEmail = (body?.patientEmail as string | undefined)?.trim();
     // Optional: what the clinic is asking for, e.g. "photo of the eyelid swelling".
     const requestNote = (body?.requestNote as string | undefined)?.trim() || null;
+    // Optional: set when this request was started from the OSCAR eChart's "Request
+    // Docs" button, so uploaded files can later be filed into that same chart.
+    const rawDemographicNo = (body?.oscarDemographicNo as string | undefined)?.trim() || "";
+    const oscarDemographicNo = DEMOGRAPHIC_NO_RE.test(rawDemographicNo) ? rawDemographicNo : null;
 
     if (!patientName || !patientEmail) {
       status = 400;
@@ -106,8 +111,8 @@ export async function POST(request: NextRequest) {
     const inserted = await query<{ id: string }>(
       `INSERT INTO patient_document_requests
          (organization_id, created_by_user_id, created_by_user_type, patient_name, patient_email,
-          token_hash, expires_at, request_note)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+          token_hash, expires_at, request_note, oscar_demographic_no)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
        RETURNING id`,
       [
         orgContext.organizationId,
@@ -118,6 +123,7 @@ export async function POST(request: NextRequest) {
         hash,
         expiresAt,
         requestNote,
+        oscarDemographicNo,
       ],
     );
 
