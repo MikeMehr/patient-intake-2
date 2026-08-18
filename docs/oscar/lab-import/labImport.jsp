@@ -265,13 +265,65 @@
             outcome = "failed";
             err = String.valueOf(e);
         }
+
+        // ---- routing safety net (added 2026-08-17) -------------------------------------
+        // When the PDF carries no Client Ref # (seen on LifeLabs printed-direct reports),
+        // Hl7Builder leaves OBR-16 empty and MessageUploader mints a providerLabRouting row
+        // with provider_no='' - the lab then sits in NOBODY's inbox and only the nightly
+        // routing check notices (bitten live: lab 4 / demo 82, 2026-08-17). After a
+        // successful import: drop any blank-provider rows, and if no valid routing remains,
+        // route the lab to the importing provider so a human always sees it.
+        boolean routedToImporter = false;
+        if (err == null) {
+            try {
+                int labNo = 0;
+                PreparedStatement lps = conn.prepareStatement(
+                        "SELECT lab_id FROM hl7TextMessage WHERE fileUploadCheck_id = ? "
+                      + "ORDER BY lab_id DESC LIMIT 1");
+                lps.setInt(1, fileId);
+                ResultSet lrs = lps.executeQuery();
+                if (lrs.next()) labNo = lrs.getInt(1);
+                lrs.close(); lps.close();
+                if (labNo > 0) {
+                    PreparedStatement del = conn.prepareStatement(
+                            "DELETE FROM providerLabRouting WHERE lab_no=? AND lab_type='HL7' "
+                          + "AND TRIM(IFNULL(provider_no,''))=''");
+                    del.setInt(1, labNo);
+                    del.executeUpdate();
+                    del.close();
+
+                    PreparedStatement cnt = conn.prepareStatement(
+                            "SELECT COUNT(*) FROM providerLabRouting WHERE lab_no=? AND lab_type='HL7'");
+                    cnt.setInt(1, labNo);
+                    ResultSet crs = cnt.executeQuery();
+                    int remaining = crs.next() ? crs.getInt(1) : 0;
+                    crs.close(); cnt.close();
+
+                    if (remaining == 0) {
+                        PreparedStatement ins = conn.prepareStatement(
+                                "INSERT INTO providerLabRouting (provider_no, lab_no, status, lab_type) "
+                              + "VALUES (?, ?, 'N', 'HL7')");
+                        ins.setString(1, loggedInInfo.getLoggedInProviderNo());
+                        ins.setInt(2, labNo);
+                        ins.executeUpdate();
+                        ins.close();
+                        routedToImporter = true;
+                    }
+                }
+            } catch (Exception routeFixEx) {
+                // The import itself succeeded; a failed cleanup must not report it as failed.
+                // Worst case is the pre-fix behaviour, which the nightly check still catches.
+            }
+        }
 %>
   <% if (err == null) { %>
     <div class="panel"><b>Imported.</b> <%=flat.size()%> results filed to
         <%=Encode.forHtml(matches.get(0).label())%>.<br/>
         Accession <%=Encode.forHtml(report.accession)%>, upload id <%=fileId%>, outcome
         <code><%=Encode.forHtml(nz(outcome))%></code>.<br/>
-        It now appears in the lab inbox for acknowledgement, and under Lab Results in the eChart.</div>
+        It now appears in the lab inbox for acknowledgement, and under Lab Results in the eChart.
+        <% if (routedToImporter) { %><br/><b>Note:</b> the report named no ordering practitioner
+        OSCAR could recognise, so it was routed to <b>your</b> lab inbox to acknowledge.<% } %></div>
   <% } else { %>
     <div class="warn"><b>Import failed.</b> <%=Encode.forHtml(err)%><br/>
         Nothing usable was written; check catalina.out.</div>
