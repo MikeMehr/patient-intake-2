@@ -133,15 +133,18 @@ Exercise the app endpoint straight from the box with the canonical example:
 ```bash
 sudo python3 - <<'PY'
 import json, urllib.request
-cfg = dict(l.split("=",1) for l in open("/var/lib/OscarDocument/oscar/mymd_specialist.properties")
-           if "=" in l and not l.strip().startswith("#"))
-url = cfg["healthassist.url"].strip().rstrip("/") + "/api/emr/oscar/specialist-extract"
+cfg = {}
+for l in open("/var/lib/OscarDocument/oscar/mymd_specialist.properties"):
+    if "=" in l and not l.strip().startswith("#"):
+        k, v = l.split("=", 1)
+        cfg[k.strip()] = v.strip()   # keys are padded for alignment — strip or KeyError
+url = cfg["healthassist.url"].rstrip("/") + "/api/emr/oscar/specialist-extract"
 text = ("Dr. Harmon Toor\nDermatology\nMan, MSP #Q4978\nAccepting consultative referrals.\n"
         "Office Information\n604-247-9378\nFax: 604-273-2363\n"
         "Public email (okay for patient use): freshbayderm@gmail.com\n"
         "Fresh Bay Health Centre - #305, 2777 Jow Street, Richmond, British Columbia, V6X 0V7 with 5 others\n")
 req = urllib.request.Request(url, json.dumps({"text": text, "providerNo": "999998"}).encode(),
-    {"Content-Type": "application/json", "x-mymd-specialist-secret": cfg["specialist.secret"].strip()})
+    {"Content-Type": "application/json", "x-mymd-specialist-secret": cfg["specialist.secret"]})
 print(json.dumps(json.load(urllib.request.urlopen(req)), indent=2))
 PY
 ```
