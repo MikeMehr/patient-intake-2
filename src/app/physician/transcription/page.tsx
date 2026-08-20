@@ -2367,6 +2367,40 @@ export default function PhysicianTranscriptionPage() {
                         </button>
                       </div>
                     )}
+                    {!orgWoundCare && (
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-xs font-medium text-slate-600">Detail level:</span>
+                        <div className="inline-flex flex-wrap gap-0.5 rounded-lg border border-slate-200 bg-slate-50 p-1">
+                          {([
+                            { level: 1 as const, label: "1 · Concise" },
+                            { level: 2 as const, label: "2 · Balanced" },
+                            { level: 3 as const, label: "3 · Detailed" },
+                          ]).map(({ level, label }) => (
+                            <button
+                              key={level}
+                              type="button"
+                              onClick={() => updateDetailLevel(level)}
+                              className={`px-3 py-1.5 text-xs font-medium rounded-md ${
+                                detailLevel === level
+                                  ? "bg-white text-slate-900 shadow-sm"
+                                  : "text-slate-600 hover:text-slate-900"
+                              }`}
+                            >
+                              {label}
+                            </button>
+                          ))}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => void generateSoap()}
+                          disabled={!canGenerate}
+                          title={generateDisabledReason ?? undefined}
+                          className="px-3 py-1.5 text-xs font-medium text-white bg-slate-900 rounded-lg hover:bg-slate-800 disabled:bg-slate-400 disabled:cursor-not-allowed"
+                        >
+                          {actionLoading ? "Regenerating..." : "Regenerate SOAP"}
+                        </button>
+                      </div>
+                    )}
                     <div className="flex items-center justify-end gap-2">
                       {orgWoundCare && (
                         <button
