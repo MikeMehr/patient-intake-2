@@ -332,6 +332,18 @@ export default function ClinicBookingPage({
               </p>
             </div>
           )}
+          {/* Shown to everyone, on every clinic: a booking page is the wrong place to wait out an
+              emergency, and the patient needs to know that before they pick a time. */}
+          <div className="mt-2 flex items-start gap-2 bg-red-50 border border-red-200 rounded-lg p-3">
+            <span aria-hidden className="text-base leading-none mt-0.5">🚨</span>
+            <div>
+              <p className="text-sm font-semibold text-red-900">Not for emergencies</p>
+              <p className="text-xs text-red-800 mt-0.5">
+                If this is a medical emergency, call 911 or go to your nearest emergency
+                department. Do not wait for an appointment.
+              </p>
+            </div>
+          </div>
           {settings?.bookingInstructions && (
             <p className="text-gray-600 text-sm mt-2 bg-blue-50 border border-blue-100 rounded-lg p-3">
               {settings.bookingInstructions}
