@@ -62,6 +62,70 @@
     }
   }
 
+  static void writeBook(File f,List<String> lines,File perms) throws Exception {
+    Writer w=new OutputStreamWriter(new FileOutputStream(f),"UTF-8");
+    try{ for(String l:lines){ w.write(l); w.write("\n"); } } finally { w.close(); }
+    // java.io.File cannot express the group bit, and this file is 640.
+    try{ java.nio.file.Files.setPosixFilePermissions(f.toPath(),
+           java.nio.file.Files.getPosixFilePermissions(perms.toPath())); }catch(Exception ig){}
+  }
+
+  // Edit and delete rewrite the whole file. The row is found by its exact group/name/fax
+  // rather than by position, because a position is not stable - someone else's add lands at
+  // the end of the file while this page sits open. Every line that is not the target is
+  // written back as it was, so a malformed line nobody has noticed is never quietly dropped.
+  // Returns false when the row is no longer there.
+  static boolean rewriteContact(String[] was,String[] now) throws Exception {
+    synchronized(AB_LOCK){
+      File f=new File(AB_FILE);
+      List<String> lines=new ArrayList<String>();
+      BufferedReader br=new BufferedReader(new InputStreamReader(new FileInputStream(f),"UTF-8"));
+      try{ String l; while((l=br.readLine())!=null) lines.add(l); } finally { br.close(); }
+      int at=-1;
+      for(int i=0;i<lines.size();i++){
+        String[] q=lines.get(i).split("\t",-1);
+        if(q.length>=3 && q[0].equals(was[0]) && q[1].equals(was[1]) && q[2].equals(was[2])){ at=i; break; }
+      }
+      if(at<0) return false;
+      List<String> before=new ArrayList<String>(lines);
+      if(now==null) lines.remove(at);
+      else lines.set(at,now[0].replace("\t"," ")+"\t"+now[1].replace("\t"," ")+"\t"+now[2]);
+      // One level of undo, in case a delete turns out to have taken the wrong row.
+      writeBook(new File(AB_FILE+".prev"),before,f);
+      File tmp=new File(AB_FILE+".tmp");
+      writeBook(tmp,lines,f);
+      if(!tmp.renameTo(f)){ tmp.delete(); throw new Exception("Could not write the address book"); }
+      return true;
+    }
+  }
+
+  // The name/category/number rules are the same whether a contact is being added or edited.
+  // Returns {group,name,fax} with the category canonicalised to the spelling already in the
+  // book, so "doctors" cannot come to sit beside "Doctors".
+  static String[] cleanRow(List<String[]> book,String name,String group,String fax,boolean allowNewGroup) throws Exception {
+    name=name.trim(); group=group.trim(); fax=fax.replaceAll("[^0-9]","");
+    if(name.isEmpty()) throw new Exception("Contact name is required");
+    if(name.length()>120) name=name.substring(0,120).trim();
+    if(group.isEmpty()) throw new Exception("Please choose a category");
+    if(group.length()>60) group=group.substring(0,60).trim();
+    if(fax.length()==11 && fax.startsWith("1")) fax=fax.substring(1);
+    if(fax.length()!=10) throw new Exception("Fax number must be 10 digits");
+    boolean known=false;
+    for(String[] r:book){ if(r[0].equalsIgnoreCase(group)){ group=r[0]; known=true; break; } }
+    if(!known && !allowNewGroup) throw new Exception("Please choose an existing category");
+    return new String[]{group,name,fax};
+  }
+
+  static boolean hasGroup(List<String[]> book,String group){
+    for(String[] r:book) if(r[0].equals(group)) return true;
+    return false;
+  }
+
+  static String p(HttpServletRequest r,String n){
+    String v=r.getParameter(n);
+    return v==null?"":v.trim();
+  }
+
   static String esc(String s){ if(s==null) return ""; return s.replace("&","&amp;").replace("<","&lt;").replace(">","&gt;").replace("\"","&quot;"); }
 
   static String docDir(){
@@ -306,42 +370,57 @@ if(ServletFileUpload.isMultipartContent(request)){
     // e.getMessage() can carry a filename that came out of the database.
     msg="<div style='color:red;padding:10px;background:#fee;border:1px solid #900'>Error: "+Encode.forHtml(String.valueOf(e.getMessage()))+"</div>";
   }
-} else if("addContact".equals(request.getParameter("action"))){
-  // Answers the "add this number to the Address Book" panel under the destination field,
-  // over fetch(). Deliberately JSON and not a page render: a full-page POST would reload
-  // the page and throw away the fax being composed - the chosen file cannot be put back
-  // into a file input, and the ticked documents and cover note would go with it.
+} else if("addContact".equals(request.getParameter("action"))
+       || "editContact".equals(request.getParameter("action"))
+       || "deleteContact".equals(request.getParameter("action"))){
+  // Answers the Address Book panel under the destination field, over fetch(). Deliberately
+  // JSON and not a page render: a full-page POST would reload the page and throw away the
+  // fax being composed - the chosen file cannot be put back into a file input, and the
+  // ticked documents and cover note would go with it.
+  String act=request.getParameter("action");
   response.setContentType("application/json;charset=UTF-8");
   response.setHeader("Cache-Control","no-store");
   JsonObject j=new JsonObject();
   try{
-    String cname=request.getParameter("cname")==null?"":request.getParameter("cname").trim();
-    String cgroup=request.getParameter("cgroup")==null?"":request.getParameter("cgroup").trim();
-    String cfax=request.getParameter("cfax")==null?"":request.getParameter("cfax").replaceAll("[^0-9]","");
-    if(cname.isEmpty()) throw new Exception("Contact name is required");
-    if(cname.length()>120) cname=cname.substring(0,120);
-    if(cgroup.isEmpty()) throw new Exception("Please choose a category");
-    if(cgroup.length()>60) cgroup=cgroup.substring(0,60).trim();
-    // A new category has to be asked for explicitly, so a stale or mistyped dropdown value
-    // can never quietly mint a heading nobody can find anything under.
-    boolean wantNew="1".equals(request.getParameter("newcat"));
-    boolean known=false, dup=false;
-    for(String[] r:readAddressBook()){
-      if(!r[0].equalsIgnoreCase(cgroup)) continue;
-      cgroup=r[0];   // the spelling already in the book wins, so "doctors" cannot sit beside "Doctors"
-      known=true;
-      if(r[2].equals(cfax) && r[1].equalsIgnoreCase(cname)) dup=true;
+    List<String[]> book=readAddressBook();
+    // The row as the page had it. Edit and delete carry it so the server acts on the
+    // contact that was actually on screen and not on whatever now sits at that position.
+    String[] was=new String[]{p(request,"ogroup"),p(request,"oname"),p(request,"ofax").replaceAll("[^0-9]","")};
+    String gone="That contact is no longer in the address book - reload the page";
+    if("deleteContact".equals(act)){
+      if(!rewriteContact(was,null)) throw new Exception(gone);
+      j.addProperty("ok",true);
+      j.addProperty("group",was[0]); j.addProperty("name",was[1]); j.addProperty("fax",was[2]);
+    } else {
+      boolean editing="editContact".equals(act);
+      // A new category has to be asked for explicitly, so a stale or mistyped dropdown
+      // value can never quietly mint a heading nobody can find anything under.
+      String[] row=cleanRow(book,p(request,"cname"),p(request,"cgroup"),p(request,"cfax"),
+                            "1".equals(request.getParameter("newcat")));
+      boolean newCategory=!hasGroup(book,row[0]);
+      boolean same=editing && was[0].equals(row[0]) && was[1].equals(row[1]) && was[2].equals(row[2]);
+      // Already in the book under this exact name, category and number - the edit or add
+      // would only mint a second identical row.
+      boolean dup=false;
+      for(String[] r:book){
+        if(!r[0].equals(row[0]) || !r[2].equals(row[2]) || !r[1].equalsIgnoreCase(row[1])) continue;
+        if(same) continue;   // the row being edited matching itself is not a duplicate
+        dup=true; break;
+      }
+      if(!editing){
+        if(!dup) appendContact(row[0],row[1],row[2]);
+      } else if(!same){
+        // An edit that lands exactly on another existing contact is a merge, so the row
+        // being edited is dropped rather than written as its twin.
+        if(!rewriteContact(was,dup?null:row)) throw new Exception(gone);
+      }
+      j.addProperty("ok",true);
+      j.addProperty("name",row[1]);
+      j.addProperty("group",row[0]);
+      j.addProperty("fax",row[2]);
+      j.addProperty("duplicate",dup);
+      j.addProperty("newCategory",newCategory);
     }
-    if(!known && !wantNew) throw new Exception("Please choose an existing category");
-    if(cfax.length()==11 && cfax.startsWith("1")) cfax=cfax.substring(1);
-    if(cfax.length()!=10) throw new Exception("Fax number must be 10 digits");
-    if(!dup) appendContact(cgroup,cname,cfax);
-    j.addProperty("ok",true);
-    j.addProperty("name",cname);
-    j.addProperty("group",cgroup);
-    j.addProperty("fax",cfax);
-    j.addProperty("duplicate",dup);
-    j.addProperty("newCategory",!known);
   } catch(Exception e){
     j.addProperty("ok",false);
     j.addProperty("error",String.valueOf(e.getMessage()));
@@ -437,7 +516,8 @@ java.text.SimpleDateFormat dfmt=new java.text.SimpleDateFormat("yyyy-MM-dd");
        abSaveGo() posts them on their own. --%>
   <div id="abSave" style="display:none;margin-top:6px;font-size:13px">
     <div id="abSaveLine"></div>
-    <div id="abSaveForm" style="display:none;border:1px solid #ccd;border-radius:4px;padding:2px 10px 10px;margin-top:6px;background:#fafaff">
+    <div id="abSaveForm" style="display:none;border:1px solid #ccd;border-radius:4px;padding:8px 10px 10px;margin-top:6px;background:#fafaff">
+      <div id="abFormTitle" style="font-weight:bold;color:#336">Add to the Address Book</div>
       <label>Contact Name</label>
       <input type="text" id="abSaveName" placeholder="e.g. Dr. Jane Smith / Burnaby Hospital - Lab" autocomplete="off"
              onkeydown="if(event.key==='Enter'){event.preventDefault();abSaveGo();}" />
@@ -445,6 +525,12 @@ java.text.SimpleDateFormat dfmt=new java.text.SimpleDateFormat("yyyy-MM-dd");
       <select id="abSaveGroup" onchange="abSaveGroupChange()"><option value="">Choose a category&hellip;</option><%= grpOpts.toString() %><option value="__new__">&#10133; New category&hellip;</option></select>
       <input type="text" id="abSaveNewGroup" placeholder="Name the new category, e.g. Physiotherapy" autocomplete="off"
              style="display:none;margin-top:6px" onkeydown="if(event.key==='Enter'){event.preventDefault();abSaveGo();}" />
+      <%-- Only shown when editing: adding takes the number from the destination field above. --%>
+      <div id="abFaxWrap" style="display:none">
+        <label>Fax Number (10 digits)</label>
+        <input type="text" id="abSaveFax" autocomplete="off"
+               onkeydown="if(event.key==='Enter'){event.preventDefault();abSaveGo();}" />
+      </div>
       <div>
         <button type="button" id="abSaveBtn" onclick="abSaveGo()" style="margin-top:10px">Save to Address Book</button>
         <button type="button" onclick="abSaveClose()" style="margin-top:10px;background:#888">Cancel</button>
@@ -539,8 +625,28 @@ function abPick(){
   if(!o || !o.value) return;
   document.getElementsByName('faxNumber')[0].value=o.value;
   var t=document.getElementsByName('toName'); if(t.length) t[0].value=o.text;
-  document.getElementById('abChosen').textContent='✓ Selected: '+o.text+'  —  '+o.value;
+  abPicked={name:o.text,group:o.parentNode.label,fax:o.value};
+  abShowChosen();
   abSaveSync();
+}
+// The contact currently picked out of the book - what Edit and Delete act on.
+var abPicked=null;
+function abMiniBtn(label,fn){
+  var b=document.createElement('button');
+  b.type='button'; b.textContent=label;
+  b.style.margin='0 0 0 6px'; b.style.padding='2px 8px'; b.style.fontSize='12px';
+  b.onclick=fn;
+  return b;
+}
+function abShowChosen(){
+  var c=document.getElementById('abChosen');
+  c.innerHTML='';
+  if(!abPicked) return;
+  var s=document.createElement('span');
+  s.textContent='✓ Selected: '+abPicked.name+'  —  '+abPicked.fax;
+  c.appendChild(s);
+  c.appendChild(abMiniBtn('✏️ Edit',abEditOpen));
+  c.appendChild(abMiniBtn('🗑 Delete',abDeleteGo));
 }
 
 // ---- filing a number that is not in the book yet ----
@@ -560,15 +666,17 @@ function abBuildIndex(){
     }
   }
 }
-function abDigits(){
-  var v=document.getElementsByName('faxNumber')[0].value.replace(/[^0-9]/g,'');
+function abNorm(v){
+  v=(v||'').replace(/[^0-9]/g,'');
   if(v.length===11&&v.charAt(0)==='1') v=v.substring(1);
   return v;
 }
+function abDigits(){ return abNorm(document.getElementsByName('faxNumber')[0].value); }
 function abSaveSync(){
+  if(abMode==='edit') return;   // the edit panel owns the box until it is closed
   var wrap=document.getElementById('abSave'), line=document.getElementById('abSaveLine');
   var d=abDigits();
-  if(d.length!==10){ wrap.style.display='none'; abSaveClose(); return; }
+  if(d.length!==10){ wrap.style.display='none'; abFormHide(); return; }
   if(!abIndex) abBuildIndex();
   wrap.style.display='';
   line.innerHTML='';
@@ -578,7 +686,7 @@ function abSaveSync(){
     for(var i=0;i<hits.length;i++) names.push(hits[i].name+' ('+hits[i].group+')');
     line.style.color='#690';
     line.textContent='✓ In the Address Book as '+names.join(', ');
-    abSaveClose();
+    abFormHide();
     return;
   }
   line.style.color='#666';
@@ -597,54 +705,147 @@ function abSaveGroupChange(){
   n.style.display=isNew?'':'none';
   if(isNew) n.focus();
 }
+var abMode='add';
 function abSaveOpen(){
+  abMode='add';
+  document.getElementById('abFormTitle').textContent='Add to the Address Book';
+  document.getElementById('abSaveBtn').textContent='Save to Address Book';
+  document.getElementById('abFaxWrap').style.display='none';
   document.getElementById('abSaveForm').style.display='';
   document.getElementById('abSaveMsg').textContent='';
   var n=document.getElementById('abSaveName');
   if(!n.value){ var t=document.getElementsByName('toName'); n.value=t.length?t[0].value:''; }
   n.focus();
 }
-function abSaveClose(){
+// Editing borrows the same panel, plus a field for the number itself - which, when adding,
+// is simply the destination entered above.
+function abEditOpen(){
+  if(!abPicked) return;
+  abMode='edit';
+  document.getElementById('abFormTitle').textContent='Edit this contact';
+  document.getElementById('abSaveBtn').textContent='Save Changes';
+  document.getElementById('abSaveName').value=abPicked.name;
+  document.getElementById('abSaveGroup').value=abPicked.group;
+  document.getElementById('abSaveNewGroup').value='';
+  document.getElementById('abSaveNewGroup').style.display='none';
+  document.getElementById('abSaveFax').value=abPicked.fax;
+  document.getElementById('abFaxWrap').style.display='';
+  document.getElementById('abSave').style.display='';
+  document.getElementById('abSaveForm').style.display='';
+  document.getElementById('abSaveMsg').textContent='';
+  document.getElementById('abSaveName').focus();
+}
+// Hide only. abSaveSync() calls this, so it must not call back into it.
+function abFormHide(){
+  abMode='add';
   var f=document.getElementById('abSaveForm');
   if(f) f.style.display='none';
+  document.getElementById('abFaxWrap').style.display='none';
+  document.getElementById('abSaveBtn').textContent='Save to Address Book';
+}
+function abSaveClose(){ abFormHide(); abSaveSync(); }
+function abDeleteGo(){
+  if(!abPicked) return;
+  var c=abPicked, ch=document.getElementById('abChosen');
+  if(!window.confirm('Remove '+c.name+' ('+c.group+') — '+c.fax
+      +' from the Address Book?\n\nEveryone in the clinic shares this book.')) return;
+  fetch('newFax.jsp',{method:'POST',
+    headers:{'Content-Type':'application/x-www-form-urlencoded'},
+    body:'action=deleteContact&ogroup='+encodeURIComponent(c.group)
+        +'&oname='+encodeURIComponent(c.name)+'&ofax='+encodeURIComponent(c.fax)
+  }).then(function(r){return r.json();}).then(function(j){
+    if(!j || !j.ok){ ch.textContent='Could not remove: '+((j&&j.error)||'unknown error'); return; }
+    abRemoveOption(c.group,c.name,c.fax);
+    abPicked=null;
+    abFormHide();
+    abSaveSync();
+    ch.textContent='🗑 Removed '+c.name+' ('+c.group+') from the Address Book.';
+  }).catch(function(){
+    ch.textContent='Could not remove — the page could not reach the server.';
+  });
 }
 function abSaveGo(){
+  var editing=abMode==='edit', was=abPicked;
   var name=document.getElementById('abSaveName').value.trim();
   var group=document.getElementById('abSaveGroup').value;
   var isNew=group==='__new__';
   if(isNew) group=document.getElementById('abSaveNewGroup').value.trim();
-  var fax=abDigits();
+  var fax=editing?abNorm(document.getElementById('abSaveFax').value):abDigits();
   var m=document.getElementById('abSaveMsg'), btn=document.getElementById('abSaveBtn');
   m.style.color='#900';
   if(!name){ m.textContent='Enter a contact name.'; return; }
   if(!group){ m.textContent=isNew?'Name the new category.':'Choose a category.'; return; }
-  if(fax.length!==10){ m.textContent='The destination fax number must be 10 digits.'; return; }
+  if(fax.length!==10){
+    m.textContent=editing?'The fax number must be 10 digits.':'The destination fax number must be 10 digits.';
+    return;
+  }
+  if(editing && !was){ m.textContent='Nothing is selected to edit.'; return; }
   btn.disabled=true; m.style.color='#666'; m.textContent='Saving…';
   fetch('newFax.jsp',{method:'POST',
     headers:{'Content-Type':'application/x-www-form-urlencoded'},
-    body:'action=addContact&cname='+encodeURIComponent(name)
+    body:'action='+(editing?'editContact':'addContact')
+        +'&cname='+encodeURIComponent(name)
         +'&cgroup='+encodeURIComponent(group)+'&cfax='+encodeURIComponent(fax)
         +(isNew?'&newcat=1':'')
+        +(editing?'&ogroup='+encodeURIComponent(was.group)
+                 +'&oname='+encodeURIComponent(was.name)
+                 +'&ofax='+encodeURIComponent(was.fax):'')
   }).then(function(r){return r.json();}).then(function(j){
     btn.disabled=false;
     if(!j || !j.ok){ m.style.color='#900'; m.textContent='Could not save: '+((j&&j.error)||'unknown error'); return; }
-    if(!j.duplicate) abInsertOption(j.group,j.name,j.fax);
-    var t=document.getElementsByName('toName'); if(t.length) t[0].value=j.name;
-    document.getElementById('abChosen').textContent='✓ Selected: '+j.name+'  —  '+j.fax;
+    // New heading first, then the contact, and only then drop the row it replaced - that
+    // order never leaves a category momentarily empty and so never discards it.
     if(j.newCategory) abInsertCategory(j.group);
+    if(!j.duplicate) abInsertOption(j.group,j.name,j.fax);
+    if(editing) abRemoveOption(was.group,was.name,was.fax);
+    var t=document.getElementsByName('toName'); if(t.length) t[0].value=j.name;
+    if(editing) document.getElementsByName('faxNumber')[0].value=j.fax;
+    abPicked={name:j.name,group:j.group,fax:j.fax};
+    abShowChosen();
     document.getElementById('abSaveName').value='';
     document.getElementById('abSaveGroup').value='';
     document.getElementById('abSaveNewGroup').value='';
     document.getElementById('abSaveNewGroup').style.display='none';
-    abSaveClose();
+    abFormHide();
+    abSaveSync();
     var line=document.getElementById('abSaveLine');
     line.style.color='#090';
-    line.textContent=(j.duplicate?'✓ Already in the Address Book as ':'✓ Saved to the Address Book as ')
-                     +j.name+' ('+j.group+')';
+    line.textContent=(editing?(j.duplicate?'✓ Merged into the contact already in ':'✓ Updated in the Address Book, in ')
+                             :(j.duplicate?'✓ Already in the Address Book as ':'✓ Saved to the Address Book as '))
+                     +(editing?j.group+': '+j.name:j.name+' ('+j.group+')');
   }).catch(function(){
     btn.disabled=false;
     m.style.color='#900'; m.textContent='Could not save — the page could not reach the server.';
   });
+}
+function abRemoveOption(group,name,fax){
+  var sel=document.getElementById('abSelect');
+  for(var g=0;g<sel.children.length;g++){
+    var og=sel.children[g];
+    if(og.label!==group) continue;
+    for(var i=0;i<og.children.length;i++){
+      var o=og.children[i];
+      if(o.value!==fax || o.text!==name) continue;
+      og.removeChild(o);
+      if(!og.children.length){ sel.removeChild(og); abRemoveCategory(group); }
+      var c=document.getElementById('abCount');
+      if(c) c.textContent=String(parseInt(c.textContent,10)-1);
+      var arr=abIndex?abIndex[fax]:null;
+      if(arr){
+        for(var k=0;k<arr.length;k++){
+          if(arr[k].name===name && arr[k].group===group){ arr.splice(k,1); break; }
+        }
+        if(!arr.length) delete abIndex[fax];
+      }
+      return true;
+    }
+  }
+  return false;
+}
+// A category only exists as long as something is filed under it, on the server too.
+function abRemoveCategory(group){
+  var g=document.getElementById('abSaveGroup');
+  for(var i=0;i<g.options.length;i++) if(g.options[i].value===group){ g.remove(i); return; }
 }
 function abInsertCategory(group){
   var g=document.getElementById('abSaveGroup');
@@ -785,6 +986,7 @@ function dsRender(j){
     fx.value=j.faxNumber;
     fx.setCustomValidity('');
     var tn=document.getElementsByName('toName'); if(tn.length) tn[0].value=j.senderName||'';
+    abPicked=null;
     document.getElementById('abChosen').textContent='✓ Selected: '+(j.senderName||j.faxNumberFormatted)+'  —  '+j.faxNumber;
     btn.textContent='✓ Filled — click to re-apply';
     abSaveSync();
