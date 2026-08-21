@@ -19,6 +19,12 @@ export interface OrgSessionValue {
   isOrgAdminAccount: boolean;
   /** Whether to offer a link across to AI Scribe. */
   canAccessPhysicianDashboard: boolean;
+  /**
+   * The signed-in physician's own provider id, when this session reached the dashboard
+   * through manages_org_booking rather than a true organization_users login. Null for
+   * organization_users logins (isOrgAdminAccount true) — they have no physicians row.
+   */
+  currentPhysicianId: string | null;
 }
 
 const OrgSessionContext = createContext<OrgSessionValue | null>(null);

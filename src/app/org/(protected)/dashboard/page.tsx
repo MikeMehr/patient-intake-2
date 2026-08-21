@@ -438,14 +438,34 @@ export default function OrgDashboard() {
                           </div>
                         </div>
                         <div className="flex items-center gap-2">
-                          <button
-                            onClick={() => handleOpenPhysicianDashboard(provider.id)}
-                            disabled={openingProviderId === provider.id}
-                            title="Open this provider's Physician Dashboard (guided interviews & transcription) without logging in again"
-                            className="text-sm font-medium text-blue-600 hover:text-blue-800 disabled:opacity-50"
-                          >
-                            {openingProviderId === provider.id ? "Opening…" : "Physician Dashboard"}
-                          </button>
+                          {orgSession?.isOrgAdminAccount ? (
+                            <button
+                              onClick={() => handleOpenPhysicianDashboard(provider.id)}
+                              disabled={openingProviderId === provider.id}
+                              title="Open this provider's Physician Dashboard (guided interviews & transcription) without logging in again"
+                              className="text-sm font-medium text-blue-600 hover:text-blue-800 disabled:opacity-50"
+                            >
+                              {openingProviderId === provider.id ? "Opening…" : "Physician Dashboard"}
+                            </button>
+                          ) : orgSession?.currentPhysicianId === provider.id ? (
+                            // Signed in as this physician via manages_org_booking — no need to mint a
+                            // new session, and act-as-provider is org_admin/super_admin only anyway.
+                            <Link
+                              href="/physician/dashboard"
+                              className="text-sm font-medium text-blue-600 hover:text-blue-800"
+                            >
+                              Open My Dashboard
+                            </Link>
+                          ) : (
+                            // manages_org_booking does not confer credential/session powers, so
+                            // act-as-provider always 401s for other providers on this session type.
+                            <span
+                              className="text-sm text-slate-400"
+                              title="Only an organization admin account can open another provider's Physician Dashboard"
+                            >
+                              Physician Dashboard
+                            </span>
+                          )}
                           <span className="text-slate-300">|</span>
                           <Link
                             href={`/org/providers/${provider.id}/edit`}

@@ -71,6 +71,7 @@ export default async function OrgLayout({
         // A granted physician holds both surfaces on one session; an organization_users
         // login has no physicians row and cannot reach /physician/* at all.
         canAccessPhysicianDashboard: !orgContext.isOrgAdminAccount,
+        currentPhysicianId: orgContext.isOrgAdminAccount ? null : session.userId,
       }}
     >
       {children}
