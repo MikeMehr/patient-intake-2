@@ -114,7 +114,8 @@ export default function BookingConfirmPage({
   const [blockMessage, setBlockMessage]   = useState("");
   const [blockClinicEmail, setBlockClinicEmail] = useState<string | null>(null);
 
-  // Extra info for new Oscar patients (Step 2 not-found)
+  // Extra info collected on Step 2. Everything but `phone` is for a new Oscar chart; `phone` is
+  // asked on every path, including the returning-patient one that creates no chart.
   const [extra, setExtra] = useState({
     phone: "", email: "", address: "", city: "", province: "British Columbia", postal: "",
     gender: "", // OSCAR sex code: M | F | O | U
@@ -629,6 +630,26 @@ export default function BookingConfirmPage({
     </div>
   );
 
+  // Asked on both paths. A new patient's number goes onto the chart being created; a returning
+  // patient's is the number the physician calls back on today, which is worth more than whatever
+  // the chart has been carrying since the last visit. Before this it was asked on the new-patient
+  // path only, so a returning patient booking a phone visit left no number anywhere.
+  const phoneField = (
+    <div>
+      <label htmlFor="patientPhone" className="block text-sm font-medium text-gray-700 mb-1">
+        Phone number *
+      </label>
+      <input
+        id="patientPhone"
+        required
+        type="tel"
+        value={extra.phone}
+        onChange={(e) => setEx("phone", e.target.value)}
+        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+      />
+    </div>
+  );
+
   function handleAttachmentChange(e: React.ChangeEvent<HTMLInputElement>) {
     const picked = Array.from(e.target.files ?? []);
     if (picked.length > MAX_ATTACHMENTS) {
@@ -877,6 +898,7 @@ export default function BookingConfirmPage({
 
           <form onSubmit={handleSubmit} className="space-y-5">
             {reasonField}
+            {phoneField}
             {attachmentField}
             {modalityPicker}
             {modalityBanner}
@@ -951,6 +973,7 @@ export default function BookingConfirmPage({
 
         <form onSubmit={handleSubmit} className="space-y-5">
           {reasonField}
+          {phoneField}
           {attachmentField}
           {modalityPicker}
           {modalityBanner}
@@ -958,17 +981,6 @@ export default function BookingConfirmPage({
           {/* Extra info for new Oscar patients */}
           {isNewOscarPatient && (
             <>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Phone number *</label>
-                <input
-                  required
-                  type="tel"
-                  value={extra.phone}
-                  onChange={(e) => setEx("phone", e.target.value)}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Gender *</label>
                 <select

@@ -19,7 +19,7 @@ import {
 import { generateManageToken } from "@/lib/booking-token";
 import { sendBookingConfirmation } from "@/lib/booking-email";
 import { sendBookingAlertSMS, toE164 } from "@/lib/sms";
-import { describeMspEligibility } from "@/lib/billing/msp-eligibility";
+import { describeMspEligibility, type ChartCard } from "@/lib/billing/msp-eligibility";
 import { bookingCardMessage, checkBookingHealthCard } from "@/lib/billing/booking-msp-gate";
 import {
   normalizeModality,
@@ -29,6 +29,8 @@ import {
   buildOscarAppointmentNotes,
 } from "@/lib/oscar/appointment-notes";
 import { getPhysicianPhone } from "@/lib/physician-lookup";
+import { getOscarCredsForOrg } from "@/lib/oscar/self-serve";
+import { fetchOscarDemographic } from "@/lib/oscar/demographics";
 import { query } from "@/lib/db";
 import { decryptString } from "@/lib/encrypted-field";
 import { createOscarAppointment, toClinicLocalParts } from "@/lib/oscar/appointments";
@@ -340,6 +342,15 @@ async function handleConfirm(
             hour12: true,
           }).format(slotStart)
         : "";
+      // A returning patient is never asked for a health card — theirs is already on the chart —
+      // so the only way to say more than "see chart" is to go and read it. The same read supplies
+      // a phone number for anyone who booked before the form started asking returning patients
+      // for one. Runs after the booking is committed and cannot fail it.
+      const chart =
+        String(coverageType) === "EXISTING_OSCAR_PATIENT" && oscarDemographicNo
+          ? await readOscarChartContact(clinic.id, String(oscarDemographicNo))
+          : { card: null, phone: null };
+
       await sendBookingAlertSMS(physicianPhone, {
         patientName: `${firstName} ${lastName}`,
         clinicName: clinic.name,
@@ -348,12 +359,14 @@ async function handleConfirm(
         // patient booked before the field existed, and the line is dropped.
         reason: reasonText || undefined,
         // storedPhone, not the raw field: only a well-formed E.164 number is worth
-        // texting to a physician who may dial it.
-        patientPhone: storedPhone ?? undefined,
+        // texting to a physician who may dial it. What the patient just typed wins over the
+        // chart, which may be years old.
+        patientPhone: storedPhone ?? chart.phone ?? undefined,
         mspStatus: describeMspEligibility({
           coverageType: String(coverageType),
           province: province ? String(province) : null,
           healthCardNumber: healthCardNumber ? String(healthCardNumber) : null,
+          chartCard: chart.card,
         }),
       });
     }
@@ -371,6 +384,39 @@ async function handleConfirm(
   // Clear the hold cookie
   response.cookies.set(HOLD_COOKIE, "", { maxAge: 0, path: "/" });
   return response;
+}
+
+/**
+ * Read the health card and phone number OSCAR already holds for a returning patient.
+ *
+ * Both are things this booking never collects on the returning-patient path, so the chart is the
+ * only source. Every failure — no OSCAR connection, OSCAR unreachable, a chart that has gone away
+ * — comes back as nulls, and the physician's text falls back to exactly what it said before.
+ * Nothing here is allowed to throw: the appointment is already committed by the time it runs.
+ */
+async function readOscarChartContact(
+  orgId: string,
+  demographicNo: string,
+): Promise<{ card: ChartCard | null; phone: string | null }> {
+  const empty = { card: null, phone: null };
+  try {
+    const creds = await getOscarCredsForOrg(orgId);
+    if (!creds) return empty;
+
+    const fetched = await fetchOscarDemographic(creds, demographicNo);
+    if (!fetched.ok) return empty;
+
+    const { insuranceNumber, healthCardType, primaryPhone, secondaryPhone } = fetched.demographic;
+    // toE164 hands back anything it doesn't recognize unchanged, so the shape is re-checked —
+    // same guard the typed-in number gets before it reaches a physician who may dial it.
+    const phone = toE164(primaryPhone ?? secondaryPhone ?? "");
+    return {
+      card: { hin: insuranceNumber, hcType: healthCardType },
+      phone: /^\+\d{10,15}$/.test(phone) ? phone : null,
+    };
+  } catch {
+    return empty;
+  }
 }
 
 /**

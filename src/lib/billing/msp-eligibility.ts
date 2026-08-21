@@ -14,6 +14,18 @@ import { checkHealthCard } from "@/lib/billing/health-card";
 import { toProvinceCode } from "@/lib/province-code";
 
 /**
+ * The card OSCAR already holds for a returning patient, read straight off the chart.
+ *
+ * `hcType` is OSCAR's own `hc_type` column, passed through exactly as stored — including blank,
+ * which checkHealthCard() reads as BC. Normalizing it here would make the verdict disagree with
+ * what the day-billing sweep decides about the very same chart.
+ */
+export type ChartCard = {
+  hin?: string | null;
+  hcType?: string | null;
+};
+
+/**
  * Summarize what the patient's stated coverage means for MSP.
  *
  * @returns A short lowercase phrase to drop after "MSP: " — never empty.
@@ -22,6 +34,11 @@ export function describeMspEligibility(input: {
   coverageType: string;
   province?: string | null;
   healthCardNumber?: string | null;
+  /**
+   * The card on the OSCAR chart, for a returning patient the form never asks for one. Omit it (or
+   * pass null) when the chart could not be read — that is not the same as a chart with no card.
+   */
+  chartCard?: ChartCard | null;
 }): string {
   switch (input.coverageType) {
     case "PRIVATE_PAY":
@@ -32,8 +49,9 @@ export function describeMspEligibility(input: {
       return "no - uninsured";
     case "EXISTING_OSCAR_PATIENT":
       // The booking form does not re-ask an existing patient for their card, so the chart is the
-      // only source. Say so rather than implying the coverage was checked.
-      return "see chart";
+      // only source — and the caller goes and reads it. Without it, say so rather than implying
+      // the coverage was checked.
+      return describeChartCard(input.chartCard);
     case "CANADIAN_HEALTH_CARD":
       break;
     default:
@@ -52,12 +70,35 @@ export function describeMspEligibility(input: {
   const check = checkHealthCard(card, code);
   if (check.ok) return "eligible";
   if (code !== "BC") return `out of province (${code})`;
-  // checkHealthCard writes its reasons for a web page and uses em dashes. A single non-GSM-7
-  // character flips the entire SMS to UCS-2, which drops the segment size from 160 to 70 — so the
-  // dash is folded to ASCII rather than passed through.
-  const reason = (check.reason ?? "card failed validation").replace(
-    /[\u2010-\u2015\u2212]/g,
-    "-",
-  );
-  return `unverified - ${reason}`;
+  return `unverified - ${toGsm7(check.reason ?? "card failed validation")}`;
+}
+
+/**
+ * Verdict for a returning patient, from the card already on their OSCAR chart.
+ *
+ * This is a card check, not a coverage check: it says whether the chart carries a health card MSP
+ * will accept on a claim, which is the same standard applied to a card a new patient types in. It
+ * does not ask MSP whether the patient's coverage is in force today — nothing in this app talks to
+ * Teleplan.
+ *
+ * A null chartCard means the chart could not be read at all (OSCAR down, or not connected for this
+ * clinic), which is a different thing from a chart with no card on it. Only the first falls back
+ * to the original "see chart".
+ */
+function describeChartCard(chartCard: ChartCard | null | undefined): string {
+  if (!chartCard) return "see chart";
+  // Straight to checkHealthCard rather than through the province dropdown path above: this input
+  // is OSCAR's own hc_type, and its blank-means-BC rule is the one billing will apply.
+  const check = checkHealthCard(chartCard.hin ?? "", chartCard.hcType ?? null);
+  if (check.ok) return "eligible (chart)";
+  return toGsm7(check.reason ?? "card on chart failed validation");
+}
+
+/**
+ * checkHealthCard writes its reasons for a web page and uses em dashes. A single non-GSM-7
+ * character flips the entire SMS to UCS-2, which drops the segment size from 160 to 70 — so the
+ * dash is folded to ASCII rather than passed through.
+ */
+function toGsm7(reason: string): string {
+  return reason.replace(/[\u2010-\u2015\u2212]/g, "-");
 }

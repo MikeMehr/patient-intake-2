@@ -10,6 +10,8 @@ const queryMock = vi.hoisted(() => vi.fn());
 const confirmAppointmentMock = vi.hoisted(() => vi.fn());
 const getClinicBySlugMock = vi.hoisted(() => vi.fn());
 const getPhysiciansForBookingMock = vi.hoisted(() => vi.fn());
+const getSlotPhysicianIdMock = vi.hoisted(() => vi.fn());
+const physicianSupportsVideoMock = vi.hoisted(() => vi.fn());
 const linkOscarPharmacyMock = vi.hoisted(() => vi.fn());
 const upsertOscarPharmacyMock = vi.hoisted(() => vi.fn());
 const isPharmacyUpsertEnabledMock = vi.hoisted(() => vi.fn());
@@ -23,6 +25,8 @@ vi.mock("@/lib/booking-store", () => ({
   confirmAppointment: (...a: unknown[]) => confirmAppointmentMock(...a),
   getClinicBySlug: (...a: unknown[]) => getClinicBySlugMock(...a),
   getPhysiciansForBooking: (...a: unknown[]) => getPhysiciansForBookingMock(...a),
+  getSlotPhysicianId: (...a: unknown[]) => getSlotPhysicianIdMock(...a),
+  physicianSupportsVideo: (...a: unknown[]) => physicianSupportsVideoMock(...a),
 }));
 
 vi.mock("@/lib/booking-token", () => ({
@@ -125,6 +129,8 @@ beforeEach(() => {
   getPhysiciansForBookingMock.mockReset().mockResolvedValue([
     { id: "phys-1", displayName: "Dr. Nahid Mehraein" },
   ]);
+  getSlotPhysicianIdMock.mockReset().mockResolvedValue("phys-1");
+  physicianSupportsVideoMock.mockReset().mockResolvedValue(true);
   linkOscarPharmacyMock.mockReset().mockResolvedValue({ ok: true });
   upsertOscarPharmacyMock.mockReset();
   isPharmacyUpsertEnabledMock.mockReset().mockReturnValue(false);

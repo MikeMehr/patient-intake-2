@@ -31,6 +31,12 @@ export type OscarDemographic = {
   primaryPhone: string | null;
   secondaryPhone: string | null;
   insuranceNumber: string | null;
+  /**
+   * OSCAR's own `hc_type` — the 2-letter province the card was issued in, or null when the chart
+   * carries none. Passed through untouched rather than defaulted: checkHealthCard() has its own
+   * rule for a blank one, and applying it here would hide the difference.
+   */
+  healthCardType: string | null;
   patientAddress: string | null;
 };
 
@@ -124,6 +130,8 @@ export function normalizeOscarDemographic(demographicNo: string, details: any): 
   const insuranceNumber =
     String(details.hin ?? details.healthInsuranceNumber ?? details.insuranceNumber ?? details.hcNumber ?? "").trim() ||
     null;
+  const healthCardType =
+    String(details.hcType ?? details.hc_type ?? details.healthCardType ?? "").trim().toUpperCase() || null;
 
   const firstName = String(details.firstName ?? details.first_name ?? details.givenName ?? "").trim() || null;
   const lastName = String(details.lastName ?? details.last_name ?? details.surname ?? "").trim() || null;
@@ -139,6 +147,7 @@ export function normalizeOscarDemographic(demographicNo: string, details: any): 
     primaryPhone,
     secondaryPhone,
     insuranceNumber,
+    healthCardType,
     patientAddress: normalizeAddressFromOscar(details),
   };
 }
