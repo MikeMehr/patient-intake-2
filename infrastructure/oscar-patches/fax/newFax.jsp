@@ -321,23 +321,27 @@ if(ServletFileUpload.isMultipartContent(request)){
     if(cname.isEmpty()) throw new Exception("Contact name is required");
     if(cname.length()>120) cname=cname.substring(0,120);
     if(cgroup.isEmpty()) throw new Exception("Please choose a category");
-    if(cfax.length()==11 && cfax.startsWith("1")) cfax=cfax.substring(1);
-    if(cfax.length()!=10) throw new Exception("Fax number must be 10 digits");
-    // Categories are the ones already in the book on purpose - a free-text group would
-    // spawn near-duplicate headings nobody can find anything under.
+    if(cgroup.length()>60) cgroup=cgroup.substring(0,60).trim();
+    // A new category has to be asked for explicitly, so a stale or mistyped dropdown value
+    // can never quietly mint a heading nobody can find anything under.
+    boolean wantNew="1".equals(request.getParameter("newcat"));
     boolean known=false, dup=false;
     for(String[] r:readAddressBook()){
-      if(!r[0].equals(cgroup)) continue;
+      if(!r[0].equalsIgnoreCase(cgroup)) continue;
+      cgroup=r[0];   // the spelling already in the book wins, so "doctors" cannot sit beside "Doctors"
       known=true;
       if(r[2].equals(cfax) && r[1].equalsIgnoreCase(cname)) dup=true;
     }
-    if(!known) throw new Exception("Please choose an existing category");
+    if(!known && !wantNew) throw new Exception("Please choose an existing category");
+    if(cfax.length()==11 && cfax.startsWith("1")) cfax=cfax.substring(1);
+    if(cfax.length()!=10) throw new Exception("Fax number must be 10 digits");
     if(!dup) appendContact(cgroup,cname,cfax);
     j.addProperty("ok",true);
     j.addProperty("name",cname);
     j.addProperty("group",cgroup);
     j.addProperty("fax",cfax);
     j.addProperty("duplicate",dup);
+    j.addProperty("newCategory",!known);
   } catch(Exception e){
     j.addProperty("ok",false);
     j.addProperty("error",String.valueOf(e.getMessage()));
@@ -438,7 +442,9 @@ java.text.SimpleDateFormat dfmt=new java.text.SimpleDateFormat("yyyy-MM-dd");
       <input type="text" id="abSaveName" placeholder="e.g. Dr. Jane Smith / Burnaby Hospital - Lab" autocomplete="off"
              onkeydown="if(event.key==='Enter'){event.preventDefault();abSaveGo();}" />
       <label>Category</label>
-      <select id="abSaveGroup"><option value="">Choose a category&hellip;</option><%= grpOpts.toString() %></select>
+      <select id="abSaveGroup" onchange="abSaveGroupChange()"><option value="">Choose a category&hellip;</option><%= grpOpts.toString() %><option value="__new__">&#10133; New category&hellip;</option></select>
+      <input type="text" id="abSaveNewGroup" placeholder="Name the new category, e.g. Physiotherapy" autocomplete="off"
+             style="display:none;margin-top:6px" onkeydown="if(event.key==='Enter'){event.preventDefault();abSaveGo();}" />
       <div>
         <button type="button" id="abSaveBtn" onclick="abSaveGo()" style="margin-top:10px">Save to Address Book</button>
         <button type="button" onclick="abSaveClose()" style="margin-top:10px;background:#888">Cancel</button>
@@ -585,6 +591,12 @@ function abSaveSync(){
   b.onclick=abSaveOpen;
   line.appendChild(b);
 }
+function abSaveGroupChange(){
+  var g=document.getElementById('abSaveGroup'), n=document.getElementById('abSaveNewGroup');
+  var isNew=g.value==='__new__';
+  n.style.display=isNew?'':'none';
+  if(isNew) n.focus();
+}
 function abSaveOpen(){
   document.getElementById('abSaveForm').style.display='';
   document.getElementById('abSaveMsg').textContent='';
@@ -599,25 +611,31 @@ function abSaveClose(){
 function abSaveGo(){
   var name=document.getElementById('abSaveName').value.trim();
   var group=document.getElementById('abSaveGroup').value;
+  var isNew=group==='__new__';
+  if(isNew) group=document.getElementById('abSaveNewGroup').value.trim();
   var fax=abDigits();
   var m=document.getElementById('abSaveMsg'), btn=document.getElementById('abSaveBtn');
   m.style.color='#900';
   if(!name){ m.textContent='Enter a contact name.'; return; }
-  if(!group){ m.textContent='Choose a category.'; return; }
+  if(!group){ m.textContent=isNew?'Name the new category.':'Choose a category.'; return; }
   if(fax.length!==10){ m.textContent='The destination fax number must be 10 digits.'; return; }
   btn.disabled=true; m.style.color='#666'; m.textContent='Saving…';
   fetch('newFax.jsp',{method:'POST',
     headers:{'Content-Type':'application/x-www-form-urlencoded'},
     body:'action=addContact&cname='+encodeURIComponent(name)
         +'&cgroup='+encodeURIComponent(group)+'&cfax='+encodeURIComponent(fax)
+        +(isNew?'&newcat=1':'')
   }).then(function(r){return r.json();}).then(function(j){
     btn.disabled=false;
     if(!j || !j.ok){ m.style.color='#900'; m.textContent='Could not save: '+((j&&j.error)||'unknown error'); return; }
     if(!j.duplicate) abInsertOption(j.group,j.name,j.fax);
     var t=document.getElementsByName('toName'); if(t.length) t[0].value=j.name;
     document.getElementById('abChosen').textContent='✓ Selected: '+j.name+'  —  '+j.fax;
+    if(j.newCategory) abInsertCategory(j.group);
     document.getElementById('abSaveName').value='';
     document.getElementById('abSaveGroup').value='';
+    document.getElementById('abSaveNewGroup').value='';
+    document.getElementById('abSaveNewGroup').style.display='none';
     abSaveClose();
     var line=document.getElementById('abSaveLine');
     line.style.color='#090';
@@ -628,10 +646,29 @@ function abSaveGo(){
     m.style.color='#900'; m.textContent='Could not save — the page could not reach the server.';
   });
 }
+function abInsertCategory(group){
+  var g=document.getElementById('abSaveGroup');
+  for(var i=0;i<g.options.length;i++) if(g.options[i].value===group) return;
+  var o=document.createElement('option');
+  o.value=group; o.text=group;
+  var at=null;
+  for(var i=1;i<g.options.length;i++){
+    var v=g.options[i].value;
+    if(v==='__new__' || v.toLowerCase()>group.toLowerCase()){ at=g.options[i]; break; }
+  }
+  g.add(o,at);
+}
 function abInsertOption(group,name,fax){
   var sel=document.getElementById('abSelect'), og=null;
   for(var g=0;g<sel.children.length;g++){ if(sel.children[g].label===group){ og=sel.children[g]; break; } }
-  if(!og){ og=document.createElement('optgroup'); og.label=group; sel.appendChild(og); }
+  if(!og){
+    og=document.createElement('optgroup'); og.label=group;
+    var before=null;
+    for(var k=0;k<sel.children.length;k++){
+      if(sel.children[k].label.toLowerCase()>group.toLowerCase()){ before=sel.children[k]; break; }
+    }
+    sel.insertBefore(og,before);
+  }
   var o=document.createElement('option');
   o.value=fax; o.text=name;
   var at=null;
