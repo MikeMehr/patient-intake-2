@@ -1,0 +1,20 @@
+# Providers allowed to EDIT or DELETE contacts in the shared fax address book
+# (/var/lib/OscarDocument/oscar/fax_addressbook.tsv), used by fax/newFax.jsp.
+#
+# One OSCAR provider number per line. Anything after a # is a comment.
+#
+# While no numbers are listed below, EVERY logged-in provider may edit and delete -
+# which is how this is set up today. Uncomment a line and only those providers can;
+# everyone else keeps the ability to ADD a contact, but the Edit and Delete buttons
+# stop appearing for them and the server refuses the change either way.
+#
+# Read fresh on every request: save the file and it takes effect immediately, no
+# Tomcat restart and no redeploy.
+#
+# Current logins on this OSCAR:
+#   100     Manucher Mehraein
+#   101     Nahid Mehraein
+#   999998  oscardoc (built-in shared account)
+#
+#100
+#101

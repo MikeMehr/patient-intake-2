@@ -20,6 +20,12 @@
   static final String AB_FILE = "/var/lib/OscarDocument/oscar/fax_addressbook.tsv";
   static final Object AB_LOCK = new Object();
 
+  // Anyone may add a contact; changing or removing one that is already filed is what this
+  // list governs, because the book is shared clinic-wide. One provider number per line,
+  // # comments allowed. No numbers in it - or no file at all - means every logged-in
+  // provider may, which is how it ships. Read per request, so trimming it needs no redeploy.
+  static final String AB_EDITORS = "/var/lib/OscarDocument/oscar/fax_addressbook_editors.txt";
+
   // A 20-document fax of large scans can exhaust the heap long before the assembled-size
   // check at the end of the merge, so the sources are capped as they are read too.
   static final long MAX_UPLOAD_BYTES   = 25L * 1024 * 1024;
@@ -60,6 +66,27 @@
         w.write(group.replace("\t"," ").replace("\n"," ")+"\t"+name.replace("\t"," ").replace("\n"," ")+"\t"+fax+"\n");
       } finally { if(w!=null) w.close(); }
     }
+  }
+
+  static boolean canEditBook(String providerNo){
+    File f=new File(AB_EDITORS);
+    if(!f.exists()) return true;
+    List<String> allowed=new ArrayList<String>();
+    BufferedReader br=null;
+    try{
+      br=new BufferedReader(new InputStreamReader(new FileInputStream(f),"UTF-8"));
+      String l;
+      while((l=br.readLine())!=null){
+        int h=l.indexOf('#'); if(h>=0) l=l.substring(0,h);
+        l=l.trim();
+        if(l.length()>0) allowed.add(l);
+      }
+    }
+    // A list that cannot be read is treated as no list at all - a wrong mode on this file
+    // should leave the page as it shipped, not lock everyone out of their own address book.
+    catch(Exception e){ return true; }
+    finally{ if(br!=null) try{br.close();}catch(Exception e){} }
+    return allowed.isEmpty() || allowed.contains(providerNo);
   }
 
   static void writeBook(File f,List<String> lines,File perms) throws Exception {
@@ -387,6 +414,8 @@ if(ServletFileUpload.isMultipartContent(request)){
     // contact that was actually on screen and not on whatever now sits at that position.
     String[] was=new String[]{p(request,"ogroup"),p(request,"oname"),p(request,"ofax").replaceAll("[^0-9]","")};
     String gone="That contact is no longer in the address book - reload the page";
+    if(!"addContact".equals(act) && !canEditBook(providerNo))
+      throw new Exception("You are not on the list of providers allowed to change the shared address book");
     if("deleteContact".equals(act)){
       if(!rewriteContact(was,null)) throw new Exception(gone);
       j.addProperty("ok",true);
@@ -466,6 +495,7 @@ if(demographicNo.length()>0){
   if(patientName.length()==0) patientName="#"+demographicNo;
 }
 
+boolean canEditBook=canEditBook(providerNo);
 List<String[]> ab=readAddressBook();
 StringBuilder opts=new StringBuilder();
 String curG=null;
@@ -629,8 +659,10 @@ function abPick(){
   abShowChosen();
   abSaveSync();
 }
-// The contact currently picked out of the book - what Edit and Delete act on.
+// The contact currently picked out of the book - what Edit and Delete act on. The buttons
+// only appear for a provider the editors list covers; the server checks again regardless.
 var abPicked=null;
+var abCanEdit=<%= canEditBook %>;
 function abMiniBtn(label,fn){
   var b=document.createElement('button');
   b.type='button'; b.textContent=label;
@@ -645,6 +677,7 @@ function abShowChosen(){
   var s=document.createElement('span');
   s.textContent='✓ Selected: '+abPicked.name+'  —  '+abPicked.fax;
   c.appendChild(s);
+  if(!abCanEdit) return;
   c.appendChild(abMiniBtn('✏️ Edit',abEditOpen));
   c.appendChild(abMiniBtn('🗑 Delete',abDeleteGo));
 }
