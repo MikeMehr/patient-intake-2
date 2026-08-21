@@ -7,7 +7,11 @@
   book, and returns a rendered PNG of the page the number was read from so the operator can see it
   with their own eyes before anything is sent.
 
-  Two tiers:
+  Three tiers:
+    0. A chart document printed from a requisition eForm takes the destination the eForm declares
+       for itself. Those forms print "Fax to <somewhere>: <number>" in a letterhead IMAGE, so the
+       number is not in the text layer at all and tier 1 can only see the patient's and clinic's
+       own numbers. Skipped for forms that fax to one of several locations (FAX_BY_LOCATION).
     1. Local PDFBox text extraction + label-proximity heuristic. Free, ~instant, works even when
        the Health Assist bridge is disabled. Enough for any PDF with a text layer.
     2. Inbound SRFax faxes are raster scans with NO text layer, so when tier 1 finds essentially no
@@ -47,6 +51,78 @@
     // picker found it on an inbound Fraser Health cover (2026-08-18).
     static final Set<String> CLINIC_NUMBERS =
         new HashSet<String>(Arrays.asList("6046283830", "6048807919", "6043986518"));
+
+    // ---- eForm-declared destinations -----------------------------------------------------------
+    // A requisition eForm prints "Fax to <somewhere>: <number>" in its letterhead IMAGE, so that
+    // number never reaches the PDF text layer -- the only numbers with a text layer are the
+    // patient's and the clinic's, and the heuristic below rightly refuses to guess between them.
+    // The form itself knows the number though: its own Fax button reads it from a single
+    // "var ...FAX... = "digits";" declaration. Forms that fax to one of several locations declare
+    // a FAX_BY_LOCATION map instead, which these patterns deliberately do NOT match -- those stay
+    // ambiguous and fall through to the heuristic rather than being guessed at.
+    static final java.util.regex.Pattern EFORM_FAX_VAR = java.util.regex.Pattern.compile(
+        "var\\s+[A-Za-z0-9_]*FAX[A-Za-z0-9_]*\\s*=\\s*\"(1?[2-9]\\d{2}[2-9]\\d{6})\"");
+    // "Save & Fax" files the annotated copy as annot_<parentDocNo>_*; the eForm print it was
+    // annotated from is eformreq_<fdid>_*.
+    static final java.util.regex.Pattern ANNOT_NAME    = java.util.regex.Pattern.compile("^annot_(\\d+)_");
+    static final java.util.regex.Pattern EFORMREQ_NAME = java.util.regex.Pattern.compile("^eformreq_(\\d+)_");
+
+    /**
+     * The destination fax an eForm declares for itself, or null when the document did not come
+     * from an eForm, the eForm declares none, or it declares more than one (ambiguous -- never
+     * guess). Returns { tenDigits, eForm name }.
+     */
+    static String[] eformDest(String docFilename) {
+        try {
+            String name = new File(nz(docFilename)).getName();
+            Connection c = DbConnectionFilter.getThreadLocalDbConnection();
+            if (c == null) return null;
+            // Walk annotations back to the original print. Bounded rather than while(true): an
+            // annotation of an annotation is legitimate, a filename cycle should not be fatal.
+            for (int hops = 0; hops < 4; hops++) {
+                java.util.regex.Matcher a = ANNOT_NAME.matcher(name);
+                if (!a.find()) break;
+                String parent = "";
+                PreparedStatement ps = c.prepareStatement(
+                    "SELECT docfilename FROM document WHERE document_no=?");
+                try {
+                    ps.setString(1, a.group(1));
+                    ResultSet rs = ps.executeQuery();
+                    try { if (rs.next()) parent = nz(rs.getString(1)); } finally { rs.close(); }
+                } finally { ps.close(); }
+                if (parent.isEmpty()) return null;
+                name = new File(parent).getName();
+            }
+            java.util.regex.Matcher e = EFORMREQ_NAME.matcher(name);
+            if (!e.find()) return null;
+
+            String html = "", formName = "";
+            PreparedStatement ps2 = c.prepareStatement(
+                "SELECT f.form_name, f.form_html FROM eform_data d JOIN eform f ON f.fid=d.fid WHERE d.fdid=?");
+            try {
+                ps2.setString(1, e.group(1));
+                ResultSet rs = ps2.executeQuery();
+                try {
+                    if (rs.next()) { formName = nz(rs.getString(1)); html = nz(rs.getString(2)); }
+                } finally { rs.close(); }
+            } finally { ps2.close(); }
+            if (html.isEmpty()) return null;
+
+            String found = null;
+            java.util.regex.Matcher m = EFORM_FAX_VAR.matcher(html);
+            while (m.find()) {
+                String digits = m.group(1);
+                if (digits.length() == 11) digits = digits.substring(1);
+                if (CLINIC_NUMBERS.contains(digits)) continue;
+                if (found != null && !found.equals(digits)) return null;   // several: ambiguous
+                found = digits;
+            }
+            return found == null ? null : new String[]{ found, formName };
+        } catch (Throwable t) {
+            // A suggestion only: a lookup that fails just leaves the page heuristic in charge.
+            return null;
+        }
+    }
 
     static String nz(String s) { return s == null ? "" : s.trim(); }
 
@@ -220,6 +296,7 @@
     try {
         // --- get the PDF bytes: an upload, or a re-authorised chart document ---------------------
         byte[] bytes = null;
+        String[] eformHit = null;
         if (ServletFileUpload.isMultipartContent(request)) {
             DiskFileItemFactory factory = new DiskFileItemFactory();
             ServletFileUpload upload = new ServletFileUpload(factory);
@@ -249,6 +326,7 @@
             File f = chartFile(d);
             if (f.length() > MAX_UPLOAD_BYTES) { outJson.addProperty("reason", "too_big"); out.print(gson.toJson(outJson)); return; }
             bytes = readAll(f);
+            eformHit = eformDest(d.getDocfilename());
         }
 
         if (bytes == null || bytes.length < 5) { outJson.addProperty("reason", "not_pdf"); out.print(gson.toJson(outJson)); return; }
@@ -273,7 +351,14 @@
         String faxNumber = "", source = "", senderFacility = "";
         int pageFound = 0;
 
-        if (!scanned) {
+        if (eformHit != null) {
+            // The form states where it must go -- better evidence than anything readable on the
+            // page, and it costs neither an OCR round trip nor a guess between the patient's
+            // phone and the clinic's own fax.
+            faxNumber = eformHit[0];
+            pageFound = 1;              // page 1 is the letterhead the number is printed on
+            source = "eform";
+        } else if (!scanned) {
             String[] hit = pickFaxNumber(pages, CLINIC_NUMBERS);
             if (hit == null) { outJson.addProperty("reason", "no_number"); out.print(gson.toJson(outJson)); return; }
             faxNumber = hit[0];
@@ -482,6 +567,7 @@
         outJson.addProperty("page", pageFound);
         outJson.addProperty("pageCount", pageCount);
         outJson.addProperty("source", source);
+        outJson.addProperty("eformName", eformHit == null ? "" : eformHit[1]);
         outJson.addProperty("senderName", primary == null ? "" : nz(primary[1]));
         outJson.addProperty("senderGroup", primary == null ? "" : nz(primary[0]));
         outJson.addProperty("senderFacility", senderFacility);

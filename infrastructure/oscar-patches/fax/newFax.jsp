@@ -558,7 +558,7 @@ function dsRender(j){
   }
   if(!j || j.reason || !j.faxNumber){ dsClear(); return; }
   var b=dsBox();
-  var warn=!j.senderName || j.source==='ocr-name';
+  var warn=(!j.senderName || j.source==='ocr-name') && j.source!=='eform';
   b.style.display='';
   b.style.background=warn?'#fff6e6':'#eef';
   b.style.borderColor=warn?'#d90':'#99c';
@@ -568,7 +568,10 @@ function dsRender(j){
   var head=document.createElement('div');
   head.style.fontWeight='bold';
   var t='📠 ';
-  if(j.source==='ocr-name'){
+  if(j.source==='eform'){
+    t+='This form faxes to: '+(j.senderName?j.senderName+' \u2014 ':'')+j.faxNumberFormatted;
+    if(j.eformName) t+=' (the number printed on the '+j.eformName+' form)';
+  } else if(j.source==='ocr-name'){
     t+='Sender looks like: '+j.senderName+' — '+j.faxNumberFormatted
       +' (matched by name from the address book; number NOT read off the page)';
   } else if(j.senderName){
