@@ -332,7 +332,11 @@ if(ServletFileUpload.isMultipartContent(request)){
 
     byte[] uploadBytes=null;
     if(pdf!=null && pdf.getSize()>0) uploadBytes=pdf.get();
-    if(uploadBytes==null && docIds.isEmpty()) throw new Exception("Choose a PDF to upload, or tick at least one document");
+    // A cover page on its own is a fax in its own right - a note to a pharmacy or a clinic
+    // with nothing to attach - so it is only "nothing to fax" when the cover is off too.
+    boolean coverOnly = uploadBytes==null && docIds.isEmpty();
+    if(coverOnly && !wantCover)
+      throw new Exception("Choose a PDF to upload, tick at least one document, or include a cover page");
 
     LinkedHashMap<String,org.oscarehr.common.model.Document> byId=chartDocsById(demographicNo);
 
@@ -390,7 +394,7 @@ if(ServletFileUpload.isMultipartContent(request)){
     msg="<div style='color:green;padding:10px;background:#efe;border:1px solid #090'>Fax queued to "+esc(faxNumber)
        +" &mdash; "+numPages+" page"+(numPages==1?"":"s")
        +(docIds.isEmpty()?"":", including "+docIds.size()+" chart document"+(docIds.size()==1?"":"s"))
-       +(wantCover?", with a cover page":"")
+       +(wantCover?(coverOnly?", the cover page on its own":", with a cover page"):"")
        +". It will send within 30 seconds.</div>";
     preTicked.clear();
   } catch(Exception e){
@@ -569,7 +573,7 @@ java.text.SimpleDateFormat dfmt=new java.text.SimpleDateFormat("yyyy-MM-dd");
     </div>
   </div>
 
-  <label>PDF File to Fax <span class="hint">(optional if you tick documents below)</span></label>
+  <label>PDF File to Fax <span class="hint">(optional &mdash; tick documents below, or send just a cover page)</span></label>
   <input type="file" name="pdfFile" accept="application/pdf" />
   <%-- Detected-sender banner: filled by faxDestSuggest.jsp when a PDF is chosen. Fails soft:
        if that endpoint is missing or errors, this div simply never shows. --%>
