@@ -66,6 +66,34 @@
     // annotated from is eformreq_<fdid>_*.
     static final java.util.regex.Pattern ANNOT_NAME    = java.util.regex.Pattern.compile("^annot_(\\d+)_");
     static final java.util.regex.Pattern EFORMREQ_NAME = java.util.regex.Pattern.compile("^eformreq_(\\d+)_");
+    // Forms that fax to one of several sites declare a map of field name -> { label, fax } rather
+    // than a single number. The map alone is ambiguous -- but the SAVED requisition is not: OSCAR
+    // stores a ticked eForm checkbox as "X" under its field name, so the copy being faxed records
+    // which site was chosen. EFORM_OPTION covers the other shape, a <select> whose option values
+    // are the numbers. Both conventions also offer a fax_override box, which the forms' own Fax
+    // buttons prefer over the location -- so this does too.
+    static final java.util.regex.Pattern EFORM_FAX_MAP = java.util.regex.Pattern.compile(
+        "var\\s+[A-Za-z0-9_]*FAX[A-Za-z0-9_]*\\s*=\\s*\\{([^}]*)\\}");
+    static final java.util.regex.Pattern EFORM_FAX_MAP_ENTRY = java.util.regex.Pattern.compile(
+        "\"([A-Za-z0-9_]+)\"\\s*:\\s*\\[\\s*\"([^\"]*)\"\\s*,\\s*\"(1?[2-9]\\d{2}[2-9]\\d{6})\"\\s*\\]");
+    static final java.util.regex.Pattern EFORM_OPTION = java.util.regex.Pattern.compile(
+        "(?i)<option\\s+value\\s*=\\s*\"(1?[2-9]\\d{2}[2-9]\\d{6})\"[^>]*>\\s*([^<]*?)\\s*</option>");
+    static final java.util.regex.Pattern EFORM_LOC_SELECT = java.util.regex.Pattern.compile(
+        "(?i)name\\s*=\\s*\"fax_location\"");
+
+    /** A NANP 10-digit number, or "" when the text is not one. Tolerates a leading 1 and punctuation. */
+    static String tenDigits(String s) {
+        String d = nz(s).replaceAll("[^0-9]", "");
+        if (d.length() == 11 && d.charAt(0) == '1') d = d.substring(1);
+        return d.length() == 10 ? d : "";
+    }
+
+    /** The <option> label a form gives a number, for the banner. "" when it names none. */
+    static String optionLabel(String html, String digits) {
+        java.util.regex.Matcher m = EFORM_OPTION.matcher(html);
+        while (m.find()) if (digits.equals(tenDigits(m.group(1)))) return nz(m.group(2));
+        return "";
+    }
 
     /**
      * The destination fax an eForm declares for itself, or null when the document did not come
@@ -95,12 +123,13 @@
             }
             java.util.regex.Matcher e = EFORMREQ_NAME.matcher(name);
             if (!e.find()) return null;
+            String fdid = e.group(1);
 
             String html = "", formName = "";
             PreparedStatement ps2 = c.prepareStatement(
                 "SELECT f.form_name, f.form_html FROM eform_data d JOIN eform f ON f.fid=d.fid WHERE d.fdid=?");
             try {
-                ps2.setString(1, e.group(1));
+                ps2.setString(1, fdid);
                 ResultSet rs = ps2.executeQuery();
                 try {
                     if (rs.next()) { formName = nz(rs.getString(1)); html = nz(rs.getString(2)); }
@@ -108,16 +137,68 @@
             } finally { ps2.close(); }
             if (html.isEmpty()) return null;
 
-            String found = null;
+            // --- what the form declares for itself: one fixed number, and/or a map of sites ---
+            String single = null;
             java.util.regex.Matcher m = EFORM_FAX_VAR.matcher(html);
             while (m.find()) {
-                String digits = m.group(1);
-                if (digits.length() == 11) digits = digits.substring(1);
-                if (CLINIC_NUMBERS.contains(digits)) continue;
-                if (found != null && !found.equals(digits)) return null;   // several: ambiguous
-                found = digits;
+                String digits = tenDigits(m.group(1));
+                if (digits.isEmpty() || CLINIC_NUMBERS.contains(digits)) continue;
+                if (single != null && !single.equals(digits)) { single = null; break; }   // ambiguous
+                single = digits;
             }
-            return found == null ? null : new String[]{ found, formName };
+            Map<String,String[]> byField = new LinkedHashMap<String,String[]>();
+            java.util.regex.Matcher mm = EFORM_FAX_MAP.matcher(html);
+            if (mm.find()) {
+                java.util.regex.Matcher me = EFORM_FAX_MAP_ENTRY.matcher(mm.group(1));
+                while (me.find()) {
+                    String digits = tenDigits(me.group(3));
+                    if (!digits.isEmpty()) byField.put(me.group(1), new String[]{ nz(me.group(2)), digits });
+                }
+            }
+            // A <select> form declares its numbers only in the option tags, so it has neither of
+            // the above -- recognise it by the field name instead.
+            boolean hasLocSelect = EFORM_LOC_SELECT.matcher(html).find();
+            if (single == null && byField.isEmpty() && !hasLocSelect) return null;   // not a fax form
+
+            // --- what THIS saved requisition actually chose ---
+            String override = "", selected = "", ticked = "", tickedLabel = "";
+            PreparedStatement ps3 = c.prepareStatement(
+                "SELECT var_name, var_value FROM eform_values WHERE fdid=?");
+            try {
+                ps3.setString(1, fdid);
+                ResultSet rs = ps3.executeQuery();
+                try {
+                    while (rs.next()) {
+                        String vn = nz(rs.getString(1)), vv = nz(rs.getString(2));
+                        if ("fax_override".equals(vn))      override = tenDigits(vv);
+                        else if ("fax_location".equals(vn)) selected = tenDigits(vv);
+                        else if ("X".equalsIgnoreCase(vv) && byField.containsKey(vn)) {
+                            // Two sites ticked is a filling-in error, not a destination. Say nothing.
+                            if (!ticked.isEmpty()) return null;
+                            ticked = byField.get(vn)[1];
+                            tickedLabel = byField.get(vn)[0];
+                        }
+                    }
+                } finally { rs.close(); }
+            } finally { ps3.close(); }
+
+            // Same order of preference the forms' own Fax buttons apply: a number typed on the
+            // form beats a chosen site, which beats the form's fixed number.
+            if (!override.isEmpty() && !CLINIC_NUMBERS.contains(override))
+                return new String[]{ override, formName,
+                    "the fax number entered on the " + formName + " form" };
+            if (!selected.isEmpty() && !CLINIC_NUMBERS.contains(selected)) {
+                String label = optionLabel(html, selected);
+                return new String[]{ selected, formName,
+                    (label.isEmpty() ? "" : label + " \u2014 ") + "the location chosen on the " + formName + " form" };
+            }
+            if (!ticked.isEmpty() && !CLINIC_NUMBERS.contains(ticked))
+                return new String[]{ ticked, formName,
+                    tickedLabel + " \u2014 the location ticked on the " + formName + " form" };
+            if (single != null)
+                return new String[]{ single, formName,
+                    "the number printed on the " + formName + " form" };
+            return null;
         } catch (Throwable t) {
             // A suggestion only: a lookup that fails just leaves the page heuristic in charge.
             return null;
@@ -568,6 +649,7 @@
         outJson.addProperty("pageCount", pageCount);
         outJson.addProperty("source", source);
         outJson.addProperty("eformName", eformHit == null ? "" : eformHit[1]);
+        outJson.addProperty("eformVia", eformHit == null ? "" : eformHit[2]);
         outJson.addProperty("senderName", primary == null ? "" : nz(primary[1]));
         outJson.addProperty("senderGroup", primary == null ? "" : nz(primary[0]));
         outJson.addProperty("senderFacility", senderFacility);

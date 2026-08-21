@@ -570,7 +570,7 @@ function dsRender(j){
   var t='📠 ';
   if(j.source==='eform'){
     t+='This form faxes to: '+(j.senderName?j.senderName+' \u2014 ':'')+j.faxNumberFormatted;
-    if(j.eformName) t+=' (the number printed on the '+j.eformName+' form)';
+    if(j.eformVia) t+=' ('+j.eformVia+')';
   } else if(j.source==='ocr-name'){
     t+='Sender looks like: '+j.senderName+' — '+j.faxNumberFormatted
       +' (matched by name from the address book; number NOT read off the page)';
