@@ -22,3 +22,18 @@ export function getFinalizedRetentionHours(): number {
   const validYears = Number.isFinite(years) && years > 0 ? years : 7;
   return validYears * 365 * 24; // convert years → hours
 }
+
+/**
+ * Returns the retention window in hours for saved consultation audio.
+ * Reads AUDIO_RETENTION_DAYS from the environment; defaults to 90 days.
+ *
+ * Audio runs on its own clock, shorter than the note it belongs to: the
+ * transcript is kept for the full clinical retention window, but the raw
+ * recording captures everything said in the room — side conversations, third
+ * parties, names that never reach the note — so it is purged early.
+ */
+export function getAudioRetentionHours(): number {
+  const days = Number(process.env.AUDIO_RETENTION_DAYS);
+  const validDays = Number.isFinite(days) && days > 0 ? days : 90;
+  return validDays * 24; // convert days → hours
+}

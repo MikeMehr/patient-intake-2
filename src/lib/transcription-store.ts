@@ -2,7 +2,7 @@ import { createHash } from "crypto";
 import { getClient, query } from "@/lib/db";
 import type { SoapDraft } from "@/lib/transcription-schema";
 import { EMR_EXPORT_STATUS, SOAP_LIFECYCLE_STATES } from "@/lib/transcription-policy";
-import { getFinalizedRetentionHours, getPhiRetentionHours } from "@/lib/phi-retention";
+import { getAudioRetentionHours, getFinalizedRetentionHours, getPhiRetentionHours } from "@/lib/phi-retention";
 import { deleteAudioBlob } from "@/lib/azure-blob-audio";
 
 type Scope = { organizationId: string; physicianId?: never } | { organizationId?: never; physicianId: string };
@@ -366,9 +366,8 @@ export async function finalizeSoapVersion(params: {
     assessment: string;
     plan: string;
     lifecycle_state: string;
-    audio_blob_path: string | null;
   }>(
-    `SELECT id, encounter_id, patient_id, version, subjective, objective, assessment, plan, lifecycle_state, audio_blob_path
+    `SELECT id, encounter_id, patient_id, version, subjective, objective, assessment, plan, lifecycle_state
      FROM soap_note_versions
      WHERE id = $1
        AND EXISTS (
@@ -403,8 +402,6 @@ export async function finalizeSoapVersion(params: {
          finalized_for_export_at = NOW(),
          finalized_by = $2,
          content_hash = $4,
-         draft_transcript = NULL,
-         audio_blob_path = NULL,
          updated_at = NOW()
      WHERE id = $1`,
     [params.soapVersionId, params.actorUserId, SOAP_LIFECYCLE_STATES.FINALIZED_FOR_EXPORT, contentHash],
@@ -412,12 +409,10 @@ export async function finalizeSoapVersion(params: {
   if ((updated.rowCount ?? 0) === 0) {
     throw new Error("Failed to finalize SOAP version.");
   }
-  // row.audio_blob_path holds the old value captured before the UPDATE cleared it
-  if (row.audio_blob_path) {
-    void deleteAudioBlob(row.audio_blob_path).catch((e) =>
-      console.error("[finalizeSoapVersion] blob cleanup failed:", e),
-    );
-  }
+  // Finalizing no longer destroys the transcript or the recording. Both are
+  // left to age out on their own clocks in cleanupExpiredPhiRecords(): the
+  // transcript dies with its row at the clinical retention window (7 years
+  // default), the audio blob goes early at AUDIO_RETENTION_DAYS (90 default).
   return { encounterId: row.encounter_id, patientId: row.patient_id, version: row.version };
 }
 
@@ -820,6 +815,7 @@ export async function cleanupExpiredPhiRecords(): Promise<{
   emrExports: number;
   transcriptionSessions: number;
   soapNoteVersions: number;
+  audioRecordings: number;
   patientEncounters: number;
   patients: number;
 }> {
@@ -829,6 +825,10 @@ export async function cleanupExpiredPhiRecords(): Promise<{
   // Review with legal counsel before reducing; jurisdiction-specific medical
   // record laws may require longer retention periods.
   const finalizedHours = Math.floor(getFinalizedRetentionHours());
+  // Audio has its own, much shorter window (90 days default) and ignores
+  // lifecycle state — a finalized note keeps its transcript for years but
+  // gives up the recording long before that.
+  const audioHours = Math.floor(getAudioRetentionHours());
   const client = await getClient();
   try {
     await client.query("BEGIN");
@@ -881,14 +881,45 @@ export async function cleanupExpiredPhiRecords(): Promise<{
       [hours, finalizedHours],
     );
 
-    // Collect audio blob paths from expiring DRAFT SOAPs before deleting them.
+    // Audio past its own window is purged regardless of lifecycle state, and
+    // regardless of whether the note itself is due for deletion. Collect the
+    // paths first, then drop the pointers so the UI stops offering
+    // re-transcription against a blob that is about to disappear.
     const expiredAudioRes = await client.query<{ id: string; audio_blob_path: string }>(
       `SELECT id, audio_blob_path
        FROM soap_note_versions
-       WHERE lifecycle_state = 'DRAFT'
-         AND created_at < NOW() - ($1::int * INTERVAL '1 hour')
-         AND audio_blob_path IS NOT NULL`,
-      [hours],
+       WHERE audio_blob_path IS NOT NULL
+         AND created_at < NOW() - ($1::int * INTERVAL '1 hour')`,
+      [audioHours],
+    );
+    const audioRes = await client.query(
+      `UPDATE soap_note_versions
+       SET audio_blob_path = NULL,
+           updated_at = NOW()
+       WHERE audio_blob_path IS NOT NULL
+         AND created_at < NOW() - ($1::int * INTERVAL '1 hour')`,
+      [audioHours],
+    );
+
+    // Rows being deleted outright may still hold audio inside its window
+    // (possible whenever AUDIO_RETENTION_DAYS outruns a note's own retention).
+    // Collect those paths too — once the row is gone nothing points at the
+    // blob, and it would sit in the container forever.
+    const deletedRowAudioRes = await client.query<{ id: string; audio_blob_path: string }>(
+      `SELECT id, audio_blob_path
+       FROM soap_note_versions
+       WHERE audio_blob_path IS NOT NULL
+         AND (
+           (
+             lifecycle_state = 'DRAFT'
+             AND created_at < NOW() - ($1::int * INTERVAL '1 hour')
+           ) OR (
+             lifecycle_state = 'FINALIZED_FOR_EXPORT'
+             AND finalized_for_export_at IS NOT NULL
+             AND finalized_for_export_at < NOW() - ($2::int * INTERVAL '1 hour')
+           )
+         )`,
+      [hours, finalizedHours],
     );
 
     // DRAFT notes: expire after the standard PHI retention window (3 years default).
@@ -941,9 +972,14 @@ export async function cleanupExpiredPhiRecords(): Promise<{
     await client.query("COMMIT");
 
     // Fire-and-forget blob cleanup after commit — don't block the response.
-    for (const row of expiredAudioRes.rows) {
-      void deleteAudioBlob(row.audio_blob_path).catch((e) =>
-        console.error(`[cleanupExpiredPhiRecords] blob delete failed for ${row.id}:`, e),
+    // The two collections can overlap, so delete each path once.
+    const blobPaths = new Map<string, string>();
+    for (const row of [...expiredAudioRes.rows, ...deletedRowAudioRes.rows]) {
+      if (!blobPaths.has(row.audio_blob_path)) blobPaths.set(row.audio_blob_path, row.id);
+    }
+    for (const [blobPath, id] of blobPaths) {
+      void deleteAudioBlob(blobPath).catch((e) =>
+        console.error(`[cleanupExpiredPhiRecords] blob delete failed for ${id}:`, e),
       );
     }
 
@@ -954,6 +990,7 @@ export async function cleanupExpiredPhiRecords(): Promise<{
       emrExports: emrRes.rowCount ?? 0,
       transcriptionSessions: txRes.rowCount ?? 0,
       soapNoteVersions: soapRes.rowCount ?? 0,
+      audioRecordings: audioRes.rowCount ?? 0,
       patientEncounters: encRes.rowCount ?? 0,
       patients: patRes.rowCount ?? 0,
     };

@@ -1256,7 +1256,6 @@ export default function PhysicianTranscriptionPage() {
       }
       setLifecycleState("FINALIZED_FOR_EXPORT");
       if (typeof finalizeData?.snapshotLabel === "string") setSnapshotLabel(finalizeData.snapshotLabel);
-      setTranscript("");
       const updatedCases = [...soapCases];
       if (updatedCases[activeCaseIndex]) {
         updatedCases[activeCaseIndex] = { ...updatedCases[activeCaseIndex], lifecycleState: "FINALIZED_FOR_EXPORT" };
