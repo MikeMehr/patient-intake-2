@@ -6,6 +6,7 @@ import Link from "next/link";
 import SessionKeepAlive from "@/components/auth/SessionKeepAlive";
 import PasskeyEnrollmentBanner from "@/components/auth/PasskeyEnrollmentBanner";
 import { useOrgSession } from "@/components/auth/OrgSessionContext";
+import { resolveClientAppUrl } from "@/lib/client-app-url";
 
 interface Organization {
   id: string;
@@ -433,8 +434,7 @@ export default function OrgDashboard() {
                             {provider.phone && ` • ${provider.phone}`}
                           </div>
                           <div className="text-xs text-slate-400 mt-1">
-                            Intake Link: {process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}
-                            /intake/{provider.uniqueSlug}
+                            Intake Link: {resolveClientAppUrl()}/intake/{provider.uniqueSlug}
                           </div>
                         </div>
                         <div className="flex items-center gap-2">
