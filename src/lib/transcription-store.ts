@@ -2,7 +2,12 @@ import { createHash } from "crypto";
 import { getClient, query } from "@/lib/db";
 import type { SoapDraft } from "@/lib/transcription-schema";
 import { EMR_EXPORT_STATUS, SOAP_LIFECYCLE_STATES } from "@/lib/transcription-policy";
-import { getAudioRetentionHours, getFinalizedRetentionHours, getPhiRetentionHours } from "@/lib/phi-retention";
+import {
+  getAudioRetentionHours,
+  getAudioRetentionPolicyStart,
+  getFinalizedRetentionHours,
+  getPhiRetentionHours,
+} from "@/lib/phi-retention";
 import { deleteAudioBlob } from "@/lib/azure-blob-audio";
 
 type Scope = { organizationId: string; physicianId?: never } | { organizationId?: never; physicianId: string };
@@ -829,6 +834,9 @@ export async function cleanupExpiredPhiRecords(): Promise<{
   // lifecycle state — a finalized note keeps its transcript for years but
   // gives up the recording long before that.
   const audioHours = Math.floor(getAudioRetentionHours());
+  // The 90-day rule is not retroactive: recordings made before the policy
+  // took effect are left where they are while they remain drafts.
+  const audioPolicyStart = getAudioRetentionPolicyStart();
   const client = await getClient();
   try {
     await client.query("BEGIN");
@@ -881,24 +889,34 @@ export async function cleanupExpiredPhiRecords(): Promise<{
       [hours, finalizedHours],
     );
 
-    // Audio past its own window is purged regardless of lifecycle state, and
-    // regardless of whether the note itself is due for deletion. Collect the
-    // paths first, then drop the pointers so the UI stops offering
-    // re-transcription against a blob that is about to disappear.
+    // Audio past its own window is purged whether or not the note itself is
+    // due for deletion. Two exceptions are folded into the predicate: audio
+    // recorded before the policy start is skipped while it is still a draft,
+    // but is caught once the note is finalized. Collect the paths first, then
+    // drop the pointers so the UI stops offering re-transcription against a
+    // blob that is about to disappear.
     const expiredAudioRes = await client.query<{ id: string; audio_blob_path: string }>(
       `SELECT id, audio_blob_path
        FROM soap_note_versions
        WHERE audio_blob_path IS NOT NULL
-         AND created_at < NOW() - ($1::int * INTERVAL '1 hour')`,
-      [audioHours],
+         AND created_at < NOW() - ($1::int * INTERVAL '1 hour')
+         AND (
+           created_at >= $2::timestamptz
+           OR lifecycle_state = 'FINALIZED_FOR_EXPORT'
+         )`,
+      [audioHours, audioPolicyStart],
     );
     const audioRes = await client.query(
       `UPDATE soap_note_versions
        SET audio_blob_path = NULL,
            updated_at = NOW()
        WHERE audio_blob_path IS NOT NULL
-         AND created_at < NOW() - ($1::int * INTERVAL '1 hour')`,
-      [audioHours],
+         AND created_at < NOW() - ($1::int * INTERVAL '1 hour')
+         AND (
+           created_at >= $2::timestamptz
+           OR lifecycle_state = 'FINALIZED_FOR_EXPORT'
+         )`,
+      [audioHours, audioPolicyStart],
     );
 
     // Rows being deleted outright may still hold audio inside its window

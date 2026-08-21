@@ -37,3 +37,19 @@ export function getAudioRetentionHours(): number {
   const validDays = Number.isFinite(days) && days > 0 ? days : 90;
   return validDays * 24; // convert days → hours
 }
+
+/**
+ * The instant the 90-day audio policy takes effect, as an ISO 8601 string.
+ * Override with AUDIO_RETENTION_POLICY_START.
+ *
+ * Recordings older than this predate the policy. While they are still drafts
+ * the sweep leaves them alone and they age out with their row exactly as they
+ * did before (PHI_RETENTION_HOURS). Once such a note is finalized the 90-day
+ * rule does apply to it — before this policy existed, finalizing deleted the
+ * recording outright, so exempting it there would strand audio for years.
+ */
+export function getAudioRetentionPolicyStart(): string {
+  const configured = process.env.AUDIO_RETENTION_POLICY_START;
+  if (configured && !Number.isNaN(Date.parse(configured))) return configured;
+  return "2026-08-21T18:00:00Z";
+}
