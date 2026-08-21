@@ -14,7 +14,7 @@
 
   Repo copy: infrastructure/oscar-patches/fax/newFax.jsp
 --%>
-<%@ page import="java.util.*,java.io.*,java.sql.*,java.sql.Connection,java.sql.PreparedStatement,java.sql.DriverManager,org.apache.commons.fileupload.servlet.ServletFileUpload,org.apache.commons.fileupload.disk.DiskFileItemFactory,org.apache.commons.fileupload.FileItem,org.oscarehr.util.LoggedInInfo,org.oscarehr.util.SpringUtils,org.oscarehr.managers.SecurityInfoManager,org.oscarehr.common.dao.DocumentDao,org.oscarehr.common.dao.DemographicDao,org.oscarehr.common.model.Demographic,org.owasp.encoder.Encode,oscar.OscarProperties,org.apache.pdfbox.pdmodel.PDDocument,org.apache.pdfbox.pdmodel.PDPage,org.apache.pdfbox.pdmodel.PDPageContentStream,org.apache.pdfbox.pdmodel.common.PDRectangle,org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject,org.apache.pdfbox.multipdf.PDFMergerUtility,com.itextpdf.text.Document,com.itextpdf.text.Paragraph,com.itextpdf.text.Chunk,com.itextpdf.text.Font,com.itextpdf.text.PageSize,com.itextpdf.text.pdf.PdfWriter" contentType="text/html;charset=UTF-8" %>
+<%@ page import="java.util.*,java.io.*,java.sql.*,java.sql.Connection,java.sql.PreparedStatement,java.sql.DriverManager,org.apache.commons.fileupload.servlet.ServletFileUpload,org.apache.commons.fileupload.disk.DiskFileItemFactory,org.apache.commons.fileupload.FileItem,org.oscarehr.util.LoggedInInfo,org.oscarehr.util.SpringUtils,org.oscarehr.managers.SecurityInfoManager,org.oscarehr.common.dao.DocumentDao,org.oscarehr.common.dao.DemographicDao,org.oscarehr.common.model.Demographic,org.owasp.encoder.Encode,oscar.OscarProperties,org.apache.pdfbox.pdmodel.PDDocument,org.apache.pdfbox.pdmodel.PDPage,org.apache.pdfbox.pdmodel.PDPageContentStream,org.apache.pdfbox.pdmodel.common.PDRectangle,org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject,org.apache.pdfbox.multipdf.PDFMergerUtility,com.itextpdf.text.Document,com.itextpdf.text.Paragraph,com.itextpdf.text.Chunk,com.itextpdf.text.Font,com.itextpdf.text.PageSize,com.itextpdf.text.pdf.PdfWriter,com.google.gson.Gson,com.google.gson.JsonObject" contentType="text/html;charset=UTF-8" %>
 <%!
   // Address book stored as TSV (group <tab> name <tab> 10-digit-fax) outside the web root.
   static final String AB_FILE = "/var/lib/OscarDocument/oscar/fax_addressbook.tsv";
@@ -307,18 +307,43 @@ if(ServletFileUpload.isMultipartContent(request)){
     msg="<div style='color:red;padding:10px;background:#fee;border:1px solid #900'>Error: "+Encode.forHtml(String.valueOf(e.getMessage()))+"</div>";
   }
 } else if("addContact".equals(request.getParameter("action"))){
+  // Answers the "add this number to the Address Book" panel under the destination field,
+  // over fetch(). Deliberately JSON and not a page render: a full-page POST would reload
+  // the page and throw away the fax being composed - the chosen file cannot be put back
+  // into a file input, and the ticked documents and cover note would go with it.
+  response.setContentType("application/json;charset=UTF-8");
+  response.setHeader("Cache-Control","no-store");
+  JsonObject j=new JsonObject();
   try{
     String cname=request.getParameter("cname")==null?"":request.getParameter("cname").trim();
     String cgroup=request.getParameter("cgroup")==null?"":request.getParameter("cgroup").trim();
     String cfax=request.getParameter("cfax")==null?"":request.getParameter("cfax").replaceAll("[^0-9]","");
     if(cname.isEmpty()) throw new Exception("Contact name is required");
+    if(cname.length()>120) cname=cname.substring(0,120);
+    if(cgroup.isEmpty()) throw new Exception("Please choose a category");
     if(cfax.length()==11 && cfax.startsWith("1")) cfax=cfax.substring(1);
     if(cfax.length()!=10) throw new Exception("Fax number must be 10 digits");
-    boolean ok=false; for(String[] r:readAddressBook()){ if(r[0].equals(cgroup)){ ok=true; break; } }
-    if(!ok) throw new Exception("Please choose an existing group");
-    appendContact(cgroup,cname,cfax);
-    msg="<div style='color:green;padding:10px;background:#efe;border:1px solid #090'>Added &quot;"+esc(cname)+"&quot; ("+cfax+") to "+esc(cgroup)+".</div>";
-  } catch(Exception e){ msg="<div style='color:red;padding:10px;background:#fee;border:1px solid #900'>Error: "+Encode.forHtml(String.valueOf(e.getMessage()))+"</div>"; }
+    // Categories are the ones already in the book on purpose - a free-text group would
+    // spawn near-duplicate headings nobody can find anything under.
+    boolean known=false, dup=false;
+    for(String[] r:readAddressBook()){
+      if(!r[0].equals(cgroup)) continue;
+      known=true;
+      if(r[2].equals(cfax) && r[1].equalsIgnoreCase(cname)) dup=true;
+    }
+    if(!known) throw new Exception("Please choose an existing category");
+    if(!dup) appendContact(cgroup,cname,cfax);
+    j.addProperty("ok",true);
+    j.addProperty("name",cname);
+    j.addProperty("group",cgroup);
+    j.addProperty("fax",cfax);
+    j.addProperty("duplicate",dup);
+  } catch(Exception e){
+    j.addProperty("ok",false);
+    j.addProperty("error",String.valueOf(e.getMessage()));
+  }
+  out.clearBuffer(); out.print(new Gson().toJson(j)); out.flush();
+  return;
 }
 
 // ---- which chart is being offered ----
@@ -377,7 +402,7 @@ StringBuilder grpOpts=new StringBuilder();
 for(String g:groups) grpOpts.append("<option value=\""+esc(g)+"\">"+esc(g)+"</option>");
 java.text.SimpleDateFormat dfmt=new java.text.SimpleDateFormat("yyyy-MM-dd");
 %>
-<html><head><title>New Fax</title><style>body{font-family:sans-serif;max-width:640px;margin:30px auto;padding:20px}label{display:block;margin:12px 0 4px;font-weight:bold}input[type=text],input[type=file],select,textarea{width:100%;padding:6px;font-size:14px;box-sizing:border-box}textarea{font-family:sans-serif;resize:vertical}button{margin-top:16px;padding:10px 20px;background:#336;color:#fff;border:0;border-radius:4px;cursor:pointer;font-size:14px}button:hover{background:#558}details{margin-top:24px;border:1px solid #ddd;border-radius:4px;padding:8px 12px}summary{cursor:pointer;font-weight:bold;color:#336}#abChosen{margin:6px 0 4px;color:#336;font-size:13px;min-height:18px}.hint{font-weight:normal;color:#888;font-size:12px}.chk{font-weight:normal;margin-top:14px}.chk input{width:auto;margin-right:6px;vertical-align:middle}
+<html><head><title>New Fax</title><style>body{font-family:sans-serif;max-width:640px;margin:30px auto;padding:20px}label{display:block;margin:12px 0 4px;font-weight:bold}input[type=text],input[type=file],select,textarea{width:100%;padding:6px;font-size:14px;box-sizing:border-box}textarea{font-family:sans-serif;resize:vertical}button{margin-top:16px;padding:10px 20px;background:#336;color:#fff;border:0;border-radius:4px;cursor:pointer;font-size:14px}button:hover{background:#558}#abChosen{margin:6px 0 4px;color:#336;font-size:13px;min-height:18px}.hint{font-weight:normal;color:#888;font-size:12px}.chk{font-weight:normal;margin-top:14px}.chk input{width:auto;margin-right:6px;vertical-align:middle}
 #docwrap{max-height:260px;overflow-y:auto;border:1px solid #ccd;border-radius:4px;margin-top:6px}
 #docwrap table{border-collapse:collapse;width:100%;font-size:13px}
 #docwrap th{position:sticky;top:0;background:#eef;text-align:left;padding:5px 6px;font-size:12px;border-bottom:1px solid #ccd}
@@ -395,14 +420,32 @@ java.text.SimpleDateFormat dfmt=new java.text.SimpleDateFormat("yyyy-MM-dd");
 <% if(demographicNo.length()>0){ %>
   <input type="hidden" name="demographicNo" value="<%= esc(demographicNo) %>" />
 <% } %>
-  <label>Address Book <span class="hint">(<%= ab.size() %> contacts — type to search, click to fill the number below)</span></label>
+  <label>Address Book <span class="hint">(<span id="abCount"><%= ab.size() %></span> contacts — type to search, click to fill the number below)</span></label>
   <input type="text" id="abSearch" placeholder="Search by name, hospital, lab, doctor…" autocomplete="off" oninput="abFilter()" style="margin-bottom:6px" />
   <select id="abSelect" size="10" onchange="abPick()" onkeyup="if(event.key==='Enter')abPick()">
 <%= opts.toString() %>
   </select>
   <div id="abChosen"></div>
   <label>Destination Fax Number (10 digits, North America only)</label>
-  <input type="text" name="faxNumber" placeholder="604-398-6518 or (604) 398-6518 or 6043986518" oninput="this.setCustomValidity('');var t=document.getElementsByName('toName');if(t.length)t[0].value=''" value="<%= esc(faxNumber) %>" required />
+  <input type="text" name="faxNumber" placeholder="604-398-6518 or (604) 398-6518 or 6043986518" oninput="this.setCustomValidity('');var t=document.getElementsByName('toName');if(t.length)t[0].value='';abSaveSync()" value="<%= esc(faxNumber) %>" required />
+  <%-- Save the number just entered into the address book. These inputs carry no name
+       attribute, so they sit inside the fax form without ever being submitted with it -
+       abSaveGo() posts them on their own. --%>
+  <div id="abSave" style="display:none;margin-top:6px;font-size:13px">
+    <div id="abSaveLine"></div>
+    <div id="abSaveForm" style="display:none;border:1px solid #ccd;border-radius:4px;padding:2px 10px 10px;margin-top:6px;background:#fafaff">
+      <label>Contact Name</label>
+      <input type="text" id="abSaveName" placeholder="e.g. Dr. Jane Smith / Burnaby Hospital - Lab" autocomplete="off"
+             onkeydown="if(event.key==='Enter'){event.preventDefault();abSaveGo();}" />
+      <label>Category</label>
+      <select id="abSaveGroup"><option value="">Choose a category&hellip;</option><%= grpOpts.toString() %></select>
+      <div>
+        <button type="button" id="abSaveBtn" onclick="abSaveGo()" style="margin-top:10px">Save to Address Book</button>
+        <button type="button" onclick="abSaveClose()" style="margin-top:10px;background:#888">Cancel</button>
+      </div>
+      <div id="abSaveMsg" style="margin-top:8px"></div>
+    </div>
+  </div>
 
   <label>PDF File to Fax <span class="hint">(optional if you tick documents below)</span></label>
   <input type="file" name="pdfFile" accept="application/pdf" />
@@ -455,21 +498,6 @@ java.text.SimpleDateFormat dfmt=new java.text.SimpleDateFormat("yyyy-MM-dd");
   <button type="submit">Send Fax</button>
 </form>
 
-<details>
-  <summary>➕ Add a contact to the address book</summary>
-  <p class="hint">Saves a new fax number into one of the existing groups. Everyone sees it the next time the page loads.</p>
-  <form method="POST">
-    <input type="hidden" name="action" value="addContact" />
-    <label>Contact Name</label>
-    <input type="text" name="cname" placeholder="e.g. Dr. Jane Smith / Burnaby Hospital - Lab" required />
-    <label>Group</label>
-    <select name="cgroup" required><%= grpOpts.toString() %></select>
-    <label>Fax Number (10 digits)</label>
-    <input type="text" name="cfax" placeholder="6045551234" required />
-    <button type="submit">Add Contact</button>
-  </form>
-</details>
-
 <p style="color:#666;font-size:12px;margin-top:24px">Faxes are sent via SRFax account 430688 from your clinic number 604-628-3830. Status appears in Admin → Faxes → Manage Faxes.</p>
 <script>
 function abFilter(){
@@ -506,6 +534,115 @@ function abPick(){
   document.getElementsByName('faxNumber')[0].value=o.value;
   var t=document.getElementsByName('toName'); if(t.length) t[0].value=o.text;
   document.getElementById('abChosen').textContent='✓ Selected: '+o.text+'  —  '+o.value;
+  abSaveSync();
+}
+
+// ---- filing a number that is not in the book yet ----
+// Driven by the destination field: the moment it holds a full 10-digit number the page says
+// whether that number is already filed, and offers to file it if it is not. Saving posts to
+// action=addContact and splices the new contact into the picker above, so nothing reloads and
+// the fax being composed is untouched.
+var abIndex=null;
+function abBuildIndex(){
+  abIndex={};
+  var sel=document.getElementById('abSelect');
+  for(var g=0;g<sel.children.length;g++){
+    var og=sel.children[g];
+    for(var i=0;i<og.children.length;i++){
+      var o=og.children[i];
+      (abIndex[o.value]=abIndex[o.value]||[]).push({name:o.text,group:og.label});
+    }
+  }
+}
+function abDigits(){
+  var v=document.getElementsByName('faxNumber')[0].value.replace(/[^0-9]/g,'');
+  if(v.length===11&&v.charAt(0)==='1') v=v.substring(1);
+  return v;
+}
+function abSaveSync(){
+  var wrap=document.getElementById('abSave'), line=document.getElementById('abSaveLine');
+  var d=abDigits();
+  if(d.length!==10){ wrap.style.display='none'; abSaveClose(); return; }
+  if(!abIndex) abBuildIndex();
+  wrap.style.display='';
+  line.innerHTML='';
+  var hits=abIndex[d];
+  if(hits && hits.length){
+    var names=[];
+    for(var i=0;i<hits.length;i++) names.push(hits[i].name+' ('+hits[i].group+')');
+    line.style.color='#690';
+    line.textContent='✓ In the Address Book as '+names.join(', ');
+    abSaveClose();
+    return;
+  }
+  line.style.color='#666';
+  var t=document.createElement('span');
+  t.textContent='This number is not in the Address Book. ';
+  line.appendChild(t);
+  var b=document.createElement('button');
+  b.type='button'; b.textContent='➕ Add it';
+  b.style.margin='0'; b.style.padding='3px 10px'; b.style.fontSize='13px';
+  b.onclick=abSaveOpen;
+  line.appendChild(b);
+}
+function abSaveOpen(){
+  document.getElementById('abSaveForm').style.display='';
+  document.getElementById('abSaveMsg').textContent='';
+  var n=document.getElementById('abSaveName');
+  if(!n.value){ var t=document.getElementsByName('toName'); n.value=t.length?t[0].value:''; }
+  n.focus();
+}
+function abSaveClose(){
+  var f=document.getElementById('abSaveForm');
+  if(f) f.style.display='none';
+}
+function abSaveGo(){
+  var name=document.getElementById('abSaveName').value.trim();
+  var group=document.getElementById('abSaveGroup').value;
+  var fax=abDigits();
+  var m=document.getElementById('abSaveMsg'), btn=document.getElementById('abSaveBtn');
+  m.style.color='#900';
+  if(!name){ m.textContent='Enter a contact name.'; return; }
+  if(!group){ m.textContent='Choose a category.'; return; }
+  if(fax.length!==10){ m.textContent='The destination fax number must be 10 digits.'; return; }
+  btn.disabled=true; m.style.color='#666'; m.textContent='Saving…';
+  fetch('newFax.jsp',{method:'POST',
+    headers:{'Content-Type':'application/x-www-form-urlencoded'},
+    body:'action=addContact&cname='+encodeURIComponent(name)
+        +'&cgroup='+encodeURIComponent(group)+'&cfax='+encodeURIComponent(fax)
+  }).then(function(r){return r.json();}).then(function(j){
+    btn.disabled=false;
+    if(!j || !j.ok){ m.style.color='#900'; m.textContent='Could not save: '+((j&&j.error)||'unknown error'); return; }
+    if(!j.duplicate) abInsertOption(j.group,j.name,j.fax);
+    var t=document.getElementsByName('toName'); if(t.length) t[0].value=j.name;
+    document.getElementById('abChosen').textContent='✓ Selected: '+j.name+'  —  '+j.fax;
+    document.getElementById('abSaveName').value='';
+    document.getElementById('abSaveGroup').value='';
+    abSaveClose();
+    var line=document.getElementById('abSaveLine');
+    line.style.color='#090';
+    line.textContent=(j.duplicate?'✓ Already in the Address Book as ':'✓ Saved to the Address Book as ')
+                     +j.name+' ('+j.group+')';
+  }).catch(function(){
+    btn.disabled=false;
+    m.style.color='#900'; m.textContent='Could not save — the page could not reach the server.';
+  });
+}
+function abInsertOption(group,name,fax){
+  var sel=document.getElementById('abSelect'), og=null;
+  for(var g=0;g<sel.children.length;g++){ if(sel.children[g].label===group){ og=sel.children[g]; break; } }
+  if(!og){ og=document.createElement('optgroup'); og.label=group; sel.appendChild(og); }
+  var o=document.createElement('option');
+  o.value=fax; o.text=name;
+  var at=null;
+  for(var i=0;i<og.children.length;i++){
+    if(og.children[i].text.toLowerCase()>name.toLowerCase()){ at=og.children[i]; break; }
+  }
+  og.insertBefore(o,at);
+  (abIndex[fax]=abIndex[fax]||[]).push({name:name,group:group});
+  var c=document.getElementById('abCount');
+  if(c) c.textContent=String(parseInt(c.textContent,10)+1);
+  abFilter();
 }
 
 // ---- detected sender: read the chosen PDF and suggest who to fax back to ----
@@ -613,6 +750,7 @@ function dsRender(j){
     var tn=document.getElementsByName('toName'); if(tn.length) tn[0].value=j.senderName||'';
     document.getElementById('abChosen').textContent='✓ Selected: '+(j.senderName||j.faxNumberFormatted)+'  —  '+j.faxNumber;
     btn.textContent='✓ Filled — click to re-apply';
+    abSaveSync();
   }
   btn.textContent='Use this number';
   btn.onclick=fill;
@@ -673,6 +811,7 @@ function dsFromDocs(){
   // Opened from a document's Fax button (docNo pre-ticked): suggest right away - this is the
   // pharmacy-refill path the feature exists for.
   if(!(pf && pf.files && pf.files.length>0)) dsFromDocs();
+  abSaveSync();
 })();
 </script>
 </body></html>
