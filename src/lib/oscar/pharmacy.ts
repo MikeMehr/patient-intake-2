@@ -93,9 +93,13 @@ export async function getPharmacyBridgeConfig(orgId: string): Promise<PharmacyBr
   return { url: safe.toString(), secret };
 }
 
-type BridgeResponse = { ok: true; json: Record<string, unknown> } | PharmacyBridgeError;
+export type BridgeResponse = { ok: true; json: Record<string, unknown> } | PharmacyBridgeError;
 
-async function postToBridge(
+/**
+ * Exported because the bridge has outgrown pharmacies: the same service, path, and secret also
+ * answer MSP eligibility checks (op=check_elig, used by @/lib/oscar/msp-coverage).
+ */
+export async function postToBridge(
   orgId: string,
   params: Record<string, string>,
   timeoutMs: number,

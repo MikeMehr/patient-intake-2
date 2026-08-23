@@ -436,6 +436,16 @@ needs the `X-MyMD-Pharmacy-Secret` header.
 - `op=upsert` — adds a `pharmacyInfo` row, returns its `recordID`. Implemented but the app leaves it
   off (`PHARMACY_BRIDGE_ALLOW_UPSERT`): it would let anonymous booking input write into the table
   that routes prescription faxes.
+- `op=check_elig` + `phn` (10 digits) + `dob` (YYYY-MM-DD) — real-time MSP eligibility, added
+  2026-08-22. Replicates OSCAR's own "Check Eligibility" button (decompiled
+  `ManageTeleplanAction.checkElig` → `TeleplanAPI.checkElig`): three form POSTs to
+  `https://teleplan.hnet.bc.ca/TeleplanBroker` over one cookie session — `AsignOn`, `AcheckE45`,
+  `AsignOff` — using the credentials OSCAR keeps in its `property` table
+  (`teleplan_username`/`teleplan_password`). Date of service is always "today" in clinic time, like
+  OSCAR's button. Returns `{ok, eligOnDos: "YES"|"NO"|"", coverageEndDate, coverageEndReason,
+  dateOfService, msgs}` — never the patient name/gender lines the E45 report also carries, and the
+  PHN is never logged. Feeds the booking alert's MSP verdict (`@/lib/oscar/msp-coverage`); a card
+  that merely passes its check digit is no longer reported as "eligible".
 
 ### Server-side prerequisites (already done, not in this repo)
 

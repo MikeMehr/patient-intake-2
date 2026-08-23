@@ -1,5 +1,5 @@
-import { describe, it, expect } from "vitest";
-import { describeMspEligibility } from "@/lib/billing/msp-eligibility";
+import { describe, it, expect, vi } from "vitest";
+import { describeMspEligibility, describeMspEligibilityChecked } from "@/lib/billing/msp-eligibility";
 
 // A PHN that passes the BC check digit (mod 11 over digits 2..9), and the same number with the
 // last digit bumped so it fails. Both are synthetic.
@@ -216,6 +216,133 @@ describe("describeMspEligibility", () => {
         healthCardNumber: card,
       });
       expect(label).not.toContain(card);
+    }
+  });
+});
+
+describe("describeMspEligibilityChecked (live MSP E45 on top of the card check)", () => {
+  const TYPED = {
+    coverageType: "CANADIAN_HEALTH_CARD",
+    province: "British Columbia",
+    healthCardNumber: VALID_BC_PHN,
+    dateOfBirth: "1996-03-15",
+  };
+  const CHART = {
+    coverageType: "EXISTING_OSCAR_PATIENT",
+    chartCard: { hin: VALID_BC_PHN, hcType: "BC" },
+    dateOfBirth: "1996-03-15",
+  };
+
+  it("confirms with MSP rather than trusting the check digit", async () => {
+    const probe = vi.fn(async () => ({ status: "ELIGIBLE" as const }));
+    await expect(describeMspEligibilityChecked({ ...TYPED, checkCoverage: probe })).resolves.toBe(
+      "eligible, MSP-confirmed",
+    );
+    // The probe gets the claim PHN (digits only) and the birthdate MSP verifies it against.
+    expect(probe).toHaveBeenCalledWith({ phn: VALID_BC_PHN, dob: "1996-03-15" });
+  });
+
+  it("says NOT eligible when MSP answers ELIG_ON_DOS: NO for a checksum-valid card", async () => {
+    // The Nathan Archer case: a real PHN, lapsed coverage. The old verdict said "eligible".
+    const probe = vi.fn(async () => ({
+      status: "NOT_ELIGIBLE" as const,
+      coverageEndDate: null,
+      coverageEndReason: null,
+    }));
+    await expect(describeMspEligibilityChecked({ ...TYPED, checkCoverage: probe })).resolves.toBe(
+      "NOT eligible today (MSP)",
+    );
+  });
+
+  it("carries MSP's coverage-end detail when present, folded to GSM-7 and capped", async () => {
+    const probe = vi.fn(async () => ({
+      status: "NOT_ELIGIBLE" as const,
+      coverageEndDate: "20260131",
+      coverageEndReason: "MOVED OUT OF PROVINCE — PERMANENTLY AND FOR A VERY LONG TIME INDEED",
+    }));
+    const label = await describeMspEligibilityChecked({ ...TYPED, checkCoverage: probe });
+    expect(label).toContain("NOT eligible today (MSP)");
+    expect(label).toContain("coverage ended 20260131");
+    expect(label).toMatch(/^[\x20-\x7E]+$/);
+    // Prefix (42 chars) plus the detail capped at 40 — bounded well inside one SMS segment.
+    expect(label.length).toBeLessThanOrEqual(82);
+  });
+
+  it("keeps the chart tag on a chart-sourced card", async () => {
+    const probe = vi.fn(async () => ({ status: "ELIGIBLE" as const }));
+    await expect(describeMspEligibilityChecked({ ...CHART, checkCoverage: probe })).resolves.toBe(
+      "eligible (chart), MSP-confirmed",
+    );
+    expect(probe).toHaveBeenCalledWith({ phn: VALID_BC_PHN, dob: "1996-03-15" });
+  });
+
+  it("downgrades to coverage-unverified when the probe cannot answer", async () => {
+    const probe = vi.fn(async () => ({ status: "UNAVAILABLE" as const, detail: "bridge down" }));
+    await expect(describeMspEligibilityChecked({ ...TYPED, checkCoverage: probe })).resolves.toBe(
+      "card valid, coverage unverified",
+    );
+    await expect(describeMspEligibilityChecked({ ...CHART, checkCoverage: probe })).resolves.toBe(
+      "card valid (chart), coverage unverified",
+    );
+  });
+
+  it("never says plain eligible without MSP: no probe means coverage unverified", async () => {
+    await expect(describeMspEligibilityChecked({ ...TYPED, checkCoverage: null })).resolves.toBe(
+      "card valid, coverage unverified",
+    );
+  });
+
+  it("skips the probe and stays unverified when the birthdate is missing or malformed", async () => {
+    const probe = vi.fn(async () => ({ status: "ELIGIBLE" as const }));
+    for (const dateOfBirth of [null, "", "1996/03/15"]) {
+      await expect(
+        describeMspEligibilityChecked({ ...TYPED, dateOfBirth, checkCoverage: probe }),
+      ).resolves.toBe("card valid, coverage unverified");
+    }
+    expect(probe).not.toHaveBeenCalled();
+  });
+
+  it("treats a probe that throws as unavailable, never as a verdict", async () => {
+    const probe = vi.fn(async () => {
+      throw new Error("boom");
+    });
+    await expect(describeMspEligibilityChecked({ ...TYPED, checkCoverage: probe })).resolves.toBe(
+      "card valid, coverage unverified",
+    );
+  });
+
+  it("passes non-eligible card verdicts through untouched and never calls the probe", async () => {
+    const probe = vi.fn(async () => ({ status: "ELIGIBLE" as const }));
+    const cases = [
+      { input: { coverageType: "PRIVATE_PAY" }, expected: "no - private pay" },
+      {
+        input: {
+          coverageType: "CANADIAN_HEALTH_CARD",
+          province: "British Columbia",
+          healthCardNumber: BAD_CHECKDIGIT,
+          dateOfBirth: "1996-03-15",
+        },
+        expected: "unverified - BC PHN fails its check digit",
+      },
+      { input: { coverageType: "EXISTING_OSCAR_PATIENT", chartCard: null }, expected: "see chart" },
+    ];
+    for (const { input, expected } of cases) {
+      await expect(describeMspEligibilityChecked({ ...input, checkCoverage: probe })).resolves.toBe(expected);
+    }
+    expect(probe).not.toHaveBeenCalled();
+  });
+
+  it("never leaks the card number into the checked labels", async () => {
+    for (const status of ["ELIGIBLE", "NOT_ELIGIBLE", "UNAVAILABLE"] as const) {
+      const probe = async () =>
+        status === "NOT_ELIGIBLE"
+          ? { status, coverageEndDate: null, coverageEndReason: null }
+          : status === "UNAVAILABLE"
+            ? { status, detail: "x" }
+            : { status };
+      const label = await describeMspEligibilityChecked({ ...TYPED, checkCoverage: probe });
+      expect(label).not.toContain(VALID_BC_PHN);
+      expect(label).toMatch(/^[\x20-\x7E]+$/);
     }
   });
 });

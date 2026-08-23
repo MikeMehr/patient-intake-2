@@ -19,7 +19,8 @@ import {
 import { generateManageToken } from "@/lib/booking-token";
 import { sendBookingConfirmation } from "@/lib/booking-email";
 import { sendBookingAlertSMS, toE164 } from "@/lib/sms";
-import { describeMspEligibility, type ChartCard } from "@/lib/billing/msp-eligibility";
+import { describeMspEligibilityChecked, type ChartCard } from "@/lib/billing/msp-eligibility";
+import { checkMspCoverage } from "@/lib/oscar/msp-coverage";
 import { bookingCardMessage, checkBookingHealthCard } from "@/lib/billing/booking-msp-gate";
 import {
   normalizeModality,
@@ -362,11 +363,17 @@ async function handleConfirm(
         // texting to a physician who may dial it. What the patient just typed wins over the
         // chart, which may be years old.
         patientPhone: storedPhone ?? chart.phone ?? undefined,
-        mspStatus: describeMspEligibility({
+        // A card that passes its check digit is then put to MSP for real (Teleplan E45 via the
+        // OSCAR bridge): a lapsed patient carries a perfectly valid PHN, and only MSP knows the
+        // difference. When the bridge can't answer, the verdict says "coverage unverified"
+        // rather than promising an eligibility nobody checked.
+        mspStatus: await describeMspEligibilityChecked({
           coverageType: String(coverageType),
           province: province ? String(province) : null,
           healthCardNumber: healthCardNumber ? String(healthCardNumber) : null,
           chartCard: chart.card,
+          dateOfBirth: String(dateOfBirth),
+          checkCoverage: (args) => checkMspCoverage(clinic.id, args),
         }),
       });
     }

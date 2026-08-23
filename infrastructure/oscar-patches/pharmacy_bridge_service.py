@@ -16,6 +16,7 @@ Operations (POST, application/x-www-form-urlencoded, JSON response):
   op=list                                 -> every active pharmacyInfo row
   op=link   demographicNo= pharmacyId=    -> make that pharmacy the patient's preferred one
   op=upsert name= address= ...            -> create a pharmacyInfo row, return its recordID
+  op=check_elig phn= dob=                 -> real-time MSP eligibility (Teleplan E45) for a BC PHN
 
 Auth: shared secret in the X-MyMD-Pharmacy-Secret header, compared with hmac.compare_digest.
 The secret lives in /var/lib/OscarDocument/oscar/mymd_pharmacy_bridge.properties (root:tomcat
@@ -23,12 +24,18 @@ The secret lives in /var/lib/OscarDocument/oscar/mymd_pharmacy_bridge.properties
 """
 
 import hmac
+import http.cookiejar
 import json
 import logging
 import os
 import re
+import urllib.error
+import urllib.parse
+import urllib.request
+from datetime import datetime
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import parse_qs
+from zoneinfo import ZoneInfo
 
 import mysql.connector
 
@@ -231,6 +238,158 @@ def op_upsert(params):
         conn.close()
 
 
+# --- MSP eligibility (Teleplan E45) ---------------------------------------------------------
+#
+# Replicates exactly what OSCAR's own "Check Eligibility" button does (ManageTeleplanAction
+# .checkElig -> TeleplanAPI.checkElig, verified by decompiling the deployed classes): three form
+# POSTs to the Teleplan broker — AsignOn, AcheckE45, AsignOff — over one cookie session, using
+# the same credentials OSCAR keeps in its `property` table. The E45 is a read-only inquiry; MSP
+# answers with an ELIG_ON_DOS line for the given PHN + birthdate on the given date of service.
+
+TELEPLAN_URL = "https://teleplan.hnet.bc.ca/TeleplanBroker"
+# TeleplanAPI sends this UA; keep it so our requests look like every other OSCAR client.
+TELEPLAN_UA = "TeleplanPerl 1.0"
+TELEPLAN_TIMEOUT_S = 25
+
+PHN_RE = re.compile(r"^\d{10}$")
+DOB_RE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})$")
+# Every broker response ends with this trailer line (TeleplanResponse.processLastLine).
+TRAILER_RE = re.compile(r"#TID=([^;]*);Result=([^;]*);Filename=([^;]*);Msgs=(.*);\s*$")
+
+
+def teleplan_creds():
+    """The Teleplan username/password OSCAR itself uses, from the `property` table.
+
+    OSCAR's TeleplanUserPassDAO iterates every row for the name and keeps the last one, so
+    ORDER BY id and take the final row to agree with it.
+    """
+    conn = get_db()
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT name, value FROM property "
+            "WHERE name IN ('teleplan_username', 'teleplan_password') ORDER BY id"
+        )
+        creds = {}
+        for name, value in cursor.fetchall():
+            creds[name] = value or ""
+        cursor.close()
+        username = creds.get("teleplan_username", "").strip()
+        password = creds.get("teleplan_password", "").strip()
+        if username and password:
+            return username, password
+        return None
+    finally:
+        conn.close()
+
+
+def _teleplan_post(opener, fields):
+    """One broker POST. Returns (body_lines, trailer_dict); raises on transport errors."""
+    data = urllib.parse.urlencode(fields).encode("utf-8")
+    req = urllib.request.Request(TELEPLAN_URL, data=data, headers={"User-Agent": TELEPLAN_UA})
+    with opener.open(req, timeout=TELEPLAN_TIMEOUT_S) as resp:
+        body = resp.read().decode("utf-8", "replace")
+    lines = body.splitlines()
+    trailer = {"tid": "", "result": "", "filename": "", "msgs": ""}
+    if lines:
+        m = TRAILER_RE.search(lines[-1])
+        if m:
+            trailer = {
+                "tid": m.group(1),
+                "result": m.group(2),
+                "filename": m.group(3),
+                "msgs": m.group(4),
+            }
+            lines = lines[:-1]
+    return lines, trailer
+
+
+def op_check_elig(params):
+    """
+    Ask MSP whether `phn` is eligible on today's date of service (Teleplan E45).
+
+    Inputs: phn = 10-digit BC PHN, dob = YYYY-MM-DD. The date of service is always "today" in
+    clinic time — the same choice OSCAR's own button makes — because MSP answers about current
+    coverage, not future dates.
+
+    The caller (the booking app) gets only the eligibility fields back, never the patient name
+    or gender lines the E45 report also carries. Nothing PHN-shaped is logged here.
+    """
+    phn = (params.get("phn") or [""])[0].strip()
+    dob = (params.get("dob") or [""])[0].strip()
+
+    if not PHN_RE.match(phn):
+        return 400, {"error": "phn must be 10 digits"}
+    dob_m = DOB_RE.match(dob)
+    if not dob_m:
+        return 400, {"error": "dob must be YYYY-MM-DD"}
+
+    creds = teleplan_creds()
+    if not creds:
+        return 503, {"ok": False, "reason": "teleplan_not_configured"}
+    username, password = creds
+
+    jar = http.cookiejar.CookieJar()
+    opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))
+
+    try:
+        _, login = _teleplan_post(
+            opener,
+            {"username": username, "password": password, "ExternalAction": "AsignOn"},
+        )
+        if login["result"] != "SUCCESS":
+            logger.error("check_elig: teleplan login failed: %s", login["msgs"])
+            return 502, {"ok": False, "reason": "teleplan_login_failed"}
+
+        today = datetime.now(ZoneInfo("America/Vancouver"))
+        lines, trailer = _teleplan_post(
+            opener,
+            {
+                "PHN": phn,
+                "dateOfBirthyyyy": dob_m.group(1),
+                "dateOfBirthmm": dob_m.group(2),
+                "dateOfBirthdd": dob_m.group(3),
+                "dateOfServiceyyyy": f"{today.year:04d}",
+                "dateOfServicemm": f"{today.month:02d}",
+                "dateOfServicedd": f"{today.day:02d}",
+                "PatientVisitCharge": "true",
+                "LastEyeExam": "true",
+                "PatientRestriction": "true",
+                "ExternalAction": "AcheckE45",
+            },
+        )
+
+        try:
+            _teleplan_post(opener, {"ExternalAction": "AsignOff"})
+        except Exception:
+            pass  # the session expires on its own; the answer is already in hand
+
+        if trailer["result"] != "SUCCESS":
+            logger.error("check_elig: E45 failed: result=%s msgs=%s", trailer["result"], trailer["msgs"])
+            return 502, {"ok": False, "reason": "teleplan_e45_failed", "msgs": trailer["msgs"]}
+
+        report = {}
+        for line in lines:
+            key, sep, value = line.partition(":")
+            if sep:
+                report[key.strip().upper()] = value.strip()
+
+        elig = report.get("ELIG_ON_DOS", "").upper()
+        logger.info("check_elig: eligOnDos=%s msgs=%s", elig or "(missing)", trailer["msgs"])
+        return 200, {
+            "ok": True,
+            "eligOnDos": elig,  # "YES" | "NO" | "" when MSP's answer had no such line
+            "coverageEndDate": report.get("COVERAGE_END_DT", ""),
+            "coverageEndReason": report.get("COVERAGE_END_REASON", ""),
+            "dateOfService": today.strftime("%Y-%m-%d"),
+            "msgs": trailer["msgs"],
+        }
+    except (urllib.error.URLError, OSError) as exc:
+        # Reason only — never the request, which carries the PHN.
+        logger.error("check_elig: teleplan unreachable: %s", exc)
+        return 502, {"ok": False, "reason": "teleplan_unreachable"}
+
+
 class BridgeHandler(BaseHTTPRequestHandler):
     server_version = "MyMDPharmacyBridge"
     sys_version = ""
@@ -270,6 +429,8 @@ class BridgeHandler(BaseHTTPRequestHandler):
                 status, payload = op_link(params)
             elif op == "upsert":
                 status, payload = op_upsert(params)
+            elif op == "check_elig":
+                status, payload = op_check_elig(params)
             else:
                 status, payload = 400, {"error": "unknown op"}
 

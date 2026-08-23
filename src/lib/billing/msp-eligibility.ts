@@ -12,6 +12,7 @@
 
 import { checkHealthCard } from "@/lib/billing/health-card";
 import { toProvinceCode } from "@/lib/province-code";
+import type { MspCoverageCheck } from "@/lib/oscar/msp-coverage";
 
 /**
  * The card OSCAR already holds for a returning patient, read straight off the chart.
@@ -92,6 +93,70 @@ function describeChartCard(chartCard: ChartCard | null | undefined): string {
   const check = checkHealthCard(chartCard.hin ?? "", chartCard.hcType ?? null);
   if (check.ok) return "eligible (chart)";
   return toGsm7(check.reason ?? "card on chart failed validation");
+}
+
+export type MspCoverageProbe = (args: { phn: string; dob: string }) => Promise<MspCoverageCheck>;
+
+/**
+ * The card verdict, upgraded to a real coverage answer when MSP can be asked.
+ *
+ * A structurally valid card is not coverage — a patient whose MSP has lapsed still carries a PHN
+ * that passes its check digit, and calling that "eligible" once told a physician a claim would go
+ * through when MSP had already answered ELIG_ON_DOS: NO. So a card the check digit accepts is now
+ * only the ticket to the real question: the probe runs a Teleplan E45 through the clinic's OSCAR
+ * bridge, and the verdict says what MSP said. When the probe cannot answer (no bridge, Teleplan
+ * down, DOB missing) the verdict is honest about it — "coverage unverified", never "eligible".
+ *
+ * Cards that fail the format check keep their existing verdicts untouched: there is nothing to
+ * ask MSP about, and the E45 only covers BC PHNs anyway.
+ */
+export async function describeMspEligibilityChecked(input: {
+  coverageType: string;
+  province?: string | null;
+  healthCardNumber?: string | null;
+  chartCard?: ChartCard | null;
+  /** Patient's birthdate, strict YYYY-MM-DD — the E45 verifies the PHN against it. */
+  dateOfBirth?: string | null;
+  /** Runs the live MSP check. Null/omitted when the clinic has no bridge to ask through. */
+  checkCoverage?: MspCoverageProbe | null;
+}): Promise<string> {
+  const base = describeMspEligibility(input);
+
+  const fromChart = base === "eligible (chart)";
+  if (base !== "eligible" && !fromChart) return base;
+
+  // Re-derive the claim PHN from the same source the base verdict used. Both "eligible" verdicts
+  // require checkHealthCard ok, which only BC cards get, so claimHin is always 10 digits here.
+  const check = fromChart
+    ? checkHealthCard(input.chartCard?.hin ?? "", input.chartCard?.hcType ?? null)
+    : checkHealthCard((input.healthCardNumber || "").trim(), toProvinceCode(input.province));
+  const chartTag = fromChart ? " (chart)" : "";
+
+  const dob = (input.dateOfBirth || "").trim();
+  if (!check.ok || !input.checkCoverage || !/^\d{4}-\d{2}-\d{2}$/.test(dob)) {
+    return `card valid${chartTag}, coverage unverified`;
+  }
+
+  let coverage: MspCoverageCheck;
+  try {
+    coverage = await input.checkCoverage({ phn: check.claimHin, dob });
+  } catch {
+    coverage = { status: "UNAVAILABLE", detail: "probe threw" };
+  }
+
+  switch (coverage.status) {
+    case "ELIGIBLE":
+      return `eligible${chartTag}, MSP-confirmed`;
+    case "NOT_ELIGIBLE": {
+      const ended = [coverage.coverageEndDate, coverage.coverageEndReason]
+        .filter(Boolean)
+        .join(" ")
+        .slice(0, 40);
+      return `NOT eligible today (MSP)${ended ? ` - coverage ended ${toGsm7(ended)}` : ""}`;
+    }
+    default:
+      return `card valid${chartTag}, coverage unverified`;
+  }
 }
 
 /**

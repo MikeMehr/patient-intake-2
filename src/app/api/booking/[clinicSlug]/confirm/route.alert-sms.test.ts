@@ -19,6 +19,7 @@ const sendBookingAlertSMSMock = vi.hoisted(() => vi.fn());
 const getPhysicianPhoneMock = vi.hoisted(() => vi.fn());
 const getOscarCredsForOrgMock = vi.hoisted(() => vi.fn());
 const fetchOscarDemographicMock = vi.hoisted(() => vi.fn());
+const checkMspCoverageMock = vi.hoisted(() => vi.fn());
 
 vi.mock("@/lib/db", () => ({ query: (...a: unknown[]) => queryMock(...a) }));
 
@@ -57,6 +58,10 @@ vi.mock("@/lib/oscar/self-serve", () => ({
 
 vi.mock("@/lib/oscar/demographics", () => ({
   fetchOscarDemographic: (...a: unknown[]) => fetchOscarDemographicMock(...a),
+}));
+
+vi.mock("@/lib/oscar/msp-coverage", () => ({
+  checkMspCoverage: (...a: unknown[]) => checkMspCoverageMock(...a),
 }));
 
 vi.mock("@/lib/encrypted-field", () => ({
@@ -173,6 +178,8 @@ beforeEach(() => {
   getPhysicianPhoneMock.mockReset().mockResolvedValue("+16045550100");
   getOscarCredsForOrgMock.mockReset().mockResolvedValue(CREDS);
   fetchOscarDemographicMock.mockReset().mockResolvedValue(chart());
+  // MSP said yes, unless a test says otherwise.
+  checkMspCoverageMock.mockReset().mockResolvedValue({ status: "ELIGIBLE" });
   vi.spyOn(console, "error").mockImplementation(() => {});
 });
 
@@ -185,7 +192,40 @@ describe("POST confirm — physician booking alert", () => {
     expect(res.status).toBe(200);
     expect(fetchOscarDemographicMock).toHaveBeenCalledWith(CREDS, "46");
     expect(alert().patientPhone).toBe("+16045550134");
-    expect(alert().mspStatus).toBe("eligible (chart)");
+    expect(alert().mspStatus).toBe("eligible (chart), MSP-confirmed");
+    // The E45 runs against the chart's PHN and the birthdate the patient just typed.
+    expect(checkMspCoverageMock).toHaveBeenCalledWith(ORG, { phn: VALID_BC_PHN, dob: "1988-04-15" });
+  });
+
+  it("says NOT eligible when MSP answers no for a checksum-valid chart card", async () => {
+    // The Nathan Archer case: the PHN passes its check digit, the coverage has lapsed. The old
+    // card-only verdict called this "eligible (chart)".
+    checkMspCoverageMock.mockResolvedValue({
+      status: "NOT_ELIGIBLE",
+      coverageEndDate: null,
+      coverageEndReason: null,
+    });
+
+    await POST(makeRequest(), { params });
+
+    expect(alert().mspStatus).toBe("NOT eligible today (MSP)");
+  });
+
+  it("downgrades to coverage-unverified when the live check is unavailable", async () => {
+    checkMspCoverageMock.mockResolvedValue({ status: "UNAVAILABLE", detail: "bridge down" });
+
+    await POST(makeRequest(), { params });
+
+    expect(alert().mspStatus).toBe("card valid (chart), coverage unverified");
+  });
+
+  it("still sends the alert when the live check throws outright", async () => {
+    checkMspCoverageMock.mockRejectedValue(new Error("boom"));
+
+    const res = await POST(makeRequest(), { params });
+
+    expect(res.status).toBe(200);
+    expect(alert().mspStatus).toBe("card valid (chart), coverage unverified");
   });
 
   it("prefers the number the patient just typed over the one on the chart", async () => {
@@ -252,8 +292,10 @@ describe("POST confirm — physician booking alert", () => {
     );
 
     expect(fetchOscarDemographicMock).not.toHaveBeenCalled();
-    expect(alert().mspStatus).toBe("eligible");
+    expect(alert().mspStatus).toBe("eligible, MSP-confirmed");
     expect(alert().patientPhone).toBe("+16045550177");
+    // The typed card still gets the real MSP check, against the typed birthdate.
+    expect(checkMspCoverageMock).toHaveBeenCalledWith(ORG, { phn: VALID_BC_PHN, dob: "1988-04-15" });
   });
 
   it("never puts the health card number in the message", async () => {
