@@ -2,7 +2,7 @@
 # MyMD: nightly guard for the "document filed but reaches nobody's inbox" family of failures.
 #
 # Every incident this week had the same shape: the chart link succeeded, the inbox routing silently
-# did not, and nothing said so. This checks the four known ways that happens and emails
+# did not, and nothing said so. This checks the three known ways that happens and emails
 # info@mymdonline.ca (whose new-mail SMS bridge pages the phone) ONLY when something is wrong.
 #
 # Runs as root from cron: `mysql` uses socket auth, msmtp reads root's /etc/msmtprc (account mymd).
@@ -38,17 +38,9 @@ ORPHANS=$(mysql -N oscar_db -e "
 EMPTY=$(mysql -N oscar_db -e "SELECT COUNT(*) FROM demographic WHERE provider_no=''" 2>/dev/null)
 [ "${EMPTY:-0}" -gt 0 ] && add "WARNING: $EMPTY chart(s) have provider_no='' (should be NULL). Fix: UPDATE demographic SET provider_no=NULL WHERE provider_no='';"
 
-# 4. Externally-sourced documents filed to a chart in the last 7 days with no inbox routing at all.
-#    Excludes types this clinic generates for itself (requisitions, photos, encounter exports).
-UNROUTED=$(mysql -N oscar_db -e "
-  SELECT GROUP_CONCAT(CONCAT('#', d.document_no, ' (', d.doctype, ' ', DATE(d.updatedatetime), ')') SEPARATOR ', ')
-  FROM document d
-  JOIN ctl_document c ON c.document_no = d.document_no AND c.module = 'demographic'
-  LEFT JOIN providerLabRouting r ON r.lab_no = d.document_no AND r.lab_type = 'DOC'
-  WHERE r.id IS NULL AND d.status <> 'D'
-    AND d.updatedatetime >= NOW() - INTERVAL 7 DAY
-    AND d.doctype IN ('lab','consult','radiology','pathology','insurance','legal','oldchart')" 2>/dev/null)
-[ -n "$UNROUTED" ] && [ "$UNROUTED" != "NULL" ] && add "WARNING: document(s) filed to a chart with NO inbox routing - nobody will review them: $UNROUTED"
+# (A fourth check - documents filed to a chart with no inbox routing at all - was removed
+# 2026-08-23 at the physician's request: staff file documents they have already reviewed,
+# so the alert was pure noise.)
 
 [ -z "$ALERT" ] && exit 0
 
