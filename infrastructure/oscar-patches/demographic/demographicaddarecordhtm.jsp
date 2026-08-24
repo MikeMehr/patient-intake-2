@@ -1878,6 +1878,7 @@ console.log(year+"-"+month+"-"+day);
 
 <%-- TOGGLE OFF PATIENT ROSTERING - NOT USED IN ALL PROVINCES. --%>
 <oscar:oscarPropertiesCheck property="DEMOGRAPHIC_PATIENT_ROSTERING" value="true">
+<div style="display:none"><%-- MyMD 2026-08-24: enrollment/rostering fields hidden on Add Patient; inputs kept so aSubmit() and the empty POST defaults still work --%>
 
         <div class="control-group span5">
             <label class="control-label" for="roster_status"><bean:message key="demographic.demographiceditdemographic.formRosterStatus" /></label>
@@ -1945,6 +1946,7 @@ console.log(year+"-"+month+"-"+day);
         </div>
 
 
+</div>
 </oscar:oscarPropertiesCheck>
 <%-- END TOGGLE OFF PATIENT ROSTERING --%>
         <div class="control-group span5">

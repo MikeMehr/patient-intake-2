@@ -9,25 +9,35 @@ editing any JSP, delete its compiled copy under
 `/opt/tomcat9/work/Catalina/localhost/oscar/org/apache/jsp/...` to force a recompile — no Tomcat
 restart is needed.
 
-## Add Patient — enrollment date optional, defaults to today (added 2026-08-24)
+## Add Patient — enrollment/rostering fields removed (added 2026-08-24)
 
-On the Add Demographic form (`demographic/demographicaddarecordhtm.jsp`), picking Roster Status
-"Rostered" used to make `aSubmit()` **silently refuse to save** unless an enrollment ("Date
-Joined") date and an Enrolled-To doctor were entered — the alerts were commented out upstream, so
-the Add button just did nothing. Rostering/enrolment is administrative attachment bookkeeping (it
-has no effect on FFS MSP billing), so the date is not worth blocking on.
+The Add Demographic form (`demographic/demographicaddarecordhtm.jsp`) no longer shows the
+Roster Status / enrollment ("Date Joined") / Enrolled-To fields at all. Rostering/enrolment is
+administrative attachment bookkeeping for enrolment-model provinces (mainly Ontario) and has no
+effect on FFS MSP billing, so it just cluttered patient creation — and worse, picking "Rostered"
+made `aSubmit()` **silently refuse to save** when the date or doctor was blank (the alerts were
+commented out upstream, plus it read the nonexistent field `roster_date_date`).
 
-Now: a blank enrollment date is auto-filled with **today's date** (via the existing
-`parseroster_date()` so the hidden year/month/day fields stay in sync), and the Enrolled-To check
-alerts visibly instead of failing silently. This also removes a latent bug where the old check read
-the nonexistent field `roster_date_date` (the hidden input is `roster_date_day`).
+Two stacked patches, applied in order:
+
+1. `patch_roster_date.py` — inside `aSubmit()`, a blank enrollment date auto-fills with today
+   (via `parseroster_date()` so the hidden year/month/day fields stay in sync) and the
+   Enrolled-To check alerts visibly instead of failing silently.
+2. `patch_hide_roster.py` — wraps the whole `DEMOGRAPHIC_PATIENT_ROSTERING` block in a
+   `display:none` div. The inputs are **hidden, not deleted**: `aSubmit()` reads
+   `document.adddemographic.roster_status` and would throw if it vanished, and the empty
+   "Not Set" values still POST so the Struts action sees exactly what an untouched form sent.
+   With roster_status always `''`, patch 1's RO branch is dormant — kept as a safety net if the
+   block is ever unhidden. Rostering fields on demographiceditdemographic.jsp (chart edit) are
+   untouched, as is the `DEMOGRAPHIC_PATIENT_ROSTERING=true` property.
 
 | File | What |
 |---|---|
 | `demographic/demographicaddarecordhtm.jsp` | Patched copy of the live file. |
-| `demographic/patch_roster_date.py` | The idempotent patcher (run on the box as root; expects the stock block). |
+| `demographic/patch_roster_date.py` | Patch 1 (idempotent; expects the stock block). |
+| `demographic/patch_hide_roster.py` | Patch 2 (idempotent; run after patch 1). |
 
-Verified with JspC (0 errors). Backup on the box: `demographicaddarecordhtm.jsp.oscarbak.20260824*`.
+Verified with JspC (0 errors). Backups on the box: `demographicaddarecordhtm.jsp.oscarbak.20260824*`.
 
 ## Add Specialist — PathwaysBC paste into the consultation list (added 2026-08-17)
 
