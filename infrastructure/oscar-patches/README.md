@@ -9,6 +9,28 @@ editing any JSP, delete its compiled copy under
 `/opt/tomcat9/work/Catalina/localhost/oscar/org/apache/jsp/...` to force a recompile — no Tomcat
 restart is needed.
 
+## Manual PDF upload into the Faxes inbox (added 2026-08-24)
+
+PDFs can now be added by hand to the same Faxes inbox the SRFax bridge feeds, and filed to
+patient charts through the identical triage/Save flow. An unfiled inbound fax is nothing more
+than a tomcat-owned PDF in `/var/lib/OscarDocument/oscar/incomingdocs/1/Fax/` — no database row —
+and stock OSCAR already ships the upload backend (`dms/documentUploader.jsp` +
+`DocumentUploadAction`, destination `incomingDocs`), so this is pure UI wiring:
+
+| File | What |
+|---|---|
+| `dms/patch_fax_upload.py` | All three edits below; run on the box with `sudo python3`. |
+| `provider/appointmentprovideradminday.jsp` | The **Fax** nav tab used to render only when the Fax directory was non-empty (no way in when the queue was empty). Always visible now; `tabalert` styling + count superscript only when > 0. |
+| `dms/incomingDocs.jsp` | **Upload PDF** button beside Fax/Mail/File/Refile, opens the stock uploader preselected for the current queue/folder. |
+| `dms/documentUploader.jsp` | Validated query params `destination`/`destFolder`/`queue` override the sticky user-property defaults; a successful upload refreshes the incomingDocs opener via `loadPdf()`. |
+
+Because Tomcat itself writes the uploaded file, the "PDF must be OWNED by tomcat" rasterisation
+gotcha (SRFax bridge section below) does not apply. Duplicate filenames are rejected by the stock
+action (`dms.documentUpload.alreadyExists`), not overwritten. Verified with JspC (0 errors) and a
+live upload → listed in Faxes → rendered → cleaned up. Backups on the box:
+`appointmentprovideradminday.jsp.oscarbak.20260824A`, `incomingDocs.jsp.oscarbak.20260824A`,
+`documentUploader.jsp.oscarbak.20260824A`.
+
 ## Add Patient — enrollment/rostering fields removed (added 2026-08-24)
 
 The Add Demographic form (`demographic/demographicaddarecordhtm.jsp`) no longer shows the
