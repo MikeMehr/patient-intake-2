@@ -2,7 +2,9 @@
 
 import { use, useEffect, useRef, useState } from "react";
 
-const MAX_FILES = 5;
+// Documents allowed per request link in total — the server enforces the same
+// cap across visits, so a returning patient may have fewer slots left.
+const MAX_FILES = 3;
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
 
 interface Validity {
@@ -11,6 +13,9 @@ interface Validity {
   patientName?: string;
   requestNote?: string | null;
   clinicName?: string;
+  maxFiles?: number;
+  uploadedCount?: number;
+  remaining?: number;
 }
 
 function humanSize(bytes: number): string {
@@ -27,7 +32,11 @@ export default function UploadPage({ params }: { params: Promise<{ token: string
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
+  const [remainingAfterUpload, setRemainingAfterUpload] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  const remaining = validity?.remaining ?? MAX_FILES;
+  const alreadyUploaded = validity?.uploadedCount ?? 0;
 
   useEffect(() => {
     (async () => {
@@ -48,8 +57,12 @@ export default function UploadPage({ params }: { params: Promise<{ token: string
     setError(null);
     const next = [...files];
     for (const f of Array.from(incoming)) {
-      if (next.length >= MAX_FILES) {
-        setError(`You can upload at most ${MAX_FILES} files.`);
+      if (next.length >= remaining) {
+        setError(
+          alreadyUploaded > 0
+            ? `You can upload ${remaining} more ${remaining === 1 ? "file" : "files"} (${MAX_FILES} in total).`
+            : `You can upload at most ${MAX_FILES} files.`,
+        );
         break;
       }
       if (f.size > MAX_FILE_BYTES) {
@@ -66,7 +79,7 @@ export default function UploadPage({ params }: { params: Promise<{ token: string
         next.push(f);
       }
     }
-    setFiles(next.slice(0, MAX_FILES));
+    setFiles(next.slice(0, remaining));
     if (inputRef.current) inputRef.current.value = "";
   };
 
@@ -91,6 +104,7 @@ export default function UploadPage({ params }: { params: Promise<{ token: string
         setSubmitting(false);
         return;
       }
+      setRemainingAfterUpload(typeof data.remaining === "number" ? data.remaining : 0);
       setDone(true);
     } catch {
       setError("Upload failed. Please try again.");
@@ -116,7 +130,7 @@ export default function UploadPage({ params }: { params: Promise<{ token: string
       state === "expired"
         ? "This upload link has expired. Please contact the clinic for a new one."
         : state === "completed"
-          ? "Your documents have already been submitted. Thank you!"
+          ? `All ${MAX_FILES} documents have been received. Thank you! If you need to send more, please contact the clinic.`
           : "This upload link is not valid. Please contact the clinic.";
     return shell(
       <div className="text-center">
@@ -138,6 +152,13 @@ export default function UploadPage({ params }: { params: Promise<{ token: string
           Thank you{validity.patientName ? `, ${validity.patientName.split(" ")[0]}` : ""}.
           Your files have been securely sent to {validity.clinicName}. You can close this page.
         </p>
+        {remainingAfterUpload > 0 && (
+          <p className="text-xs text-slate-500 mt-3">
+            Need to send more? You can reopen this link to upload up to{" "}
+            {remainingAfterUpload} more {remainingAfterUpload === 1 ? "file" : "files"} before it
+            expires.
+          </p>
+        )}
       </div>,
     );
   }
@@ -148,7 +169,7 @@ export default function UploadPage({ params }: { params: Promise<{ token: string
         Upload your documents <span className="font-normal text-slate-500">(optional)</span>
       </h1>
       <p className="text-sm text-slate-600 mt-1">
-        {validity.clinicName} has asked you to securely upload one or more documents
+        {validity.clinicName} has asked you to securely upload up to {MAX_FILES} documents
         (photo ID, images, or PDFs).
       </p>
 
@@ -157,6 +178,15 @@ export default function UploadPage({ params }: { params: Promise<{ token: string
           <p className="text-xs font-semibold text-blue-800">What the clinic needs</p>
           <p className="mt-1 text-sm text-blue-900 whitespace-pre-line">
             {validity.requestNote.trim()}
+          </p>
+        </div>
+      )}
+
+      {alreadyUploaded > 0 && (
+        <div className="mt-4 rounded-lg bg-emerald-50 border border-emerald-200 px-4 py-3">
+          <p className="text-sm text-emerald-900">
+            You&apos;ve already uploaded {alreadyUploaded}{" "}
+            {alreadyUploaded === 1 ? "file" : "files"}. You can add up to {remaining} more.
           </p>
         </div>
       )}
@@ -180,7 +210,7 @@ export default function UploadPage({ params }: { params: Promise<{ token: string
           Tap to choose files, or take a photo
         </p>
         <p className="text-xs text-slate-500 mt-1">
-          Images or PDF · up to {MAX_FILES} files · 10 MB each
+          Images or PDF · up to {remaining} {remaining === 1 ? "file" : "files"} · 10 MB each
         </p>
         <input
           ref={inputRef}

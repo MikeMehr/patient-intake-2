@@ -261,7 +261,7 @@ export async function sendDocumentRequestEmail(opts: {
       <div style="font-family:sans-serif;max-width:560px;margin:0 auto">
         <h2 style="color:#1a1a2e">Please upload your documents (optional)</h2>
         <p>Hi ${firstName},</p>
-        <p>${opts.clinicName} has requested that you securely upload one or more
+        <p>${opts.clinicName} has requested that you securely upload up to 3
            documents (for example a photo of your ID, or images and PDFs of your
            records). Your files are sent directly to the clinic and are not stored
            on your device.</p>${noteBlock}

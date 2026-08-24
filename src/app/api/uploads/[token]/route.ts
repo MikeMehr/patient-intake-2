@@ -15,7 +15,9 @@ import { consumeRateLimit } from "@/lib/invitation-security";
 import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
 import { sanitizeFilename, validatePatientUpload } from "@/lib/upload-validation";
 
-const MAX_FILES = 5;
+// Total documents allowed per request link, across visits. The link stays
+// usable (until expiry) so a patient who sent one photo can come back with more.
+const MAX_FILES = 3;
 
 interface RequestRow {
   id: string;
@@ -38,9 +40,22 @@ async function loadRequest(rawToken: string): Promise<RequestRow | null> {
   return result.rows[0] ?? null;
 }
 
-function requestState(req: RequestRow): "valid" | "revoked" | "expired" | "completed" {
+async function countUploadedFiles(requestId: string): Promise<number> {
+  const result = await query<{ count: string }>(
+    `SELECT COUNT(*) AS count FROM patient_document_files WHERE request_id = $1`,
+    [requestId],
+  );
+  return Number(result.rows[0]?.count ?? 0);
+}
+
+// "completed" is derived from the file count, not completed_at, so the link
+// keeps working for the remaining slots even after a first submission.
+function requestState(
+  req: RequestRow,
+  uploadedCount: number,
+): "valid" | "revoked" | "expired" | "completed" {
   if (req.revoked_at) return "revoked";
-  if (req.completed_at) return "completed";
+  if (uploadedCount >= MAX_FILES) return "completed";
   if (new Date(req.expires_at).getTime() < Date.now()) return "expired";
   return "valid";
 }
@@ -65,7 +80,8 @@ export async function GET(
       [req.organization_id],
     );
 
-    const state = requestState(req);
+    const uploadedCount = await countUploadedFiles(req.id);
+    const state = requestState(req, uploadedCount);
     logRequestMeta("/api/uploads", requestId, 200, Date.now() - started);
     return NextResponse.json({
       valid: state === "valid",
@@ -73,6 +89,9 @@ export async function GET(
       patientName: req.patient_name,
       requestNote: req.request_note,
       clinicName: orgResult.rows[0]?.name ?? "the clinic",
+      maxFiles: MAX_FILES,
+      uploadedCount,
+      remaining: Math.max(0, MAX_FILES - uploadedCount),
     });
   } catch (error) {
     console.error("[api/uploads GET] Error:", error);
@@ -96,13 +115,14 @@ export async function POST(
       return NextResponse.json({ error: "This upload link is not valid." }, { status: 404 });
     }
 
-    const state = requestState(req);
+    const uploadedCount = await countUploadedFiles(req.id);
+    const state = requestState(req, uploadedCount);
     if (state !== "valid") {
       const message =
         state === "expired"
           ? "This upload link has expired. Please contact the clinic for a new one."
           : state === "completed"
-            ? "Documents have already been submitted for this request."
+            ? `The maximum of ${MAX_FILES} documents has already been uploaded for this request.`
             : "This upload link is no longer active.";
       logRequestMeta("/api/uploads", requestId, 410, Date.now() - started);
       return NextResponse.json({ error: message }, { status: 410 });
@@ -130,10 +150,16 @@ export async function POST(
       logRequestMeta("/api/uploads", requestId, 400, Date.now() - started);
       return NextResponse.json({ error: "Please choose at least one file." }, { status: 400 });
     }
-    if (files.length > MAX_FILES) {
+    const remaining = MAX_FILES - uploadedCount;
+    if (files.length > remaining) {
       logRequestMeta("/api/uploads", requestId, 400, Date.now() - started);
       return NextResponse.json(
-        { error: `You can upload at most ${MAX_FILES} files.` },
+        {
+          error:
+            uploadedCount > 0
+              ? `You can upload ${remaining} more ${remaining === 1 ? "file" : "files"} (${MAX_FILES} in total).`
+              : `You can upload at most ${MAX_FILES} files.`,
+        },
         { status: 400 },
       );
     }
@@ -164,13 +190,21 @@ export async function POST(
       stored += 1;
     }
 
-    await query(
-      `UPDATE patient_document_requests SET completed_at = NOW() WHERE id = $1`,
-      [req.id],
-    );
+    // completed_at now marks "all slots used" for the dashboard; state on this
+    // route derives from the file count, so a partial upload leaves the link open.
+    if (uploadedCount + stored >= MAX_FILES) {
+      await query(
+        `UPDATE patient_document_requests SET completed_at = COALESCE(completed_at, NOW()) WHERE id = $1`,
+        [req.id],
+      );
+    }
 
     logRequestMeta("/api/uploads", requestId, 200, Date.now() - started);
-    return NextResponse.json({ success: true, count: stored });
+    return NextResponse.json({
+      success: true,
+      count: stored,
+      remaining: Math.max(0, MAX_FILES - uploadedCount - stored),
+    });
   } catch (error) {
     console.error("[api/uploads POST] Error:", error);
     logRequestMeta("/api/uploads", requestId, 500, Date.now() - started);

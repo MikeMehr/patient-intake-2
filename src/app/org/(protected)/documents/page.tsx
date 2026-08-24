@@ -676,7 +676,8 @@ export default function OrgDocumentsPage() {
             </div>
           </form>
           <p className="text-xs text-slate-400 mt-3">
-            The patient gets a one-time link (expires in 7 days) to upload images or PDFs.
+            The patient gets a secure link (expires in 7 days) to upload up to 3 images or PDFs,
+            in one go or across several visits.
             Anything you write above is shown in the email and on the upload page.
           </p>
         </div>
