@@ -40,6 +40,9 @@ rostered patients' stored values must keep POSTing back unchanged so a save wipe
 plain `date_joined` practice field stays visible (it is a demographic field, not rostering), as
 does the read-only roster-status line in the chart header for patients that already have one.
 
+`patch_hide_date_joined.py` (same day) also hides the plain **Date Joined** (`date_joined`)
+practice field on both forms — same hidden-not-deleted rationale.
+
 | File | What |
 |---|---|
 | `demographic/demographicaddarecordhtm.jsp` | Patched copy of the live file (Add Patient). |
@@ -47,6 +50,7 @@ does the read-only roster-status line in the chart header for patients that alre
 | `demographic/patch_hide_roster.py` | Add form, patch 2 (idempotent; run after patch 1). |
 | `demographic/demographiceditdemographic.jsp` | Patched copy of the live file (Edit Patient). |
 | `demographic/patch_hide_roster_edit.py` | Edit page patch (idempotent). |
+| `demographic/patch_hide_date_joined.py` | Hides the plain `date_joined` field on BOTH forms (idempotent). |
 
 Verified with JspC (0 errors). Backups on the box: `demographicaddarecordhtm.jsp.oscarbak.20260824*`,
 `demographiceditdemographic.jsp.oscarbak.20260824*`.

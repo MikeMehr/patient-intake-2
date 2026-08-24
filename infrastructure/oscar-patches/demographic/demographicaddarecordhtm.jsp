@@ -1855,7 +1855,7 @@ console.log(year+"-"+month+"-"+day);
                 <input type="hidden" name="hc_renew_date_day" id="hc_renew_date_day">
             </div>
         </div>
-        <div class="control-group span5">
+        <div class="control-group span5" style="display:none"><%-- MyMD 2026-08-24: date_joined hidden; input kept so scripts and stored values keep working --%>
             <label class="control-label" for="date_joined"><bean:message key="demographic.demographiceditdemographic.formDateJoined1" /></label>
             <div class="controls">
                 <input type="date" id="date_joined" name="date_joined" onchange="parsedate_joined();" >
