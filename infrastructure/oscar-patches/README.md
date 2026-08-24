@@ -31,13 +31,25 @@ Two stacked patches, applied in order:
    block is ever unhidden. Rostering fields on demographiceditdemographic.jsp (chart edit) are
    untouched, as is the `DEMOGRAPHIC_PATIENT_ROSTERING=true` property.
 
+The **Edit Patient page** (`demographic/demographiceditdemographic.jsp`, the chart's demographic
+editor) is stripped the same way (`patch_hide_roster_edit.py`): the enrollment date
+(`roster_date`), Roster Status, Enrolled-To, and roster termination date/reason are hidden. Again
+hidden not deleted — the onLoad handlers (`checkRosterStatus2`, `parseroster_date`,
+`parseroster_termination_date`) and the updateSubmit validation read those elements, and existing
+rostered patients' stored values must keep POSTing back unchanged so a save wipes nothing. The
+plain `date_joined` practice field stays visible (it is a demographic field, not rostering), as
+does the read-only roster-status line in the chart header for patients that already have one.
+
 | File | What |
 |---|---|
-| `demographic/demographicaddarecordhtm.jsp` | Patched copy of the live file. |
-| `demographic/patch_roster_date.py` | Patch 1 (idempotent; expects the stock block). |
-| `demographic/patch_hide_roster.py` | Patch 2 (idempotent; run after patch 1). |
+| `demographic/demographicaddarecordhtm.jsp` | Patched copy of the live file (Add Patient). |
+| `demographic/patch_roster_date.py` | Add form, patch 1 (idempotent; expects the stock block). |
+| `demographic/patch_hide_roster.py` | Add form, patch 2 (idempotent; run after patch 1). |
+| `demographic/demographiceditdemographic.jsp` | Patched copy of the live file (Edit Patient). |
+| `demographic/patch_hide_roster_edit.py` | Edit page patch (idempotent). |
 
-Verified with JspC (0 errors). Backups on the box: `demographicaddarecordhtm.jsp.oscarbak.20260824*`.
+Verified with JspC (0 errors). Backups on the box: `demographicaddarecordhtm.jsp.oscarbak.20260824*`,
+`demographiceditdemographic.jsp.oscarbak.20260824*`.
 
 ## Add Specialist — PathwaysBC paste into the consultation list (added 2026-08-17)
 
