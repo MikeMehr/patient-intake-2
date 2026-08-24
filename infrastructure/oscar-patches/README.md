@@ -9,6 +9,26 @@ editing any JSP, delete its compiled copy under
 `/opt/tomcat9/work/Catalina/localhost/oscar/org/apache/jsp/...` to force a recompile — no Tomcat
 restart is needed.
 
+## Add Patient — enrollment date optional, defaults to today (added 2026-08-24)
+
+On the Add Demographic form (`demographic/demographicaddarecordhtm.jsp`), picking Roster Status
+"Rostered" used to make `aSubmit()` **silently refuse to save** unless an enrollment ("Date
+Joined") date and an Enrolled-To doctor were entered — the alerts were commented out upstream, so
+the Add button just did nothing. Rostering/enrolment is administrative attachment bookkeeping (it
+has no effect on FFS MSP billing), so the date is not worth blocking on.
+
+Now: a blank enrollment date is auto-filled with **today's date** (via the existing
+`parseroster_date()` so the hidden year/month/day fields stay in sync), and the Enrolled-To check
+alerts visibly instead of failing silently. This also removes a latent bug where the old check read
+the nonexistent field `roster_date_date` (the hidden input is `roster_date_day`).
+
+| File | What |
+|---|---|
+| `demographic/demographicaddarecordhtm.jsp` | Patched copy of the live file. |
+| `demographic/patch_roster_date.py` | The idempotent patcher (run on the box as root; expects the stock block). |
+
+Verified with JspC (0 errors). Backup on the box: `demographicaddarecordhtm.jsp.oscarbak.20260824*`.
+
 ## Add Specialist — PathwaysBC paste into the consultation list (added 2026-08-17)
 
 An **Add Specialist** nav item (right of Specialist Directory) opens `mymd/addSpecialist.jsp`:
