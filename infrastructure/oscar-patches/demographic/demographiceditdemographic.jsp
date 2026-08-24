@@ -1967,7 +1967,7 @@ if( demographic!=null) {
 
 
 						<% } %>
-						<div class="demographicSection" id="clinicStatus">
+						<div class="demographicSection" id="clinicStatus" style="display:none"><%-- MyMD 2026-08-24: read-only enrolment/clinic-status summary hidden --%>
 						<h4>&nbsp;<bean:message key="demographic.demographiceditdemographic.msgClinicStatus"/><input type="button" class="btn btn-link"  onclick="popup(1000, 650, 'EnrollmentHistory.jsp?demographicNo=<%=demographic_no%>', 'enrollmentHistory'); return false;" value="<bean:message key="demographic.demographiceditdemographic.msgEnrollmentHistory"/>"><i class="icon-edit" style="float: right;" title="<bean:message key="demographic.demographiceditdemographic.msgEdit"/>" onclick="showHideDetail();closeAccordion(); getElementById('insuranceSectionContent').style.height='auto';"></i></h4>
 						<table style="background-color: #FFFFFF">
 						<% if (!StringUtils.isBlank(demographic.getRosterStatusDisplay())) { // don't show roster status if not set %>
