@@ -292,11 +292,18 @@
     static final java.util.regex.Pattern NUM = java.util.regex.Pattern.compile(
         "(?<!\\d)(?:\\+?1[\\s.\\-]?)?\\(?([2-9]\\d{2})\\)?[\\s.\\-]?([2-9]\\d{2})[\\s.\\-]?(\\d{4})(?!\\d)");
     // Anchored at the end so the label must sit immediately before the number's lookback window.
+    // Letterhead footers abbreviate to a single letter ("P: <phone> F: <fax>"), so a bare F/P/T
+    // counts too — but only with its colon or period, or any word ending in f would qualify.
     static final java.util.regex.Pattern FAX_LABEL = java.util.regex.Pattern.compile(
-        "(?i)(?:\\bfax\\b|facsimile|\\bfx\\b)\\s*(?:#|no\\.?|number)?\\s*[:.\\-]?\\s*\\(?$");
+        "(?i)(?:(?:\\bfax\\b|facsimile|\\bfx\\b)\\s*(?:#|no\\.?|number)?\\s*[:.\\-]?|\\bf\\s*[:.])\\s*\\(?$");
     static final java.util.regex.Pattern ANTI_LABEL = java.util.regex.Pattern.compile(
-        "(?i)(?:\\btel(?:ephone)?\\b|\\bphone\\b|\\bph\\b|\\bcell\\b|\\bmobile\\b|\\bvoice\\b|"
-        + "\\bphn\\b|\\bmsp\\b|health\\s*(?:no|number|#))\\s*[:.\\-]?\\s*\\(?$");
+        "(?i)(?:(?:\\btel(?:ephone)?\\b|\\bphone\\b|\\bph\\b|\\bcell\\b|\\bmobile\\b|\\bvoice\\b|"
+        + "\\bphn\\b|\\bmsp\\b|health\\s*(?:no|number|#))\\s*[:.\\-]?|\\b[pt]\\s*[:.])\\s*\\(?$");
+    // "fax your response to <number>" — body text naming the reply destination outright, the way
+    // recall letters phrase it. Outranks a bare "F:"/"Fax:" label (+5 vs +4), and its own "to"
+    // must not count as recipient context — that "to" IS the label.
+    static final java.util.regex.Pattern FAX_TO_VERB = java.util.regex.Pattern.compile(
+        "(?i)\\bfax\\b[^\\n\\r]{0,30}?\\bto\\b\\s*[:.]?\\s*\\(?$");
     // Cover sheets label BOTH numbers "Fax": "To ... Fax <ours>" then "From ... (FAX: <theirs>)".
     // These two look at a wider window than the label patterns (which are anchored right before
     // the number) so they can see the To/From on the line above, and they break that tie: the
@@ -324,7 +331,8 @@
      * Best fax-number candidate across pages, or null.
      * Returns { tenDigits, "1"-based page, "labeled"|"only" }.
      *
-     * A "Fax:"-labelled number wins outright — but when several numbers are labelled "Fax" (a
+     * A "Fax:"-labelled number wins outright, and a "fax your response to <number>" instruction
+     * outranks even that — but when several numbers are labelled "Fax" (a
      * cover sheet labels the recipient's AND the sender's), nearby From/To context orders them:
      * sender context outranks recipient context. A number in a To block is also no longer
      * "labelled" on its own (4-2=2), so it can only be suggested as the document's single
@@ -342,10 +350,12 @@
                 String before = pages.get(p).substring(Math.max(0, m.start() - 25), m.start());
                 String context = pages.get(p).substring(Math.max(0, m.start() - 80), m.start());
                 int score = 0;
-                if (FAX_LABEL.matcher(before).find())  score += 4;   // "Fax: " right before it
-                if (ANTI_LABEL.matcher(before).find()) score -= 3;   // "Tel: " / "PHN " right before it
+                boolean faxToVerb = FAX_TO_VERB.matcher(before).find();
+                if (FAX_LABEL.matcher(before).find())  score += 4;   // "Fax: " / "F: " right before it
+                else if (faxToVerb)                    score += 5;   // "fax your response to " right before it
+                if (ANTI_LABEL.matcher(before).find()) score -= 3;   // "Tel: " / "P: " / "PHN " right before it
                 if (SENDER_CTX.matcher(context).find())    score += 2;   // "From ..." nearby
-                if (RECIPIENT_CTX.matcher(context).find()) score -= 2;   // "To ..." nearby
+                if (!faxToVerb && RECIPIENT_CTX.matcher(context).find()) score -= 2;   // "To ..." nearby
                 if (score > bestScore) { bestScore = score; bestNum = digits; bestPage = p + 1; }
             }
         }
