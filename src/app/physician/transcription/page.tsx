@@ -1893,12 +1893,13 @@ export default function PhysicianTranscriptionPage() {
   function handleAiFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 25 * 1024 * 1024) {
-      setAiError("File must be 25 MB or smaller.");
+    const isImage = file.type.startsWith("image/") || /\.(heic|heif)$/i.test(file.name);
+    const maxBytes = isImage ? 20 * 1024 * 1024 : 25 * 1024 * 1024;
+    if (file.size > maxBytes) {
+      setAiError(isImage ? "Images must be 20 MB or smaller." : "PDFs must be 25 MB or smaller.");
       e.target.value = "";
       return;
     }
-    const isImage = file.type.startsWith("image/") || /\.(heic|heif)$/i.test(file.name);
     const reader = new FileReader();
     reader.onload = () => {
       const dataUrl = reader.result as string;
