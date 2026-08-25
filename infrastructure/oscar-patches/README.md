@@ -15,11 +15,16 @@ restart is needed.
 requisition) and fid 7 (CT/XR/US requisition) that reads an `ha_prefill` base64url
 JSON query param and ticks/fills the named form fields — this is how the
 transcription page's "Create requisition" buttons open a pre-filled eForm. Lives in
-the database, so a WAR redeploy does NOT wipe it. Full field maps, format, and
-smoke test: `docs/oscar/eform-prefill-install.md`.
+the database, so a WAR redeploy does NOT wipe it.
+`eform-fax/patch_consultation_prefill.py` does the same for the Consultation
+Request page (`oscarEncounter/oscarConsultationRequest/ConsultationFormRequest.jsp`,
+the "Create consultation" button) — that one is a webapp JSP, so a WAR redeploy
+DOES wipe it. Full field maps, format, and smoke test:
+`docs/oscar/eform-prefill-install.md`.
 
 ```
 sudo python3 patch_eform_prefill.py 3 7
+sudo python3 patch_consultation_prefill.py
 ```
 
 ## Manual PDF upload into the Faxes inbox (added 2026-08-24)

@@ -18,6 +18,11 @@ export type FillSpec = {
   checks: string[];
   // Free-text element ids/names -> value (set if empty, append otherwise).
   fields: Record<string, string>;
+  // <select> ids/names -> option to choose, matched by option value first, then
+  // case-insensitive visible text (used by the Consultation Request page: the
+  // service select matches by text, urgency by value). eForm-side scripts that
+  // predate this key simply ignore it.
+  selects?: Record<string, string>;
 };
 
 // The imaging requisition is fid=7 ("1 - CT/XR/US Req - FHA"); the screenshot
@@ -25,6 +30,12 @@ export type FillSpec = {
 export const EFORM_FIDS = { labs: 3, imaging: 7 } as const;
 
 export const OSCAR_EFORM_ADD_PATH = "/oscar/eform/efmformadd_data.jsp";
+
+// The Consultation Request page is a stock JSP, not an eForm — it takes the
+// patient as `de` and gets its own ha_prefill reader from
+// infrastructure/oscar-patches/eform-fax/patch_consultation_prefill.py.
+export const OSCAR_CONSULTATION_PATH =
+  "/oscar/oscarEncounter/oscarConsultationRequest/ConsultationFormRequest.jsp";
 
 // Keep the encoded URL comfortably inside Tomcat's ~8KB request-line budget.
 const MAX_SPEC_JSON_CHARS = 4000;
@@ -37,6 +48,8 @@ const LONG_TEXT_FIELDS = [
   "RelevantHistory",
   "RelevantHistoryText",
   "DiagnosisAndIndications",
+  "clinicalInformation",
+  "reasonForConsultation",
 ];
 
 function truncate(value: string, max: number): string {
@@ -63,6 +76,14 @@ export function clampFillSpec(spec: FillSpec): ClampResult {
     fields[key] = clipped;
   }
   let clamped: FillSpec = { ...spec, fields };
+  if (spec.selects) {
+    const selects: Record<string, string> = {};
+    for (const [key, raw] of Object.entries(spec.selects)) {
+      const value = raw.trim();
+      if (value) selects[key] = truncate(value, MAX_SHORT_FIELD_CHARS);
+    }
+    clamped = { ...clamped, selects };
+  }
 
   for (const field of LONG_TEXT_FIELDS) {
     if (JSON.stringify(clamped).length <= MAX_SPEC_JSON_CHARS) break;
@@ -96,4 +117,12 @@ export function buildEformAddUrl(oscarOrigin: string, spec: FillSpec): string {
     ha_prefill: encodeFillSpecParam(spec),
   });
   return `${oscarOrigin}${OSCAR_EFORM_ADD_PATH}?${params.toString()}`;
+}
+
+export function buildConsultationRequestUrl(oscarOrigin: string, spec: FillSpec): string {
+  const params = new URLSearchParams({
+    de: spec.demographicNo,
+    ha_prefill: encodeFillSpecParam(spec),
+  });
+  return `${oscarOrigin}${OSCAR_CONSULTATION_PATH}?${params.toString()}`;
 }

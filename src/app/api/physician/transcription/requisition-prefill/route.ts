@@ -10,10 +10,13 @@ import { clampFillSpec } from "@/lib/oscar/eform-prefill";
 import {
   buildImagingFillSpec,
   buildLabsFillSpec,
+  buildReferralFillSpecs,
   type ImagingExtraction,
   type ImagingModality,
   type ImagingStudy,
   type LabsExtraction,
+  type ReferralExtraction,
+  type ReferralItem,
 } from "@/lib/oscar/eform-prefill-maps";
 import {
   buildContentFilterPayload,
@@ -44,6 +47,15 @@ Return valid JSON only, exactly: {"tests": string[], "indication": string, "subj
 - "indication": a 1-2 line clinical indication combining the rationales given (e.g. "Joint pain, r/o rheumatoid arthritis").
 - "subject": a summary line of at most 60 characters (e.g. "Bloodwork - RA workup").
 - Write everything in English. No markdown, no code fences, no extra keys.`;
+
+const referralSystemPrompt = `You extract specialist referrals from a physician's referral-recommendations text (and assessment, if provided).
+Return valid JSON only, exactly: {"referrals": [{"service": string, "urgency": "routine"|"urgent", "reason": string, "clinicalInformation": string}]}.
+- One entry per distinct referral stated in the text. Never invent referrals not present in the text.
+- "service": the specialty as a plain noun matching a clinic directory entry (e.g. "Dermatology", "Orthopedics", "Gynecology") — no "Dr.", no "referral to".
+- "urgency": "urgent" only when the text says so; otherwise "routine".
+- "reason": a 1-3 line reason for consultation addressed to the specialist (e.g. "Thank you for seeing this patient. Evaluate ...").
+- "clinicalInformation": 1-3 lines of pertinent positives/negatives and relevant history drawn from the text/assessment; empty string if none given.
+- Write everything in English; use standard clinical abbreviations. No markdown, no code fences, no extra keys.`;
 
 function asString(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
@@ -91,6 +103,34 @@ function parseLabsExtraction(raw: unknown): LabsExtraction | null {
     subject: asString(record.subject),
   };
 }
+
+function parseReferralExtraction(raw: unknown): ReferralExtraction | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const record = raw as Record<string, unknown>;
+  const referralsRaw = Array.isArray(record.referrals) ? record.referrals : [];
+  const referrals: ReferralItem[] = [];
+  for (const entry of referralsRaw) {
+    if (!entry || typeof entry !== "object") continue;
+    const referral = entry as Record<string, unknown>;
+    const service = asString(referral.service);
+    const reason = asString(referral.reason);
+    if (!service && !reason) continue;
+    referrals.push({
+      service,
+      urgency: asString(referral.urgency).toLowerCase() === "urgent" ? "urgent" : "routine",
+      reason,
+      clinicalInformation: asString(referral.clinicalInformation),
+    });
+  }
+  if (referrals.length === 0) return null;
+  return { referrals };
+}
+
+const SYSTEM_PROMPTS = {
+  imaging: imagingSystemPrompt,
+  labs: labsSystemPrompt,
+  referral: referralSystemPrompt,
+} as const;
 
 export async function POST(request: NextRequest) {
   const requestId = getRequestId(request.headers);
@@ -151,7 +191,7 @@ export async function POST(request: NextRequest) {
     const completion = await azure.client.chat.completions.create({
       model: azure.deployment,
       messages: [
-        { role: "system", content: type === "imaging" ? imagingSystemPrompt : labsSystemPrompt },
+        { role: "system", content: SYSTEM_PROMPTS[type] },
         { role: "user", content: userContent },
       ],
       max_completion_tokens: 800,
@@ -178,6 +218,29 @@ export async function POST(request: NextRequest) {
       );
     } catch {
       extractedRaw = null;
+    }
+
+    if (type === "referral") {
+      const extraction = parseReferralExtraction(extractedRaw);
+      if (!extraction) {
+        status = 422;
+        const res = NextResponse.json(
+          { error: "Could not extract any referrals from this recommendation. Please fill the form manually." },
+          { status },
+        );
+        logRequestMeta(ROUTE, requestId, status, Date.now() - started);
+        return res;
+      }
+      const { specs, summary } = buildReferralFillSpecs(extraction, demographicNo);
+      let truncated = false;
+      const clampedSpecs = specs.map((s) => {
+        const clamped = clampFillSpec(s);
+        truncated = truncated || clamped.truncated;
+        return clamped.spec;
+      });
+      const res = NextResponse.json({ specs: clampedSpecs, truncated, summary });
+      logRequestMeta(ROUTE, requestId, status, Date.now() - started);
+      return res;
     }
 
     let result;

@@ -11,7 +11,7 @@ import QuickAskAiModal from "@/components/QuickAskAiModal";
 import { convertToWav, getMicrophoneErrorMessage, MAX_STT_AUDIO_BYTES } from "@/lib/audio-utils";
 import { classifyAuthFailure, type AuthFailure } from "@/lib/client/auth-response";
 import { useOscarLaunch, describeSendFailure } from "@/components/physician/useOscarLaunch";
-import { buildEformAddUrl } from "@/lib/oscar/eform-prefill";
+import { buildConsultationRequestUrl, buildEformAddUrl, type FillSpec } from "@/lib/oscar/eform-prefill";
 import { OscarLaunchBanner } from "@/components/physician/OscarLaunchBanner";
 import {
   clearStoredTranscript,
@@ -315,9 +315,12 @@ export default function PhysicianTranscriptionPage() {
   const [showImaging, setShowImaging] = useState(false);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   // OSCAR eForm prefill ("Create requisition") — only offered when launched from OSCAR.
-  const [requisitionLoading, setRequisitionLoading] = useState<null | "labs" | "imaging">(null);
+  const [requisitionLoading, setRequisitionLoading] = useState<null | "labs" | "imaging" | "referral">(null);
   const [requisitionError, setRequisitionError] = useState<string | null>(null);
   const [requisitionNotice, setRequisitionNotice] = useState<string | null>(null);
+  // Extra referrals beyond the first — each click opens the next one (popup
+  // blockers allow one synchronously-opened window per click).
+  const [referralQueue, setReferralQueue] = useState<{ spec: FillSpec; label: string }[]>([]);
 
   useEffect(() => {
     if (!showHpi) return;
@@ -877,12 +880,16 @@ export default function PhysicianTranscriptionPage() {
     }
   }
 
-  // Open the patient's OSCAR eForm (imaging fid=7 / labs fid=3) prefilled from
-  // the recommendation text. The window MUST be opened synchronously in the
-  // click handler — opening it after the awaited fetch gets popup-blocked.
-  async function openOscarRequisition(type: "labs" | "imaging") {
+  // Open the patient's OSCAR form prefilled from the recommendation text:
+  // imaging eForm (fid=7), lab eForm (fid=3), or the Consultation Request page
+  // for referrals. The window MUST be opened synchronously in the click
+  // handler — opening it after the awaited fetch gets popup-blocked.
+  async function openOscarRequisition(type: "labs" | "imaging" | "referral") {
     if (requisitionLoading) return;
-    const recommendationText = type === "labs" ? recommendations?.labs : recommendations?.imaging;
+    const recommendationText =
+      type === "labs" ? recommendations?.labs
+        : type === "imaging" ? recommendations?.imaging
+          : recommendations?.referrals;
     if (!recommendationText || !oscarLaunch.demographicNo || !oscarLaunch.openerOrigin) return;
     setRequisitionError(null);
     setRequisitionNotice(null);
@@ -896,6 +903,19 @@ export default function PhysicianTranscriptionPage() {
       win.document.write("<p style='font-family:sans-serif;padding:24px'>Preparing requisition…</p>");
     } catch {
       // Cosmetic only.
+    }
+
+    // Queued referrals were already extracted — open the next one without a new API call.
+    if (type === "referral" && referralQueue.length > 0) {
+      const [next, ...rest] = referralQueue;
+      win.location.href = buildConsultationRequestUrl(oscarLaunch.openerOrigin, next.spec);
+      setReferralQueue(rest);
+      setRequisitionNotice(
+        rest.length > 0
+          ? `Opened the ${next.label} consultation. ${rest.length} more queued — click again for ${rest[0].label}.`
+          : `Opened the ${next.label} consultation. Review it before submitting.`,
+      );
+      return;
     }
 
     setRequisitionLoading(type);
@@ -919,14 +939,33 @@ export default function PhysicianTranscriptionPage() {
         return;
       }
       const data = await res.json();
-      win.location.href = buildEformAddUrl(oscarLaunch.openerOrigin, data.spec);
       const notices: string[] = [];
       if (data.truncated) notices.push("Some text was shortened to fit the form.");
-      const unmapped: string[] = data.summary?.unmappedTests || [];
-      if (unmapped.length > 0) {
-        notices.push(`Not on the form, added to instructions: ${unmapped.join(", ")}.`);
+
+      if (type === "referral") {
+        const specs: FillSpec[] = data.specs || [];
+        const labels: string[] = data.summary?.referrals || [];
+        if (specs.length === 0) {
+          win.close();
+          setRequisitionError("No referrals could be extracted.");
+          return;
+        }
+        win.location.href = buildConsultationRequestUrl(oscarLaunch.openerOrigin, specs[0]);
+        const rest = specs.slice(1).map((spec, i) => ({ spec, label: labels[i + 1] || "next" }));
+        setReferralQueue(rest);
+        notices.push(
+          rest.length > 0
+            ? `Opened the ${labels[0] || "first"} consultation. ${rest.length} more queued — click again for ${rest[0].label}.`
+            : "Review the consultation before submitting.",
+        );
+      } else {
+        win.location.href = buildEformAddUrl(oscarLaunch.openerOrigin, data.spec);
+        const unmapped: string[] = data.summary?.unmappedTests || [];
+        if (unmapped.length > 0) {
+          notices.push(`Not on the form, added to instructions: ${unmapped.join(", ")}.`);
+        }
+        notices.push("Review the form before submitting.");
       }
-      notices.push("Review the form before submitting.");
       setRequisitionNotice(notices.join(" "));
     } catch {
       win.close();
@@ -1018,6 +1057,7 @@ export default function PhysicianTranscriptionPage() {
     setShowImaging(false);
     setRequisitionError(null);
     setRequisitionNotice(null);
+    setReferralQueue([]);
     try {
       const res = await fetch("/api/physician/transcription/generate", {
         method: "POST",
@@ -1547,6 +1587,7 @@ export default function PhysicianTranscriptionPage() {
     setShowImaging(false);
     setRequisitionError(null);
     setRequisitionNotice(null);
+    setReferralQueue([]);
   }
 
   async function handleRetranscribe() {
@@ -2626,9 +2667,25 @@ export default function PhysicianTranscriptionPage() {
                         )}
                         {showReferrals && recommendations?.referrals && (
                           <div className="mt-2 rounded-md border border-slate-200 bg-white px-3 py-2">
-                            <div className="flex items-center justify-between mb-1">
+                            <div className="flex items-center justify-between mb-1 gap-2">
                               <span className="text-xs font-semibold text-slate-700">Referral letters</span>
-                              <button type="button" onClick={() => void copyText(recommendations.referrals, "referrals")} className="text-xs text-slate-500 hover:text-slate-700">{copiedKey === "referrals" ? "Copied!" : "Copy"}</button>
+                              <span className="flex items-center gap-3">
+                                {oscarLaunch.launchMode && oscarLaunch.status === "resolved" && oscarLaunch.demographicNo && oscarLaunch.openerOrigin && (
+                                  <button
+                                    type="button"
+                                    onClick={() => void openOscarRequisition("referral")}
+                                    disabled={requisitionLoading !== null}
+                                    className="text-xs font-medium text-emerald-700 hover:text-emerald-900 disabled:text-slate-400"
+                                  >
+                                    {requisitionLoading === "referral"
+                                      ? "Preparing…"
+                                      : referralQueue.length > 0
+                                        ? `Create next consultation (${referralQueue.length} left)`
+                                        : "Create consultation"}
+                                  </button>
+                                )}
+                                <button type="button" onClick={() => void copyText(recommendations.referrals, "referrals")} className="text-xs text-slate-500 hover:text-slate-700">{copiedKey === "referrals" ? "Copied!" : "Copy"}</button>
+                              </span>
                             </div>
                             <pre className="whitespace-pre-wrap font-sans text-sm text-slate-800">{recommendations.referrals}</pre>
                           </div>

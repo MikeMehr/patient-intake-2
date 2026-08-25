@@ -1,8 +1,9 @@
 # eForm prefill from the transcription page ("Create requisition")
 
-The transcription page's Recommendations box offers **Create requisition** (imaging)
-and **Create lab requisition** (labs) when the page was launched from the OSCAR
-eChart Transcribe button. Clicking one:
+The transcription page's Recommendations box offers **Create requisition**
+(imaging), **Create lab requisition** (labs), and **Create consultation**
+(referrals) when the page was launched from the OSCAR eChart Transcribe button.
+Clicking one:
 
 1. POSTs the recommendation text to `/api/physician/transcription/requisition-prefill`,
    which uses Azure OpenAI to extract a structured order and maps it onto eForm
@@ -23,18 +24,24 @@ app-repo change; the OSCAR patch never needs re-running for that.
 ## Install (on the OSCAR box)
 
 ```
-scp -i ~/.ssh/oscar_server infrastructure/oscar-patches/eform-fax/patch_eform_prefill.py manucher@10.9.0.1:/tmp/
+scp -i ~/.ssh/oscar_server infrastructure/oscar-patches/eform-fax/patch_eform_prefill.py \
+    infrastructure/oscar-patches/eform-fax/patch_consultation_prefill.py manucher@10.9.0.1:/tmp/
 ssh -i ~/.ssh/oscar_server manucher@10.9.0.1
 sudo python3 /tmp/patch_eform_prefill.py 3 7
+sudo python3 /tmp/patch_consultation_prefill.py
 ```
 
-Idempotent (skips a form that already has `haPrefill`). Writes a hex backup of
-each `form_html` to `/var/lib/OscarDocument/oscar/mymd_eform_backups/` first.
-Rollback: `UPDATE eform SET form_html=UNHEX('<backup file contents>') WHERE fid=N;`
+Both are idempotent (they skip when the script is already present). The eForm
+patch writes a hex backup of each `form_html` to
+`/var/lib/OscarDocument/oscar/mymd_eform_backups/` first
+(rollback: `UPDATE eform SET form_html=UNHEX('<backup file contents>') WHERE fid=N;`);
+the consultation patch leaves a `.oscarbak.<timestamp>` beside the JSP and
+deletes the compiled copy so Tomcat recompiles without a restart.
 
-The patch lives in the **database**, not the webapp, so a WAR redeploy does NOT
-wipe it — but restoring an eForm from an old backup or re-importing the form
-would.
+The eForm patch lives in the **database**, so a WAR redeploy does NOT wipe it —
+but restoring an eForm from an old backup or re-importing the form would. The
+consultation patch edits a **webapp JSP**, so a WAR redeploy DOES wipe it —
+re-run after redeploys like the other JSP patches.
 
 ## Patched forms and their field maps
 
@@ -67,6 +74,25 @@ Side and body-part checkboxes exist only in the yellow quick-pick panel
 prefill puts side/body-part into the exam text instead. Risk-factor boxes
 (PregnantYes/No, DiabeticYes/No, anticoagulants, dialysis, …) are deliberately
 never emitted by the app-side mapping: unknown information is never ticked.
+
+### Consultation Request — `ConsultationFormRequest.jsp` (not an eForm)
+
+Opened as `ConsultationFormRequest.jsp?de=<demographicNo>&ha_prefill=B`;
+`patch_consultation_prefill.py` injects the reader before `</body>`. One request
+per referral — for multiple referrals the transcription page queues them and the
+button becomes "Create next consultation (N left)". The spec uses a `selects`
+map in addition to `fields`:
+
+| What | Element | Matching |
+|---|---|---|
+| Service | `service` select | by visible option TEXT (case-insensitive; exact, then contains) — options are built client-side, so the script waits up to ~6 s for them, then fires `onchange` so the specialist list loads |
+| Urgency | `urgency` select | by option VALUE: `2` = Non-Urgent, `1` = Urgent, `3` = Return |
+| Reason for Consultation | `reasonForConsultation` | textarea |
+| Pertinent clinical information | `clinicalInformation` | textarea |
+
+The wrong-patient guard checks `spec.demographicNo` against the `de` URL param
+(falling back to the hidden `#demographicNo` input). An unmatched service name
+just leaves the select untouched for the physician to pick.
 
 ## `ha_prefill` format and safety
 

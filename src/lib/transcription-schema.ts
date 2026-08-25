@@ -32,7 +32,7 @@ export const transcriptionRecommendationsRequestSchema = z.object({
 });
 
 export const requisitionPrefillRequestSchema = z.object({
-  type: z.enum(["imaging", "labs"]),
+  type: z.enum(["imaging", "labs", "referral"]),
   recommendationText: z.string().trim().min(1).max(8000),
   assessment: z.string().trim().max(6000).optional(),
   demographicNo: z.string().trim().regex(/^\d{1,20}$/),

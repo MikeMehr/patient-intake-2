@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildImagingFillSpec, buildLabsFillSpec } from "./eform-prefill-maps";
+import { buildImagingFillSpec, buildLabsFillSpec, buildReferralFillSpecs } from "./eform-prefill-maps";
 
 describe("buildImagingFillSpec", () => {
   it("combines all studies into one form with modality checks and exam text", () => {
@@ -76,5 +76,32 @@ describe("buildLabsFillSpec", () => {
       "42",
     );
     expect(spec.fields.subject).toBe("Fatigue workup");
+  });
+});
+
+describe("buildReferralFillSpecs", () => {
+  it("builds one consultation spec per referral with service text and urgency value", () => {
+    const { specs, summary } = buildReferralFillSpecs(
+      {
+        referrals: [
+          {
+            service: "Dermatology",
+            urgency: "routine",
+            reason: "Evaluate a nevus on the tip of the nose.",
+            clinicalInformation: "No change in size; no bleeding.",
+          },
+          { service: "Orthopedics", urgency: "urgent", reason: "Knee instability.", clinicalInformation: "" },
+        ],
+      },
+      "45",
+    );
+    expect(specs).toHaveLength(2);
+    expect(specs[0].demographicNo).toBe("45");
+    expect(specs[0].selects).toEqual({ urgency: "2", service: "Dermatology" });
+    expect(specs[0].fields.reasonForConsultation).toBe("Evaluate a nevus on the tip of the nose.");
+    expect(specs[0].fields.clinicalInformation).toBe("No change in size; no bleeding.");
+    expect(specs[1].selects).toEqual({ urgency: "1", service: "Orthopedics" });
+    expect(specs[1].fields.clinicalInformation).toBeUndefined();
+    expect(summary.referrals).toEqual(["Dermatology", "Orthopedics"]);
   });
 });

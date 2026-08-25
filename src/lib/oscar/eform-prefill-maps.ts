@@ -19,6 +19,14 @@
 // whose ids come from mapLabTestsToEformFields; free text goes to
 // DiagnosisAndIndications / AdditionalTestInstructions / subject.
 
+// The Consultation Request page (ConsultationFormRequest.jsp, patched by
+// patch_consultation_prefill.py) is targeted via `selects` + `fields`:
+//   - `service` select: options are built client-side from the consultation
+//     services list, so we match by visible text (the specialty name);
+//   - `urgency` select: matched by option value — 2 = Non-Urgent, 1 = Urgent;
+//   - `reasonForConsultation` / `clinicalInformation` textareas.
+// One consultation request per referral — multiple referrals yield multiple specs.
+
 import { mapLabTestsToEformFields } from "@/lib/lab-requisition-mapping";
 import { EFORM_FIDS, type FillSpec } from "@/lib/oscar/eform-prefill";
 
@@ -105,6 +113,50 @@ export function buildImagingFillSpec(
     },
     summary: { studies: studyLines },
   };
+}
+
+export type ReferralItem = {
+  service: string;
+  urgency: "routine" | "urgent";
+  reason: string;
+  clinicalInformation: string;
+};
+
+export type ReferralExtraction = {
+  referrals: ReferralItem[];
+};
+
+const URGENCY_OPTION_VALUES: Record<ReferralItem["urgency"], string> = {
+  routine: "2", // "Non-Urgent"
+  urgent: "1",
+};
+
+export type ReferralFillResult = {
+  specs: FillSpec[];
+  summary: { referrals: string[] };
+};
+
+/** One Consultation Request per referral. `fid` is 0 — the page is not an eForm. */
+export function buildReferralFillSpecs(
+  extraction: ReferralExtraction,
+  demographicNo: string,
+): ReferralFillResult {
+  const specs: FillSpec[] = [];
+  const referralLines: string[] = [];
+  for (const referral of extraction.referrals) {
+    const fields: Record<string, string> = {};
+    if (referral.reason.trim()) fields.reasonForConsultation = referral.reason.trim();
+    if (referral.clinicalInformation.trim()) {
+      fields.clinicalInformation = referral.clinicalInformation.trim();
+    }
+    const selects: Record<string, string> = {
+      urgency: URGENCY_OPTION_VALUES[referral.urgency] ?? URGENCY_OPTION_VALUES.routine,
+    };
+    if (referral.service.trim()) selects.service = referral.service.trim();
+    specs.push({ v: 1, fid: 0, demographicNo, checks: [], fields, selects });
+    referralLines.push(referral.service.trim() || "Consultation");
+  }
+  return { specs, summary: { referrals: referralLines } };
 }
 
 export type LabsFillResult = {

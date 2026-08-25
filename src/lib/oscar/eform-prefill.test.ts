@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  buildConsultationRequestUrl,
   buildEformAddUrl,
   clampFillSpec,
   encodeFillSpecParam,
@@ -71,6 +72,25 @@ describe("clampFillSpec", () => {
     expect(truncated).toBe(true);
     expect(JSON.stringify(clamped).length).toBeLessThanOrEqual(4000);
     expect(clamped.checks).toEqual(big.checks);
+  });
+});
+
+describe("clampFillSpec selects", () => {
+  it("passes selects through, dropping empty values", () => {
+    const { spec: clamped } = clampFillSpec(
+      spec({ selects: { service: "Dermatology", urgency: "2", empty: "  " } }),
+    );
+    expect(clamped.selects).toEqual({ service: "Dermatology", urgency: "2" });
+  });
+});
+
+describe("buildConsultationRequestUrl", () => {
+  it("targets ConsultationFormRequest.jsp with de and ha_prefill", () => {
+    const s = spec({ fid: 0, selects: { service: "Dermatology" } });
+    const url = new URL(buildConsultationRequestUrl("https://oscar.example.ca", s));
+    expect(url.pathname).toBe("/oscar/oscarEncounter/oscarConsultationRequest/ConsultationFormRequest.jsp");
+    expect(url.searchParams.get("de")).toBe("123");
+    expect(decodeParam(url.searchParams.get("ha_prefill") || "")).toEqual(s);
   });
 });
 
