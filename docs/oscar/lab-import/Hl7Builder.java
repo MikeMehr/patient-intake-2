@@ -72,6 +72,32 @@ public class Hl7Builder {
         return sb.toString();
     }
 
+    /**
+     * Joins narrative lines into the single NTE field OSCAR is able to read.
+     *
+     * OSCAR only ever shows the FIRST NTE segment attached to an OBX or an OBR: its
+     * PATHL7Handler.getOBXCommentCount() is hard-coded to return 1 or 0 (likewise
+     * getOBRCommentCount), and getOBXComment() reads NTE-3 repetition 0. One line per NTE
+     * therefore silently truncated every multi-line narrative to its opening line -- a stool
+     * PCR panel reported as "Negative" with the list of organisms actually tested thrown away,
+     * a Vitamin B12 result stripped of the interpretation that gives its cutoffs meaning.
+     *
+     * So the whole narrative travels as one field, its lines separated by the HL7 formatted-text
+     * break {@code \.br\}. That is what the real labs send and what PATHL7Handler.getString()
+     * looks for -- it rewrites the break to {@code <br />}, which labDisplay.jsp emits raw
+     * inside a &lt;pre&gt;. The break must be appended AFTER esc(), never through it: esc()
+     * turns a backslash into {@code \E\} and would reduce the break to literal text.
+     */
+    static String narrative(java.util.List<String> lines) {
+        StringBuilder sb = new StringBuilder();
+        for (String line : lines) {
+            if (line == null || line.trim().isEmpty()) continue;
+            if (sb.length() > 0) sb.append("\\.br\\");
+            sb.append(esc(line));
+        }
+        return sb.toString();
+    }
+
     /** "2026-07-17" + "12:40:38" -> "20260717124038" (HL7 TS). Returns "" if the date is absent. */
     static String ts(String date, String time) {
         if (date == null || date.isEmpty()) return "";
@@ -170,7 +196,15 @@ public class Hl7Builder {
             for (int i = 1; i <= 25; i++) m.append('|').append(obr[i]);
             m.append(CR);
 
-            int obxNo = 0, nteNo;
+            // Section-level notes (performing lab, narrative-only sections) belong to the OBR, and
+            // an NTE only lands in the ORDER_OBSERVATION group -- where getOBRComment() reads --
+            // when it sits BETWEEN the OBR and the first OBX. Emitted after the observations, as
+            // they once were, HAPI files them under the last OBSERVATION group instead, where they
+            // queue behind that result's own comments and are never seen.
+            String notes = narrative(s.notes);
+            if (!notes.isEmpty()) m.append("NTE|1||").append(notes).append(CR);
+
+            int obxNo = 0;
             for (LabPdfParser.Result res : s.results) {
                 obxNo++;
                 m.append("OBX|").append(obxNo).append("|").append(valueType(res.value)).append("|")
@@ -180,15 +214,8 @@ public class Hl7Builder {
                  .append(esc(res.status.isEmpty() ? "F" : res.status)).append("|||")
                  .append(ts(res.obsDate, res.obsTime)).append(CR);
 
-                nteNo = 0;
-                for (String c : res.comments) {
-                    m.append("NTE|").append(++nteNo).append("||").append(esc(c)).append(CR);
-                }
-            }
-            // Section-level notes (performing lab, narrative-only sections) attach to the OBR.
-            nteNo = 0;
-            for (String n : s.notes) {
-                m.append("NTE|").append(++nteNo).append("||").append(esc(n)).append(CR);
+                String comment = narrative(res.comments);
+                if (!comment.isEmpty()) m.append("NTE|1||").append(comment).append(CR);
             }
         }
         return m.toString();
