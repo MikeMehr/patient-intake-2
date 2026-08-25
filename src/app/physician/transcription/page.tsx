@@ -362,6 +362,10 @@ export default function PhysicianTranscriptionPage() {
   const [aiFileMime, setAiFileMime] = useState<string>("image/jpeg");
   const [aiFileName, setAiFileName] = useState<string>("");
   const [aiFileIsImage, setAiFileIsImage] = useState<boolean>(true);
+  const [phoneCaptureQr, setPhoneCaptureQr] = useState<string | null>(null);
+  const [phoneCaptureStarting, setPhoneCaptureStarting] = useState(false);
+  const phoneCaptureTokenRef = useRef<string | null>(null);
+  const phoneCapturePollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [aiPatientName, setAiPatientName] = useState<string>("");
   const [aiCopyFeedback, setAiCopyFeedback] = useState(false);
 
@@ -1911,6 +1915,72 @@ export default function PhysicianTranscriptionPage() {
     reader.readAsDataURL(file);
   }
 
+  function stopPhoneCapture() {
+    if (phoneCapturePollRef.current) {
+      clearInterval(phoneCapturePollRef.current);
+      phoneCapturePollRef.current = null;
+    }
+    phoneCaptureTokenRef.current = null;
+    setPhoneCaptureQr(null);
+  }
+
+  async function startPhoneCapture() {
+    if (phoneCaptureStarting || phoneCaptureQr) return;
+    setPhoneCaptureStarting(true);
+    setAiError(null);
+    try {
+      const res = await fetch("/api/physician/transcription/phone-capture", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || "Could not start phone capture.");
+      const token: string = data.token;
+      const captureUrl = `${window.location.origin}/capture/${token}`;
+      const QRCode = (await import("qrcode")).default;
+      const qrDataUrl = await QRCode.toDataURL(captureUrl, { width: 220, margin: 1 });
+      phoneCaptureTokenRef.current = token;
+      setPhoneCaptureQr(qrDataUrl);
+
+      phoneCapturePollRef.current = setInterval(async () => {
+        const activeToken = phoneCaptureTokenRef.current;
+        if (!activeToken) return;
+        try {
+          const pollRes = await fetch(`/api/physician/transcription/phone-capture/${activeToken}`);
+          if (!pollRes.ok) return;
+          const poll = await pollRes.json();
+          if (poll.status === "ready") {
+            setAiFile(`data:${poll.mimeType};base64,${poll.photoBase64}`);
+            setAiFileMime(poll.mimeType);
+            setAiFileName("phone-photo.jpg");
+            setAiFileIsImage(true);
+            stopPhoneCapture();
+          } else if (poll.status === "expired" || poll.status === "not_found") {
+            stopPhoneCapture();
+            setAiError("The QR code expired. Generate a new one to try again.");
+          }
+        } catch {
+          // Transient network error — keep polling.
+        }
+      }, 2000);
+    } catch (err) {
+      setAiError(err instanceof Error ? err.message : "Could not start phone capture.");
+    } finally {
+      setPhoneCaptureStarting(false);
+    }
+  }
+
+  function cancelPhoneCapture() {
+    const token = phoneCaptureTokenRef.current;
+    stopPhoneCapture();
+    if (token) {
+      fetch(`/api/physician/transcription/phone-capture/${token}`, { method: "DELETE" }).catch(() => {});
+    }
+  }
+
+  useEffect(() => {
+    return () => {
+      if (phoneCapturePollRef.current) clearInterval(phoneCapturePollRef.current);
+    };
+  }, []);
+
   async function handleAskAi() {
     if (!aiPrompt.trim() || aiLoading) return;
     setAiLoading(true);
@@ -2826,20 +2896,55 @@ export default function PhysicianTranscriptionPage() {
                             </button>
                           </div>
                         ) : (
-                          <label className="inline-flex items-center gap-2 cursor-pointer rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50">
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                            </svg>
-                            Attach photo or PDF
-                            <input
-                              type="file"
-                              accept="image/png,image/jpeg,image/webp,image/heic,image/heif,application/pdf"
-                              capture="environment"
-                              className="sr-only"
-                              onChange={handleAiFileChange}
-                              disabled={aiLoading}
-                            />
-                          </label>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <label className="inline-flex items-center gap-2 cursor-pointer rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50">
+                              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                              </svg>
+                              Attach photo or PDF
+                              <input
+                                type="file"
+                                accept="image/png,image/jpeg,image/webp,image/heic,image/heif,application/pdf"
+                                capture="environment"
+                                className="sr-only"
+                                onChange={handleAiFileChange}
+                                disabled={aiLoading}
+                              />
+                            </label>
+                            {!phoneCaptureQr && (
+                              <button
+                                type="button"
+                                onClick={startPhoneCapture}
+                                disabled={aiLoading || phoneCaptureStarting}
+                                className="inline-flex items-center gap-2 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-60"
+                              >
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                                </svg>
+                                {phoneCaptureStarting ? "Starting…" : "Take photo with phone"}
+                              </button>
+                            )}
+                          </div>
+                        )}
+                        {phoneCaptureQr && !aiFile && (
+                          <div className="mt-3 inline-flex flex-col items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 p-4">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={phoneCaptureQr} alt="QR code for phone camera" className="h-[180px] w-[180px] rounded-md bg-white p-1" />
+                            <p className="text-xs text-slate-500 text-center max-w-[220px]">
+                              Scan with your phone camera, take the photo, and it will appear here automatically.
+                            </p>
+                            <div className="flex items-center gap-2 text-xs text-slate-400">
+                              <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+                              Waiting for photo…
+                            </div>
+                            <button
+                              type="button"
+                              onClick={cancelPhoneCapture}
+                              className="text-xs text-slate-500 underline hover:text-slate-700"
+                            >
+                              Cancel
+                            </button>
+                          </div>
                         )}
                       </div>
                       {aiFile && !aiFileIsImage && (
