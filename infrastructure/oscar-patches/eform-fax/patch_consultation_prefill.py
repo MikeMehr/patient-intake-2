@@ -95,13 +95,20 @@ PREFILL_JS = r'''
 			try { if (sel.onchange) { sel.onchange(); } } catch (e) {}
 		}
 
+		function norm(t) { return String(t).toLowerCase().replace(/[^a-z0-9]+/g, " ").replace(/^\s+|\s+$/g, ""); }
+
 		var fields = spec.fields || {};
 		for (var fname in fields) {
 			if (!Object.prototype.hasOwnProperty.call(fields, fname)) { continue; }
 			var input = el(String(fname));
 			if (!input || !("value" in input)) { continue; }
 			var value = String(fields[fname]);
-			if (String(input.value).replace(/^\s+|\s+$/g, "") === "") { input.value = value; }
+			var existing = String(input.value).replace(/^\s+|\s+$/g, "");
+			if (existing === "") { input.value = value; }
+			// The page seeds boilerplate like "Thank you for seeing this patient." -
+			// when the new text starts with what is already there, replace it instead
+			// of appending a duplicate. Real content is still never clobbered.
+			else if (norm(value).indexOf(norm(existing)) === 0) { input.value = value; }
 			else { input.value += (String(input.tagName).toLowerCase() === "textarea" ? "\n" : "; ") + value; }
 		}
 	}
