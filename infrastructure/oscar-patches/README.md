@@ -9,6 +9,19 @@ editing any JSP, delete its compiled copy under
 `/opt/tomcat9/work/Catalina/localhost/oscar/org/apache/jsp/...` to force a recompile — no Tomcat
 restart is needed.
 
+## eForm prefill from the transcription page (added 2026-08-24)
+
+`eform-fax/patch_eform_prefill.py` injects a script into `form_html` of fid 3 (lab
+requisition) and fid 7 (CT/XR/US requisition) that reads an `ha_prefill` base64url
+JSON query param and ticks/fills the named form fields — this is how the
+transcription page's "Create requisition" buttons open a pre-filled eForm. Lives in
+the database, so a WAR redeploy does NOT wipe it. Full field maps, format, and
+smoke test: `docs/oscar/eform-prefill-install.md`.
+
+```
+sudo python3 patch_eform_prefill.py 3 7
+```
+
 ## Manual PDF upload into the Faxes inbox (added 2026-08-24)
 
 PDFs can now be added by hand to the same Faxes inbox the SRFax bridge feeds, and filed to

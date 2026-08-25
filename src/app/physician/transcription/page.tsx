@@ -11,6 +11,7 @@ import QuickAskAiModal from "@/components/QuickAskAiModal";
 import { convertToWav, getMicrophoneErrorMessage, MAX_STT_AUDIO_BYTES } from "@/lib/audio-utils";
 import { classifyAuthFailure, type AuthFailure } from "@/lib/client/auth-response";
 import { useOscarLaunch, describeSendFailure } from "@/components/physician/useOscarLaunch";
+import { buildEformAddUrl } from "@/lib/oscar/eform-prefill";
 import { OscarLaunchBanner } from "@/components/physician/OscarLaunchBanner";
 import {
   clearStoredTranscript,
@@ -313,6 +314,10 @@ export default function PhysicianTranscriptionPage() {
   const [showReferrals, setShowReferrals] = useState(false);
   const [showImaging, setShowImaging] = useState(false);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  // OSCAR eForm prefill ("Create requisition") — only offered when launched from OSCAR.
+  const [requisitionLoading, setRequisitionLoading] = useState<null | "labs" | "imaging">(null);
+  const [requisitionError, setRequisitionError] = useState<string | null>(null);
+  const [requisitionNotice, setRequisitionNotice] = useState<string | null>(null);
 
   useEffect(() => {
     if (!showHpi) return;
@@ -872,6 +877,65 @@ export default function PhysicianTranscriptionPage() {
     }
   }
 
+  // Open the patient's OSCAR eForm (imaging fid=7 / labs fid=3) prefilled from
+  // the recommendation text. The window MUST be opened synchronously in the
+  // click handler — opening it after the awaited fetch gets popup-blocked.
+  async function openOscarRequisition(type: "labs" | "imaging") {
+    if (requisitionLoading) return;
+    const recommendationText = type === "labs" ? recommendations?.labs : recommendations?.imaging;
+    if (!recommendationText || !oscarLaunch.demographicNo || !oscarLaunch.openerOrigin) return;
+    setRequisitionError(null);
+    setRequisitionNotice(null);
+
+    const win = window.open("", "_blank");
+    if (!win) {
+      setRequisitionError("Your browser blocked the popup — allow popups for this site and try again.");
+      return;
+    }
+    try {
+      win.document.write("<p style='font-family:sans-serif;padding:24px'>Preparing requisition…</p>");
+    } catch {
+      // Cosmetic only.
+    }
+
+    setRequisitionLoading(type);
+    try {
+      const res = await fetch("/api/physician/transcription/requisition-prefill", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          type,
+          recommendationText,
+          assessment: reviewText.trim().slice(0, 6000) || undefined,
+          demographicNo: oscarLaunch.demographicNo,
+        }),
+      });
+      if (!res.ok) {
+        win.close();
+        const data = await res.json().catch(() => null);
+        setRequisitionError(
+          (data && typeof data.error === "string" && data.error) || "Failed to prepare the requisition.",
+        );
+        return;
+      }
+      const data = await res.json();
+      win.location.href = buildEformAddUrl(oscarLaunch.openerOrigin, data.spec);
+      const notices: string[] = [];
+      if (data.truncated) notices.push("Some text was shortened to fit the form.");
+      const unmapped: string[] = data.summary?.unmappedTests || [];
+      if (unmapped.length > 0) {
+        notices.push(`Not on the form, added to instructions: ${unmapped.join(", ")}.`);
+      }
+      notices.push("Review the form before submitting.");
+      setRequisitionNotice(notices.join(" "));
+    } catch {
+      win.close();
+      setRequisitionError("Could not reach the server. Please try again.");
+    } finally {
+      setRequisitionLoading(null);
+    }
+  }
+
   // Generate a quick working HPI from the transcript so far and show it in a
   // throwaway popup. Nothing is saved.
   async function generateHpiMidVisit() {
@@ -952,6 +1016,8 @@ export default function PhysicianTranscriptionPage() {
     setShowLabs(false);
     setShowReferrals(false);
     setShowImaging(false);
+    setRequisitionError(null);
+    setRequisitionNotice(null);
     try {
       const res = await fetch("/api/physician/transcription/generate", {
         method: "POST",
@@ -1479,6 +1545,8 @@ export default function PhysicianTranscriptionPage() {
     setShowLabs(false);
     setShowReferrals(false);
     setShowImaging(false);
+    setRequisitionError(null);
+    setRequisitionNotice(null);
   }
 
   async function handleRetranscribe() {
@@ -2537,9 +2605,21 @@ export default function PhysicianTranscriptionPage() {
                         )}
                         {showLabs && recommendations?.labs && (
                           <div className="mt-2 rounded-md border border-slate-200 bg-white px-3 py-2">
-                            <div className="flex items-center justify-between mb-1">
+                            <div className="flex items-center justify-between mb-1 gap-2">
                               <span className="text-xs font-semibold text-slate-700">Recommended labs</span>
-                              <button type="button" onClick={() => void copyText(recommendations.labs, "labs")} className="text-xs text-slate-500 hover:text-slate-700">{copiedKey === "labs" ? "Copied!" : "Copy"}</button>
+                              <span className="flex items-center gap-3">
+                                {oscarLaunch.launchMode && oscarLaunch.status === "resolved" && oscarLaunch.demographicNo && oscarLaunch.openerOrigin && (
+                                  <button
+                                    type="button"
+                                    onClick={() => void openOscarRequisition("labs")}
+                                    disabled={requisitionLoading !== null}
+                                    className="text-xs font-medium text-emerald-700 hover:text-emerald-900 disabled:text-slate-400"
+                                  >
+                                    {requisitionLoading === "labs" ? "Preparing…" : "Create lab requisition"}
+                                  </button>
+                                )}
+                                <button type="button" onClick={() => void copyText(recommendations.labs, "labs")} className="text-xs text-slate-500 hover:text-slate-700">{copiedKey === "labs" ? "Copied!" : "Copy"}</button>
+                              </span>
                             </div>
                             <pre className="whitespace-pre-wrap font-sans text-sm text-slate-800">{recommendations.labs}</pre>
                           </div>
@@ -2555,12 +2635,30 @@ export default function PhysicianTranscriptionPage() {
                         )}
                         {showImaging && recommendations?.imaging && (
                           <div className="mt-2 rounded-md border border-slate-200 bg-white px-3 py-2">
-                            <div className="flex items-center justify-between mb-1">
+                            <div className="flex items-center justify-between mb-1 gap-2">
                               <span className="text-xs font-semibold text-slate-700">Imaging requisitions</span>
-                              <button type="button" onClick={() => void copyText(recommendations.imaging, "imaging")} className="text-xs text-slate-500 hover:text-slate-700">{copiedKey === "imaging" ? "Copied!" : "Copy"}</button>
+                              <span className="flex items-center gap-3">
+                                {oscarLaunch.launchMode && oscarLaunch.status === "resolved" && oscarLaunch.demographicNo && oscarLaunch.openerOrigin && (
+                                  <button
+                                    type="button"
+                                    onClick={() => void openOscarRequisition("imaging")}
+                                    disabled={requisitionLoading !== null}
+                                    className="text-xs font-medium text-emerald-700 hover:text-emerald-900 disabled:text-slate-400"
+                                  >
+                                    {requisitionLoading === "imaging" ? "Preparing…" : "Create requisition"}
+                                  </button>
+                                )}
+                                <button type="button" onClick={() => void copyText(recommendations.imaging, "imaging")} className="text-xs text-slate-500 hover:text-slate-700">{copiedKey === "imaging" ? "Copied!" : "Copy"}</button>
+                              </span>
                             </div>
                             <pre className="whitespace-pre-wrap font-sans text-sm text-slate-800">{recommendations.imaging}</pre>
                           </div>
+                        )}
+                        {requisitionError && (
+                          <p className="mt-2 text-xs text-red-600">{requisitionError}</p>
+                        )}
+                        {requisitionNotice && (
+                          <p className="mt-2 text-xs text-slate-500">{requisitionNotice}</p>
                         )}
                       </div>
                     )}

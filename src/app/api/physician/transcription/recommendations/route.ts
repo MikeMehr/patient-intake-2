@@ -5,7 +5,7 @@ import { getAzureSoapClient } from "@/lib/azure-openai";
 import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
 import { resolveWorkforceScope } from "@/lib/transcription-store";
 import { transcriptionRecommendationsRequestSchema } from "@/lib/transcription-schema";
-import { parseJsonValue } from "@/lib/safe-json";
+import { escapeRawNewlinesInJsonStrings, parseJsonValue } from "@/lib/safe-json";
 import {
   buildContentFilterPayload,
   categoriesFromApiError,
@@ -26,41 +26,6 @@ Return valid JSON only: an object with EXACTLY these three string keys — labs,
 - "referrals": for each specialist referral discussed, a concise referral note of 2-3 lines — reason for referral, pertinent positives/negatives, and urgency (e.g. "Referral to Gynecology. Reason: ... Pertinent findings: ... Urgency: routine"). Separate multiple referrals with a blank line. Empty string "" if no referral is indicated.
 - "imaging": for each imaging need discussed, a requisition line — modality + body part followed by a 1-2 line clinical indication (e.g. "X-ray right knee — Two weeks of right knee pain, rule out arthritis"). Separate multiple studies with a blank line. Empty string "" if no imaging is indicated.
 Do not include markdown, code fences, or extra keys.`;
-
-/**
- * Escapes unescaped newlines/carriage-returns that appear inside JSON string
- * values. Models sometimes emit literal line-breaks in strings, which is
- * invalid JSON and causes JSON.parse to throw.
- */
-function escapeRawNewlinesInJsonStrings(raw: string): string {
-  let inString = false;
-  let result = "";
-  let i = 0;
-  while (i < raw.length) {
-    const ch = raw[i];
-    if (inString) {
-      if (ch === "\\") {
-        result += ch + (raw[i + 1] ?? "");
-        i += 2;
-        continue;
-      } else if (ch === '"') {
-        inString = false;
-        result += ch;
-      } else if (ch === "\n") {
-        result += "\\n";
-      } else if (ch === "\r") {
-        result += "\\r";
-      } else {
-        result += ch;
-      }
-    } else {
-      if (ch === '"') inString = true;
-      result += ch;
-    }
-    i++;
-  }
-  return result;
-}
 
 function asString(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";

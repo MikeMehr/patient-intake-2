@@ -31,6 +31,13 @@ export const transcriptionRecommendationsRequestSchema = z.object({
   assessment: z.string().trim().max(6000).optional(),
 });
 
+export const requisitionPrefillRequestSchema = z.object({
+  type: z.enum(["imaging", "labs"]),
+  recommendationText: z.string().trim().min(1).max(8000),
+  assessment: z.string().trim().max(6000).optional(),
+  demographicNo: z.string().trim().regex(/^\d{1,20}$/),
+});
+
 export const saveSoapDraftRequestSchema = z.object({
   soapVersionId: z.string().uuid(),
   draft: soapDraftSchema,
