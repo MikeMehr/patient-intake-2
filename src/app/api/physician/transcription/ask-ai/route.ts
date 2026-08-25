@@ -15,7 +15,7 @@ const ALLOWED_FILE_MIME_TYPES = new Set([
   "image/png", "image/jpeg", "image/webp", "image/heic", "image/heif",
   "application/pdf",
 ]);
-const MAX_FILE_BASE64_LENGTH = 7_000_000; // ~5 MB raw
+const MAX_FILE_BASE64_LENGTH = 35_000_000; // ~25 MB raw
 
 const systemPrompt = `You are a clinical assistant helping physicians with tasks related to a SOAP note.
 - Use only the provided SOAP note as clinical context.
@@ -74,7 +74,7 @@ export async function POST(request: NextRequest) {
   // Validate optional file attachment
   if (fileBase64 !== undefined) {
     if (typeof fileBase64 !== "string" || fileBase64.length > MAX_FILE_BASE64_LENGTH) {
-      return NextResponse.json({ error: "File is too large (max 5 MB)." }, { status: 400 });
+      return NextResponse.json({ error: "File is too large (max 25 MB)." }, { status: 400 });
     }
     if (!fileMimeType || !ALLOWED_FILE_MIME_TYPES.has(fileMimeType)) {
       return NextResponse.json({ error: "Invalid file type. Supported: PNG, JPEG, WEBP, HEIC, HEIF, PDF." }, { status: 400 });

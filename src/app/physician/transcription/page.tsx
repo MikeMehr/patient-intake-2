@@ -1893,8 +1893,8 @@ export default function PhysicianTranscriptionPage() {
   function handleAiFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 5 * 1024 * 1024) {
-      setAiError("File must be 5 MB or smaller.");
+    if (file.size > 25 * 1024 * 1024) {
+      setAiError("File must be 25 MB or smaller.");
       e.target.value = "";
       return;
     }
