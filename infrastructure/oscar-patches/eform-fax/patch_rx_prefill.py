@@ -82,6 +82,29 @@ PREFILL_JS = r'''
 		return null;
 	}
 
+	function fillRow(item, rand) {
+		try {
+			var instr = $('instructions_' + rand);
+			if (instr && item.sig) { instr.value = item.sig; try { parseIntr(instr); } catch (e) {} }
+			var q = $('quantity_' + rand);
+			if (q && item.quantity) { q.value = item.quantity; try { updateQty(q); } catch (e) {} }
+			var rep = $('repeats_' + rand);
+			if (rep && item.repeats) { rep.value = item.repeats; }
+			try { updateCurrentInteractions(); } catch (e) {}
+		} catch (e) {}
+		// The row's deferred init (or a late updateQty response) can still clobber
+		// the quantity - re-assert it once after everything has settled.
+		setTimeout(function () {
+			try {
+				var q2 = $('quantity_' + rand);
+				if (q2 && item.quantity && q2.value !== item.quantity) {
+					q2.value = item.quantity;
+					try { updateQty(q2); } catch (e) {}
+				}
+			} catch (e) {}
+		}, 1500);
+	}
+
 	function addDrug(item, match, next) {
 		var rand = Math.floor(Math.random() * 1000000000);
 		new Ajax.Updater('rxText', '/oscar/oscarRx/WriteScript.do?parameterValue=createNewRx', {
@@ -91,16 +114,10 @@ PREFILL_JS = r'''
 				+ '&text=' + encodeURIComponent(match.name)
 				+ '&randomId=' + rand,
 			onComplete: function () {
-				try {
-					var instr = $('instructions_' + rand);
-					if (instr && item.sig) { instr.value = item.sig; try { parseIntr(instr); } catch (e) {} }
-					var q = $('quantity_' + rand);
-					if (q && item.quantity) { q.value = item.quantity; try { updateQty(q); } catch (e) {} }
-					var rep = $('repeats_' + rand);
-					if (rep && item.repeats) { rep.value = item.repeats; }
-					try { updateCurrentInteractions(); } catch (e) {}
-				} catch (e) {}
-				next();
+				// Prototype evaluates the fragment's own inline scripts on a deferred
+				// setTimeout AFTER this callback; filling immediately gets reset by the
+				// row's init (seen live: quantity stomped back to 0). Fill after they run.
+				setTimeout(function () { fillRow(item, rand); next(); }, 500);
 			}
 		});
 	}
