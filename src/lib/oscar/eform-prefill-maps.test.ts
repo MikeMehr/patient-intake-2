@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { buildImagingFillSpec, buildLabsFillSpec, buildReferralFillSpecs } from "./eform-prefill-maps";
+import {
+  buildImagingFillSpec,
+  buildLabsFillSpec,
+  buildPrescriptionFillSpec,
+  buildReferralFillSpecs,
+} from "./eform-prefill-maps";
 
 describe("buildImagingFillSpec", () => {
   it("combines all studies into one form with modality checks and exam text", () => {
@@ -76,6 +81,46 @@ describe("buildLabsFillSpec", () => {
       "42",
     );
     expect(spec.fields.subject).toBe("Fatigue workup");
+  });
+});
+
+describe("buildPrescriptionFillSpec", () => {
+  const base = { drug: "Naproxen", strength: "500 mg", sig: "1 tab PO BID", quantity: "40", repeats: "", prn: true };
+
+  it("builds rx items with PRN folded into the sig and repeats defaulted", () => {
+    const { spec, summary } = buildPrescriptionFillSpec({ prescriptions: [base] }, "45");
+    expect(spec.fid).toBe(0);
+    expect(spec.demographicNo).toBe("45");
+    expect(spec.rx).toEqual([
+      { search: "naproxen", strength: "500 mg", sig: "1 tab PO BID PRN", quantity: "40", repeats: "0" },
+    ]);
+    expect(summary.medications[0]).toContain("naproxen 500 mg");
+    expect(summary.medications[0]).toContain("qty 40");
+  });
+
+  it("does not double-append PRN when the sig already has it", () => {
+    const { spec } = buildPrescriptionFillSpec(
+      { prescriptions: [{ ...base, sig: "1 tab PO BID PRN pain" }] },
+      "45",
+    );
+    expect(spec.rx![0].sig).toBe("1 tab PO BID PRN pain");
+  });
+
+  it("dedupes repeated drug+strength and keeps liquids verbatim", () => {
+    const { spec } = buildPrescriptionFillSpec(
+      {
+        prescriptions: [
+          base,
+          { ...base, drug: "NAPROXEN" },
+          { drug: "amoxicillin", strength: "125 mg/5 mL", sig: "5 mL PO TID x 7 days", quantity: "150 mL", repeats: "2", prn: false },
+        ],
+      },
+      "45",
+    );
+    expect(spec.rx).toHaveLength(2);
+    expect(spec.rx![1]).toEqual({
+      search: "amoxicillin", strength: "125 mg/5 mL", sig: "5 mL PO TID x 7 days", quantity: "150 mL", repeats: "2",
+    });
   });
 });
 

@@ -10,11 +10,14 @@ import { clampFillSpec } from "@/lib/oscar/eform-prefill";
 import {
   buildImagingFillSpec,
   buildLabsFillSpec,
+  buildPrescriptionFillSpec,
   buildReferralFillSpecs,
   type ImagingExtraction,
   type ImagingModality,
   type ImagingStudy,
   type LabsExtraction,
+  type PrescriptionExtraction,
+  type PrescriptionItem,
   type ReferralExtraction,
   type ReferralItem,
 } from "@/lib/oscar/eform-prefill-maps";
@@ -56,6 +59,17 @@ Return valid JSON only, exactly: {"referrals": [{"service": string, "urgency": "
 - "reason": a 1-3 line reason for consultation addressed to the specialist (e.g. "Thank you for seeing this patient. Evaluate ...").
 - "clinicalInformation": 1-3 lines of pertinent positives/negatives and relevant history drawn from the text/assessment; empty string if none given.
 - Write everything in English; use standard clinical abbreviations. No markdown, no code fences, no extra keys.`;
+
+const prescriptionSystemPrompt = `You extract prescriptions from a physician's dictated-medications text (and assessment, if provided).
+Return valid JSON only, exactly: {"prescriptions": [{"drug": string, "strength": string, "sig": string, "quantity": string, "repeats": string, "prn": boolean}]}.
+- One entry per drug the physician EXPLICITLY dictated as a prescription. Never invent drugs, doses, quantities, or repeats not present in the text.
+- "drug": the drug name only, lowercase generic when dictated generically — no strength, no form (e.g. "naproxen").
+- "strength": dose strength with unit as dictated (e.g. "500 mg", "125 mg/5 mL"); "" if not stated.
+- "sig": patient instructions in prescription shorthand: "<amount> <form> <route> <frequency>[ PRN <reason>]" — e.g. "1 tab PO BID PRN pain", "5 mL PO TID x 7 days", "1 puff INH QID PRN". Use tab/cap/mL/puff/drop; assume PO unless another route is stated; include duration only when dictated.
+- "quantity": the dispense quantity from "#40" / "dispense 40" as "40" (include the unit for liquids, e.g. "150 mL"); "" if not stated.
+- "repeats": refills/repeats as digits; "0" if not stated.
+- "prn": true only when dictated as needed.
+- Write everything in English. No markdown, no code fences, no extra keys.`;
 
 function asString(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
@@ -126,10 +140,34 @@ function parseReferralExtraction(raw: unknown): ReferralExtraction | null {
   return { referrals };
 }
 
+function parsePrescriptionExtraction(raw: unknown): PrescriptionExtraction | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const record = raw as Record<string, unknown>;
+  const itemsRaw = Array.isArray(record.prescriptions) ? record.prescriptions : [];
+  const prescriptions: PrescriptionItem[] = [];
+  for (const entry of itemsRaw) {
+    if (!entry || typeof entry !== "object") continue;
+    const item = entry as Record<string, unknown>;
+    const drug = asString(item.drug);
+    if (!drug) continue;
+    prescriptions.push({
+      drug,
+      strength: asString(item.strength),
+      sig: asString(item.sig),
+      quantity: asString(item.quantity),
+      repeats: asString(item.repeats),
+      prn: item.prn === true,
+    });
+  }
+  if (prescriptions.length === 0) return null;
+  return { prescriptions };
+}
+
 const SYSTEM_PROMPTS = {
   imaging: imagingSystemPrompt,
   labs: labsSystemPrompt,
   referral: referralSystemPrompt,
+  prescription: prescriptionSystemPrompt,
 } as const;
 
 export async function POST(request: NextRequest) {
@@ -239,6 +277,24 @@ export async function POST(request: NextRequest) {
         return clamped.spec;
       });
       const res = NextResponse.json({ specs: clampedSpecs, truncated, summary });
+      logRequestMeta(ROUTE, requestId, status, Date.now() - started);
+      return res;
+    }
+
+    if (type === "prescription") {
+      const extraction = parsePrescriptionExtraction(extractedRaw);
+      const built = extraction ? buildPrescriptionFillSpec(extraction, demographicNo) : null;
+      if (!built || (built.spec.rx?.length ?? 0) === 0) {
+        status = 422;
+        const res = NextResponse.json(
+          { error: "Could not extract any prescriptions from this recommendation. Please add them in OSCAR manually." },
+          { status },
+        );
+        logRequestMeta(ROUTE, requestId, status, Date.now() - started);
+        return res;
+      }
+      const { spec, truncated } = clampFillSpec(built.spec);
+      const res = NextResponse.json({ spec, truncated, summary: built.summary });
       logRequestMeta(ROUTE, requestId, status, Date.now() - started);
       return res;
     }

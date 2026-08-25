@@ -1,9 +1,9 @@
 # eForm prefill from the transcription page ("Create requisition")
 
 The transcription page's Recommendations box offers **Create requisition**
-(imaging), **Create lab requisition** (labs), and **Create consultation**
-(referrals) when the page was launched from the OSCAR eChart Transcribe button.
-Clicking one:
+(imaging), **Create lab requisition** (labs), **Create consultation**
+(referrals), and **Create prescription** (explicitly dictated medications) when
+the page was launched from the OSCAR eChart Transcribe button. Clicking one:
 
 1. POSTs the recommendation text to `/api/physician/transcription/requisition-prefill`,
    which uses Azure OpenAI to extract a structured order and maps it onto eForm
@@ -25,23 +25,26 @@ app-repo change; the OSCAR patch never needs re-running for that.
 
 ```
 scp -i ~/.ssh/oscar_server infrastructure/oscar-patches/eform-fax/patch_eform_prefill.py \
-    infrastructure/oscar-patches/eform-fax/patch_consultation_prefill.py manucher@10.9.0.1:/tmp/
+    infrastructure/oscar-patches/eform-fax/patch_consultation_prefill.py \
+    infrastructure/oscar-patches/eform-fax/patch_rx_prefill.py manucher@10.9.0.1:/tmp/
 ssh -i ~/.ssh/oscar_server manucher@10.9.0.1
 sudo python3 /tmp/patch_eform_prefill.py 3 7
 sudo python3 /tmp/patch_consultation_prefill.py
+sudo python3 /tmp/patch_rx_prefill.py
 ```
 
-Both are idempotent (they skip when the script is already present). The eForm
+All are idempotent (they skip when the script is already present). The eForm
 patch writes a hex backup of each `form_html` to
 `/var/lib/OscarDocument/oscar/mymd_eform_backups/` first
 (rollback: `UPDATE eform SET form_html=UNHEX('<backup file contents>') WHERE fid=N;`);
-the consultation patch leaves a `.oscarbak.<timestamp>` beside the JSP and
-deletes the compiled copy so Tomcat recompiles without a restart.
+the consultation and Rx patches leave a `.oscarbak.<timestamp>` beside the JSP
+and delete the compiled copy so Tomcat recompiles without a restart.
 
 The eForm patch lives in the **database**, so a WAR redeploy does NOT wipe it —
 but restoring an eForm from an old backup or re-importing the form would. The
-consultation patch edits a **webapp JSP**, so a WAR redeploy DOES wipe it —
-re-run after redeploys like the other JSP patches.
+consultation patch (`ConsultationFormRequest.jsp`) and the Rx patch
+(`oscarRx/SearchDrug3.jsp`) edit **webapp JSPs**, so a WAR redeploy DOES wipe
+them — re-run both after redeploys like the other JSP patches.
 
 ## Patched forms and their field maps
 
@@ -93,6 +96,38 @@ map in addition to `fields`:
 The wrong-patient guard checks `spec.demographicNo` against the `de` URL param
 (falling back to the hidden `#demographicNo` input). An unmatched service name
 just leaves the select untouched for the physician to pick.
+
+### Prescriptions — `oscarRx/SearchDrug3.jsp` (Rx3, not an eForm)
+
+Opened as `choosePatient.do?providerNo=&demographicNo=D&ha_prefill=B` (the
+struts FORWARD to SearchDrug3.jsp keeps the query string; empty `providerNo` is
+fine — the Rx session uses the logged-in provider). The spec carries an `rx`
+array: `[{search, strength, sig, quantity, repeats}]`, capped at 10 items.
+Sources: the "Prescriptions" recommendation lists ONLY prescriptions the
+physician explicitly dictated in the transcript.
+
+For each item, sequentially, `patch_rx_prefill.py`'s script replays a human
+autocomplete pick: POST `searchDrug.do?method=jsonSearch` → **confident-match
+gate** → `WriteScript.do?parameterValue=createNewRx` (Ajax.Updater into
+`#rxText`, evalScripts) → fill `instructions_<rand>` + `parseIntr()`,
+`quantity_<rand>` + `updateQty()`, `repeats_<rand>`, `updateCurrentInteractions()`.
+
+**Confident-match gate** (the drug search has historically returned wrong drugs
+outside category 13 / generic-name search): a result is auto-added only when it
+is not inactive, its name contains every word of the dictated drug name, AND it
+contains every digit group of the dictated strength. Anything else is NOT added:
+the first unmatched drug is seeded into the search box and an amber banner lists
+each unmatched item with its dictated sig for the physician to add by hand.
+
+**Safety exception**: alone among the prefill scripts, this one performs network
+calls — two fixed same-origin OSCAR endpoints, all params URL-encoded, replaying
+exactly what a human click does in the physician's own session. Spec data is
+never eval'd or innerHTML'd (banner uses createTextNode). The custom-drug path
+(`newCustomDrug`) is never used — it bypasses allergy/interaction checking.
+Nothing is signed or saved by the script; the physician reviews, edits, and
+prints/saves as usual, and OSCAR's own interaction/duplicate warnings fire per
+added drug. Reloading the Rx page re-stages the items (visible; delete the
+extra rows).
 
 ## `ha_prefill` format and safety
 

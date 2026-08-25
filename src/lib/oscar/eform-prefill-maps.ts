@@ -28,7 +28,7 @@
 // One consultation request per referral — multiple referrals yield multiple specs.
 
 import { mapLabTestsToEformFields } from "@/lib/lab-requisition-mapping";
-import { EFORM_FIDS, type FillSpec } from "@/lib/oscar/eform-prefill";
+import { EFORM_FIDS, type FillSpec, type RxItem } from "@/lib/oscar/eform-prefill";
 
 export type ImagingModality = "xray" | "ct" | "ultrasound" | "doppler" | "other";
 
@@ -157,6 +157,66 @@ export function buildReferralFillSpecs(
     referralLines.push(referral.service.trim() || "Consultation");
   }
   return { specs, summary: { referrals: referralLines } };
+}
+
+export type PrescriptionItem = {
+  drug: string;
+  strength: string;
+  sig: string;
+  quantity: string;
+  repeats: string;
+  prn: boolean;
+};
+
+export type PrescriptionExtraction = {
+  prescriptions: PrescriptionItem[];
+};
+
+export type PrescriptionFillResult = {
+  spec: FillSpec;
+  summary: { medications: string[] };
+};
+
+/**
+ * All dictated prescriptions go on ONE Rx3 pad (fid 0 — not an eForm). PRN is
+ * folded into the sig so parseIntr() picks it up; it never travels separately.
+ */
+export function buildPrescriptionFillSpec(
+  extraction: PrescriptionExtraction,
+  demographicNo: string,
+): PrescriptionFillResult {
+  const rx: RxItem[] = [];
+  const medications: string[] = [];
+  const seen = new Set<string>();
+  for (const item of extraction.prescriptions) {
+    const search = item.drug.trim().toLowerCase();
+    if (!search) continue;
+    const strength = item.strength.trim();
+    const dedupeKey = `${search} ${strength}`.replace(/[^a-z0-9]+/g, " ").trim();
+    if (seen.has(dedupeKey)) continue;
+    seen.add(dedupeKey);
+
+    let sig = item.sig.trim();
+    if (item.prn && !/\bprn\b/i.test(sig)) sig = `${sig} PRN`.trim();
+    const repeats = /^\d+$/.test(item.repeats.trim()) ? item.repeats.trim() : "0";
+    const quantity = item.quantity.trim();
+
+    rx.push({ search, strength, sig, quantity, repeats });
+    medications.push(
+      [
+        [search, strength].filter(Boolean).join(" "),
+        sig,
+        quantity ? `qty ${quantity}` : "",
+        `repeats ${repeats}`,
+      ]
+        .filter(Boolean)
+        .join(" — "),
+    );
+  }
+  return {
+    spec: { v: 1, fid: 0, demographicNo, checks: [], fields: {}, rx },
+    summary: { medications },
+  };
 }
 
 export type LabsFillResult = {

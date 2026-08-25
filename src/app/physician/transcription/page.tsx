@@ -11,7 +11,7 @@ import QuickAskAiModal from "@/components/QuickAskAiModal";
 import { convertToWav, getMicrophoneErrorMessage, MAX_STT_AUDIO_BYTES } from "@/lib/audio-utils";
 import { classifyAuthFailure, type AuthFailure } from "@/lib/client/auth-response";
 import { useOscarLaunch, describeSendFailure } from "@/components/physician/useOscarLaunch";
-import { buildConsultationRequestUrl, buildEformAddUrl, type FillSpec } from "@/lib/oscar/eform-prefill";
+import { buildConsultationRequestUrl, buildEformAddUrl, buildRxUrl, type FillSpec } from "@/lib/oscar/eform-prefill";
 import { OscarLaunchBanner } from "@/components/physician/OscarLaunchBanner";
 import {
   clearStoredTranscript,
@@ -308,14 +308,15 @@ export default function PhysicianTranscriptionPage() {
   const [hpiError, setHpiError] = useState<string | null>(null);
 
   // Pre-computed encounter recommendations, revealed on demand in Review & export.
-  const [recommendations, setRecommendations] = useState<{ labs: string; referrals: string; imaging: string } | null>(null);
+  const [recommendations, setRecommendations] = useState<{ labs: string; referrals: string; imaging: string; medications: string } | null>(null);
   const [recommendationsLoading, setRecommendationsLoading] = useState(false);
   const [showLabs, setShowLabs] = useState(false);
   const [showReferrals, setShowReferrals] = useState(false);
   const [showImaging, setShowImaging] = useState(false);
+  const [showMedications, setShowMedications] = useState(false);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   // OSCAR eForm prefill ("Create requisition") — only offered when launched from OSCAR.
-  const [requisitionLoading, setRequisitionLoading] = useState<null | "labs" | "imaging" | "referral">(null);
+  const [requisitionLoading, setRequisitionLoading] = useState<null | "labs" | "imaging" | "referral" | "prescription">(null);
   const [requisitionError, setRequisitionError] = useState<string | null>(null);
   const [requisitionNotice, setRequisitionNotice] = useState<string | null>(null);
   // Extra referrals beyond the first — each click opens the next one (popup
@@ -884,12 +885,13 @@ export default function PhysicianTranscriptionPage() {
   // imaging eForm (fid=7), lab eForm (fid=3), or the Consultation Request page
   // for referrals. The window MUST be opened synchronously in the click
   // handler — opening it after the awaited fetch gets popup-blocked.
-  async function openOscarRequisition(type: "labs" | "imaging" | "referral") {
+  async function openOscarRequisition(type: "labs" | "imaging" | "referral" | "prescription") {
     if (requisitionLoading) return;
     const recommendationText =
       type === "labs" ? recommendations?.labs
         : type === "imaging" ? recommendations?.imaging
-          : recommendations?.referrals;
+          : type === "prescription" ? recommendations?.medications
+            : recommendations?.referrals;
     if (!recommendationText || !oscarLaunch.demographicNo || !oscarLaunch.openerOrigin) return;
     setRequisitionError(null);
     setRequisitionNotice(null);
@@ -958,6 +960,14 @@ export default function PhysicianTranscriptionPage() {
             ? `Opened the ${labels[0] || "first"} consultation. ${rest.length} more queued — click again for ${rest[0].label}.`
             : "Review the consultation before submitting.",
         );
+      } else if (type === "prescription") {
+        win.location.href = buildRxUrl(oscarLaunch.openerOrigin, data.spec);
+        const meds: string[] = data.summary?.medications || [];
+        notices.push(
+          `${meds.length} medication${meds.length === 1 ? "" : "s"} staged on the Rx pad. ` +
+            "Drugs without a confident match are left in the search box with their sig shown — " +
+            "review everything before printing or saving.",
+        );
       } else {
         win.location.href = buildEformAddUrl(oscarLaunch.openerOrigin, data.spec);
         const unmapped: string[] = data.summary?.unmappedTests || [];
@@ -1006,6 +1016,7 @@ export default function PhysicianTranscriptionPage() {
               labs: typeof recData?.labs === "string" ? recData.labs : "",
               referrals: typeof recData?.referrals === "string" ? recData.referrals : "",
               imaging: typeof recData?.imaging === "string" ? recData.imaging : "",
+              medications: typeof recData?.medications === "string" ? recData.medications : "",
             });
           }
         } catch {
@@ -1055,6 +1066,7 @@ export default function PhysicianTranscriptionPage() {
     setShowLabs(false);
     setShowReferrals(false);
     setShowImaging(false);
+    setShowMedications(false);
     setRequisitionError(null);
     setRequisitionNotice(null);
     setReferralQueue([]);
@@ -1172,6 +1184,7 @@ export default function PhysicianTranscriptionPage() {
                 labs: typeof recData?.labs === "string" ? recData.labs : "",
                 referrals: typeof recData?.referrals === "string" ? recData.referrals : "",
                 imaging: typeof recData?.imaging === "string" ? recData.imaging : "",
+                medications: typeof recData?.medications === "string" ? recData.medications : "",
               });
             }
           } catch {
@@ -1585,6 +1598,7 @@ export default function PhysicianTranscriptionPage() {
     setShowLabs(false);
     setShowReferrals(false);
     setShowImaging(false);
+    setShowMedications(false);
     setRequisitionError(null);
     setRequisitionNotice(null);
     setReferralQueue([]);
@@ -2610,10 +2624,10 @@ export default function PhysicianTranscriptionPage() {
                           {recommendationsLoading && <span className="text-xs text-slate-500">Analysing encounter…</span>}
                         </div>
                         {!recommendationsLoading && recommendations
-                          && !recommendations.labs && !recommendations.referrals && !recommendations.imaging && (
-                          <p className="text-xs text-slate-500">No lab, referral, or imaging recommendations for this encounter.</p>
+                          && !recommendations.labs && !recommendations.referrals && !recommendations.imaging && !recommendations.medications && (
+                          <p className="text-xs text-slate-500">No lab, referral, imaging, or prescription recommendations for this encounter.</p>
                         )}
-                        {recommendations && (recommendations.labs || recommendations.referrals || recommendations.imaging) && (
+                        {recommendations && (recommendations.labs || recommendations.referrals || recommendations.imaging || recommendations.medications) && (
                           <div className="flex flex-wrap gap-2">
                             {recommendations.labs && (
                               <button
@@ -2640,6 +2654,15 @@ export default function PhysicianTranscriptionPage() {
                                 className="px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50"
                               >
                                 {showImaging ? "Hide imaging requisitions" : "Imaging requisitions"}
+                              </button>
+                            )}
+                            {recommendations.medications && (
+                              <button
+                                type="button"
+                                onClick={() => setShowMedications((v) => !v)}
+                                className="px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50"
+                              >
+                                {showMedications ? "Hide prescriptions" : "Prescriptions"}
                               </button>
                             )}
                           </div>
@@ -2709,6 +2732,27 @@ export default function PhysicianTranscriptionPage() {
                               </span>
                             </div>
                             <pre className="whitespace-pre-wrap font-sans text-sm text-slate-800">{recommendations.imaging}</pre>
+                          </div>
+                        )}
+                        {showMedications && recommendations?.medications && (
+                          <div className="mt-2 rounded-md border border-slate-200 bg-white px-3 py-2">
+                            <div className="flex items-center justify-between mb-1 gap-2">
+                              <span className="text-xs font-semibold text-slate-700">Prescriptions</span>
+                              <span className="flex items-center gap-3">
+                                {oscarLaunch.launchMode && oscarLaunch.status === "resolved" && oscarLaunch.demographicNo && oscarLaunch.openerOrigin && (
+                                  <button
+                                    type="button"
+                                    onClick={() => void openOscarRequisition("prescription")}
+                                    disabled={requisitionLoading !== null}
+                                    className="text-xs font-medium text-emerald-700 hover:text-emerald-900 disabled:text-slate-400"
+                                  >
+                                    {requisitionLoading === "prescription" ? "Preparing…" : "Create prescription"}
+                                  </button>
+                                )}
+                                <button type="button" onClick={() => void copyText(recommendations.medications, "medications")} className="text-xs text-slate-500 hover:text-slate-700">{copiedKey === "medications" ? "Copied!" : "Copy"}</button>
+                              </span>
+                            </div>
+                            <pre className="whitespace-pre-wrap font-sans text-sm text-slate-800">{recommendations.medications}</pre>
                           </div>
                         )}
                         {requisitionError && (

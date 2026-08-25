@@ -2,9 +2,11 @@ import { describe, it, expect } from "vitest";
 import {
   buildConsultationRequestUrl,
   buildEformAddUrl,
+  buildRxUrl,
   clampFillSpec,
   encodeFillSpecParam,
   type FillSpec,
+  type RxItem,
 } from "./eform-prefill";
 
 function spec(overrides: Partial<FillSpec> = {}): FillSpec {
@@ -90,6 +92,59 @@ describe("buildConsultationRequestUrl", () => {
     const url = new URL(buildConsultationRequestUrl("https://oscar.example.ca", s));
     expect(url.pathname).toBe("/oscar/oscarEncounter/oscarConsultationRequest/ConsultationFormRequest.jsp");
     expect(url.searchParams.get("de")).toBe("123");
+    expect(decodeParam(url.searchParams.get("ha_prefill") || "")).toEqual(s);
+  });
+});
+
+function rxItem(overrides: Partial<RxItem> = {}): RxItem {
+  return { search: "naproxen", strength: "500 mg", sig: "1 tab PO BID PRN pain", quantity: "40", repeats: "0", ...overrides };
+}
+
+describe("clampFillSpec rx", () => {
+  it("round-trips rx items and drops empty-search ones", () => {
+    const { spec: clamped, truncated } = clampFillSpec(
+      spec({ rx: [rxItem(), rxItem({ search: "  " })] }),
+    );
+    expect(clamped.rx).toEqual([rxItem()]);
+    expect(truncated).toBe(true);
+  });
+
+  it("caps rx field lengths and item count", () => {
+    const { spec: clamped, truncated } = clampFillSpec(
+      spec({ rx: Array.from({ length: 12 }, (_, i) => rxItem({ search: `drug${i}`, sig: "x".repeat(400) })) }),
+    );
+    expect(truncated).toBe(true);
+    expect(clamped.rx).toHaveLength(10);
+    expect(clamped.rx![0].sig.length).toBeLessThanOrEqual(200);
+  });
+
+  it("pops trailing rx items to meet the URL budget but keeps the first", () => {
+    const { spec: clamped, truncated } = clampFillSpec(
+      spec({
+        rx: Array.from({ length: 10 }, (_, i) =>
+          rxItem({
+            search: `drug${i}` + "n".repeat(74),
+            strength: "5".repeat(40),
+            sig: "s".repeat(200),
+            quantity: "q".repeat(20),
+          }),
+        ),
+      }),
+    );
+    expect(truncated).toBe(true);
+    expect(JSON.stringify(clamped).length).toBeLessThanOrEqual(4000);
+    expect(clamped.rx!.length).toBeGreaterThanOrEqual(1);
+    expect(clamped.rx![0].search.startsWith("drug0")).toBe(true);
+  });
+});
+
+describe("buildRxUrl", () => {
+  it("targets choosePatient.do with empty providerNo, demographicNo and ha_prefill", () => {
+    const s = spec({ fid: 0, rx: [rxItem()] });
+    const url = new URL(buildRxUrl("https://oscar.example.ca", s));
+    expect(url.pathname).toBe("/oscar/oscarRx/choosePatient.do");
+    expect(url.searchParams.get("providerNo")).toBe("");
+    expect(url.searchParams.get("demographicNo")).toBe("123");
     expect(decodeParam(url.searchParams.get("ha_prefill") || "")).toEqual(s);
   });
 });
