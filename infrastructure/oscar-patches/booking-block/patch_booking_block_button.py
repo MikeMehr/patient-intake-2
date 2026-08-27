@@ -56,8 +56,12 @@ SNIPPET = """
         btn.disabled = false;
         btn.setAttribute("data-blocked", blocked ? "1" : "0");
         btn.value = blocked ? "Online booking BLOCKED \\u2014 click to allow" : "Block online booking";
-        btn.style.backgroundColor = blocked ? "#c9302c" : "";
+        // "background" shorthand, not backgroundColor: OSCAR's .btn paints a
+        // background-image gradient that would sit on top of a color alone.
+        btn.style.background = blocked ? "#c9302c" : "";
         btn.style.color = blocked ? "#fff" : "";
+        btn.style.borderColor = blocked ? "#ac2925" : "";
+        btn.style.textShadow = blocked ? "none" : "";
     }
     function fail() {
         btn.value = "Booking block: unavailable";
