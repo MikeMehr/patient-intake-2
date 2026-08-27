@@ -16,6 +16,7 @@
  * already holds.
  */
 
+import { timingSafeEqual } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { getClinicBySlug } from "@/lib/booking-store";
 import {
@@ -28,9 +29,15 @@ export const runtime = "nodejs";
 
 const HEADER_NAME = "x-booking-block-secret";
 
+/** Constant-time compare that tolerates unequal lengths without leaking them. */
 function authorized(req: NextRequest): boolean {
   const expected = process.env.OSCAR_BOOKING_BLOCK_SECRET;
-  return Boolean(expected) && req.headers.get(HEADER_NAME) === expected;
+  const provided = req.headers.get(HEADER_NAME);
+  if (!expected || !provided) return false;
+  const a = Buffer.from(provided);
+  const b = Buffer.from(expected);
+  if (a.length !== b.length) return false;
+  return timingSafeEqual(a, b);
 }
 
 async function resolveOrgId(clinicSlug: string): Promise<string | null> {

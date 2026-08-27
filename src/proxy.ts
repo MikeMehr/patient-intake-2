@@ -105,6 +105,11 @@ const PUBLIC_EXCEPTIONS = new Set<string>([
   // cookie and the prefix guard would 401 it. Shared secret in constant time, 404 when that secret
   // is unconfigured. Same reasoning as billing-dx above.
   "/api/emr/oscar/specialist-extract",
+  // The Master Chart's "Block online booking" button posts here via mymd/bookingBlock.jsp on
+  // the OSCAR server, not a browser, so there is no physician_session cookie and the prefix
+  // guard would 401 it. Shared secret in constant time, 503 when that secret is unconfigured.
+  // Same reasoning as billing-dx above.
+  "/api/emr/oscar/booking-block",
 ]);
 
 /**
