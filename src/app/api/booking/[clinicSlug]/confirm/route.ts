@@ -9,6 +9,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
+import { isBookingBlocked } from "@/lib/booking-blocks";
 import {
   getClinicBySlug,
   getPhysiciansForBooking,
@@ -152,6 +153,20 @@ async function handleConfirm(
   const clinic = await getClinicBySlug(clinicSlug);
   if (!clinic || !clinic.settings?.onlineBookingEnabled) {
     return NextResponse.json({ error: "Clinic not found or booking not enabled" }, { status: 404 });
+  }
+
+  // Server-side copy of the per-patient block. lookup-patient never hands a blocked
+  // patient their demographicNo, but this field arrives from the client, so a
+  // hand-rolled POST could otherwise skip the screen.
+  if (oscarDemographicNo && (await isBookingBlocked(clinic.id, String(oscarDemographicNo)))) {
+    return NextResponse.json(
+      {
+        error:
+          "Online booking is not available for your patient record. Please email the clinic to book an appointment." +
+          (clinic.email ? ` Contact: ${clinic.email}` : ""),
+      },
+      { status: 403 },
+    );
   }
 
   // How this appointment happens. The clinic setting is the default; the patient may only move

@@ -31,6 +31,29 @@ sudo python3 patch_consultation_prefill.py
 sudo python3 patch_rx_prefill.py
 ```
 
+## Block online booking per patient (added 2026-08-27)
+
+The Master Chart patient detail page (`demographic/demographiceditdemographic.jsp`) gets a
+**Block online booking** toggle beside "Export this Demographic". The flag lives in the Health
+Assist app's `booking_blocks` table (`079_add_booking_blocks.sql`), keyed
+`(organization_id, oscar_demographic_no)`; a blocked patient who passes the booking lookup is
+shown "please email the clinic" (with a mailto link) instead of their match, and the confirm
+route re-checks server-side. Files in `booking-block/`:
+
+| File | What |
+|---|---|
+| `bookingBlock.jsp` | → `/opt/tomcat9/webapps/oscar/mymd/bookingBlock.jsp`. Same-origin proxy; requires a logged-in OSCAR session, forwards to the app's `/api/emr/oscar/booking-block` with the shared secret from `/var/lib/OscarDocument/oscar/mymd_booking_block.properties` (tomcat:tomcat 600: `app_base`, `clinic_slug`, `secret`). |
+| `patch_booking_block_button.py` | Appends the button script to `demographiceditdemographic.jsp` (WAR redeploy wipes it — re-run). The button anchors on the visible Export button at runtime because the page has two alternate button-row markups. |
+
+The app side authenticates via the `OSCAR_BOOKING_BLOCK_SECRET` env var (Azure app setting); the
+same value goes in the properties file. Apply on the box:
+
+```
+sudo cp bookingBlock.jsp /opt/tomcat9/webapps/oscar/mymd/
+sudo python3 patch_booking_block_button.py
+sudo rm -rf /opt/tomcat9/work/Catalina/localhost/oscar/org/apache/jsp/demographic
+```
+
 ## Manual PDF upload into the Faxes inbox (added 2026-08-24)
 
 PDFs can now be added by hand to the same Faxes inbox the SRFax bridge feeds, and filed to

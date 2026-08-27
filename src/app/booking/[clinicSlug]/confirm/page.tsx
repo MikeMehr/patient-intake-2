@@ -246,6 +246,15 @@ export default function BookingConfirmPage({
         return;
       }
 
+      if (data.blocked) {
+        setBlockMessage(
+          "Online booking is not available for your patient record. Please email the clinic to book your appointment."
+        );
+        setBlockClinicEmail(data.clinicEmail ?? null);
+        setStep("blocked");
+        return;
+      }
+
       if (data.found) {
         setOscarDemographicNo(data.demographicNo);
         setStep("found");

@@ -20,9 +20,11 @@
  *   { oscarConnected: true, found: true, demographicNo: string }
  *   { oscarConnected: true, ambiguous: true, clinicEmail: string | null }
  *   { oscarConnected: true, lookupError: true, clinicEmail: string | null }
+ *   { oscarConnected: true, blocked: true, clinicEmail: string | null }
  */
 
 import { NextRequest, NextResponse } from "next/server";
+import { isBookingBlocked } from "@/lib/booking-blocks";
 import { getClinicBySlug } from "@/lib/booking-store";
 import { query } from "@/lib/db";
 import { normalizeOscarDob } from "@/lib/oscar/dob";
@@ -99,6 +101,23 @@ export async function POST(
       dateOfBirth,
       email,
     });
+
+    // A patient the clinic has blocked from online booking (Master Chart button in
+    // OSCAR) gets the "please email the clinic" screen instead of their match. The
+    // demographicNo is deliberately not echoed back on this branch.
+    if (result.oscarConnected && "found" in result && result.found) {
+      if (await isBookingBlocked(clinic.id, result.demographicNo)) {
+        const orgRow = await query<{ email: string | null }>(
+          "SELECT email FROM organizations WHERE id = $1 LIMIT 1",
+          [clinic.id]
+        );
+        return NextResponse.json({
+          oscarConnected: true,
+          blocked: true,
+          clinicEmail: orgRow.rows[0]?.email ?? null,
+        });
+      }
+    }
 
     // For ambiguous / lookupError variants, enrich with clinic contact email so the
     // UI can show a "please contact the clinic" block.

@@ -20,6 +20,7 @@ const findPharmacyByNameCityMock = vi.hoisted(() => vi.fn());
 const createOscarAppointmentMock = vi.hoisted(() => vi.fn());
 
 vi.mock("@/lib/db", () => ({ query: (...a: unknown[]) => queryMock(...a) }));
+vi.mock("@/lib/booking-blocks", () => ({ isBookingBlocked: vi.fn(async () => false) }));
 
 vi.mock("@/lib/booking-store", () => ({
   confirmAppointment: (...a: unknown[]) => confirmAppointmentMock(...a),
