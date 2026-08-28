@@ -58,6 +58,8 @@
     // Base64 inflates ~37% and GoDaddy rejects messages around 25-30 MB, so 15 MB of raw
     // attachment keeps the encoded message comfortably under the ceiling.
     private static final long MAX_ATTACH_TOTAL = 15L * 1024 * 1024;
+    // Uploaded files only - the pre-attached chart document does not count against this.
+    private static final int MAX_ATTACH_COUNT = 3;
     private static final String DB_URL = "jdbc:mysql://127.0.0.1:3306/oscar_db?useSSL=false";
     private static final String DB_USER = "oscar";
     private static final String DB_PASS = "oscar_password_2026";
@@ -196,6 +198,12 @@
                     String name = baseName(item.getName());
                     // An untouched <input type=file> still posts one empty part - skip it.
                     if (name.length() == 0 || item.getSize() == 0) { item.delete(); continue; }
+                    if (attachments.size() >= MAX_ATTACH_COUNT) {
+                        attachError = "Too many attachments: at most " + MAX_ATTACH_COUNT
+                                    + " files can be attached. Nothing was sent.";
+                        item.delete();
+                        break;
+                    }
                     total += item.getSize();
                     if (total > MAX_ATTACH_TOTAL) {
                         attachError = "Attachments too large: the total must stay under "
@@ -778,7 +786,7 @@
             <label for="attachments"><%= docNo > 0 ? "Additional attachments" : "Attachments" %></label>
             <input type="file" id="attachments" name="attachments" multiple>
             <div class="foot-note">
-                Optional. Up to 15&nbsp;MB total. Attachments are sent as-is and are
+                Optional. Up to 3 files, 15&nbsp;MB total. Attachments are sent as-is and are
                 <b>not password-protected</b> - for lab or imaging requisitions prefer the
                 "Email to Patient" button on the eForm, which protects the PDF with the
                 patient's health number.
@@ -830,6 +838,10 @@
                 var fi = document.getElementById('attachments');
                 var n = <%= docNo > 0 && docName != null ? "1" : "0" %>, total = <%= docSize %>;
                 if (fi && fi.files) {
+                    if (fi.files.length > 3) {
+                        alert('Too many attachments - at most 3 files can be attached.');
+                        return false;
+                    }
                     n += fi.files.length;
                     for (var i = 0; i < fi.files.length; i++) total += fi.files[i].size;
                 }
