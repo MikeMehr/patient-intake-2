@@ -25,12 +25,21 @@ add() { ALERT="${ALERT}${1}
 V=$(mysql -N -e "SELECT @@global.explicit_defaults_for_timestamp" 2>/dev/null)
 [ "$V" = "1" ] && add "CRITICAL: explicit_defaults_for_timestamp is back ON - every inbox-routing insert is failing again. Fix: SET PERSIST explicit_defaults_for_timestamp = OFF; then restart tomcat9. See reference_oscar_mysql8_timestamp_null."
 
-# 2. Routing rows addressed to nobody ('' or a provider that does not exist).
-ORPHANS=$(mysql -N oscar_db -e "
-  SELECT COUNT(*) FROM providerLabRouting r
+# 2. Labs whose ONLY routing rows point at nobody ('' or a nonexistent provider) - those labs
+#    appear in NO inbox, which is the failure this guard exists for. A stray ''-row on a lab
+#    that ALSO reached a real provider is a harmless duplicate (minted by the ''-MRP import
+#    quirk) and is deliberately not alerted on: not every patient has an MRP, and those labs
+#    did reach an inbox. (Narrowed 2026-08-28 after two benign duplicates paged the phone.)
+LOST=$(mysql -N oscar_db -e "
+  SELECT GROUP_CONCAT(DISTINCT CONCAT(r.lab_type, ' lab_no ', r.lab_no) SEPARATOR ', ')
+  FROM providerLabRouting r
   LEFT JOIN provider p ON p.provider_no = r.provider_no
-  WHERE p.provider_no IS NULL" 2>/dev/null)
-[ "${ORPHANS:-0}" -gt 0 ] && add "WARNING: $ORPHANS providerLabRouting row(s) point at a provider that does not exist (empty or junk provider_no). List: SELECT * FROM providerLabRouting r LEFT JOIN provider p ON p.provider_no=r.provider_no WHERE p.provider_no IS NULL;"
+  WHERE p.provider_no IS NULL
+    AND NOT EXISTS (
+      SELECT 1 FROM providerLabRouting r2
+      JOIN provider p2 ON p2.provider_no = r2.provider_no
+      WHERE r2.lab_no = r.lab_no AND r2.lab_type = r.lab_type)" 2>/dev/null)
+[ -n "$LOST" ] && [ "$LOST" != "NULL" ] && add "WARNING: lab(s) routed only to a provider that does not exist - they appear in NO inbox: $LOST. Route them from the lab display (Flag Provider) or fix the rows in providerLabRouting."
 
 # 3. Charts spelling 'no MRP' as '' instead of NULL - the spelling OSCAR's lab router does not
 #    guard, which mints the rows in check 2 on every Lab Import. (Clinic policy: MRP is only set
