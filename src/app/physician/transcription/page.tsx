@@ -415,6 +415,9 @@ export default function PhysicianTranscriptionPage() {
   const [language, setLanguage] = useState<string>("");
   const [hasAudio, setHasAudio] = useState(false);
   const [audioBlobPath, setAudioBlobPath] = useState<string | null>(null);
+  // True while this session's full audio is still buffered in the browser —
+  // enables re-transcription even before any SOAP/snapshot has been saved.
+  const [hasLocalAudio, setHasLocalAudio] = useState(false);
   const [audioUploading, setAudioUploading] = useState(false);
   const [audioUploadError, setAudioUploadError] = useState<string | null>(null);
   const [retranscribeLanguage, setRetranscribeLanguage] = useState<string>("");
@@ -792,6 +795,7 @@ export default function PhysicianTranscriptionPage() {
     pendingTranscriptionsRef.current = [];
     fullAudioChunksRef.current = [];
     pendingFullAudioRef.current = null;
+    setHasLocalAudio(false);
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: { noiseSuppression: true, echoCancellation: true, autoGainControl: true },
@@ -862,17 +866,56 @@ export default function PhysicianTranscriptionPage() {
     await Promise.allSettled(pendingTranscriptionsRef.current);
     pendingTranscriptionsRef.current = [];
 
-    // Store the full combined audio for potential re-transcription after SOAP is saved
+    // Store the full combined audio for potential re-transcription after SOAP is saved.
+    // Chunks are kept so audio keeps accumulating across Resume stints — the pending
+    // blob always covers the entire session, not just the latest stint.
     if (fullAudioChunksRef.current.length > 0) {
       pendingFullAudioRef.current = new Blob(fullAudioChunksRef.current, {
         type: fullAudioMimeTypeRef.current,
       });
-      fullAudioChunksRef.current = [];
+      setHasLocalAudio(true);
+      if (!retranscribeLanguage) setRetranscribeLanguage(language);
     }
 
     setTranscriptLoading(false);
     // Return the up-to-date transcript from the ref so callers don't depend on stale React state
     return segmentTextsRef.current.filter(Boolean).map(s => s.trim()).join("\n\n").trim();
+  }
+
+  /**
+   * Upload the pending session audio and attach it to the given SOAP version so
+   * re-transcription is possible if the wrong language was used. The pending blob
+   * is intentionally NOT consumed: if the note is regenerated (new version id),
+   * the audio is re-uploaded and attached to that version too. It is cleared only
+   * when a new session starts or a different note is loaded.
+   */
+  async function uploadPendingAudio(targetSoapVersionId: string) {
+    const fullBlob = pendingFullAudioRef.current;
+    if (!fullBlob || fullBlob.size === 0 || !targetSoapVersionId) return;
+    setAudioUploading(true);
+    setAudioUploadError(null);
+    try {
+      const wavBlob = await convertToWav(fullBlob);
+      const fd = new FormData();
+      fd.append("audio", new File([wavBlob], "recording.wav", { type: "audio/wav" }));
+      fd.append("soapVersionId", targetSoapVersionId);
+      const uploadRes = await fetch("/api/physician/transcription/audio/upload", {
+        method: "POST",
+        body: fd,
+      });
+      const uploadData = await uploadRes.json().catch(() => ({}));
+      if (uploadRes.ok) {
+        setAudioBlobPath(uploadData.audioBlobPath ?? null);
+        setHasAudio(true);
+        setRetranscribeLanguage(language);
+      } else {
+        setAudioUploadError(uploadData?.error ?? "Failed to save audio for re-transcription.");
+      }
+    } catch (e) {
+      setAudioUploadError(e instanceof Error ? e.message : "Failed to save audio.");
+    } finally {
+      setAudioUploading(false);
+    }
   }
 
   async function copyText(text: string, key: string) {
@@ -1200,35 +1243,8 @@ export default function PhysicianTranscriptionPage() {
       }
 
       // Upload the full session audio so re-transcription is possible if the wrong language was used
-      const fullBlob = pendingFullAudioRef.current;
-      pendingFullAudioRef.current = null;
-      if (fullBlob && fullBlob.size > 0 && cases[0].soapVersionId) {
-        setAudioUploading(true);
-        setAudioUploadError(null);
-        void (async () => {
-          try {
-            const wavBlob = await convertToWav(fullBlob);
-            const fd = new FormData();
-            fd.append("audio", new File([wavBlob], "recording.wav", { type: "audio/wav" }));
-            fd.append("soapVersionId", cases[0].soapVersionId);
-            const uploadRes = await fetch("/api/physician/transcription/audio/upload", {
-              method: "POST",
-              body: fd,
-            });
-            const uploadData = await uploadRes.json().catch(() => ({}));
-            if (uploadRes.ok) {
-              setAudioBlobPath(uploadData.audioBlobPath ?? null);
-              setHasAudio(true);
-              setRetranscribeLanguage(language);
-            } else {
-              setAudioUploadError(uploadData?.error ?? "Failed to save audio for re-transcription.");
-            }
-          } catch (e) {
-            setAudioUploadError(e instanceof Error ? e.message : "Failed to save audio.");
-          } finally {
-            setAudioUploading(false);
-          }
-        })();
+      if (cases[0].soapVersionId) {
+        void uploadPendingAudio(cases[0].soapVersionId);
       }
 
       await loadHistory();
@@ -1547,6 +1563,11 @@ export default function PhysicianTranscriptionPage() {
       if (cases.length === 0) throw new Error("Failed to load SOAP version");
 
       const primaryData = rawResults[0];
+      // Loading a different note: drop buffered audio from the current session so a
+      // later regenerate can't attach unrelated audio to the loaded note.
+      fullAudioChunksRef.current = [];
+      pendingFullAudioRef.current = null;
+      setHasLocalAudio(false);
       setSoapCases(cases);
       setActiveCaseIndex(0);
       setSoapVersionId(cases[0].soapVersionId);
@@ -1570,6 +1591,10 @@ export default function PhysicianTranscriptionPage() {
   function clearEditorState() {
     clearStoredTranscript(physicianSession?.userId);
     setRecoverableTranscript(null);
+    // Drop buffered session audio so it can never attach to a different note
+    fullAudioChunksRef.current = [];
+    pendingFullAudioRef.current = null;
+    setHasLocalAudio(false);
     setSoapVersionId(null);
     setEncounterId(null);
     setLifecycleState(null);
@@ -1609,18 +1634,37 @@ export default function PhysicianTranscriptionPage() {
   }
 
   async function handleRetranscribe() {
-    if (!soapVersionId || retranscribeLoading) return;
+    if (retranscribeLoading || !retranscribeLanguage) return;
+    const localBlob = pendingFullAudioRef.current;
+    if ((!localBlob || localBlob.size === 0) && !soapVersionId) return;
     setRetranscribeLoading(true);
     setRetranscribeError(null);
     try {
-      const res = await fetch("/api/physician/transcription/audio/retranscribe", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ soapVersionId, language: retranscribeLanguage }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.error || "Re-transcription failed");
-      const newText = typeof data?.text === "string" ? data.text.trim() : "";
+      let newText = "";
+      if (localBlob && localBlob.size > 0) {
+        // This session's audio is still in the browser — re-transcribe it directly,
+        // even if no SOAP/snapshot has been saved yet.
+        const wavBlob = await convertToWav(localBlob);
+        if (wavBlob.size > MAX_STT_AUDIO_BYTES) {
+          throw new Error("Recording is too long. Keep each clip under 100MB.");
+        }
+        const fd = new FormData();
+        fd.append("audio", new File([wavBlob], "recording.wav", { type: "audio/wav" }));
+        fd.append("language", retranscribeLanguage);
+        const res = await fetch("/api/speech/stt", { method: "POST", body: fd });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data?.error || "Re-transcription failed");
+        newText = typeof data?.text === "string" ? data.text.trim() : "";
+      } else {
+        const res = await fetch("/api/physician/transcription/audio/retranscribe", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ soapVersionId, language: retranscribeLanguage }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data?.error || "Re-transcription failed");
+        newText = typeof data?.text === "string" ? data.text.trim() : "";
+      }
       if (!newText) throw new Error("No speech detected.");
       setTranscript(newText);
       setActiveWorkflowTab("capture");
@@ -1781,6 +1825,7 @@ export default function PhysicianTranscriptionPage() {
             setEncounterId(snapData.encounterId || "");
             setLifecycleState("DRAFT");
             setSoapHasPatient(false);
+            void uploadPendingAudio(snapData.soapVersionId);
             await loadHistory();
           }
         } catch {
@@ -2297,7 +2342,7 @@ export default function PhysicianTranscriptionPage() {
                         ))}
                       </select>
                     </div>
-                    {soapVersionId && (hasAudio || Boolean(audioBlobPath)) && lifecycleState === "DRAFT" && (
+                    {!isRecording && (hasLocalAudio || (soapVersionId && (hasAudio || Boolean(audioBlobPath)) && lifecycleState === "DRAFT")) && (
                       <div className="flex flex-wrap items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
                         <span className="text-sm text-amber-700 whitespace-nowrap">Wrong language used?</span>
                         <select
@@ -2314,7 +2359,7 @@ export default function PhysicianTranscriptionPage() {
                         <button
                           type="button"
                           onClick={() => void handleRetranscribe()}
-                          disabled={retranscribeLoading || !soapVersionId || !retranscribeLanguage}
+                          disabled={retranscribeLoading || !retranscribeLanguage || (!hasLocalAudio && !soapVersionId)}
                           className="px-3 py-1.5 text-sm font-medium text-white rounded-lg bg-amber-600 hover:bg-amber-700 disabled:bg-slate-400 disabled:cursor-not-allowed"
                         >
                           {retranscribeLoading ? "Re-transcribing…" : "Re-transcribe"}
