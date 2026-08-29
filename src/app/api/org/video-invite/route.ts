@@ -68,10 +68,8 @@ export async function POST(request: NextRequest) {
 
   const room = await query<{
     doxy_room_url: string | null;
-    first_name: string;
-    last_name: string;
   }>(
-    `SELECT doxy_room_url, first_name, last_name
+    `SELECT doxy_room_url
        FROM physicians WHERE id = $1 AND organization_id = $2`,
     [targetPhysicianId, session.organizationId],
   );
@@ -122,7 +120,6 @@ export async function POST(request: NextRequest) {
       email: dest,
       patientFirstName: name.split(" ")[0] || null,
       clinicName: clinic.name,
-      physicianName: `Dr. ${physician.first_name} ${physician.last_name}`.trim(),
       joinUrl,
       emailFooter: clinic.emailFooter,
       clinicEmail: clinic.email,

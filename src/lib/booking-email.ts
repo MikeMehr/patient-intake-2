@@ -379,7 +379,6 @@ export async function sendVideoVisitLinkEmail(opts: {
   email: string;
   patientFirstName?: string | null;
   clinicName: string;
-  physicianName?: string | null;
   joinUrl: string;
   slotStartTime?: string | null;
   timezone?: string;
@@ -406,7 +405,7 @@ export async function sendVideoVisitLinkEmail(opts: {
         <h2 style="color:#1a1a2e">Your video appointment</h2>
         <p>Hi ${greeting},</p>
         <p>
-          ${opts.physicianName ? `${escapeHtml(opts.physicianName)} at ` : ""}${escapeHtml(opts.clinicName)}
+          ${escapeHtml(opts.clinicName)}
           has sent you a link to join your appointment by video${dateLabel ? ` on ${dateLabel}` : ""}.
         </p>
         <p style="margin:28px 0">
