@@ -85,18 +85,6 @@ function renderFooter(footer?: string | null): string {
 }
 
 /**
- * Renders the Physician table row, or "" when no name could be resolved — the
- * row is dropped entirely rather than left with an empty value beside the label.
- */
-function renderPhysicianRow(physicianName?: string | null): string {
-  const name = (physicianName ?? "").trim();
-  if (!name) return "";
-  return `
-          <tr><td style="padding:8px 0;color:#555">Physician</td>
-              <td style="padding:8px 0;font-weight:600">${name}</td></tr>`;
-}
-
-/**
  * The join button for a video visit.
  *
  * Absent whenever the room could not be created at booking time — a Daily outage, or video not
@@ -170,7 +158,6 @@ export async function sendBookingConfirmation(opts: {
   email: string;
   patientFirstName: string;
   clinicName: string;
-  physicianName?: string | null;
   slotStartTime: string;
   slotEndTime: string;
   timezone: string;
@@ -201,7 +188,7 @@ export async function sendBookingConfirmation(opts: {
         <p>Your appointment has been booked successfully.</p>
         <table style="border-collapse:collapse;width:100%;margin:16px 0">
           <tr><td style="padding:8px 0;color:#555;width:140px">Clinic</td>
-              <td style="padding:8px 0;font-weight:600">${opts.clinicName}</td></tr>${renderPhysicianRow(opts.physicianName)}
+              <td style="padding:8px 0;font-weight:600">${opts.clinicName}</td></tr>
           <tr><td style="padding:8px 0;color:#555">Date &amp; time</td>
               <td style="padding:8px 0;font-weight:600">${dateLabel}</td></tr>${renderModalityRow(modality)}
         </table>
@@ -345,7 +332,6 @@ export async function sendCancellationConfirmation(opts: {
   email: string;
   patientFirstName: string;
   clinicName: string;
-  physicianName?: string | null;
   slotStartTime: string;
   timezone: string;
   emailFooter?: string | null;
@@ -368,7 +354,7 @@ export async function sendCancellationConfirmation(opts: {
         <p>Your appointment has been cancelled.</p>
         <table style="border-collapse:collapse;width:100%;margin:16px 0">
           <tr><td style="padding:8px 0;color:#555;width:140px">Clinic</td>
-              <td style="padding:8px 0;font-weight:600">${opts.clinicName}</td></tr>${renderPhysicianRow(opts.physicianName)}
+              <td style="padding:8px 0;font-weight:600">${opts.clinicName}</td></tr>
           <tr><td style="padding:8px 0;color:#555">Was scheduled for</td>
               <td style="padding:8px 0;font-weight:600">${dateLabel}</td></tr>
         </table>

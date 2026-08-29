@@ -12,7 +12,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { isBookingBlocked } from "@/lib/booking-blocks";
 import {
   getClinicBySlug,
-  getPhysiciansForBooking,
   confirmAppointment,
   getSlotPhysicianId,
   physicianSupportsVideo,
@@ -259,10 +258,6 @@ async function handleConfirm(
     );
   }
 
-  // Fetch physician name for email
-  const physicians = await getPhysiciansForBooking(clinic.id);
-  const physician = physicians.find((p) => p.id === result.physicianId);
-
   // Fetch slot start/end time for email + OSCAR sync
   const slotRow = await query<{ start_time: Date; end_time: Date }>(
     "SELECT start_time, end_time FROM appointment_slots WHERE id = $1",
@@ -329,7 +324,6 @@ async function handleConfirm(
       email: String(email),
       patientFirstName: String(firstName),
       clinicName: clinic.name,
-      physicianName: physician?.displayName ?? "",
       slotStartTime,
       slotEndTime: "",
       timezone: clinic.settings.timezone,
