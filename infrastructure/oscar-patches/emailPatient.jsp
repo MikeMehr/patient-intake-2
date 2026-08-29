@@ -164,7 +164,6 @@
     boolean found = false;
 
     String apptWhen = null;        // "Tuesday, July 21, 2026 at 11:45 AM"
-    String apptProvider = null;
     String apptLocation = null;
 
     String resultMsg = null;
@@ -238,9 +237,8 @@
             try { apptNo = Integer.parseInt(apptParam.trim()); } catch (NumberFormatException nfe) { apptNo = 0; }
             if (apptNo > 0) {
                 PreparedStatement ps = conn.prepareStatement(
-                    "SELECT a.demographic_no, a.appointment_date, a.start_time, a.location, "
-                  + "       p.first_name AS pfirst, p.last_name AS plast, p.provider_type AS ptype "
-                  + "FROM appointment a LEFT JOIN provider p ON p.provider_no = a.provider_no "
+                    "SELECT a.demographic_no, a.appointment_date, a.start_time, a.location "
+                  + "FROM appointment a "
                   + "WHERE a.appointment_no = ?");
                 ps.setInt(1, apptNo);
                 ResultSet rs = ps.executeQuery();
@@ -252,11 +250,6 @@
                         String when = new SimpleDateFormat("EEEE, MMMM d, yyyy").format(d);
                         if (t != null) when += " at " + new SimpleDateFormat("h:mm a").format(t);
                         apptWhen = when;
-                    }
-                    String pname = tidyName((rs.getString("pfirst") == null ? "" : rs.getString("pfirst"))
-                                          + " " + (rs.getString("plast") == null ? "" : rs.getString("plast")));
-                    if (pname.length() > 0) {
-                        apptProvider = ("doctor".equalsIgnoreCase(rs.getString("ptype")) ? "Dr. " : "") + pname;
                     }
                     apptLocation = rs.getString("location");
                 }
@@ -637,7 +630,6 @@
             defaultSubject = "Your appointment at MyMD Telehealth";
             defaultBody = greeting + "\n\nThis is a reminder of your upcoming appointment:\n\n"
                         + "    Date and time: " + apptWhen + "\n"
-                        + (apptProvider != null ? "    With: " + apptProvider + "\n" : "")
                         + (apptLocation != null && apptLocation.trim().length() > 0
                               ? "    Location: " + apptLocation.trim() + "\n" : "")
                         + "\nIf you need to reschedule or cancel, please contact the office in advance.\n\n"
