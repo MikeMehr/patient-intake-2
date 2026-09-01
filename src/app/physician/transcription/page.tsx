@@ -1633,8 +1633,10 @@ export default function PhysicianTranscriptionPage() {
             hasPatient: Boolean(d.patientId),
             draft: nextDraft,
             reviewText: composeUnifiedSoapText(nextDraft),
-            // Restored sessions have no AI original to diff against — Learn stays disabled.
-            aiOriginalDraft: initialDraft,
+            // Restored sessions use the saved content as the Learn baseline: an
+            // unedited draft IS the AI original, and a previously edited one makes
+            // Learn capture only the new edits — correct incremental learning.
+            aiOriginalDraft: nextDraft,
           };
         })
         .filter((c): c is SoapCase => c !== null);
