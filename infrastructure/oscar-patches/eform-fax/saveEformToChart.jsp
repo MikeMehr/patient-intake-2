@@ -59,6 +59,9 @@ static {
     // Filing them under `insurance` puts the request next to the response in the chart.
     FORM_FILING.put("62", new String[] { "insurance", "Special Authority Request" });
     FORM_FILING.put("52", new String[] { "insurance", "Plan G Request" });
+    // Referrals: the decision letter comes back by fax and gets filed under consult -
+    // putting the outgoing referral there keeps request and response together.
+    FORM_FILING.put("75", new String[] { "consult", "Thrombosis Clinic Referral" });
 }
 
 // A page with no text and no image/form XObject. wkhtmltopdf leaves one of these at

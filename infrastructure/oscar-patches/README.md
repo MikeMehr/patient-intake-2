@@ -9,6 +9,27 @@ editing any JSP, delete its compiled copy under
 `/opt/tomcat9/work/Catalina/localhost/oscar/org/apache/jsp/...` to force a recompile — no Tomcat
 restart is needed.
 
+## Thrombosis Clinic referral eForm (added 2026-08-31)
+
+`eform-fax/ThrombosisClinicReferral.html` is the source of eForm **fid 75** ("Thrombosis Clinic
+Referral - JPOCSC"): the Fraser Health MSXX108053A form as a background image
+(`ThrombosisClinicReferral_MSXX108053A.png` in `/var/lib/OscarDocument/oscar/eform/images/`,
+tomcat:tomcat 640) with positioned inputs. Prefills patient demographics, medical history and
+drug list via `oscarDB` tags; DOB/date reformatted to DD/MM/YYYY and the sex checkbox set by JS.
+Reuses the generic `faxEformReq.jsp` / `saveEformToChart.jsp` / `emailEformToPatient.jsp` buttons,
+with the fax box prefilled to the clinic's 604-528-5435, and is registered in both FORM_FILING
+maps as `consult` / "Thrombosis Clinic Referral". Lives in the `eform` table (form_html), so a WAR
+redeploy does NOT wipe it. To update: hex the HTML and
+`UPDATE eform SET form_html=UNHEX('...') WHERE fid=75` (never `UNHEX(LOAD_FILE(...))` — it NULLs
+the column).
+
+`eform-fax/currentUserSignature.jsp` (deploy to `/opt/tomcat9/webapps/oscar/eform/`, wiped by WAR
+redeploys) returns the logged-in provider's `providerExt.signature` — the same text
+`oscarRx/Preview2.jsp` prints on the prescription signature line — falling back to "First Last"
+from `provider`. The eForm's Signature field fetches it on new forms, so referrals carry the same
+signature as prescriptions; blanking `providerExt.signature` blanks both, and a missing endpoint
+just leaves the line blank for a hand signature.
+
 ## eForm prefill from the transcription page (added 2026-08-24)
 
 `eform-fax/patch_eform_prefill.py` injects a script into `form_html` of fid 3 (lab

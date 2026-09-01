@@ -1,0 +1,598 @@
+<html>
+<head>
+<title>Thrombosis Clinic Referral - JPOCSC</title>
+
+<!-- MyMD Aug2026: Fraser Health Thrombosis Clinic Referral (Form ID MSXX108053A, Sep 26 2025),
+     Jim Pattison Outpatient Care and Surgery Centre. Built in the house style of the FHA
+     imaging requisition (fid 7): background image at left 12 / top 16, width 750, fields in
+     page coordinates measured off the pdftotext bbox of the source PDF at 750/612 scale.
+     Fax destination is fixed by the form itself (604-528-5435) so the fax box comes prefilled. -->
+
+<link rel="stylesheet" type="text/css" href="${oscar_image_path}JSMPC.css" />
+
+<script language="javascript" type="text/javascript">
+	/****************************
+	startup functions
+	****************************/
+	function startUp()
+	{
+		// shows the form on a development machine straight from the file system -
+		// saves uploading to the server just to check field alignments
+		var strLoc = window.location.href.toLowerCase();
+		if(strLoc.indexOf("https") == -1)
+		{
+			var src = document.getElementById('BGImage').src;
+			document.getElementById('BGImage').src = src.replace('$%7Boscar_image_path%7D','');
+		}
+		document.title = 'Thrombosis Clinic Referral - ' + document.getElementById('NameLast').value;
+		setDefaults();
+	}
+
+	// yyyy-mm-dd (the today / dob AP tags) to the DD/MM/YYYY the form asks for
+	function toDDMMYYYY(s)
+	{
+		var m = String(s).match(/^(\d{4})-(\d{2})-(\d{2})/);
+		return m ? (m[3] + '/' + m[2] + '/' + m[1]) : s;
+	}
+
+	function setDefaults()
+	{
+		// only on the very first load of a new form - a saved copy keeps its answers
+		if (document.getElementById("newForm").value == 'True')
+		{
+			document.getElementById('DateOfBirth').value = toDDMMYYYY(document.getElementById('DOBRaw').value);
+			document.getElementById('RefDate').value = toDDMMYYYY(document.getElementById('TodayRaw').value);
+			var sx = String(document.getElementById('PatientSexRaw').value).toUpperCase().charAt(0);
+			if (sx == 'F') document.getElementById('SexFemale').value = 'X';
+			if (sx == 'M') document.getElementById('SexMale').value = 'X';
+			// the clinic accepts exactly one service, the reason the form is opened at all
+			document.getElementById('ServiceVTE').value = 'X';
+			if (document.getElementsByName('subject')[0].value == '')
+				document.getElementsByName('subject')[0].value = 'Thrombosis Clinic Referral';
+			fillSignature();
+		}
+	}
+
+	// The Signature line carries the same signature the prescriptions do:
+	// providerExt.signature for the logged-in provider, served by
+	// eform/currentUserSignature.jsp (blank providerExt.signature blanks it there
+	// AND here). Async fill on new forms only - a saved copy keeps what was signed,
+	// and a fetch failure (endpoint wiped by a WAR redeploy) just leaves the line
+	// blank for a hand signature.
+	function fillSignature()
+	{
+		var sigEl = document.getElementById('Signature');
+		if (!sigEl || sigEl.value != '') { return; }
+		fetch(window.location.pathname.replace(/[^\/]*$/, "") + "currentUserSignature.jsp", { credentials: "same-origin" })
+			.then(function (r) { return r.ok ? r.text() : ""; })
+			.then(function (t) {
+				t = String(t).replace(/^\s+|\s+$/g, "");
+				if (t && t.length < 80 && sigEl.value == '') { sigEl.value = t; }
+			})
+			.catch(function (e) {});
+	}
+
+	/****************************
+	submit and print functions
+	****************************/
+	function printSubmit()
+	{
+		printLetter();
+		releaseDirtyFlag();
+		submission();
+	}
+
+	function printLetter()
+	{
+		if (document.getElementById('BottomButtons').style.display == '')
+			document.getElementById('BottomButtons').style.display = 'none';
+		window.print();
+	}
+
+	function submission()
+	{
+		setFlag();
+		setTimeout('document.ThrombosisReferralForm.submit()',1000);
+	}
+
+	function setFlag()
+	{
+		if (document.getElementById("newForm").value == 'True')
+			document.getElementById("newForm").value = 'False';
+	}
+
+	function showButtons()
+	{
+		if (document.getElementById('BottomButtons').style.display == 'none')
+			document.getElementById('BottomButtons').style.display = '';
+	}
+
+	function closeReqForm()
+	{
+		try { releaseDirtyFlag(); } catch (e) {}
+		window.close();
+	}
+
+	/****************************
+	checkbox functions
+	****************************/
+	function changeValue(x)
+	{
+		if (document.getElementById(x).value == '')
+			document.getElementById(x).value = 'X';
+		else
+			document.getElementById(x).value = '';
+	}
+
+	function displayKeyCode(evt,x)
+	{
+		var charCode = (evt.which) ? evt.which : event.keyCode
+		if (charCode != 9)
+		{
+			changeValue(x);
+			return false;
+		}
+	}
+</script>
+
+<!-- CSS that removes textarea and textbox borders when printing -->
+<style type="text/css" media="print">
+div.DoNotPrint {
+	display:none;
+}
+input.noborder {
+	border:0px;
+	background: transparent;
+}
+textarea.noborder {
+	background: transparent;
+	overflow: hidden;
+	border: 0px;
+}
+</style>
+
+<script type="text/javascript">
+	// --- shared by the chart / email / fax buttons below ------------------------
+	function _reqTarget() {
+		function _qp(src, n) { var m = String(src).match(new RegExp("[?&]" + n + "=([^&]*)")); return m ? decodeURIComponent(m[1]) : ""; }
+		// On the add page the form keeps its own name; once saved OSCAR renames it to
+		// saveEForm. The saved view (efmshowform_data.jsp?fdid=N) has no query string,
+		// but OSCAR always rewrites the form action to addEForm.do?efmfid=..&efmdemographic_no=..
+		var f = document.ThrombosisReferralForm || document.saveEForm || document.getElementById("ThrombosisReferralForm");
+		if (!f) { alert("Cannot find this form on the page."); return null; }
+		var demo = _qp(window.location.search, "demographic_no") || _qp(f.action, "efmdemographic_no");
+		var theFid = _qp(window.location.search, "fid") || _qp(f.action, "efmfid");
+		if (!demo || !theFid) { alert("Cannot tell which patient or form this is - open the form from the chart and try again."); return null; }
+		return { f: f, demo: demo, fid: theFid };
+	}
+
+	var REQ_FILED = false;               // one of these buttons has already filed a copy
+
+	// Saves the referral in a hidden iframe, then calls the endpoint once the
+	// save has landed - only then is there a stored copy to render.
+	function _saveThen(t, btn, busyLabel, idleLabel, frameId, buildUrl) {
+		function restore() { if (btn) { btn.disabled = false; btn.value = idleLabel; } }
+		function send() {
+			fetch(buildUrl(t), { credentials: "same-origin" })
+				.then(function (r) { return r.text(); })
+				.then(function (txt) { alert(txt); restore(); })
+				.catch(function (e) { restore(); alert("Failed: " + e); });
+		}
+		if (btn) { btn.disabled = true; btn.value = busyLabel; }
+
+		// Already filed and nothing typed since? Send the copy already in the chart,
+		// so faxing twice leaves ONE referral in the eForm list. needToConfirm is
+		// OSCAR's own dirty flag, set on keypress and cleared by releaseDirtyFlag().
+		var dirty = true;
+		try { dirty = (typeof needToConfirm === "undefined") || needToConfirm; } catch (e) {}
+		if (REQ_FILED && !dirty) { send(); return; }
+		var ifr = document.getElementById(frameId);
+		if (!ifr) {
+			ifr = document.createElement("iframe");
+			ifr.name = frameId; ifr.id = frameId; ifr.style.display = "none";
+			document.body.appendChild(ifr);
+		}
+		var prevTarget = t.f.target;
+		var submitted = false, done = false;
+		var timer = setTimeout(function () {
+			if (done) { return; }
+			done = true; restore();
+			alert("The form did not finish saving, so nothing was sent. Try again.");
+		}, 20000);
+		ifr.onload = function () {
+			if (!submitted || done) { return; }
+			done = true;
+			clearTimeout(timer);
+			t.f.target = prevTarget;
+			REQ_FILED = true;
+			send();
+		};
+		try { setFlag(); } catch (e) {}
+		try { releaseDirtyFlag(); } catch (e) {}
+		t.f.target = frameId;
+		submitted = true;
+		t.f.submit();
+	}
+
+	function saveReqToChart() {
+		var t = _reqTarget();
+		if (!t) { return; }
+		_saveThen(t, document.getElementById("SaveChartButton"), "Saving...", "Save to chart", "chartSaveFrame",
+			function (t2) {
+				return window.location.origin + window.location.pathname.replace(/[^\/]*$/, "") + "saveEformToChart.jsp"
+					+ "?demographicNo=" + encodeURIComponent(t2.demo) + "&fid=" + encodeURIComponent(t2.fid);
+			});
+	}
+
+	function emailReqToPatient() {
+		var t = _reqTarget();
+		if (!t) { return; }
+		if (!confirm("Save this referral and email a copy to the patient?\n\nThe PDF opens with the patient PHN as the password.")) { return; }
+		_saveThen(t, document.getElementById("EmailButton"), "Sending...", "Email to Patient", "emailSaveFrame",
+			function (t2) {
+				return window.location.origin + window.location.pathname.replace(/[^\/]*$/, "") + "emailEformToPatient.jsp"
+					+ "?demographicNo=" + encodeURIComponent(t2.demo) + "&fid=" + encodeURIComponent(t2.fid);
+			});
+	}
+
+	// --- the shared fax address book, the one fax/newFax.jsp uses ---------------
+	var FAX_BOOK = null;                 // fetched once, on first use
+
+	function faxBookOpen() {
+		if (FAX_BOOK) { faxBookRender(); return; }
+		var panel = document.getElementById("fax_results");
+		panel.innerHTML = "<div style=\"padding:6px; color:#666;\">Loading the address book...</div>";
+		panel.style.display = "block";
+		fetch("../fax/faxAddressBook.jsp", { credentials: "same-origin" })
+			.then(function (r) { return r.json(); })
+			.then(function (rows) { FAX_BOOK = rows || []; faxBookRender(); })
+			.catch(function () {
+				FAX_BOOK = [];
+				panel.innerHTML = "<div style=\"padding:6px; color:#900;\">Could not load the address book - type the fax number instead.</div>";
+			});
+	}
+
+	function faxBookClose() { document.getElementById("fax_results").style.display = "none"; }
+
+	function faxBookRender() {
+		var q = (document.getElementById("fax_search").value || "").toLowerCase().replace(/\s+/g, " ").trim();
+		var panel = document.getElementById("fax_results");
+		panel.style.display = "block";
+		var hits = [];
+		for (var i = 0; i < FAX_BOOK.length && hits.length < 60; i++) {
+			var c = FAX_BOOK[i];
+			if (!q || (c.n + " " + c.g + " " + c.f).toLowerCase().indexOf(q) >= 0) { hits.push(c); }
+		}
+		if (!hits.length) {
+			panel.innerHTML = "<div style=\"padding:6px; color:#666;\">No contact matches that.</div>";
+			return;
+		}
+		var html = "", lastGroup = null;
+		for (var k = 0; k < hits.length; k++) {
+			var h = hits[k];
+			if (h.g !== lastGroup) {
+				html += '<div style="padding:3px 6px; font-weight:bold; background:#eef2f7;">'
+					+ faxEsc(h.g) + '</div>';
+				lastGroup = h.g;
+			}
+			html += '<div style="padding:3px 6px 3px 18px; cursor:pointer;"'
+				+ ' onmouseover="this.style.background=\'#dce9f7\'"'
+				+ ' onmouseout="this.style.background=\'\'"'
+				+ ' onclick="faxBookPick(\'' + faxEsc(h.f) + '\', \'' + faxEsc(h.n).replace(/'/g, "&#39;") + '\')">'
+				+ faxEsc(h.n) + ' <span style="color:#666;">' + faxEsc(h.f) + '</span></div>';
+		}
+		panel.innerHTML = html;
+	}
+
+	function faxEsc(s) {
+		return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;")
+			.replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+	}
+
+	function faxBookPick(num, name) {
+		document.getElementById("fax_number").value = num;
+		document.getElementById("fax_chosen").innerHTML = faxEsc(name);
+		document.getElementById("fax_search").value = name;
+		faxBookClose();
+	}
+
+	function faxReferral() {
+		var box = document.getElementById("fax_number");
+		var dest = box ? box.value.replace(/[^0-9]/g, "") : "";
+		if (dest.length == 11 && dest.charAt(0) == "1") { dest = dest.substring(1); }
+		if (dest.length != 10) {
+			alert("Pick a contact from the address book, or type a full 10-digit fax number."); return;
+		}
+		var chosen = document.getElementById("fax_chosen");
+		var destLabel = (chosen && chosen.textContent ? chosen.textContent + " (" + dest + ")" : dest);
+		var t = _reqTarget();
+		if (!t) { return; }
+		if (!confirm("Save this referral and fax it to " + destLabel + "?")) { return; }
+		_saveThen(t, document.getElementById("FaxButton"), "Faxing...", "Fax", "faxSaveFrame",
+			function (t2) {
+				return window.location.origin + window.location.pathname.replace(/[^\/]*$/, "") + "faxEformReq.jsp"
+					+ "?demographicNo=" + encodeURIComponent(t2.demo) + "&fid=" + encodeURIComponent(t2.fid)
+					+ "&faxNumber=" + encodeURIComponent(dest) + "&saveToChart=1";
+			});
+	}
+</script>
+
+<!-- MyMD Aug2026: apply the ha_prefill fill-spec from the Health Assist transcription page -->
+<script type="text/javascript">
+	function haPrefill() {
+		function _qp(src, n) { var m = String(src).match(new RegExp("[?&]" + n + "=([^&]*)")); return m ? decodeURIComponent(m[1]) : ""; }
+		var raw = _qp(window.location.search, "ha_prefill");
+		if (!raw || raw.length > 8192) { return; }
+		var spec;
+		try {
+			var b64 = raw.replace(/-/g, "+").replace(/_/g, "/");
+			while (b64.length % 4) { b64 += "="; }
+			spec = JSON.parse(decodeURIComponent(escape(atob(b64))));
+		} catch (e) { return; }
+		if (!spec || spec.v !== 1) { return; }
+
+		// Wrong-patient guard: the spec was built for one demographic.
+		var demo = _qp(window.location.search, "demographic_no");
+		if (!demo) {
+			var forms = document.getElementsByTagName("form");
+			for (var i = 0; i < forms.length && !demo; i++) { demo = _qp(forms[i].action, "efmdemographic_no"); }
+		}
+		if (!demo || String(spec.demographicNo) !== String(demo)) {
+			alert("This prefilled referral was prepared for a different patient - leaving the form blank.");
+			return;
+		}
+
+		function el(id) {
+			var e = document.getElementById(id);
+			if (!e) { var byName = document.getElementsByName(id); e = byName.length ? byName[0] : null; }
+			return e;
+		}
+
+		var checks = spec.checks || [];
+		for (var c = 0; c < checks.length; c++) {
+			var box = el(String(checks[c]));
+			if (!box) { continue; }
+			if (String(box.type).toLowerCase() === "checkbox") { box.checked = true; }
+			else { box.value = "X"; }
+		}
+		var fields = spec.fields || {};
+		for (var name in fields) {
+			if (!Object.prototype.hasOwnProperty.call(fields, name)) { continue; }
+			var value = String(fields[name]);
+			var input = el(String(name));
+			if (!input || !("value" in input)) { continue; }
+			// oscarDB= substitution may already have filled something - append, never clobber.
+			if (String(input.value).replace(/^\s+|\s+$/g, "") === "") { input.value = value; }
+			else { input.value += (String(input.tagName).toLowerCase() === "textarea" ? "\n" : "; ") + value; }
+		}
+
+		try { setFlag(); } catch (e) {}
+		try { setDirtyFlag(); } catch (e) {}
+	}
+	// load, not DOMContentLoaded: the form's own startup scripts run first and
+	// cannot overwrite what this fills in afterwards.
+	if (window.addEventListener) { window.addEventListener("load", haPrefill, false); }
+	else if (window.attachEvent) { window.attachEvent("onload", haPrefill); }
+</script>
+
+</head>
+<body width="750px" onload="startUp();" onMouseDown="showButtons();">
+<div style="position: absolute; left: 12px; top: 16px;">
+	<img id="BGImage" SRC="${oscar_image_path}ThrombosisClinicReferral_MSXX108053A.png" width="750">
+</div>
+
+<form method="post" action="" name="ThrombosisReferralForm">
+
+<input type="hidden" name="DOBRaw" id="DOBRaw" oscardb=dob>
+<input type="hidden" name="TodayRaw" id="TodayRaw" oscardb=today>
+<input type="hidden" name="PatientSexRaw" id="PatientSexRaw" oscarDB=sex>
+
+<!-- ---------------- Patient Information ---------------- -->
+<div style="position: absolute; left: 222px; top: 412px;">
+	<input name="NameLast" id="NameLast" type="text" class="noborder" style="width: 200px; font-family: Arial; font-size: 12px;" oscarDB=patient_nameL>
+</div>
+<div style="position: absolute; left: 428px; top: 412px;">
+	<input name="NameFirst" id="NameFirst" type="text" class="noborder" style="width: 145px; font-family: Arial; font-size: 12px;" oscarDB=patient_nameF>
+</div>
+<div style="position: absolute; left: 578px; top: 412px;">
+	<input name="NameMiddle" id="NameMiddle" type="text" class="noborder" style="width: 165px; font-family: Arial; font-size: 12px;">
+</div>
+
+<div style="position: absolute; left: 179px; top: 437px;">
+	<input name="PreferredName" id="PreferredName" type="text" class="noborder" style="width: 250px; font-family: Arial; font-size: 12px;">
+</div>
+<div style="position: absolute; left: 561px; top: 441px;">
+	<input name="SexFemale" id="SexFemale" type="text" style="width:12px; height:12px; border:1px solid #000000; font-weight:bold; text-align:center; background-color:white;" onkeypress="javascript:return displayKeyCode(event,this.id);" onmousedown="changeValue(this.id);setDirtyFlag()">
+</div>
+<div style="position: absolute; left: 620px; top: 441px;">
+	<input name="SexMale" id="SexMale" type="text" style="width:12px; height:12px; border:1px solid #000000; font-weight:bold; text-align:center; background-color:white;" onkeypress="javascript:return displayKeyCode(event,this.id);" onmousedown="changeValue(this.id);setDirtyFlag()">
+</div>
+<div style="position: absolute; left: 664px; top: 441px;">
+	<input name="SexIntersex" id="SexIntersex" type="text" style="width:12px; height:12px; border:1px solid #000000; font-weight:bold; text-align:center; background-color:white;" onkeypress="javascript:return displayKeyCode(event,this.id);" onmousedown="changeValue(this.id);setDirtyFlag()">
+</div>
+
+<div style="position: absolute; left: 133px; top: 455px;">
+	<input name="GenderWoman" id="GenderWoman" type="text" style="width:12px; height:12px; border:1px solid #000000; font-weight:bold; text-align:center; background-color:white;" onkeypress="javascript:return displayKeyCode(event,this.id);" onmousedown="changeValue(this.id);setDirtyFlag()">
+</div>
+<div style="position: absolute; left: 193px; top: 455px;">
+	<input name="GenderMan" id="GenderMan" type="text" style="width:12px; height:12px; border:1px solid #000000; font-weight:bold; text-align:center; background-color:white;" onkeypress="javascript:return displayKeyCode(event,this.id);" onmousedown="changeValue(this.id);setDirtyFlag()">
+</div>
+<div style="position: absolute; left: 234px; top: 455px;">
+	<input name="GenderOther" id="GenderOther" type="text" style="width:12px; height:12px; border:1px solid #000000; font-weight:bold; text-align:center; background-color:white;" onkeypress="javascript:return displayKeyCode(event,this.id);" onmousedown="changeValue(this.id);setDirtyFlag()">
+</div>
+<div style="position: absolute; left: 376px; top: 451px;">
+	<input name="GenderOtherText" id="GenderOtherText" type="text" class="noborder" style="width: 368px; font-family: Arial; font-size: 12px;">
+</div>
+
+<div style="position: absolute; left: 145px; top: 469px;">
+	<input name="PronounsShe" id="PronounsShe" type="text" style="width:12px; height:12px; border:1px solid #000000; font-weight:bold; text-align:center; background-color:white;" onkeypress="javascript:return displayKeyCode(event,this.id);" onmousedown="changeValue(this.id);setDirtyFlag()">
+</div>
+<div style="position: absolute; left: 233px; top: 469px;">
+	<input name="PronounsHe" id="PronounsHe" type="text" style="width:12px; height:12px; border:1px solid #000000; font-weight:bold; text-align:center; background-color:white;" onkeypress="javascript:return displayKeyCode(event,this.id);" onmousedown="changeValue(this.id);setDirtyFlag()">
+</div>
+<div style="position: absolute; left: 308px; top: 469px;">
+	<input name="PronounsThey" id="PronounsThey" type="text" style="width:12px; height:12px; border:1px solid #000000; font-weight:bold; text-align:center; background-color:white;" onkeypress="javascript:return displayKeyCode(event,this.id);" onmousedown="changeValue(this.id);setDirtyFlag()">
+</div>
+<div style="position: absolute; left: 417px; top: 469px;">
+	<input name="PronounsOther" id="PronounsOther" type="text" style="width:12px; height:12px; border:1px solid #000000; font-weight:bold; text-align:center; background-color:white;" onkeypress="javascript:return displayKeyCode(event,this.id);" onmousedown="changeValue(this.id);setDirtyFlag()">
+</div>
+<div style="position: absolute; left: 558px; top: 465px;">
+	<input name="PronounsOtherText" id="PronounsOtherText" type="text" class="noborder" style="width: 187px; font-family: Arial; font-size: 12px;">
+</div>
+
+<div style="position: absolute; left: 223px; top: 480px;">
+	<input name="PHN" id="PHN" type="text" class="noborder" style="width: 170px; font-family: Arial; font-size: 12px;" oscarDB=hinc>
+</div>
+<div style="position: absolute; left: 561px; top: 480px;">
+	<input name="DateOfBirth" id="DateOfBirth" type="text" class="noborder" style="width: 184px; font-family: Arial; font-size: 12px;">
+</div>
+
+<div style="position: absolute; left: 163px; top: 494px;">
+	<input name="HomePhone" id="HomePhone" type="text" class="noborder" style="width: 140px; font-family: Arial; font-size: 12px;" oscarDB=phone>
+</div>
+<div style="position: absolute; left: 309px; top: 498px;">
+	<input name="HomeOkMsg" id="HomeOkMsg" type="text" style="width:12px; height:12px; border:1px solid #000000; font-weight:bold; text-align:center; background-color:white;" onkeypress="javascript:return displayKeyCode(event,this.id);" onmousedown="changeValue(this.id);setDirtyFlag()">
+</div>
+<div style="position: absolute; left: 166px; top: 508px;">
+	<input name="MobilePhone" id="MobilePhone" type="text" class="noborder" style="width: 137px; font-family: Arial; font-size: 12px;" oscarDB=cell>
+</div>
+<div style="position: absolute; left: 309px; top: 512px;">
+	<input name="MobileOkMsg" id="MobileOkMsg" type="text" style="width:12px; height:12px; border:1px solid #000000; font-weight:bold; text-align:center; background-color:white;" onkeypress="javascript:return displayKeyCode(event,this.id);" onmousedown="changeValue(this.id);setDirtyFlag()">
+</div>
+
+<div style="position: absolute; left: 137px; top: 522px;">
+	<input name="AddressStreet" id="AddressStreet" type="text" class="noborder" style="width: 220px; font-family: Arial; font-size: 12px;" oscarDB=address>
+</div>
+<div style="position: absolute; left: 363px; top: 522px;">
+	<input name="AddressCity" id="AddressCity" type="text" class="noborder" style="width: 135px; font-family: Arial; font-size: 12px;" oscarDB=city>
+</div>
+<div style="position: absolute; left: 503px; top: 522px;">
+	<input name="AddressProvince" id="AddressProvince" type="text" class="noborder" style="width: 120px; font-family: Arial; font-size: 12px;" oscarDB=province>
+</div>
+<div style="position: absolute; left: 628px; top: 522px;">
+	<input name="AddressPostal" id="AddressPostal" type="text" class="noborder" style="width: 117px; font-family: Arial; font-size: 12px;" oscarDB=postal>
+</div>
+
+<div style="position: absolute; left: 124px; top: 547px;">
+	<input name="PatientEmail" id="PatientEmail" type="text" class="noborder" style="width: 620px; font-family: Arial; font-size: 12px;" oscarDB=email>
+</div>
+
+<div style="position: absolute; left: 219px; top: 561px;">
+	<input name="AltContactName" id="AltContactName" type="text" class="noborder" style="width: 195px; font-family: Arial; font-size: 12px;">
+</div>
+<div style="position: absolute; left: 600px; top: 561px;">
+	<input name="AltContactPhone" id="AltContactPhone" type="text" class="noborder" style="width: 145px; font-family: Arial; font-size: 12px;">
+</div>
+
+<div style="position: absolute; left: 219px; top: 575px;">
+	<input name="Insurance" id="Insurance" type="text" class="noborder" style="width: 160px; font-family: Arial; font-size: 12px;">
+</div>
+<div style="position: absolute; left: 497px; top: 579px;">
+	<input name="InterpreterYes" id="InterpreterYes" type="text" style="width:12px; height:12px; border:1px solid #000000; font-weight:bold; text-align:center; background-color:white;" onkeypress="javascript:return displayKeyCode(event,this.id);" onmousedown="changeValue(this.id);setDirtyFlag()">
+</div>
+<div style="position: absolute; left: 592px; top: 575px;">
+	<input name="InterpreterLanguage" id="InterpreterLanguage" type="text" class="noborder" style="width: 152px; font-family: Arial; font-size: 12px;">
+</div>
+
+<div style="position: absolute; left: 204px; top: 593px;">
+	<input name="IsoAirborne" id="IsoAirborne" type="text" style="width:12px; height:12px; border:1px solid #000000; font-weight:bold; text-align:center; background-color:white;" onkeypress="javascript:return displayKeyCode(event,this.id);" onmousedown="changeValue(this.id);setDirtyFlag()">
+</div>
+<div style="position: absolute; left: 269px; top: 593px;">
+	<input name="IsoContact" id="IsoContact" type="text" style="width:12px; height:12px; border:1px solid #000000; font-weight:bold; text-align:center; background-color:white;" onkeypress="javascript:return displayKeyCode(event,this.id);" onmousedown="changeValue(this.id);setDirtyFlag()">
+</div>
+<div style="position: absolute; left: 329px; top: 593px;">
+	<input name="IsoDroplet" id="IsoDroplet" type="text" style="width:12px; height:12px; border:1px solid #000000; font-weight:bold; text-align:center; background-color:white;" onkeypress="javascript:return displayKeyCode(event,this.id);" onmousedown="changeValue(this.id);setDirtyFlag()">
+</div>
+<div style="position: absolute; left: 386px; top: 593px;">
+	<input name="IsoNA" id="IsoNA" type="text" style="width:12px; height:12px; border:1px solid #000000; font-weight:bold; text-align:center; background-color:white;" onkeypress="javascript:return displayKeyCode(event,this.id);" onmousedown="changeValue(this.id);setDirtyFlag()">
+</div>
+
+<div style="position: absolute; left: 177px; top: 607px;">
+	<input name="PriorityRoutine" id="PriorityRoutine" type="text" style="width:12px; height:12px; border:1px solid #000000; font-weight:bold; text-align:center; background-color:white;" onkeypress="javascript:return displayKeyCode(event,this.id);" onmousedown="changeValue(this.id);setDirtyFlag()">
+</div>
+<div style="position: absolute; left: 236px; top: 607px;">
+	<input name="PriorityUrgent" id="PriorityUrgent" type="text" style="width:12px; height:12px; border:1px solid #000000; font-weight:bold; text-align:center; background-color:white;" onkeypress="javascript:return displayKeyCode(event,this.id);" onmousedown="changeValue(this.id);setDirtyFlag()">
+</div>
+
+<div style="position: absolute; left: 200px; top: 618px;">
+	<input name="ReasonUrgency" id="ReasonUrgency" type="text" class="noborder" style="width: 545px; font-family: Arial; font-size: 12px;">
+</div>
+
+<!-- ---------------- Referral Information ---------------- -->
+<div style="position: absolute; left: 88px; top: 668px;">
+	<input name="ServiceVTE" id="ServiceVTE" type="text" style="width:12px; height:12px; border:1px solid #000000; font-weight:bold; text-align:center; background-color:white;" onkeypress="javascript:return displayKeyCode(event,this.id);" onmousedown="changeValue(this.id);setDirtyFlag()">
+</div>
+
+<div style="position: absolute; left: 88px; top: 718px;">
+	<textarea name="ReasonReferral" id="ReasonReferral" class="noborder" style="width: 655px; height: 56px; font-family: Arial; font-size: 12px; resize: none; background: transparent;"></textarea>
+</div>
+
+<div style="position: absolute; left: 88px; top: 795px;">
+	<textarea name="MedicalHistory" id="MedicalHistory" class="noborder" style="width: 326px; height: 72px; font-family: Arial; font-size: 11px; resize: none; background: transparent;" oscarDB=medical_history></textarea>
+</div>
+<div style="position: absolute; left: 428px; top: 795px;">
+	<textarea name="CurrentMedications" id="CurrentMedications" class="noborder" style="width: 314px; height: 72px; font-family: Arial; font-size: 11px; resize: none; background: transparent;" oscarDB=druglist_line></textarea>
+</div>
+
+<!-- ---------------- Referring Provider ---------------- -->
+<div style="position: absolute; left: 126px; top: 885px;">
+	<input name="ProviderName" id="ProviderName" type="text" class="noborder" style="width: 238px; font-family: Arial; font-size: 12px;" oscarDB=current_user>
+</div>
+<div style="position: absolute; left: 427px; top: 885px;">
+	<input name="Signature" id="Signature" type="text" class="noborder" style="width: 155px; font-family: Arial; font-size: 12px;">
+</div>
+<div style="position: absolute; left: 621px; top: 885px;">
+	<input name="ProviderMSP" id="ProviderMSP" type="text" class="noborder" style="width: 124px; font-family: Arial; font-size: 12px;" oscarDB=current_user_ohip_no>
+</div>
+
+<div style="position: absolute; left: 129px; top: 899px;">
+	<input name="ProviderPhone" id="ProviderPhone" type="text" class="noborder" style="width: 155px; font-family: Arial; font-size: 12px;" oscardb=clinic_phone>
+</div>
+<div style="position: absolute; left: 316px; top: 899px;">
+	<input name="ProviderFax" id="ProviderFax" type="text" class="noborder" style="width: 155px; font-family: Arial; font-size: 12px;" oscardb=clinic_fax>
+</div>
+<div style="position: absolute; left: 598px; top: 899px;">
+	<input name="RefDate" id="RefDate" type="text" class="noborder" style="width: 145px; font-family: Arial; font-size: 12px;">
+</div>
+
+<div style="position: absolute; left: 143px; top: 913px;">
+	<input name="Specialty" id="Specialty" type="text" class="noborder" style="width: 175px; font-family: Arial; font-size: 12px;" value="Family Practice">
+</div>
+<div style="position: absolute; left: 512px; top: 913px;">
+	<input name="PrimaryCareProvider" id="PrimaryCareProvider" type="text" class="noborder" style="width: 232px; font-family: Arial; font-size: 12px;">
+</div>
+
+<!-- The submit/print/fax buttons ---------------------------------------------- -->
+<div style="position: absolute; left: 10px; top: 990px;" class="DoNotPrint" id="BottomButtons">
+	<table>
+	<tr><td>
+	<input type="hidden" id="newForm" name="newForm" value="True" />
+	Subject: <input name="subject" size="40" type="text">
+	<input value="Submit" name="SubmitButton" id="SubmitButton" type="button" onclick="releaseDirtyFlag();document.ThrombosisReferralForm.submit()">
+	<input value="Reset" name="ResetButton" id="ResetButton" type="reset">
+	<input value="Print" name="PrintButton" id="PrintButton" type="button" onclick="printLetter()">
+	<input value="Print and Submit" name="PrintSubmitButton" type="button" onClick="printSubmit()">
+	<input value="Save to chart" name="SaveChartButton" id="SaveChartButton" type="button" style="background-color:#dce9f7; font-weight:bold;" onClick="saveReqToChart();" title="Save this referral into the patient Documents, so it can be faxed later without downloading it first">
+	<input value="Email to Patient" name="EmailButton" id="EmailButton" type="button" onClick="emailReqToPatient();" title="Save this referral and email the patient a copy of it, locked with their PHN">
+	<br>
+	<!-- Fax straight from the form through SRFax. The clinic fax is preprinted on the
+	     form itself, so the destination comes prefilled - the address book is still
+	     there for sending a copy elsewhere. id-only controls, never saved as answers. -->
+	<span style="position:relative; display:inline-block;">
+		<span style="font-size:12px;">Fax to:</span>
+		<input id="fax_search" type="text" size="34" autocomplete="off"
+			placeholder="search the fax address book" onfocus="faxBookOpen();"
+			oninput="faxBookOpen();" onkeydown="if(event.keyCode==27){faxBookClose();}">
+		<div id="fax_results" style="display:none; position:absolute; left:52px; top:100%; z-index:30; width:360px; max-height:220px; overflow:auto; background:#fff; border:1px solid #999; font-size:12px; text-align:left;"></div>
+	</span>
+	<span style="font-size:12px;">Fax #:</span>
+	<input id="fax_number" size="13" type="text" placeholder="10-digit" value="604-528-5435">
+	<span id="fax_chosen" style="font-size:12px; color:#245;">Thrombosis Clinic JPOCSC</span>
+	<input value="Fax" name="FaxButton" id="FaxButton" type="button" style="background-color:#c6f0c6; font-weight:bold;" onClick="faxReferral();" title="Save this referral and fax it to the Thrombosis Clinic">
+	<input value="Close" name="CloseButton" id="CloseButton" type="button" onClick="closeReqForm();" title="Leave this form without saving it again - Fax, Email and Save to chart have already filed it">
+	</td></tr>
+	</table>
+</div>
+</form>
+</body>
+</html>

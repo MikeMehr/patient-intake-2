@@ -59,6 +59,9 @@ static {
     FORM_FILING.put("74", new String[] { "requisition", "Sleep Study Requisition" });
     FORM_FILING.put("62", new String[] { "insurance", "Special Authority Request" });
     FORM_FILING.put("52", new String[] { "insurance", "Plan G Request" });
+    // Referrals: the decision letter comes back by fax and gets filed under consult -
+    // putting the outgoing referral there keeps request and response together.
+    FORM_FILING.put("75", new String[] { "consult", "Thrombosis Clinic Referral" });
 }
 
 // Is this exact saved eForm already in the chart? Keyed on fdid via EFormDocs, which is
