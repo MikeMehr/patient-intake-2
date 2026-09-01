@@ -38,6 +38,12 @@ export const requisitionPrefillRequestSchema = z.object({
   demographicNo: z.string().trim().regex(/^\d{1,20}$/),
 });
 
+export const learnStyleRulesRequestSchema = z.object({
+  noteType: z.enum(["soap", "recommendations_imaging", "recommendations_referrals"]),
+  originalText: z.string().trim().min(1).max(20000),
+  editedText: z.string().trim().min(1).max(20000),
+});
+
 export const saveSoapDraftRequestSchema = z.object({
   soapVersionId: z.string().uuid(),
   draft: soapDraftSchema,

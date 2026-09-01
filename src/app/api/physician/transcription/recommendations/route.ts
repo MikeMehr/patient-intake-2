@@ -6,6 +6,7 @@ import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
 import { resolveWorkforceScope } from "@/lib/transcription-store";
 import { transcriptionRecommendationsRequestSchema } from "@/lib/transcription-schema";
 import { escapeRawNewlinesInJsonStrings, parseJsonValue } from "@/lib/safe-json";
+import { formatStyleRulesAppendix, listStyleRuleTexts } from "@/lib/ai-style-rules";
 import {
   buildContentFilterPayload,
   categoriesFromApiError,
@@ -86,11 +87,24 @@ export async function POST(request: NextRequest) {
       ? `Transcript:\n${parsed.data.transcript}\n\nAssessment:\n${parsed.data.assessment}`
       : `Transcript:\n${parsed.data.transcript}`;
 
+    const physicianId = getEffectivePhysicianId(auth);
+    const [imagingRules, referralRules] = await Promise.all([
+      listStyleRuleTexts(physicianId, "recommendations_imaging"),
+      listStyleRuleTexts(physicianId, "recommendations_referrals"),
+    ]);
+    let styledSystemPrompt = systemPrompt;
+    if (imagingRules.length) {
+      styledSystemPrompt += "\n\n" + formatStyleRulesAppendix(imagingRules, 'the "imaging" field');
+    }
+    if (referralRules.length) {
+      styledSystemPrompt += "\n\n" + formatStyleRulesAppendix(referralRules, 'the "referrals" field');
+    }
+
     const azure = getAzureSoapClient();
     const completion = await azure.client.chat.completions.create({
       model: azure.deployment,
       messages: [
-        { role: "system", content: systemPrompt },
+        { role: "system", content: styledSystemPrompt },
         { role: "user", content: userContent },
       ],
       max_completion_tokens: 1500,

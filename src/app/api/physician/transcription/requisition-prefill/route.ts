@@ -6,6 +6,7 @@ import { getRequestId, logRequestMeta } from "@/lib/request-metadata";
 import { resolveWorkforceScope } from "@/lib/transcription-store";
 import { requisitionPrefillRequestSchema } from "@/lib/transcription-schema";
 import { escapeRawNewlinesInJsonStrings, parseJsonValue } from "@/lib/safe-json";
+import { formatStyleRulesAppendix, listStyleRuleTexts, type StyleRuleNoteType } from "@/lib/ai-style-rules";
 import { clampFillSpec } from "@/lib/oscar/eform-prefill";
 import {
   buildImagingFillSpec,
@@ -225,11 +226,26 @@ export async function POST(request: NextRequest) {
       ? `Recommendation:\n${recommendationText}\n\nAssessment:\n${assessment}`
       : `Recommendation:\n${recommendationText}`;
 
+    // Learned style rules shape only the free-text fields of imaging/referral
+    // extractions; labs and prescriptions are untouched.
+    let styleAppendix = "";
+    const styleNoteType: StyleRuleNoteType | null =
+      type === "imaging" ? "recommendations_imaging" : type === "referral" ? "recommendations_referrals" : null;
+    if (styleNoteType) {
+      const styleRules = await listStyleRuleTexts(getEffectivePhysicianId(auth), styleNoteType);
+      if (styleRules.length) {
+        styleAppendix =
+          "\n\n" +
+          formatStyleRulesAppendix(styleRules, type === "imaging" ? "imaging requisitions" : "referral notes") +
+          "\nThese preferences apply to the phrasing of free-text fields only; never let them add, remove, or change studies, referrals, or structured fields.";
+      }
+    }
+
     const azure = getAzureSoapClient();
     const completion = await azure.client.chat.completions.create({
       model: azure.deployment,
       messages: [
-        { role: "system", content: SYSTEM_PROMPTS[type] },
+        { role: "system", content: SYSTEM_PROMPTS[type] + styleAppendix },
         { role: "user", content: userContent },
       ],
       max_completion_tokens: 800,

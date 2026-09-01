@@ -22,6 +22,7 @@ import {
 } from "@/lib/content-filter";
 import { parseJsonValue } from "@/lib/safe-json";
 import { HEALTHASSIST_SNAPSHOT_LABEL } from "@/lib/transcription-policy";
+import { formatStyleRulesAppendix, listStyleRuleTexts } from "@/lib/ai-style-rules";
 
 const SYSTEM_PROMPT_BY_LEVEL: Record<1 | 2 | 3, string> = {
   // Level 1: concise, point-form — one short clinical-fact sentence per field per bullet.
@@ -213,11 +214,16 @@ export async function POST(request: NextRequest) {
       encounterId = encounter.encounterId;
     }
 
+    const styleRules = await listStyleRuleTexts(physicianId, "soap");
+    const styleAppendix = styleRules.length
+      ? "\n\n" + formatStyleRulesAppendix(styleRules, "SOAP notes")
+      : "";
+
     const azure = getAzureOpenAIClient();
     const completion = await azure.client.chat.completions.create({
       model: azure.deployment,
       messages: [
-        { role: "system", content: resolveSystemPrompt(parsed.data.detailLevel) },
+        { role: "system", content: resolveSystemPrompt(parsed.data.detailLevel) + styleAppendix },
         { role: "user", content: parsed.data.transcript },
       ],
       max_completion_tokens: 3000,

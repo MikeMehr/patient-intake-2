@@ -13,6 +13,7 @@ import { classifyAuthFailure, type AuthFailure } from "@/lib/client/auth-respons
 import { useOscarLaunch, describeSendFailure } from "@/components/physician/useOscarLaunch";
 import { buildConsultationRequestUrl, buildEformAddUrl, buildRxUrl, type FillSpec } from "@/lib/oscar/eform-prefill";
 import { OscarLaunchBanner } from "@/components/physician/OscarLaunchBanner";
+import LearnedPreferencesPanel from "@/components/physician/LearnedPreferencesPanel";
 import {
   clearStoredTranscript,
   loadTranscript,
@@ -42,7 +43,12 @@ type SoapCase = {
   hasPatient: boolean;
   draft: SoapDraft;
   reviewText: string;
+  // The AI's untouched output for this case; all-empty means "no original
+  // available" (e.g. history-restored sessions) and disables Learn.
+  aiOriginalDraft: SoapDraft;
 };
+
+type StyleRuleNoteType = "soap" | "recommendations_imaging" | "recommendations_referrals";
 
 type TranscriptionListItem = {
   transcriptionSessionId: string;
@@ -163,6 +169,12 @@ function composeUnifiedSoapText(draft: SoapDraft): string {
     "Assessment/Plan:",
     assessmentPlan,
   ].join("\n");
+}
+
+function hasSoapOriginal(draft: SoapDraft): boolean {
+  return Boolean(
+    draft.subjective.trim() || draft.objective.trim() || draft.assessment.trim() || draft.plan.trim(),
+  );
 }
 
 function parseUnifiedSoapText(value: string): SoapDraft | null {
@@ -310,6 +322,12 @@ export default function PhysicianTranscriptionPage() {
   // Pre-computed encounter recommendations, revealed on demand in Review & export.
   const [recommendations, setRecommendations] = useState<{ labs: string; referrals: string; imaging: string; medications: string } | null>(null);
   const [recommendationsLoading, setRecommendationsLoading] = useState(false);
+  // AI originals of the editable recommendation sections, kept so Learn can diff.
+  const [recommendationsOriginal, setRecommendationsOriginal] = useState<{ imaging: string; referrals: string } | null>(null);
+  const [learnLoading, setLearnLoading] = useState<StyleRuleNoteType | null>(null);
+  const [learnNotice, setLearnNotice] = useState<string | null>(null);
+  const [learnError, setLearnError] = useState<string | null>(null);
+  const [rulesRefreshKey, setRulesRefreshKey] = useState(0);
   const [showLabs, setShowLabs] = useState(false);
   const [showReferrals, setShowReferrals] = useState(false);
   const [showImaging, setShowImaging] = useState(false);
@@ -1046,6 +1064,7 @@ export default function PhysicianTranscriptionPage() {
     }
     setHpiLoading(true);
     setRecommendations(null);
+    setRecommendationsOriginal(null);
     // Pre-compute recommended labs alongside the HPI so they can be shown in
     // the same popup — never awaited, must not delay or risk the HPI path.
     if (!orgWoundCare) {
@@ -1064,6 +1083,10 @@ export default function PhysicianTranscriptionPage() {
               referrals: typeof recData?.referrals === "string" ? recData.referrals : "",
               imaging: typeof recData?.imaging === "string" ? recData.imaging : "",
               medications: typeof recData?.medications === "string" ? recData.medications : "",
+            });
+            setRecommendationsOriginal({
+              imaging: typeof recData?.imaging === "string" ? recData.imaging : "",
+              referrals: typeof recData?.referrals === "string" ? recData.referrals : "",
             });
           }
         } catch {
@@ -1110,6 +1133,7 @@ export default function PhysicianTranscriptionPage() {
     setActionSuccess(null);
     setFilterBlock(null);
     setRecommendations(null);
+    setRecommendationsOriginal(null);
     setShowLabs(false);
     setShowReferrals(false);
     setShowImaging(false);
@@ -1173,6 +1197,7 @@ export default function PhysicianTranscriptionPage() {
               hasPatient,
               draft: d,
               reviewText: composeUnifiedSoapText(d),
+              aiOriginalDraft: d,
             };
           })
         : [{
@@ -1193,6 +1218,12 @@ export default function PhysicianTranscriptionPage() {
               assessment: data?.draft?.assessment || "",
               plan: data?.draft?.plan || "",
             }),
+            aiOriginalDraft: {
+              subjective: data?.draft?.subjective || "",
+              objective: data?.draft?.objective || "",
+              assessment: data?.draft?.assessment || "",
+              plan: data?.draft?.plan || "",
+            },
           }];
       setSoapCases(cases);
       setActiveCaseIndex(0);
@@ -1232,6 +1263,10 @@ export default function PhysicianTranscriptionPage() {
                 referrals: typeof recData?.referrals === "string" ? recData.referrals : "",
                 imaging: typeof recData?.imaging === "string" ? recData.imaging : "",
                 medications: typeof recData?.medications === "string" ? recData.medications : "",
+              });
+              setRecommendationsOriginal({
+                imaging: typeof recData?.imaging === "string" ? recData.imaging : "",
+                referrals: typeof recData?.referrals === "string" ? recData.referrals : "",
               });
             }
           } catch {
@@ -1304,9 +1339,21 @@ export default function PhysicianTranscriptionPage() {
       plan: updatedCases.map((c) => `${c.label}: ${c.draft.plan}`).join("\n\n"),
     };
 
+    // Merge the AI originals the same way so Learn compares like-with-like.
+    // If any case lacks an original (restored session), the merge has none either.
+    const allHaveOriginals = updatedCases.every((c) => hasSoapOriginal(c.aiOriginalDraft));
+    const mergedOriginal: SoapDraft = allHaveOriginals
+      ? {
+          subjective: updatedCases.map((c) => `${c.label}: ${c.aiOriginalDraft.subjective}`).join("\n\n"),
+          objective: updatedCases.filter((c) => c.aiOriginalDraft.objective.trim()).map((c) => `${c.label}: ${c.aiOriginalDraft.objective}`).join("\n\n"),
+          assessment: updatedCases.map((c) => `${c.label}: ${c.aiOriginalDraft.assessment}`).join("\n\n"),
+          plan: updatedCases.map((c) => `${c.label}: ${c.aiOriginalDraft.plan}`).join("\n\n"),
+        }
+      : initialDraft;
+
     const mergedReviewText = composeUnifiedSoapText(mergedDraft);
     const baseCase = updatedCases[0];
-    const mergedCase: SoapCase = { ...baseCase, label: "Merged", draft: mergedDraft, reviewText: mergedReviewText };
+    const mergedCase: SoapCase = { ...baseCase, label: "Merged", draft: mergedDraft, reviewText: mergedReviewText, aiOriginalDraft: mergedOriginal };
 
     setSoapCases([mergedCase]);
     setActiveCaseIndex(0);
@@ -1350,6 +1397,36 @@ export default function PhysicianTranscriptionPage() {
       setActionError(err instanceof Error ? err.message : "Failed to save draft");
     } finally {
       setActionLoading(false);
+    }
+  }
+
+  // Distill durable style rules from an AI-original vs physician-edited pair so
+  // future generations match this physician's style. Explicit-button-only.
+  async function learnFromEdits(noteType: StyleRuleNoteType, originalText: string, editedText: string) {
+    if (learnLoading) return;
+    setLearnLoading(noteType);
+    setLearnNotice(null);
+    setLearnError(null);
+    try {
+      const res = await fetch("/api/physician/transcription/learn", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ noteType, originalText, editedText }),
+      });
+      if (handleAuthFailure(res)) return;
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || "Failed to learn from this edit.");
+      if (data?.changed) {
+        const count = Array.isArray(data?.rules) ? data.rules.length : 0;
+        setLearnNotice(`Preferences updated (${count} rule${count === 1 ? "" : "s"}).`);
+      } else {
+        setLearnNotice("No new preferences found — your existing preferences already cover this.");
+      }
+      setRulesRefreshKey((k) => k + 1);
+    } catch (err) {
+      setLearnError(err instanceof Error ? err.message : "Failed to learn from this edit.");
+    } finally {
+      setLearnLoading(null);
     }
   }
 
@@ -1556,6 +1633,8 @@ export default function PhysicianTranscriptionPage() {
             hasPatient: Boolean(d.patientId),
             draft: nextDraft,
             reviewText: composeUnifiedSoapText(nextDraft),
+            // Restored sessions have no AI original to diff against — Learn stays disabled.
+            aiOriginalDraft: initialDraft,
           };
         })
         .filter((c): c is SoapCase => c !== null);
@@ -1623,6 +1702,7 @@ export default function PhysicianTranscriptionPage() {
     setHpiText("");
     setHpiError(null);
     setRecommendations(null);
+    setRecommendationsOriginal(null);
     setRecommendationsLoading(false);
     setShowLabs(false);
     setShowReferrals(false);
@@ -2323,6 +2403,8 @@ export default function PhysicianTranscriptionPage() {
                   </div>
                 )}
                 {actionSuccess && <p className="text-sm text-green-700">{actionSuccess}</p>}
+                {learnNotice && <p className="text-sm text-violet-700">{learnNotice}</p>}
+                {learnError && <p className="text-sm text-red-700">{learnError}</p>}
                 {activeWorkflowTab === "capture" && (
                   <>
                     <div className="flex items-center gap-3">
@@ -2695,6 +2777,24 @@ export default function PhysicianTranscriptionPage() {
                           Save changes
                         </button>
                       )}
+                      {!orgWoundCare && (() => {
+                        const activeOriginal = soapCases[activeCaseIndex]?.aiOriginalDraft;
+                        const soapOriginalText = activeOriginal && hasSoapOriginal(activeOriginal)
+                          ? composeUnifiedSoapText(activeOriginal)
+                          : "";
+                        const soapDirty = Boolean(soapOriginalText) && reviewText.trim() !== soapOriginalText.trim();
+                        return (
+                          <button
+                            type="button"
+                            onClick={() => void learnFromEdits("soap", soapOriginalText, reviewText)}
+                            disabled={!soapVersionId || !soapDirty || learnLoading !== null}
+                            title={!soapDirty ? "Edit the note first — Learn compares your edits against the AI's original." : "Teach the AI your style from this edit."}
+                            className="px-4 py-2 text-sm font-medium text-violet-700 bg-violet-50 border border-violet-200 rounded-lg hover:bg-violet-100 disabled:text-slate-400 disabled:bg-slate-100 disabled:border-slate-200"
+                          >
+                            {learnLoading === "soap" ? "Learning…" : "Learn"}
+                          </button>
+                        );
+                      })()}
                       {oscarLaunch.launchMode && (
                         <button
                           type="button"
@@ -2823,10 +2923,24 @@ export default function PhysicianTranscriptionPage() {
                                         : "Create consultation"}
                                   </button>
                                 )}
+                                <button
+                                  type="button"
+                                  onClick={() => recommendationsOriginal && void learnFromEdits("recommendations_referrals", recommendationsOriginal.referrals, recommendations.referrals)}
+                                  disabled={!recommendationsOriginal || recommendations.referrals.trim() === recommendationsOriginal.referrals.trim() || learnLoading !== null}
+                                  title="Edit the referral text first — Learn compares your edits against the AI's original."
+                                  className="text-xs font-medium text-violet-700 hover:text-violet-900 disabled:text-slate-400"
+                                >
+                                  {learnLoading === "recommendations_referrals" ? "Learning…" : "Learn"}
+                                </button>
                                 <button type="button" onClick={() => void copyText(recommendations.referrals, "referrals")} className="text-xs text-slate-500 hover:text-slate-700">{copiedKey === "referrals" ? "Copied!" : "Copy"}</button>
                               </span>
                             </div>
-                            <pre className="whitespace-pre-wrap font-sans text-sm text-slate-800">{recommendations.referrals}</pre>
+                            <textarea
+                              value={recommendations.referrals}
+                              onChange={(e) => setRecommendations((r) => (r ? { ...r, referrals: e.target.value } : r))}
+                              rows={6}
+                              className="w-full rounded-md border border-slate-200 px-2 py-1.5 font-sans text-sm text-slate-800 resize-y"
+                            />
                           </div>
                         )}
                         {showImaging && recommendations?.imaging && (
@@ -2844,10 +2958,24 @@ export default function PhysicianTranscriptionPage() {
                                     {requisitionLoading === "imaging" ? "Preparing…" : "Create requisition"}
                                   </button>
                                 )}
+                                <button
+                                  type="button"
+                                  onClick={() => recommendationsOriginal && void learnFromEdits("recommendations_imaging", recommendationsOriginal.imaging, recommendations.imaging)}
+                                  disabled={!recommendationsOriginal || recommendations.imaging.trim() === recommendationsOriginal.imaging.trim() || learnLoading !== null}
+                                  title="Edit the requisition text first — Learn compares your edits against the AI's original."
+                                  className="text-xs font-medium text-violet-700 hover:text-violet-900 disabled:text-slate-400"
+                                >
+                                  {learnLoading === "recommendations_imaging" ? "Learning…" : "Learn"}
+                                </button>
                                 <button type="button" onClick={() => void copyText(recommendations.imaging, "imaging")} className="text-xs text-slate-500 hover:text-slate-700">{copiedKey === "imaging" ? "Copied!" : "Copy"}</button>
                               </span>
                             </div>
-                            <pre className="whitespace-pre-wrap font-sans text-sm text-slate-800">{recommendations.imaging}</pre>
+                            <textarea
+                              value={recommendations.imaging}
+                              onChange={(e) => setRecommendations((r) => (r ? { ...r, imaging: e.target.value } : r))}
+                              rows={4}
+                              className="w-full rounded-md border border-slate-200 px-2 py-1.5 font-sans text-sm text-slate-800 resize-y"
+                            />
                           </div>
                         )}
                         {showMedications && recommendations?.medications && (
@@ -2879,6 +3007,7 @@ export default function PhysicianTranscriptionPage() {
                         )}
                       </div>
                     )}
+                    {!orgWoundCare && <LearnedPreferencesPanel refreshKey={rulesRefreshKey} />}
                     {!soapHasPatient && !hasPatientIdentity && soapVersionId && (
                       <p className="text-xs text-amber-600">Patient name required to finalize and save to EMR.</p>
                     )}
