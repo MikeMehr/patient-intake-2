@@ -75,6 +75,10 @@ public class LabPdfParser extends PDFTextStripper {
         public String clientRef = "";
         /** Which layout this report was read as -- "EXCELLERIS", "LIFELABS", or "" if neither. */
         public String layout = "";
+        /** Everyone the lab copied the report to besides the ordering practitioner, exactly as
+         *  printed -- people ("DESANGHERE Ms. NANCY") and clinics ("PRIMARY CARE CENTRE SURREY
+         *  URGENT") alike. Shown as "cc:" on OSCAR's lab display via OBR-28. */
+        public final List<String> ccDocs = new ArrayList<>();
         public final List<Section> sections = new ArrayList<>();
         public final List<String> warnings = new ArrayList<>();
         public int resultCount() {
@@ -326,6 +330,12 @@ public class LabPdfParser extends PDFTextStripper {
                 report.accession = field(t, "Accession #:", null);
             } else if (t.startsWith("Requesting Client:")) {
                 report.requestingClient = field(t, "Requesting Client:", "cc:");
+                // Whoever the report was copied to prints after "cc:" on the same line. Kept
+                // verbatim as one entry -- the format inside is the lab's business, and the
+                // display field this feeds is free text anyway.
+                String cc = field(t, "cc:", "Client:");
+                if (cc.isEmpty()) cc = field(t, "cc:", null);
+                if (!cc.isEmpty()) report.ccDocs.add(cc);
             }
         }
 
@@ -578,10 +588,19 @@ public class LabPdfParser extends PDFTextStripper {
         // whitespace, so the outermost heading indent on the page is what tells the two apart.
         float sectionIndent = Float.MAX_VALUE;
         boolean inTable = false;
+        // The cc list ("Reported to:", "Copy to:") is the one header value long enough to wrap,
+        // and its continuation prints as a bare line with no label of its own -- "DESANGHERE Ms.
+        // NANCY, MEHRAEIN Dr. MANUCHER, PRIMARY" / "CARE CENTRE SURREY URGENT". A bare line is
+        // rejoined to the value above only when it starts at the SAME x the value did (wrapping
+        // is left-aligned under the value, well clear of the label margin) and follows it
+        // immediately; anything else clears the expectation.
+        String contLabel = null;
+        float contX = Float.NaN;
         for (List<Word> line : lines) {
             String text = join(line);
             if (text.isEmpty()) continue;
             if (isLifeLabsHeaderRow(line)) {
+                contLabel = null;
                 if (bounds == null) {
                     bounds = boundsFrom(line, LL_HEADER_LABELS);
                     if (bounds == null) {
@@ -593,7 +612,29 @@ public class LabPdfParser extends PDFTextStripper {
                 inTable = true;
                 continue;
             }
-            if (isLifeLabsBlockLine(line, text)) { harvest(text, f); inTable = false; continue; }
+            if (isLifeLabsBlockLine(line, text)) {
+                contLabel = null;
+                for (String lab : new String[] { "Reported to:", "Copy to:" }) {
+                    if (!text.startsWith(lab) || f.containsKey(lab)) continue;
+                    // First word of the value = first word past the label's own tokens.
+                    int consumed = 0, len = 0;
+                    for (Word w : line) {
+                        len += (len > 0 ? 1 : 0) + w.text.length();
+                        consumed++;
+                        if (len >= lab.length()) break;
+                    }
+                    if (consumed < line.size()) { contLabel = lab; contX = line.get(consumed).x; }
+                }
+                harvest(text, f);
+                if (contLabel != null && !f.containsKey(contLabel)) contLabel = null;
+                inTable = false;
+                continue;
+            }
+            if (contLabel != null && !inTable && Math.abs(line.get(0).x - contX) <= 2f) {
+                f.put(contLabel, f.get(contLabel) + " " + text);
+                continue;
+            }
+            contLabel = null;
             if (!inTable || bounds == null) continue;
 
             List<List<Word>> cells = cellsOf(line, bounds);
@@ -633,6 +674,17 @@ public class LabPdfParser extends PDFTextStripper {
         String orderedBy = nz(f.get("Ordered by:"));
         if (orderedBy.isEmpty()) orderedBy = nz(f.get("Reported to:"));
         report.requestingClient = llProviderName(orderedBy);
+
+        // Everyone else the lab reported or copied the result to is the cc list. The ordering
+        // practitioner appears in "Reported to:" as well, and repeating them there would only
+        // clutter the display's cc field.
+        for (String key : new String[] { "Reported to:", "Copy to:" }) {
+            for (String entry : nz(f.get(key)).split(",")) {
+                entry = entry.trim().replaceAll("\\s+", " ");
+                if (entry.isEmpty() || entry.equalsIgnoreCase(orderedBy.trim().replaceAll("\\s+", " "))) continue;
+                if (!report.ccDocs.contains(entry)) report.ccDocs.add(entry);
+            }
+        }
 
         String printedFor = nz(f.get("Printed for:"));
         int bar = printedFor.indexOf('|');
@@ -770,6 +822,7 @@ public class LabPdfParser extends PDFTextStripper {
         System.out.println("Patient   : " + r.patientName + "  DOB=" + r.dob + "  Sex=" + r.sex + "  PHN=" + r.phn);
         System.out.println("Accession : " + r.accession + "   Service=" + r.dateOfService + "   Status=" + r.reportStatus);
         System.out.println("Requesting: " + r.requestingClient + "   MSP=" + r.clientRef);
+        System.out.println("cc        : " + String.join(" | ", r.ccDocs));
         System.out.println("Results   : " + r.resultCount() + " in " + r.sections.size() + " sections");
         for (Section s : r.sections) {
             System.out.println("\n== " + s.code + " ==");

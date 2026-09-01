@@ -148,6 +148,31 @@ public class Hl7Builder {
         return esc(r.clientRef.trim()) + "^" + esc(last) + "^" + esc(first);
     }
 
+    /**
+     * A cc recipient as an XCN for OBR-28: {@code ^family^given^^^prefix}.
+     *
+     * The display field this feeds -- PATHL7Handler.getCCDocs() -> "cc:" on the lab view -- is
+     * assembled from the NAME components only, so "DESANGHERE Ms. NANCY" is split back into
+     * family/given/prefix to render as "Ms. NANCY DESANGHERE". Anything that doesn't fit that
+     * shape (a clinic, "PRIMARY CARE CENTRE SURREY URGENT") travels whole in the family-name
+     * component and renders verbatim.
+     *
+     * The ID component is left EMPTY on purpose: getDocNums() also walks OBR-28 and routes the
+     * lab into the inbox of any provider whose ohip_no matches the ID. The report prints no MSP
+     * number for cc recipients, and guessing one could file the lab into the wrong inbox; with
+     * no ID, the cc list is display-only and routing stays exactly as it was.
+     */
+    static String ccXcn(String printed) {
+        String n = printed == null ? "" : printed.trim().replaceAll("\\s+", " ");
+        if (n.isEmpty()) return "";
+        java.util.regex.Matcher m = java.util.regex.Pattern
+                .compile("^(\\S+)\\s+(Dr\\.?|Mr\\.?|Mrs\\.?|Ms\\.?)\\s+(.+)$").matcher(n);
+        if (m.matches()) {
+            return "^" + esc(m.group(1)) + "^" + esc(m.group(3)) + "^^^" + esc(m.group(2));
+        }
+        return "^" + esc(n);
+    }
+
     public String build(LabPdfParser.Report r, String messageControlId) {
         StringBuilder m = new StringBuilder();
         String now = ts(r.dateOfService.length() >= 10 ? r.dateOfService.substring(0, 10) : "", "")
@@ -180,7 +205,7 @@ public class Hl7Builder {
             // the message still parses and imports, it just lands in the wrong field -- which is
             // exactly how the ordering provider ended up in OBR-15 and the lab reached nobody's
             // inbox.
-            String[] obr = new String[26];
+            String[] obr = new String[29];
             java.util.Arrays.fill(obr, "");
             obr[1]  = String.valueOf(obrNo);            // set ID
             obr[3]  = esc(r.accession);                 // filler order number
@@ -192,8 +217,19 @@ public class Hl7Builder {
             // that as the link text -- leave it empty and the Lab Results row has no name.
             obr[24] = esc(s.code);                      // diagnostic service section ID
             obr[25] = "F";                              // result status
+            // OBR-28 (result copies to) is what getCCDocs() renders as "cc:" on the lab view.
+            // It only ever reads the FIRST OBR, but the list is the report's, not one section's,
+            // so it goes on every OBR rather than depending on that quirk.
+            StringBuilder cc = new StringBuilder();
+            for (String d : r.ccDocs) {
+                String xcn = ccXcn(d);
+                if (xcn.isEmpty()) continue;
+                if (cc.length() > 0) cc.append('~');
+                cc.append(xcn);
+            }
+            obr[28] = cc.toString();
             m.append("OBR");
-            for (int i = 1; i <= 25; i++) m.append('|').append(obr[i]);
+            for (int i = 1; i <= 28; i++) m.append('|').append(obr[i]);
             m.append(CR);
 
             // Section-level notes (performing lab, narrative-only sections) belong to the OBR, and
@@ -249,6 +285,10 @@ public class Hl7Builder {
         System.out.println("  docNums   : " + h.getDocNums() + "   (must contain the MSP number "
                 + "that matches provider.ohip_no)");
         System.out.println("  docName   : " + h.getDocName());
+        // The cc list is display-only: it must come back as names, and it must NOT add any
+        // routing ID beyond the ordering provider's (see ccXcn on why the IDs stay empty).
+        System.out.println("  ccDocs    : " + h.getCCDocs() + "   (parser found "
+                + r.ccDocs.size() + " cc entries in the PDF)");
         // getHeaders() joined with "/" becomes hl7TextInfo.discipline, which IS the link text
         // in the eChart Lab Results list. Empty here renders as a blank, unclickable-looking row.
         System.out.println("  headers   : " + h.getHeaders() + "   (-> discipline / eChart label)");

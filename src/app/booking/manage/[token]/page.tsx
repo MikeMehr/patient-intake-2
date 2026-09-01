@@ -141,6 +141,9 @@ export default function ManageAppointmentPage({
 
             <div className="space-y-3 mb-4">
               <Row label="Patient" value={`${appointment.firstName} ${appointment.lastName}`} />
+              {appointment.physicianOnlineBookingEnabled && (
+                <Row label="Physician" value={`Dr. ${appointment.physicianFirstName} ${appointment.physicianLastName}`} />
+              )}
               <Row label="Date & time" value={formatDateTime(appointment.slotStartTime)} />
               <Row label="Format" value={MODALITY_LABEL[modality]} />
               <Row label="Coverage" value={appointment.coverageType.replace(/_/g, " ")} />

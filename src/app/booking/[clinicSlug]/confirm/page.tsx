@@ -556,6 +556,7 @@ export default function BookingConfirmPage({
           <div className="text-green-500 text-5xl mb-4">✓</div>
           <h2 className="text-2xl font-bold text-gray-900 mb-2">Appointment Confirmed</h2>
           <p className="text-gray-600 mb-1">{clinicName}</p>
+          <p className="text-gray-600 mb-1">{physicianName}</p>
           <p className="font-semibold text-gray-800 mb-4">{formatDateTime(startTime)}</p>
           <div className="mb-6">{modalityBanner}</div>
           {attachmentError && (

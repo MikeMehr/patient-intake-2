@@ -347,6 +347,9 @@
       On the PDF: <%=Encode.forHtml(report.patientName)%> &middot; DOB <%=Encode.forHtml(report.dob)%>
       &middot; <%=Encode.forHtml(report.sex)%> &middot; PHN <%=Encode.forHtml(report.phn)%>
       &middot; accession <%=Encode.forHtml(report.accession)%>
+      <% if (!report.ccDocs.isEmpty()) { %>
+        &middot; cc: <%=Encode.forHtml(String.join(", ", report.ccDocs))%>
+      <% } %>
       <br/>OSCAR matches labs on sex + DOB + PHN and ignores the name, so the chart above &mdash;
       not the name printed on the report &mdash; is what receives these values.
     </div>

@@ -29,22 +29,37 @@ function lastHtml(): string {
 
 beforeEach(() => send.mockClear());
 
-// Patient-facing booking emails deliberately never name the physician — the clinic
-// books the visit, and which doctor takes it is not a commitment made to the patient.
 describe("Physician row", () => {
-  it("never appears in the confirmation email", async () => {
-    await sendBookingConfirmation(base);
-    const html = lastHtml();
-    expect(html).not.toContain("Physician");
-    expect(html).toContain("MyMD Telehealth");
-    expect(html).toContain("Date &amp; time");
+  it("renders with the name when a physician resolved", async () => {
+    await sendBookingConfirmation({ ...base, physicianName: "Dr. Nahid Mehraein" });
+    expect(lastHtml()).toContain("Physician");
+    expect(lastHtml()).toContain("Dr. Nahid Mehraein");
   });
 
-  it("never appears in the cancellation email", async () => {
+  it.each([
+    ["empty string", ""],
+    ["whitespace", "   "],
+    ["undefined", undefined],
+    ["null", null],
+  ])("is omitted entirely when the name is %s", async (_label, physicianName) => {
+    await sendBookingConfirmation({ ...base, physicianName });
+    expect(lastHtml()).not.toContain("Physician");
+  });
+
+  it("keeps the surrounding Clinic and Date rows intact when omitted", async () => {
+    await sendBookingConfirmation({ ...base, physicianName: "" });
+    const html = lastHtml();
+    expect(html).toContain("MyMD Telehealth");
+    expect(html).toContain("Date &amp; time");
+    expect(html).not.toContain("Physician");
+  });
+
+  it("is omitted from the cancellation email too", async () => {
     await sendCancellationConfirmation({
       email: base.email,
       patientFirstName: base.patientFirstName,
       clinicName: base.clinicName,
+      physicianName: "",
       slotStartTime: base.slotStartTime,
       timezone: base.timezone,
     });

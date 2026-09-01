@@ -17,6 +17,7 @@ const base = {
   email: "patient@example.com",
   patientFirstName: "Manucher",
   clinicName: "MyMD Telehealth",
+  physicianName: "Dr. Nahid Mehraein",
   slotStartTime: "2026-07-15T17:15:00.000Z",
   slotEndTime: "",
   timezone: "America/Vancouver",
