@@ -12,7 +12,17 @@
   Views:
     (no params)            - list, defaulting to the "Needs attention" tab
     ?tab=unassigned|...    - list, filtered
-    ?id=123                - one message
+    ?id=123                - one mirrored message
+    ?sentId=123            - one message from the OSCAR send log (mymd_patient_email_log)
+
+  The "Sent" tab is the union of two disjoint sources, newest first:
+    1. mymd_patient_email_log  - everything sent through mymd/emailPatient.jsp. These go out
+       via msmtp and are NOT copied to the mailbox's Sent folder, so the mirror never sees
+       them.
+    2. mymd_inbox_message with direction='OUT' - the webmail Sent folder, mirrored by
+       mymd_mail_sync.py. Covers mail staff send from webmail directly.
+  Rows are deduped on the Message-ID header in case the send path ever starts saving to the
+  Sent folder too.
 
   This page NEVER marks anything read in the mailbox itself. "Handled" is an OSCAR-side flag
   in mymd_inbox_message.status. The clinic's new-mail SMS alert decides "unread" from the
@@ -229,9 +239,11 @@
 
     int detailId = 0;
     try { detailId = Integer.parseInt(request.getParameter("id")); } catch (Exception ignored) {}
+    int sentId = 0;
+    try { sentId = Integer.parseInt(request.getParameter("sentId")); } catch (Exception ignored) {}
 
     String tab = request.getParameter("tab");
-    if (tab == null || !tab.matches("new|unassigned|handled|bulk|all")) tab = "new";
+    if (tab == null || !tab.matches("new|unassigned|handled|bulk|sent|all")) tab = "new";
 
     SimpleDateFormat stamp = new SimpleDateFormat("dd-MMM-yyyy HH:mm");
 %>
@@ -262,6 +274,9 @@
   .pill.unassigned { background: #fff3cd; color: #7d6608; }
   .pill.linked { background: #d6eaf8; color: #1a5276; }
   .pill.bulk { background: #eee; color: #666; }
+  .pill.oscar { background: #e8f0fe; color: #1a56a8; }
+  .pill.webmail { background: #e8f8f5; color: #117a65; }
+  .pill.failed { background: #fdecea; color: #922b21; font-weight: bold; }
   .card { background: #fff; border: 1px solid #ccd; border-radius: 4px; padding: 14px; }
   .hdrs { border-bottom: 1px solid #eef; padding-bottom: 10px; margin-bottom: 10px; }
   .hdrs div { margin: 2px 0; }
@@ -330,7 +345,102 @@
     }
 %>
 
-<% if (detailId > 0) {
+<% if (sentId > 0) {
+    // =================================================================================
+    // Sent detail view - one row of the OSCAR send log. Webmail-sent messages go through
+    // the normal ?id= detail view instead; they live in mymd_inbox_message.
+    // =================================================================================
+    PreparedStatement ps = conn.prepareStatement(
+        "SELECT l.id, l.demographic_no, l.provider_no, l.to_email, l.subject, l.body, "
+      + "       l.attachments, l.status, l.error_msg, l.sent_datetime, "
+      + "       d.first_name, d.last_name, "
+      + "       p.first_name AS p_first, p.last_name AS p_last "
+      + "  FROM mymd_patient_email_log l "
+      + "  LEFT JOIN demographic d ON d.demographic_no = l.demographic_no "
+      + "  LEFT JOIN provider p ON p.provider_no = l.provider_no "
+      + " WHERE l.id = ?");
+    ps.setInt(1, sentId);
+    ResultSet rs = ps.executeQuery();
+    if (!rs.next()) {
+        rs.close(); ps.close();
+%>
+  <div class="card">Message not found. <a href="<%= ctx %>/mymd/inbox.jsp?tab=sent">Back to Sent</a>.</div>
+<%
+    } else {
+        int demoNo       = rs.getInt("demographic_no");
+        boolean hasDemo  = !rs.wasNull() && demoNo > 0;
+        String provNo    = rs.getString("provider_no");
+        String toEmail   = rs.getString("to_email");
+        String subject   = rs.getString("subject");
+        String bodyText  = rs.getString("body");
+        String attNames  = rs.getString("attachments");
+        String status    = rs.getString("status");
+        String errorMsg  = rs.getString("error_msg");
+        Timestamp sentAt = rs.getTimestamp("sent_datetime");
+        String dFirst    = rs.getString("first_name");
+        String dLast     = rs.getString("last_name");
+        String pFirst    = rs.getString("p_first");
+        String pLast     = rs.getString("p_last");
+        rs.close(); ps.close();
+
+        // Same accountability bar as reading inbound mail: this page shows patient
+        // correspondence outside the chart. VIEW_SENT keeps it distinguishable from inbox
+        // ids sharing the same message_id_fk value.
+        audit(conn, providerNo, sentId, "VIEW_SENT", "log_id=" + sentId);
+%>
+  <div class="card">
+    <div class="hdrs">
+      <div><span class="muted">Sent by:</span>
+           <%-- Provider first names carry the billing number ("Manucher 67199") so it prints
+                on billing forms; strip bare digit tokens for display. --%>
+           <span class="who"><%= esc(pLast == null ? "provider #" + provNo
+                : tidyName((pFirst + " " + pLast).replaceAll("\\s*\\b\\d+\\b\\s*", " "))) %></span>
+           <span class="muted">via OSCAR (info@mymdonline.ca)</span></div>
+      <div><span class="muted">To:</span> <%= esc(toEmail) %></div>
+      <div><span class="muted">Date:</span>
+           <%= sentAt == null ? "" : esc(stamp.format(sentAt)) %></div>
+      <div><span class="muted">Subject:</span> <b><%= esc(subject) %></b></div>
+      <div><span class="muted">Patient:</span>
+<%      if (hasDemo) { %>
+        <a href="<%= ctx %>/casemgmt/forward.jsp?action=view&demographicNo=<%= demoNo %>"
+           target="_blank"><%= esc(tidyName(dLast + ", " + dFirst)) %></a>
+        <span class="muted">(chart #<%= demoNo %>)</span>
+<%      } else { %>
+        <span class="pill unassigned">not linked</span>
+<%      } %>
+      </div>
+      <div><span class="muted">Status:</span>
+<%      if ("FAILED".equals(status)) { %>
+        <span class="pill failed">FAILED</span>
+        <span class="muted"><%= esc(errorMsg) %> &mdash; the patient did not receive this.</span>
+<%      } else { %>
+        <%= esc(status) %>
+<%      } %>
+      </div>
+    </div>
+
+    <pre class="body"><%= esc(bodyText == null || bodyText.trim().isEmpty()
+                              ? "(no body text was logged)" : bodyText) %></pre>
+
+<%      if (attNames != null && !attNames.trim().isEmpty()) { %>
+    <div style="margin-top:12px"><b>Attachments</b>
+      <div class="muted" style="margin-top:3px"><%= esc(attNames) %></div>
+      <div class="muted" style="font-size:11px">Attachment files are not kept by the send log
+           &mdash; the documents themselves are in the patient&rsquo;s chart.</div>
+    </div>
+<%      } %>
+
+    <div class="actions">
+<%      if (hasDemo) { %>
+      <a class="btn" target="_blank"
+         href="<%= ctx %>/mymd/emailPatient.jsp?demographicNo=<%= demoNo %>">Email again</a>
+<%      } %>
+      <a class="btn sec" href="<%= ctx %>/mymd/inbox.jsp?tab=sent">Back</a>
+    </div>
+  </div>
+<%
+    }
+} else if (detailId > 0) {
     // =================================================================================
     // Detail view
     // =================================================================================
@@ -561,7 +671,7 @@
     // =================================================================================
     // List view
     // =================================================================================
-    long cNew = 0, cUnassigned = 0, cHandled = 0, cBulk = 0, cAll = 0;
+    long cNew = 0, cUnassigned = 0, cHandled = 0, cBulk = 0, cAll = 0, cSent = 0;
     try {
         PreparedStatement cps = conn.prepareStatement(
             "SELECT SUM(status='NEW' AND auto_kind='NORMAL'), "
@@ -575,6 +685,17 @@
         }
         crs.close(); cps.close();
     } catch (Exception ignored) {}
+    try {
+        PreparedStatement cps = conn.prepareStatement(
+            "SELECT (SELECT COUNT(*) FROM mymd_patient_email_log) "
+          + "     + (SELECT COUNT(*) FROM mymd_inbox_message m "
+          + "         WHERE m.direction='OUT' AND (m.message_id IS NULL OR NOT EXISTS "
+          + "               (SELECT 1 FROM mymd_patient_email_log l "
+          + "                 WHERE l.message_id = m.message_id)))");
+        ResultSet crs = cps.executeQuery();
+        if (crs.next()) cSent = crs.getLong(1);
+        crs.close(); cps.close();
+    } catch (Exception ignored) {}
 %>
   <div class="tabs">
     <a class="btn" style="float:right" target="_blank"
@@ -583,9 +704,91 @@
     <a class="<%= "unassigned".equals(tab) ? "on" : "" %>" href="?tab=unassigned">Not linked (<%= cUnassigned %>)</a>
     <a class="<%= "handled".equals(tab) ? "on" : "" %>"    href="?tab=handled">Handled (<%= cHandled %>)</a>
     <a class="<%= "bulk".equals(tab) ? "on" : "" %>"       href="?tab=bulk">Bulk / auto (<%= cBulk %>)</a>
+    <a class="<%= "sent".equals(tab) ? "on" : "" %>"       href="?tab=sent">Sent (<%= cSent %>)</a>
     <a class="<%= "all".equals(tab) ? "on" : "" %>"        href="?tab=all">All (<%= cAll %>)</a>
   </div>
 <%
+    if ("sent".equals(tab)) {
+    // ---------------------------------------------------------------------------------
+    // Sent list: OSCAR send log UNION webmail Sent mirror, newest first. The two sources
+    // are disjoint today (msmtp does not copy to the Sent folder); the NOT EXISTS guard
+    // keeps this true if that ever changes.
+    // ---------------------------------------------------------------------------------
+    try {
+        PreparedStatement ps = conn.prepareStatement(
+            "SELECT x.src, x.id, x.dt, x.to_e, x.subj, x.demographic_no, x.st, x.att, "
+          + "       d.first_name, d.last_name "
+          + "  FROM (SELECT 'OSCAR' AS src, l.id, l.sent_datetime AS dt, l.to_email AS to_e, "
+          + "               l.subject AS subj, l.demographic_no, l.status AS st, "
+          + "               (l.attachments IS NOT NULL AND l.attachments <> '') AS att "
+          + "          FROM mymd_patient_email_log l "
+          + "        UNION ALL "
+          + "        SELECT 'WEBMAIL', m.id, COALESCE(m.sent_datetime, m.received_at), "
+          + "               m.to_emails, m.subject, m.demographic_no, 'SENT', m.has_attachments "
+          + "          FROM mymd_inbox_message m "
+          + "         WHERE m.direction='OUT' AND (m.message_id IS NULL OR NOT EXISTS "
+          + "               (SELECT 1 FROM mymd_patient_email_log l2 "
+          + "                 WHERE l2.message_id = m.message_id))) x "
+          + "  LEFT JOIN demographic d ON d.demographic_no = x.demographic_no "
+          + " ORDER BY x.dt DESC LIMIT " + LIST_LIMIT);
+        ResultSet rs = ps.executeQuery();
+%>
+  <table class="list">
+    <tr><th style="width:130px">Sent</th><th style="width:230px">To</th><th>Subject</th>
+        <th style="width:190px">Patient</th><th style="width:90px">Via</th></tr>
+<%
+        boolean any = false;
+        while (rs.next()) {
+            any = true;
+            boolean fromLog = "OSCAR".equals(rs.getString("src"));
+            Timestamp ts = rs.getTimestamp("dt");
+            int demoNo = rs.getInt("demographic_no");
+            boolean hasDemo = !rs.wasNull() && demoNo > 0;
+            String subj = rs.getString("subj");
+            String st = rs.getString("st");
+            String href = fromLog ? "?sentId=" + rs.getInt("id") + "&tab=sent"
+                                  : "?id=" + rs.getInt("id") + "&tab=sent";
+%>
+    <tr>
+      <td class="muted"><%= ts == null ? "" : esc(stamp.format(ts)) %></td>
+      <td><%= esc(rs.getString("to_e")) %></td>
+      <td><a href="<%= href %>"><%=
+          esc(subj == null || subj.isEmpty() ? "(no subject)" : subj) %></a>
+<%          if (rs.getInt("att") == 1) { %> &#128206;<% } %>
+      </td>
+      <td>
+<%          if (hasDemo) { %>
+        <span class="pill linked"><%= esc(tidyName(
+            rs.getString("last_name") + ", " + rs.getString("first_name"))) %></span>
+<%          } else { %>
+        <span class="pill unassigned">not linked</span>
+<%          } %>
+      </td>
+      <td>
+<%          if ("FAILED".equals(st)) { %>
+        <span class="pill failed">FAILED</span>
+<%          } else if (fromLog) { %>
+        <span class="pill oscar">OSCAR</span>
+<%          } else { %>
+        <span class="pill webmail">webmail</span>
+<%          } %>
+      </td>
+    </tr>
+<%
+        }
+        rs.close(); ps.close();
+        if (!any) {
+%>
+    <tr><td colspan="5" class="muted" style="padding:14px">Nothing has been sent yet.</td></tr>
+<%      } %>
+  </table>
+<%
+    } catch (Exception ex) {
+%>
+  <div class="banner stale">Could not read the send log: <%= esc(ex.getMessage()) %></div>
+<%
+    }
+    } else {
     // Whitelisted branches rather than one OR-soup predicate, so the optimizer can use
     // ix_status / ix_demo instead of scanning.
     String where;
@@ -663,6 +866,7 @@
 %>
   <div class="banner stale">Could not read the mirror: <%= esc(ex.getMessage()) %></div>
 <%
+    }
     }
 }
 %>
