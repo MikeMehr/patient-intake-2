@@ -299,6 +299,9 @@ export default function PhysicianTranscriptionPage() {
   const [soapCases, setSoapCases] = useState<SoapCase[]>([]);
   const [activeCaseIndex, setActiveCaseIndex] = useState(0);
   const [actionLoading, setActionLoading] = useState(false);
+  // Set alongside actionLoading during an AI merge so buttons that share
+  // actionLoading don't show a misleading label (e.g. "Regenerating...").
+  const [mergeLoading, setMergeLoading] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [showInsufficientContentDialog, setShowInsufficientContentDialog] = useState(false);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
@@ -1323,7 +1326,8 @@ export default function PhysicianTranscriptionPage() {
     setReviewText(c.reviewText);
   }
 
-  function mergeCases() {
+  async function mergeCases() {
+    if (actionLoading) return;
     const updatedCases = [...soapCases];
     const parsedDraft = parseUnifiedSoapText(reviewText);
     updatedCases[activeCaseIndex] = {
@@ -1331,38 +1335,55 @@ export default function PhysicianTranscriptionPage() {
       reviewText,
       draft: parsedDraft ?? updatedCases[activeCaseIndex].draft,
     };
+    setSoapCases(updatedCases);
 
-    const mergedDraft: SoapDraft = {
-      subjective: updatedCases.map((c) => `${c.label}: ${c.draft.subjective}`).join("\n\n"),
-      objective: updatedCases.filter((c) => c.draft.objective.trim()).map((c) => `${c.label}: ${c.draft.objective}`).join("\n\n"),
-      assessment: updatedCases.map((c) => `${c.label}: ${c.draft.assessment}`).join("\n\n"),
-      plan: updatedCases.map((c) => `${c.label}: ${c.draft.plan}`).join("\n\n"),
-    };
+    setActionLoading(true);
+    setMergeLoading(true);
+    setActionError(null);
+    setActionSuccess(null);
+    try {
+      const res = await fetch("/api/physician/transcription/merge", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          cases: updatedCases.map((c) => ({ label: c.label, draft: c.draft })),
+        }),
+      });
+      if (handleAuthFailure(res)) return;
+      const json = await res.json().catch(() => null);
+      if (!res.ok) {
+        throw new Error(json?.error || "Failed to merge SOAP notes.");
+      }
+      const mergedDraft: SoapDraft = {
+        subjective: String(json?.draft?.subjective || "").trim(),
+        objective: String(json?.draft?.objective || "").trim(),
+        assessment: String(json?.draft?.assessment || "").trim(),
+        plan: String(json?.draft?.plan || "").trim(),
+      };
+      if (!mergedDraft.subjective || !mergedDraft.assessment) {
+        throw new Error("AI merge returned an incomplete note. Please try again.");
+      }
 
-    // Merge the AI originals the same way so Learn compares like-with-like.
-    // If any case lacks an original (restored session), the merge has none either.
-    const allHaveOriginals = updatedCases.every((c) => hasSoapOriginal(c.aiOriginalDraft));
-    const mergedOriginal: SoapDraft = allHaveOriginals
-      ? {
-          subjective: updatedCases.map((c) => `${c.label}: ${c.aiOriginalDraft.subjective}`).join("\n\n"),
-          objective: updatedCases.filter((c) => c.aiOriginalDraft.objective.trim()).map((c) => `${c.label}: ${c.aiOriginalDraft.objective}`).join("\n\n"),
-          assessment: updatedCases.map((c) => `${c.label}: ${c.aiOriginalDraft.assessment}`).join("\n\n"),
-          plan: updatedCases.map((c) => `${c.label}: ${c.aiOriginalDraft.plan}`).join("\n\n"),
-        }
-      : initialDraft;
+      // The merged note is fresh AI output, so it becomes the new baseline for
+      // Learn — edits made after the merge are what gets compared.
+      const mergedReviewText = composeUnifiedSoapText(mergedDraft);
+      const baseCase = updatedCases[0];
+      const mergedCase: SoapCase = { ...baseCase, label: "Merged", draft: mergedDraft, reviewText: mergedReviewText, aiOriginalDraft: mergedDraft };
 
-    const mergedReviewText = composeUnifiedSoapText(mergedDraft);
-    const baseCase = updatedCases[0];
-    const mergedCase: SoapCase = { ...baseCase, label: "Merged", draft: mergedDraft, reviewText: mergedReviewText, aiOriginalDraft: mergedOriginal };
-
-    setSoapCases([mergedCase]);
-    setActiveCaseIndex(0);
-    setSoapVersionId(baseCase.soapVersionId);
-    setEncounterId(baseCase.encounterId);
-    setLifecycleState(baseCase.lifecycleState);
-    setSoapHasPatient(baseCase.hasPatient);
-    setDraft(mergedDraft);
-    setReviewText(mergedReviewText);
+      setSoapCases([mergedCase]);
+      setActiveCaseIndex(0);
+      setSoapVersionId(baseCase.soapVersionId);
+      setEncounterId(baseCase.encounterId);
+      setLifecycleState(baseCase.lifecycleState);
+      setSoapHasPatient(baseCase.hasPatient);
+      setDraft(mergedDraft);
+      setReviewText(mergedReviewText);
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "Failed to merge SOAP notes.");
+    } finally {
+      setActionLoading(false);
+      setMergeLoading(false);
+    }
   }
 
   async function saveDraft() {
@@ -2682,10 +2703,11 @@ export default function PhysicianTranscriptionPage() {
                         ))}
                         <button
                           type="button"
-                          onClick={mergeCases}
-                          className="ml-1 px-3 py-1.5 text-xs font-medium rounded-md border bg-white text-slate-700 border-slate-300 hover:bg-slate-50"
+                          onClick={() => void mergeCases()}
+                          disabled={actionLoading}
+                          className="ml-1 px-3 py-1.5 text-xs font-medium rounded-md border bg-white text-slate-700 border-slate-300 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
-                          Merge
+                          {mergeLoading ? "Merging..." : "Merge"}
                         </button>
                       </div>
                     )}
@@ -2719,7 +2741,7 @@ export default function PhysicianTranscriptionPage() {
                           title={generateDisabledReason ?? undefined}
                           className="px-3 py-1.5 text-xs font-medium text-white bg-slate-900 rounded-lg hover:bg-slate-800 disabled:bg-slate-400 disabled:cursor-not-allowed"
                         >
-                          {actionLoading ? "Regenerating..." : "Regenerate SOAP"}
+                          {actionLoading && !mergeLoading ? "Regenerating..." : "Regenerate SOAP"}
                         </button>
                       </div>
                     )}

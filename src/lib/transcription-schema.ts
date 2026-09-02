@@ -21,6 +21,18 @@ export const generateSoapFromTranscriptRequestSchema = z.object({
   detailLevel: z.union([z.literal(1), z.literal(2), z.literal(3)]).optional(),
 });
 
+export const mergeSoapCasesRequestSchema = z.object({
+  cases: z
+    .array(
+      z.object({
+        label: z.string().trim().max(200).default(""),
+        draft: soapDraftSchema,
+      }),
+    )
+    .min(2)
+    .max(10),
+});
+
 export const generateHpiFromTranscriptRequestSchema = z.object({
   transcript: z.string().trim().min(10).max(80000),
   detailLevel: z.union([z.literal(1), z.literal(2), z.literal(3)]).optional(),
