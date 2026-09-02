@@ -70,6 +70,12 @@ Return valid JSON only, exactly: {"prescriptions": [{"drug": string, "strength":
 - "quantity": the dispense quantity from "#40" / "dispense 40" as "40" (include the unit for liquids, e.g. "150 mL"); "" if not stated.
 - "repeats": refills/repeats as digits; "0" if not stated.
 - "prn": true only when dictated as needed.
+- Named-regimen exception: when the text explicitly orders "H. pylori quadruple therapy" (also "bismuth quadruple therapy" or "PBMT") by name, expand it into the clinic's standard regimen as four entries:
+  {"drug": "esomeprazole", "strength": "40 mg", "sig": "1 tab PO BID x 14 days", "quantity": "28", "repeats": "0", "prn": false},
+  {"drug": "bismuth subsalicylate", "strength": "262 mg", "sig": "2 tabs PO QID x 14 days", "quantity": "112", "repeats": "0", "prn": false},
+  {"drug": "tetracycline", "strength": "250 mg", "sig": "2 tabs PO QID x 14 days", "quantity": "112", "repeats": "0", "prn": false},
+  {"drug": "metronidazole", "strength": "500 mg", "sig": "1 tab PO TID x 14 days", "quantity": "42", "repeats": "0", "prn": false}.
+  Any component the text dictates differently (drug, dose, duration) overrides the standard for that entry; a mere mention of H. pylori without an order does NOT trigger the expansion.
 - Write everything in English. No markdown, no code fences, no extra keys.`;
 
 function asString(value: unknown): string {
