@@ -3,6 +3,7 @@
 import { use, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import PharmacyPicker from "@/components/PharmacyPicker";
+import { MAX_FILE_BYTES, MAX_FILE_MB } from "@/lib/upload-validation";
 import {
   BOOKING_CARD_FIX_HINT,
   bookingCardAdvice,
@@ -39,7 +40,7 @@ const MAX_REASON_LEN = 80;
 // Mirrors the server limits in /api/booking/manage/[token]/attachment so the patient
 // is told here rather than by a 400 after their appointment is already booked.
 const MAX_ATTACHMENTS = 3;
-const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
+const MAX_ATTACHMENT_BYTES = MAX_FILE_BYTES;
 
 const PROVINCES = [
   "Alberta", "British Columbia", "Manitoba", "New Brunswick",
@@ -668,7 +669,7 @@ export default function BookingConfirmPage({
     }
     const tooBig = picked.find((f) => f.size > MAX_ATTACHMENT_BYTES);
     if (tooBig) {
-      setAttachmentError(`"${tooBig.name}" is larger than the 10 MB limit.`);
+      setAttachmentError(`"${tooBig.name}" is larger than the ${MAX_FILE_MB} MB limit.`);
       setAttachments([]);
       e.target.value = "";
       return;
@@ -698,7 +699,7 @@ export default function BookingConfirmPage({
           line is where the size and file-count limits are stated. */}
       <p className="text-xs text-gray-600 mt-1">
         A form to bring to your visit, or a photo of your complaint. Up to {MAX_ATTACHMENTS} files,
-        10 MB each.
+        {MAX_FILE_MB} MB each.
       </p>
       {attachmentError && (
         <p className="text-xs text-red-600 mt-1">{attachmentError}</p>

@@ -2,10 +2,11 @@
 
 import { use, useEffect, useRef, useState } from "react";
 
+import { MAX_FILE_BYTES, MAX_FILE_MB } from "@/lib/upload-validation";
+
 // Documents allowed per request link in total — the server enforces the same
 // cap across visits, so a returning patient may have fewer slots left.
 const MAX_FILES = 3;
-const MAX_FILE_BYTES = 10 * 1024 * 1024;
 
 interface Validity {
   valid: boolean;
@@ -66,7 +67,7 @@ export default function UploadPage({ params }: { params: Promise<{ token: string
         break;
       }
       if (f.size > MAX_FILE_BYTES) {
-        setError(`"${f.name}" is larger than the 10 MB limit.`);
+        setError(`"${f.name}" is larger than the ${MAX_FILE_MB} MB limit.`);
         continue;
       }
       const isImageOrPdf =
@@ -210,7 +211,7 @@ export default function UploadPage({ params }: { params: Promise<{ token: string
           Tap to choose files, or take a photo
         </p>
         <p className="text-xs text-slate-500 mt-1">
-          Images or PDF · up to {remaining} {remaining === 1 ? "file" : "files"} · 10 MB each
+          Images or PDF · up to {remaining} {remaining === 1 ? "file" : "files"} · {MAX_FILE_MB} MB each
         </p>
         <input
           ref={inputRef}

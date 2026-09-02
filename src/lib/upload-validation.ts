@@ -4,7 +4,8 @@
  * upload" has exactly one definition.
  */
 
-export const MAX_FILE_BYTES = 10 * 1024 * 1024; // 10 MB each
+export const MAX_FILE_MB = 25;
+export const MAX_FILE_BYTES = MAX_FILE_MB * 1024 * 1024;
 
 const ALLOWED_PREFIXES = ["image/"];
 const ALLOWED_EXACT = ["application/pdf"];
@@ -24,7 +25,7 @@ export function sanitizeFilename(name: string): string {
 /** Human-readable rejection reason, or null when the file is acceptable. */
 export function validatePatientUpload(file: File): string | null {
   if (file.size > MAX_FILE_BYTES) {
-    return `"${file.name}" is larger than the 10 MB limit.`;
+    return `"${file.name}" is larger than the ${MAX_FILE_MB} MB limit.`;
   }
   if (!isAllowedType(file.type)) {
     return `"${file.name}" is not an image or PDF.`;
