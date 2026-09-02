@@ -55,6 +55,11 @@ Return valid JSON only: an array of objects, each with keys: label, subjective, 
 - "objective": exam findings and vitals (if documented)
 - "assessment": diagnosis and clinically meaningful differentials, telegraphic but complete (e.g. "migraine; r/o secondary headache given nocturnal pattern and family history of brain tumors")
 - "plan": telegraphic actions — use short phrases separated by semicolons; omit filler words like "prescribe", "recommend", "suggest", "advise"; use drug-name + route/frequency format (e.g. "clobetasol cream daily; Cetaphil prn; avoid irritants; f/u 4 wks"); only include what was explicitly discussed or decided in the transcript
+Redundancy rules — apply across the whole note:
+- State each clinical fact exactly once, in its single most appropriate section: reported history in Subjective, exam/lab/test findings in Objective, diagnostic conclusions in Assessment, actions in Plan.
+- Objective must not restate anything already in Subjective.
+- Assessment names diagnoses and conclusions; do not re-list symptoms or result values already documented above. A brief reasoning clause that adds diagnostic value is fine (e.g. "less likely cardiac given normal ECG"), but never a full symptom recap.
+- Plan items are actions; identify each test, drug, or instruction without repeating the symptom list or diagnosis it addresses.
 If there is only one case, still return a single-element array.
 Do not include markdown, code fences, or extra keys.
 Each field should be clinically useful and concise, but do not omit a detail just to save space — favor completeness over brevity when the two conflict.
@@ -72,6 +77,11 @@ Return valid JSON only: an array of objects, each with keys: label, subjective, 
 - "objective": exam findings and vitals (if documented)
 - "assessment": diagnosis and clinically meaningful differentials; include the reasoning when the clinical picture is complex or urgent (e.g. "migraine; r/o secondary headache given known intracranial mass, nocturnal pattern, and family history of brain tumors")
 - "plan": telegraphic actions — use 2–5 word phrases separated by semicolons; omit filler words like "prescribe", "recommend", "suggest", "advise"; use drug-name + route/frequency format (e.g. "clobetasol cream daily; Cetaphil prn; avoid irritants; f/u 4 wks"); only include what was explicitly discussed or decided in the transcript
+Redundancy rules — completeness means every fact is captured once, not repeated:
+- State each clinical fact exactly once, in its single most appropriate section: reported history in Subjective, exam/lab/test findings in Objective, diagnostic conclusions in Assessment, actions in Plan.
+- Objective must not restate anything already in Subjective.
+- Assessment names diagnoses and conclusions; do not re-list symptoms or result values already documented above. A brief reasoning clause that adds diagnostic value is fine (e.g. "less likely cardiac given normal ECG"), but never a full symptom recap.
+- Plan items are actions; identify each test, drug, or instruction without repeating the symptom list or diagnosis it addresses.
 If there is only one case, still return a single-element array.
 Do not include markdown, code fences, or extra keys.
 CRITICAL JSON RULE: Every field value must be plain prose on a single line. Do NOT use bullet points, numbered lists, or any line breaks (\\n) inside any string value. Literal newline characters inside JSON strings produce invalid JSON and will cause an error. Write all content as flowing sentences separated by spaces or semicolons.
