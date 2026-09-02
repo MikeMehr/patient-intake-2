@@ -248,7 +248,11 @@ export default function OrgDocumentsPage() {
   const [progress, setProgress] = useState<{ current: number; total: number; pct: number } | null>(
     null,
   );
-  const [shareResult, setShareResult] = useState<{ url: string; emailSent: boolean } | null>(null);
+  const [shareResult, setShareResult] = useState<{
+    url: string;
+    emailSent: boolean;
+    hasPassphrase: boolean;
+  } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   /**
@@ -422,8 +426,8 @@ export default function OrgDocumentsPage() {
     clearError();
     setNotice(null);
     setShareResult(null);
-    if (passphrase.length < 6) {
-      showError("Passphrase must be at least 6 characters.");
+    if (passphrase && passphrase.length < 6) {
+      showError("Passphrase must be at least 6 characters — or leave it blank to send without one.");
       return;
     }
     if (!sendFiles.length) {
@@ -442,7 +446,7 @@ export default function OrgDocumentsPage() {
         body: JSON.stringify({
           recipientName: recipientName || undefined,
           recipientEmail: recipientEmail || undefined,
-          passphrase,
+          passphrase: passphrase || undefined,
           files: sendFiles.map((f) => ({
             filename: f.name,
             contentType: f.type,
@@ -501,7 +505,11 @@ export default function OrgDocumentsPage() {
         return;
       }
 
-      setShareResult({ url: finData.downloadUrl, emailSent: !!finData.emailSent });
+      setShareResult({
+        url: finData.downloadUrl,
+        emailSent: !!finData.emailSent,
+        hasPassphrase: !!passphrase,
+      });
       setRecipientName("");
       setRecipientEmail("");
       setPassphrase("");
@@ -686,8 +694,9 @@ export default function OrgDocumentsPage() {
         <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-6 mb-8">
           <h2 className="text-lg font-semibold text-slate-900 mb-1">Send files</h2>
           <p className="text-sm text-slate-600 mb-4">
-            Share files with anyone via a passphrase-protected link. Files are encrypted at
-            rest and only open with the passphrase you set.
+            Share files with anyone via a secure link. Files are encrypted at rest. Add a
+            passphrase for a second layer of protection, or leave it blank so the link
+            alone opens the files.
           </p>
 
           {shareResult && (
@@ -710,8 +719,9 @@ export default function OrgDocumentsPage() {
                 {shareResult.emailSent
                   ? "The link was emailed to the recipient. "
                   : ""}
-                ⚠️ Share the passphrase separately (e.g. by phone) — never in the same message
-                as the link.
+                {shareResult.hasPassphrase
+                  ? "⚠️ Share the passphrase separately (e.g. by phone) — never in the same message as the link."
+                  : "⚠️ No passphrase — anyone with this link can open the files, so only send it directly to the recipient."}
               </p>
             </div>
           )}
@@ -745,14 +755,16 @@ export default function OrgDocumentsPage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-slate-600 mb-1">Passphrase</label>
+              <label className="block text-sm font-medium text-slate-600 mb-1">
+                Passphrase <span className="text-slate-400">(optional)</span>
+              </label>
               <div className="flex items-center gap-2">
                 <input
                   type="text"
                   value={passphrase}
                   onChange={(e) => setPassphrase(e.target.value)}
                   className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono focus:border-blue-400 focus:outline-none"
-                  placeholder="At least 6 characters"
+                  placeholder="At least 6 characters, or blank for none"
                 />
                 <button
                   type="button"
@@ -772,7 +784,9 @@ export default function OrgDocumentsPage() {
                 )}
               </div>
               <p className="text-xs text-slate-400 mt-1">
-                The recipient must enter this to open the files. Give it to them separately.
+                {passphrase
+                  ? "The recipient must enter this to open the files. Give it to them separately."
+                  : "Without a passphrase, anyone who gets the link can open the files."}
               </p>
             </div>
 

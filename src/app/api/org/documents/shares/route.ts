@@ -8,6 +8,9 @@
  * The passphrase is bcrypt-hashed; the link token is SHA-256 hashed. Neither is
  * stored in the clear. The raw token is returned once (over HTTPS) so the client can
  * build the link — it is never persisted.
+ *
+ * The passphrase is optional: an empty passphrase creates a link-only share
+ * (passphrase_hash NULL) that opens with the unguessable token alone.
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -76,10 +79,10 @@ export async function POST(request: NextRequest) {
     const passphrase = (body?.passphrase as string | undefined) ?? "";
     const files = Array.isArray(body?.files) ? (body.files as IncomingFile[]) : [];
 
-    if (passphrase.length < MIN_PASSPHRASE) {
+    if (passphrase && passphrase.length < MIN_PASSPHRASE) {
       status = 400;
       const res = NextResponse.json(
-        { error: `Passphrase must be at least ${MIN_PASSPHRASE} characters.` },
+        { error: `Passphrase must be at least ${MIN_PASSPHRASE} characters (or blank for a link-only share).` },
         { status },
       );
       logRequestMeta("/api/org/documents/shares", requestId, status, Date.now() - started);
@@ -127,7 +130,7 @@ export async function POST(request: NextRequest) {
     }
 
     const { raw, hash, expiresAt } = generateDocumentToken();
-    const passphraseHash = await hashPassword(passphrase);
+    const passphraseHash = passphrase ? await hashPassword(passphrase) : null;
 
     // created_by_user_id can now be either an organization_users.id or a physicians.id, so
     // record which table it points at — the column has no FK to disambiguate it.

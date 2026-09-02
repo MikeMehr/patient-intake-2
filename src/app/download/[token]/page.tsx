@@ -8,6 +8,7 @@ interface Validity {
   clinicName?: string;
   recipientName?: string | null;
   fileCount?: number;
+  requiresPassphrase?: boolean;
 }
 
 interface DownloadFile {
@@ -48,9 +49,11 @@ export default function DownloadPage({ params }: { params: Promise<{ token: stri
     })();
   }, [token]);
 
+  const needsPassphrase = validity?.requiresPassphrase !== false;
+
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!passphrase) {
+    if (needsPassphrase && !passphrase) {
       setError("Please enter the passphrase.");
       return;
     }
@@ -146,8 +149,8 @@ export default function DownloadPage({ params }: { params: Promise<{ token: stri
           </ul>
         )}
         <p className="mt-5 text-xs text-slate-400 text-center">
-          Download links are valid for a short time. Reload and re-enter the passphrase if
-          they expire.
+          Download links are valid for a short time. Reload the page
+          {needsPassphrase ? " and re-enter the passphrase" : ""} if they expire.
         </p>
       </>,
     );
@@ -160,21 +163,28 @@ export default function DownloadPage({ params }: { params: Promise<{ token: stri
         <h1 className="text-xl font-semibold text-slate-900">Secure files</h1>
         <p className="text-sm text-slate-600 mt-1">
           {validity.clinicName} has sent you{" "}
-          {validity.fileCount === 1 ? "a file" : `${validity.fileCount} files`}. Enter the
-          passphrase they shared with you to open{" "}
-          {validity.fileCount === 1 ? "it" : "them"}.
+          {validity.fileCount === 1 ? "a file" : `${validity.fileCount} files`}.
+          {needsPassphrase
+            ? ` Enter the passphrase they shared with you to open ${
+                validity.fileCount === 1 ? "it" : "them"
+              }.`
+            : ""}
         </p>
       </div>
 
-      <label className="block text-sm font-medium text-slate-600 mb-1">Passphrase</label>
-      <input
-        type="password"
-        autoFocus
-        value={passphrase}
-        onChange={(e) => setPassphrase(e.target.value)}
-        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-400 focus:outline-none"
-        placeholder="Enter passphrase"
-      />
+      {needsPassphrase && (
+        <>
+          <label className="block text-sm font-medium text-slate-600 mb-1">Passphrase</label>
+          <input
+            type="password"
+            autoFocus
+            value={passphrase}
+            onChange={(e) => setPassphrase(e.target.value)}
+            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-400 focus:outline-none"
+            placeholder="Enter passphrase"
+          />
+        </>
+      )}
 
       {error && (
         <div className="mt-4 rounded-lg bg-red-50 border border-red-200 px-3 py-2">
@@ -184,15 +194,17 @@ export default function DownloadPage({ params }: { params: Promise<{ token: stri
 
       <button
         type="submit"
-        disabled={submitting || !passphrase}
+        disabled={submitting || (needsPassphrase && !passphrase)}
         className="mt-6 w-full bg-blue-600 text-white font-semibold rounded-lg px-4 py-3 hover:bg-blue-700 disabled:opacity-50 transition"
       >
         {submitting ? "Opening…" : "Open files"}
       </button>
 
-      <p className="mt-4 text-xs text-slate-400 text-center">
-        The passphrase was shared with you separately by {validity.clinicName}.
-      </p>
+      {needsPassphrase && (
+        <p className="mt-4 text-xs text-slate-400 text-center">
+          The passphrase was shared with you separately by {validity.clinicName}.
+        </p>
+      )}
     </form>,
   );
 }

@@ -24,6 +24,7 @@ interface ShareRow {
   token_hash: string;
   recipient_name: string | null;
   recipient_email: string | null;
+  passphrase_hash: string | null;
   expires_at: string;
   revoked_at: string | null;
 }
@@ -51,7 +52,7 @@ export async function POST(
     const token = (body?.token as string | undefined) ?? "";
 
     const shareResult = await query<ShareRow>(
-      `SELECT id, token_hash, recipient_name, recipient_email, expires_at, revoked_at
+      `SELECT id, token_hash, recipient_name, recipient_email, passphrase_hash, expires_at, revoked_at
        FROM document_shares
        WHERE id = $1 AND organization_id = $2`,
       [id, orgContext.organizationId],
@@ -131,6 +132,7 @@ export async function POST(
           clinicName: org.name,
           downloadUrl,
           expiresAt: new Date(share.expires_at),
+          hasPassphrase: !!share.passphrase_hash,
           emailFooter: org.email_footer,
           clinicEmail: org.email,
         });

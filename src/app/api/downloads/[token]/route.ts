@@ -6,6 +6,7 @@
  *
  * No login: the unguessable token + passphrase are the credentials. The passphrase is
  * only ever accepted in the POST body (never a query string). Brute force is rate-limited.
+ * A share created without a passphrase (passphrase_hash NULL) opens on the token alone.
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -20,7 +21,7 @@ interface ShareRow {
   id: string;
   organization_id: string;
   recipient_name: string | null;
-  passphrase_hash: string;
+  passphrase_hash: string | null;
   expires_at: string;
   revoked_at: string | null;
   completed_at: string | null;
@@ -78,7 +79,7 @@ export async function GET(
       clinicName: orgResult.rows[0]?.name ?? "the clinic",
       recipientName: share.recipient_name,
       fileCount: Number(countResult.rows[0]?.count ?? 0),
-      requiresPassphrase: true,
+      requiresPassphrase: !!share.passphrase_hash,
     });
   } catch (error) {
     console.error("[api/downloads GET] Error:", error);
@@ -126,10 +127,12 @@ export async function POST(
 
     const body = await request.json().catch(() => ({}));
     const passphrase = (body?.passphrase as string | undefined) ?? "";
-    const ok = passphrase ? await verifyPassword(passphrase, share.passphrase_hash) : false;
-    if (!ok) {
-      logRequestMeta("/api/downloads", requestId, 401, Date.now() - started);
-      return NextResponse.json({ error: "Incorrect passphrase." }, { status: 401 });
+    if (share.passphrase_hash) {
+      const ok = passphrase ? await verifyPassword(passphrase, share.passphrase_hash) : false;
+      if (!ok) {
+        logRequestMeta("/api/downloads", requestId, 401, Date.now() - started);
+        return NextResponse.json({ error: "Incorrect passphrase." }, { status: 401 });
+      }
     }
 
     const filesResult = await query<{
