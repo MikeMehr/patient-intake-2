@@ -1347,6 +1347,7 @@ export default function PhysicianTranscriptionPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           cases: updatedCases.map((c) => ({ label: c.label, draft: c.draft })),
+          detailLevel,
         }),
       });
       if (handleAuthFailure(res)) return;

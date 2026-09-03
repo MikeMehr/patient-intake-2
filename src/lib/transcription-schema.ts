@@ -31,6 +31,7 @@ export const mergeSoapCasesRequestSchema = z.object({
     )
     .min(2)
     .max(10),
+  detailLevel: z.union([z.literal(1), z.literal(2), z.literal(3)]).optional(),
 });
 
 export const generateHpiFromTranscriptRequestSchema = z.object({

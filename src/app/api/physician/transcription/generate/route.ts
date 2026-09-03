@@ -32,9 +32,14 @@ For EACH distinct case, create a concise, point-form SOAP note that a physician 
 Return valid JSON only: an array of objects, each with keys: label, subjective, objective, assessment, plan.
 - "label": brief case identifier (e.g. "Headache", "Left Elbow Pain")
 - "subjective": one short sentence per distinct clinical fact — chief complaint, onset/duration/severity/character, associated symptoms, aggravating and relieving factors, relevant past medical history, current medications and recent changes, allergies if mentioned, family history, social history, and any other clinically relevant details the patient reported. Exclude administrative details such as greetings, caller introductions, who called whom, office identification, and pharmacy/logistics coordination.
-- "objective": one short sentence per exam finding or vital actually documented; leave blank if nothing was examined. Do not restate facts already covered in Subjective.
+- "objective": one short sentence per exam finding or vital actually documented; leave blank if nothing was examined.
 - "assessment": one short sentence for the working diagnosis, then — only if genuinely useful — one more sentence for the differential (e.g. "DDx: ..."). Start each directly with the clinical content.
 - "plan": one dense sentence of terse, telegraphic actions separated by semicolons — drug name + dose/route/frequency/duration, tests ordered, referrals, follow-up timing. Omit filler verbs ("prescribe", "recommend", "suggest", "advise") and pure logistics (which pharmacy, who picks up a requisition) unless clinically necessary. Only include what was explicitly discussed or decided in the transcript.
+Redundancy rules — apply across the whole note:
+- State each clinical fact exactly once, in its single most appropriate section: reported history in Subjective, exam/lab findings in Objective, diagnostic conclusions in Assessment, actions in Plan.
+- Objective must not restate anything already in Subjective.
+- Assessment names the diagnosis only; never re-list symptoms or values already documented above.
+- Plan sentences are actions only; never repeat the symptom or diagnosis an action addresses.
 Style rules for every field:
 - Start each sentence directly with the clinical fact — never lead with "Patient reports", "She states", "He notes", or similar throat-clearing.
 - One clinical point per sentence, each ending in a period — this is what turns into one bullet per line downstream, so never chain multiple facts into one long compound sentence.

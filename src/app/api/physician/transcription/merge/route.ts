@@ -7,19 +7,33 @@ import { mergeSoapCasesRequestSchema, soapDraftSchema } from "@/lib/transcriptio
 import { escapeRawNewlinesInJsonStrings, parseJsonValue } from "@/lib/safe-json";
 import { formatStyleRulesAppendix, listStyleRuleTexts } from "@/lib/ai-style-rules";
 
-const SYSTEM_PROMPT = `You are a clinical documentation assistant.
+const MERGE_BASE_PROMPT = `You are a clinical documentation assistant.
 You will receive several SOAP notes, each covering a different clinical problem from the SAME patient and the SAME visit. Merge them into ONE coherent SOAP note with zero redundancy.
 Return valid JSON only: a single object with keys subjective, objective, assessment, plan.
 Merge rules:
 - Every clinical fact appears EXACTLY ONCE in the merged note, in the single most appropriate place. Never repeat a lab value, medication, history item, diagnosis, or plan action under multiple problems or in multiple sections. If the same fact appears in several source notes, keep it once and drop the copies.
 - "subjective": group the history by problem, prefixing each problem's content with its label and a colon (e.g. "Elevated Liver Enzymes: ..."). Facts relevant to several problems (family history, medication history, prior episodes) are stated once, under the problem they matter most to.
 - "objective": one consolidated list of exam findings, vitals, and lab results for the whole visit — no problem labels, each value stated once. Leave it an empty string if nothing was examined or measured.
-- "assessment": one labeled entry per problem, stating the working diagnosis (and differential only when genuinely useful). No empty entries and no restating of subjective history.
-- "plan": one labeled entry per problem with its actions in telegraphic style separated by semicolons; an action that serves several problems (e.g. a recheck panel) is listed once under the most relevant problem.
-- Preserve the wording, detail level, and telegraphic style of the source notes. Do not invent new clinical content and do not drop any clinically significant detail — only reorganize and deduplicate.
+- "assessment": one labeled entry per problem containing ONLY the working diagnosis or clinical conclusion (differential only when genuinely useful). Never recap symptoms, history items, or result values already documented in Subjective or Objective — a brief reasoning clause that adds diagnostic value is fine (e.g. "less likely cardiac given normal ECG"), a symptom recap is not. No empty entries.
+- "plan": one labeled entry per problem containing ONLY actions in telegraphic style separated by semicolons — drug name + dose/route/frequency, tests ordered, referrals, follow-up timing. Do not repeat the diagnosis or the symptoms an action addresses; an action that serves several problems (e.g. a recheck panel) is listed once under the most relevant problem.
+- Preserve the clinical CONTENT of the source notes — never invent new clinical facts and never drop a clinically significant detail — but rewrite the wording freely to eliminate repetition and to match the requested detail level below. Do not simply concatenate the sources.
+Redundancy rules — apply across the whole merged note:
+- State each clinical fact exactly once, in its single most appropriate section: reported history in Subjective, exam/lab/test findings in Objective, diagnostic conclusions in Assessment, actions in Plan.
+- Objective must not restate anything already in Subjective.
+- A problem's label may appear in Subjective, Assessment, and Plan, but the content under each occurrence must differ in kind: history under Subjective, diagnosis under Assessment, actions under Plan — never the same sentences repeated.
 CRITICAL JSON RULE: Every field value must be plain text on a single line. Do NOT use bullet characters or literal line breaks (\\n) inside any string value — literal newlines inside JSON strings produce invalid JSON and will cause an error. Separate sentences with a single space; the app renders each sentence as its own bullet automatically.
 Do not include markdown, code fences, or extra keys.
 IMPORTANT: Always write the merged note entirely in English.`;
+
+const MERGE_LEVEL_APPENDIX: Record<1 | 2 | 3, string> = {
+  1: `Detail level: CONCISE. Compress aggressively. Subjective: only the essential clinical facts per problem — chief complaint, key characteristics, decisive history — one short sentence per fact, never leading with "The patient reports", "He describes", or similar throat-clearing. Assessment: one short diagnosis phrase per problem. Plan: terse telegraphic actions only, no filler verbs ("recommend", "consider trying"). The merged note must be scannable in seconds and noticeably shorter than the combined sources.`,
+  2: `Detail level: BALANCED. Keep everything clinically important but cut padding; concise flowing sentences in Subjective, telegraphic Assessment and Plan. Favor completeness over brevity only when the two genuinely conflict.`,
+  3: `Detail level: DETAILED. Completeness takes priority over brevity — retain every clinically significant detail, red flag, and piece of reasoning from the sources (reasoning belongs in Assessment). Detailed still means each fact appears exactly once, never repeated across sections.`,
+};
+
+function resolveDetailLevel(level: unknown): 1 | 2 | 3 {
+  return level === 1 || level === 2 || level === 3 ? level : 2;
+}
 
 function buildUserPrompt(cases: Array<{ label: string; draft: { subjective: string; objective: string; assessment: string; plan: string } }>): string {
   return cases
@@ -85,7 +99,7 @@ export async function POST(request: NextRequest) {
     const completion = await azure.client.chat.completions.create({
       model: azure.deployment,
       messages: [
-        { role: "system", content: SYSTEM_PROMPT + styleAppendix },
+        { role: "system", content: MERGE_BASE_PROMPT + "\n" + MERGE_LEVEL_APPENDIX[resolveDetailLevel(parsed.data.detailLevel)] + styleAppendix },
         { role: "user", content: buildUserPrompt(parsed.data.cases) },
       ],
       max_completion_tokens: 3000,
