@@ -367,6 +367,8 @@ export default function BookingConfirmPage({
           healthCardVersion:  coverage.coverageType === "CANADIAN_HEALTH_CARD" && coverage.healthCardNumber.trim() && coverage.healthCardVersion.trim()
                                 ? coverage.healthCardVersion.trim()
                                 : undefined,
+          // Written into the new chart's Referral Doctor field (demographic.family_doctor).
+          familyDoctor:       extra.familyDoctor.trim() || undefined,
         }),
       });
       const createData = await createRes.json();

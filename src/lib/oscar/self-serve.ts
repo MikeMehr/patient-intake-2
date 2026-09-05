@@ -499,6 +499,13 @@ export type CreateDemographicInput = {
   healthCardProvince?: string | null;
   /** Version code (Ontario cards carry a 2-letter code) → OSCAR `ver`. */
   healthCardVersion?: string | null;
+  /**
+   * Patient's current family doctor (free text) → OSCAR `demographic.family_doctor`,
+   * the Master Record's Referral Doctor field. Stored there as XML fragments
+   * (`<rdohip>billing#</rdohip><rd>name</rd>`) in a varchar(80); we send an empty
+   * rdohip and the name in rd, matching what OSCAR's own demographic form writes.
+   */
+  familyDoctor?: string | null;
 };
 
 /** Map a Canadian province/territory name (or code) to OSCAR's 2-letter health-card type. */
@@ -588,6 +595,16 @@ export async function createOscarDemographic(
     ver: "",
   };
   if (email) demographicPayload.email = email;
+  // Family doctor name → the Referral Doctor XML in demographic.family_doctor.
+  // Angle brackets are stripped from the free text because it becomes XML content;
+  // the column is varchar(80) and the tags cost 26 chars, so the name gets 54.
+  const familyDoctorName = truncate(input.familyDoctor, 54)
+    .replace(/[<>]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (familyDoctorName) {
+    demographicPayload.familyDoctor = `<rdohip></rdohip><rd>${familyDoctorName}</rd>`;
+  }
   if (hin) {
     demographicPayload.hin = hin;
     // OSCAR requires a health-card type for the HIN to be usable/billable.
