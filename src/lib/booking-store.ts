@@ -87,6 +87,8 @@ export type AppointmentRow = {
   healthCardNumber: string | null; // decrypted
   billingNote: string | null;
   reason: string | null; // patient-entered reason for visit
+  allergies: string | null; // patient-reported, new-patient bookings only
+  familyDoctor: string | null; // patient's current family doctor, new-patient bookings only
   appointmentModality: string | null; // null = inherit the clinic setting
   patientPhone: string | null;
   manageTokenExpiresAt: string;
@@ -611,6 +613,10 @@ export type ConfirmAppointmentData = {
   healthCardNumber?: string;
   billingNote?: string;
   reason?: string;
+  /** Patient-reported allergies (new-patient path). Kept for staff; OSCAR has no REST field for it. */
+  allergies?: string;
+  /** Patient's current family doctor (new-patient path). */
+  familyDoctor?: string;
   /** How this specific appointment happens. Null/undefined means "inherit the clinic setting". */
   appointmentModality?: string | null;
   /** Normalized to E.164 by the caller. Needed to text a video join link, and it *is* a phone visit. */
@@ -673,12 +679,13 @@ export async function confirmAppointment(
           manage_token_hash, manage_token_expires_at, oscar_demographic_no,
           pharmacy_oscar_id, pharmacy_name, pharmacy_address, pharmacy_city,
           pharmacy_phone, pharmacy_fax, pharmacy_source,
-          appointment_modality, patient_phone, ai_scribe_consent)
+          appointment_modality, patient_phone, ai_scribe_consent,
+          allergies, family_doctor)
        SELECT
          hc.organization_id, su.physician_id, hc.id, $4, $5, $6::DATE,
          $7, $8, $9, $10, $11, $12, $13, $14::TIMESTAMPTZ, $15,
          $16, $17, $18, $19, $20, $21, $22,
-         $23, $24, $25
+         $23, $24, $25, $26, $27
        FROM hold_check hc
        JOIN slot_update su ON TRUE
        RETURNING id AS appointment_id, physician_id
@@ -710,6 +717,8 @@ export async function confirmAppointment(
         data.appointmentModality ?? null,
         data.patientPhone ?? null,
         data.aiScribeConsent ?? null,
+        data.allergies ?? null,
+        data.familyDoctor ?? null,
       ],
     );
   } catch (err) {
@@ -749,6 +758,8 @@ export async function getAppointmentByToken(tokenHash: string): Promise<Appointm
     health_card_number_enc: string | null;
     billing_note: string | null;
     reason: string | null;
+    allergies: string | null;
+    family_doctor: string | null;
     manage_token_expires_at: Date;
     cancelled_at: Date | null;
     created_at: Date;
@@ -769,6 +780,7 @@ export async function getAppointmentByToken(tokenHash: string): Promise<Appointm
        s.start_time, s.end_time,
        a.first_name, a.last_name, a.date_of_birth::TEXT, a.email,
        a.coverage_type, a.province, a.health_card_number_enc, a.billing_note, a.reason,
+       a.allergies, a.family_doctor,
        a.manage_token_expires_at, a.cancelled_at, a.created_at, a.oscar_sync_status, a.oscar_appointment_no,
        a.pharmacy_name, a.pharmacy_city, a.pharmacy_link_status,
        a.appointment_modality, a.patient_phone, a.ai_scribe_consent
@@ -810,6 +822,8 @@ export async function getAppointmentByToken(tokenHash: string): Promise<Appointm
     healthCardNumber,
     billingNote: row.billing_note,
     reason: row.reason,
+    allergies: row.allergies,
+    familyDoctor: row.family_doctor,
     appointmentModality: row.appointment_modality,
     patientPhone: row.patient_phone,
     manageTokenExpiresAt: row.manage_token_expires_at instanceof Date
@@ -893,6 +907,8 @@ export async function getAppointmentsForOrg(
     pharmacy_city: string | null;
     pharmacy_link_status: string | null;
     reason: string | null;
+    allergies: string | null;
+    family_doctor: string | null;
     appointment_modality: string | null;
     patient_phone: string | null;
     ai_scribe_consent: boolean | null;
@@ -904,6 +920,7 @@ export async function getAppointmentsForOrg(
        a.slot_id, s.start_time, s.end_time,
        a.first_name, a.last_name, a.date_of_birth::TEXT, a.email,
        a.coverage_type, a.province, a.health_card_number_enc, a.billing_note, a.reason,
+       a.allergies, a.family_doctor,
        a.manage_token_expires_at, a.cancelled_at, a.created_at, a.oscar_sync_status, a.oscar_appointment_no,
        a.pharmacy_name, a.pharmacy_city, a.pharmacy_link_status,
        a.appointment_modality, a.patient_phone, a.ai_scribe_consent
@@ -966,6 +983,8 @@ export async function getAppointmentsForOrg(
     attachments: attachmentsByAppointment.get(row.id) ?? [],
     billingNote: row.billing_note,
     reason: row.reason,
+    allergies: row.allergies,
+    familyDoctor: row.family_doctor,
     appointmentModality: row.appointment_modality,
     patientPhone: row.patient_phone,
     manageTokenExpiresAt: row.manage_token_expires_at instanceof Date

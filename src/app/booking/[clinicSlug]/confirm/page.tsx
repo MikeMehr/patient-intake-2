@@ -125,6 +125,7 @@ export default function BookingConfirmPage({
   const [extra, setExtra] = useState({
     phone: "", email: "", address: "", city: "", province: "British Columbia", postal: "",
     gender: "", // OSCAR sex code: M | F | O | U
+    allergies: "", familyDoctor: "", // optional; kept on the booking row for staff, not sent to OSCAR
   });
 
   // How the patient wants to be seen. Only offered when the clinic allows a choice AND has
@@ -426,6 +427,10 @@ export default function BookingConfirmPage({
         // up. Confirm persists the choice in the same statement that creates the booking, so even
         // a total bridge outage leaves staff a row to reconcile.
         pharmacy:         step === "not-found" ? pharmacy ?? undefined : undefined,
+        // Collected on the new-patient path only (the fields render there); kept on the
+        // booking row for staff to copy into the new chart — OSCAR has no REST field for them.
+        allergies:        extra.allergies.trim() || undefined,
+        familyDoctor:     extra.familyDoctor.trim() || undefined,
       }),
     });
 
@@ -1120,6 +1125,37 @@ export default function BookingConfirmPage({
                 value={pharmacy}
                 onChange={setPharmacy}
               />
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Allergies (if any)
+                </label>
+                <input
+                  type="text"
+                  maxLength={500}
+                  value={extra.allergies}
+                  onChange={(e) => setEx("allergies", e.target.value)}
+                  placeholder="e.g. penicillin, peanuts — leave blank if none"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <p className="text-xs text-gray-400 mt-1">
+                  Medication or other allergies the physician should know about.
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Family doctor (if you have one)
+                </label>
+                <input
+                  type="text"
+                  maxLength={200}
+                  value={extra.familyDoctor}
+                  onChange={(e) => setEx("familyDoctor", e.target.value)}
+                  placeholder="e.g. Dr. Jane Smith — leave blank if none"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
             </>
           )}
 

@@ -98,6 +98,8 @@ async function handleConfirm(
     appointmentModality,
     phone,
     aiScribeConsent,
+    allergies,
+    familyDoctor,
   } = body as Record<string, string | boolean | undefined>;
 
   // AI-scribe answer is tri-state. Strict boolean check: anything else (a form loaded before
@@ -125,6 +127,18 @@ async function handleConfirm(
     .replace(/\s+/g, " ")
     .slice(0, MAX_REASON_LEN);
   const oscarReason = reasonText || "Online booking";
+
+  // Allergies / family doctor: optional free text from the new-patient form, stored on the
+  // booking row for staff. Same anonymous-public-input scrub as reason.
+  const scrubFreeText = (v: unknown, max: number) =>
+    String(v ?? "")
+      .replace(/[\x00-\x1F\x7F]/g, " ")
+      .replace(/[<>]/g, "")
+      .trim()
+      .replace(/\s+/g, " ")
+      .slice(0, max);
+  const allergiesText = scrubFreeText(allergies, 500);
+  const familyDoctorText = scrubFreeText(familyDoctor, 200);
 
   // Validate required fields
   if (!slotId || !firstName || !lastName || !dateOfBirth || !email || !coverageType) {
@@ -242,6 +256,8 @@ async function handleConfirm(
     healthCardNumber: healthCardNumber ? String(healthCardNumber) : undefined,
     billingNote: billingNote ? String(billingNote) : undefined,
     reason: reasonText || undefined,
+    allergies: allergiesText || undefined,
+    familyDoctor: familyDoctorText || undefined,
     manageTokenHash,
     manageTokenExpiresAt,
     oscarDemographicNo: oscarDemographicNo ? String(oscarDemographicNo) : undefined,

@@ -17,6 +17,10 @@ type Appointment = {
   province: string | null;
   billingNote: string | null;
   reason: string | null;
+  /** Patient-reported allergies — new-patient bookings only; copy into the chart. */
+  allergies: string | null;
+  /** Patient's current family doctor — new-patient bookings only. */
+  familyDoctor: string | null;
   cancelledAt: string | null;
   createdAt: string;
   oscarSyncStatus: string | null;
@@ -336,6 +340,9 @@ export default function AppointmentsPage() {
                           {appt.firstName} {appt.lastName}
                         </p>
                         <p className="text-gray-400 text-xs break-all">{appt.email}</p>
+                        {appt.familyDoctor && (
+                          <p className="text-gray-400 text-xs">Family MD: {appt.familyDoctor}</p>
+                        )}
                       </td>
                       <td className="px-2 py-2 text-gray-700 whitespace-nowrap">
                         {/* "Dr." is redundant in a clinic's own list and cost real width. */}
@@ -343,6 +350,11 @@ export default function AppointmentsPage() {
                       </td>
                       <td className="px-2 py-2 text-gray-700 min-w-[8rem]">
                         {appt.reason ?? <span className="text-gray-300">—</span>}
+                        {appt.allergies && (
+                          <span className="block text-xs text-red-600 font-medium mt-1">
+                            ⚠ Allergies: {appt.allergies}
+                          </span>
+                        )}
                         {appt.attachments?.map((f) => (
                           <a
                             key={f.id}
