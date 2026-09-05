@@ -19,6 +19,7 @@ Operations (POST, application/x-www-form-urlencoded, JSON response):
   op=check_elig phn= dob=                 -> real-time MSP eligibility (Teleplan E45) for a BC PHN
   op=add_allergies demographicNo= allergies= -> record patient-reported allergies on the chart
   op=set_family_doctor demographicNo= familyDoctor= -> fill the Master Record's Referral Doctor field
+                                             + a "GP: <name>" note in the eChart Reminders box
 
 Auth: shared secret in the X-MyMD-Pharmacy-Secret header, compared with hmac.compare_digest.
 The secret lives in /var/lib/OscarDocument/oscar/mymd_pharmacy_bridge.properties (root:tomcat
@@ -31,6 +32,7 @@ import json
 import logging
 import os
 import re
+import uuid
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -280,6 +282,65 @@ def op_add_allergies(params):
 FAMILY_DOCTOR_NAME_MAX = 54
 FAMILY_DOCTOR_EMPTY = ("", "<rdohip></rdohip><rd></rd>")
 
+# eChart Reminders CPP box = casemgmt_note rows linked (casemgmt_issue_notes) to the
+# demographic's casemgmt_issue row for issue_id 18 ('Reminders'). Structural values below
+# copied from this clinic's existing Reminders notes (GROUP BY over live rows 2026-09-05):
+# signed=1, include_issue_innote=1, program_no='1', reporter_caisi_role='2',
+# reporter_program_team='null' (that literal string), position=0, appointmentNo=0 (the
+# column is nullable but Hibernate maps it to a primitive int — NULL 500s the whole
+# eChart, so it must always be written); issue row type='doctor', program_id=1.
+REMINDERS_ISSUE_ID = 18
+
+
+def _add_gp_reminder(cursor, demographic_no, name):
+    """Insert 'GP: <name>' into the chart's Reminders box. Caller owns the transaction.
+    Skipped when any unarchived Reminders note for this chart already starts with 'GP:'."""
+    cursor.execute(
+        "SELECT 1 FROM casemgmt_note n "
+        "JOIN casemgmt_issue_notes cin ON cin.note_id = n.note_id "
+        "JOIN casemgmt_issue ci ON ci.id = cin.id "
+        "WHERE ci.issue_id = %s AND n.demographic_no = %s AND n.archived = 0 "
+        "AND n.note LIKE 'GP:%%' LIMIT 1",
+        (REMINDERS_ISSUE_ID, demographic_no),
+    )
+    if cursor.fetchone():
+        return False
+
+    cursor.execute(
+        "SELECT id FROM casemgmt_issue WHERE demographic_no = %s AND issue_id = %s LIMIT 1",
+        (demographic_no, REMINDERS_ISSUE_ID),
+    )
+    row = cursor.fetchone()
+    if row:
+        issue_row_id = row[0]
+    else:
+        cursor.execute(
+            "INSERT INTO casemgmt_issue (demographic_no, issue_id, acute, certain, major, "
+            "resolved, program_id, type, update_date) VALUES (%s, %s, 0, 0, 0, 0, 1, "
+            "'doctor', NOW())",
+            (demographic_no, REMINDERS_ISSUE_ID),
+        )
+        issue_row_id = cursor.lastrowid
+
+    note_text = "GP: " + name
+    cursor.execute(
+        "INSERT INTO casemgmt_note (update_date, observation_date, demographic_no, "
+        "provider_no, note, signed, include_issue_innote, signing_provider_no, "
+        "encounter_type, billing_code, program_no, reporter_caisi_role, "
+        "reporter_program_team, history, locked, archived, position, uuid, "
+        "appointmentNo) "
+        "VALUES (NOW(), NOW(), %s, %s, %s, 1, 1, %s, '', '', '1', '2', 'null', %s, '0', "
+        "0, 0, %s, 0)",
+        (demographic_no, ALLERGY_PROVIDER_NO, note_text, ALLERGY_PROVIDER_NO, note_text,
+         str(uuid.uuid4())),
+    )
+    note_id = cursor.lastrowid
+    cursor.execute(
+        "INSERT INTO casemgmt_issue_notes (id, note_id) VALUES (%s, %s)",
+        (issue_row_id, note_id),
+    )
+    return True
+
 
 def op_set_family_doctor(params):
     """
@@ -325,10 +386,14 @@ def op_set_family_doctor(params):
             "UPDATE demographic SET family_doctor = %s WHERE demographic_no = %s",
             ("<rdohip></rdohip><rd>" + name + "</rd>", demographic_no),
         )
+        reminder_added = _add_gp_reminder(cursor, demographic_no, name)
         conn.commit()
         cursor.close()
-        logger.info("set family doctor for demographic %s", demographic_no)
-        return 200, {"ok": True, "updated": True}
+        logger.info(
+            "set family doctor for demographic %s (reminder %s)",
+            demographic_no, "added" if reminder_added else "skipped",
+        )
+        return 200, {"ok": True, "updated": True, "reminderAdded": reminder_added}
     except Exception:
         conn.rollback()
         raise
