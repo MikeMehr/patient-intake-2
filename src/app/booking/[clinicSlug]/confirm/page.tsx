@@ -6,6 +6,7 @@ import DateOfBirthField from "@/components/DateOfBirthField";
 import HoldCountdown from "@/components/HoldCountdown";
 import PharmacyPicker from "@/components/PharmacyPicker";
 import { MAX_FILE_BYTES, MAX_FILE_MB } from "@/lib/upload-validation";
+import { trackBookingConfirmed } from "@/lib/booking-analytics";
 import {
   BOOKING_CARD_FIX_HINT,
   bookingCardAdvice,
@@ -463,6 +464,7 @@ export default function BookingConfirmPage({
       }
     }
 
+    trackBookingConfirmed();
     setSuccess({ manageUrl: data.manageUrl });
     setSubmitting(false);
   }

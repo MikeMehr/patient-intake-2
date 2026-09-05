@@ -10,9 +10,18 @@ function buildCspHeader(pathname: string, nonce: string) {
   // via <script src>. The nonce covers any inline scripts Next.js generates
   // for hydration. Do NOT use 'strict-dynamic' here — it causes 'self' to be
   // ignored for <script src> elements, which breaks all chunk loading.
+  // The Google tag (Ads booking conversion + GA4) loads only under /booking —
+  // see src/app/booking/layout.tsx. These hosts stay out of the CSP on every
+  // PHI-bearing surface. Ping hosts cover GA4 regional collectors plus the
+  // Ads conversion endpoints (doubleclick, google.com/.ca 1p-conversion).
+  const isBookingPath = pathname === "/booking" || pathname.startsWith("/booking/");
+  const gtagScriptHosts = isBookingPath ? " https://www.googletagmanager.com" : "";
+  const gtagPingHosts = isBookingPath
+    ? " https://www.googletagmanager.com https://*.google-analytics.com https://*.analytics.google.com https://stats.g.doubleclick.net https://googleads.g.doubleclick.net https://ad.doubleclick.net https://www.google.com https://www.google.ca"
+    : "";
   const scriptSrc = isDevelopment || isLegacyEformPath
-    ? "script-src 'self' 'unsafe-inline' 'unsafe-eval'"
-    : `script-src 'self' 'nonce-${nonce}'`;
+    ? `script-src 'self' 'unsafe-inline' 'unsafe-eval'${gtagScriptHosts}`
+    : `script-src 'self' 'nonce-${nonce}'${gtagScriptHosts}`;
   // The secure file-share feature uploads large files directly from the browser
   // to Azure Blob Storage via a write-SAS (bypassing the server request-size
   // limit), so connect-src must allow that account host. Scope to the specific
@@ -27,7 +36,7 @@ function buildCspHeader(pathname: string, nonce: string) {
     "frame-src 'self' data: blob:",
     "object-src 'none'",
     "form-action 'self'",
-    "img-src 'self' data: blob:",
+    `img-src 'self' data: blob:${gtagPingHosts}`,
     "font-src 'self' data:",
     "media-src 'self' blob: data:",
     // Absent originally, so blob-backed workers fell through to default-src 'self' and were
@@ -38,7 +47,7 @@ function buildCspHeader(pathname: string, nonce: string) {
     // Most external API calls (Azure OpenAI, Speech, Document Intelligence,
     // Resend) are made server-side. The one browser→external call is the direct
     // upload to Azure Blob Storage for secure file sharing.
-    `connect-src 'self' ${blobHost}`,
+    `connect-src 'self' ${blobHost}${gtagPingHosts}`,
   ].join("; ");
 }
 
