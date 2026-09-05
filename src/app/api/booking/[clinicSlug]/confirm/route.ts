@@ -35,6 +35,7 @@ import { fetchOscarDemographic } from "@/lib/oscar/demographics";
 import { query } from "@/lib/db";
 import { decryptString } from "@/lib/encrypted-field";
 import { createOscarAppointment, toClinicLocalParts } from "@/lib/oscar/appointments";
+import { addPatientReportedAllergies } from "@/lib/oscar/allergies";
 import { isPharmacyUpsertEnabled, linkOscarPharmacy, upsertOscarPharmacy } from "@/lib/oscar/pharmacy";
 import { findPharmacyByNameCity, getPharmacyFromDirectory } from "@/lib/pharmacy-directory";
 import { normalizePharmacySelection, type PharmacySelection } from "@/lib/pharmacy-selection";
@@ -331,6 +332,23 @@ async function handleConfirm(
     demographicNo: oscarDemographicNo ? String(oscarDemographicNo) : undefined,
     pharmacy: pharmacyRecord,
   });
+
+  // Best-effort: record patient-reported allergies on the chart's Allergies module.
+  // Only the new-patient form collects allergies, so text here means a chart this
+  // booking just created. Failure is logged only — staff still see the allergies in
+  // red on the org appointments list either way.
+  if (allergiesText && oscarDemographicNo) {
+    const allergyResult = await addPatientReportedAllergies(
+      clinic.id,
+      String(oscarDemographicNo),
+      allergiesText,
+    );
+    if (!allergyResult.ok) {
+      console.error(
+        `[confirm] allergy write to OSCAR failed for appointment ${result.appointmentId}: ${allergyResult.error}`,
+      );
+    }
+  }
 
   const manageUrl = `${appUrl}/booking/manage/${manageTokenRaw}`;
 

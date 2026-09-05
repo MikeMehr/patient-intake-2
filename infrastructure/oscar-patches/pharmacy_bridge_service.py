@@ -17,6 +17,7 @@ Operations (POST, application/x-www-form-urlencoded, JSON response):
   op=link   demographicNo= pharmacyId=    -> make that pharmacy the patient's preferred one
   op=upsert name= address= ...            -> create a pharmacyInfo row, return its recordID
   op=check_elig phn= dob=                 -> real-time MSP eligibility (Teleplan E45) for a BC PHN
+  op=add_allergies demographicNo= allergies= -> record patient-reported allergies on the chart
 
 Auth: shared secret in the X-MyMD-Pharmacy-Secret header, compared with hmac.compare_digest.
 The secret lives in /var/lib/OscarDocument/oscar/mymd_pharmacy_bridge.properties (root:tomcat
@@ -184,6 +185,87 @@ def op_link(params):
         cursor.close()
         logger.info("linked demographic %s -> pharmacy %s", demographic_no, pharmacy_id)
         return 200, {"ok": True, "pharmacyId": pharmacy_id}
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+
+# Allergy entries created from booking-form free text. Attributed to OSCAR's built-in
+# system provider so no physician appears to have vouched for them; the reaction text
+# carries the real provenance. varchar(50) DESCRIPTION cap from `DESCRIBE allergies`.
+ALLERGY_PROVIDER_NO = "999998"  # "oscardoc, doctor"
+ALLERGY_DESC_MAX = 50
+MAX_ALLERGY_ITEMS = 10
+
+
+def op_add_allergies(params):
+    """
+    Record patient-reported allergies on a chart as Custom Allergy entries (TYPECODE 0,
+    the code OSCAR's own Allergy.getTypeDesc labels "Custom Allergy").
+
+    Called by the booking app right after it creates a chart for a new patient. The
+    patient's free text arrives as one string; each comma/semicolon-separated item
+    becomes its own `allergies` row so the eChart Allergies module lists them
+    individually. Items already on the chart (same description, unarchived) are
+    skipped, so retries don't duplicate. Custom entries carry no drugref id, which
+    means OSCAR's automated Rx interaction checking ignores them — the reaction field
+    marks them patient-reported so staff verify before relying on them.
+    """
+    demographic_no = (params.get("demographicNo") or [""])[0].strip()
+    text = (params.get("allergies") or [""])[0].strip()
+
+    if not NUMERIC_RE.match(demographic_no):
+        return 400, {"error": "demographicNo must be numeric"}
+    if not text:
+        return 400, {"error": "allergies text is required"}
+
+    items = [i.strip() for i in re.split(r"[,;]", text) if i.strip()][:MAX_ALLERGY_ITEMS]
+    if not items:
+        return 400, {"error": "no allergy items found"}
+
+    conn = get_db()
+    try:
+        conn.autocommit = False
+        cursor = conn.cursor()
+
+        cursor.execute("SELECT 1 FROM demographic WHERE demographic_no = %s", (demographic_no,))
+        if cursor.fetchone() is None:
+            conn.rollback()
+            cursor.close()
+            return 404, {"error": "demographic not found"}
+
+        added, skipped = [], []
+        for item in items:
+            desc = item[:ALLERGY_DESC_MAX]
+            cursor.execute(
+                "SELECT 1 FROM allergies WHERE demographic_no = %s AND DESCRIPTION = %s "
+                "AND archived = '0' LIMIT 1",
+                (demographic_no, desc),
+            )
+            if cursor.fetchone():
+                skipped.append(desc)
+                continue
+            reaction = "Patient-reported at online booking"
+            if len(item) > ALLERGY_DESC_MAX:
+                reaction += " — full text: " + item
+            cursor.execute(
+                "INSERT INTO allergies (demographic_no, entry_date, DESCRIPTION, TYPECODE, "
+                "reaction, archived, start_date, position, lastUpdateDate, providerNo) "
+                "VALUES (%s, CURDATE(), %s, 0, %s, '0', CURDATE(), 0, NOW(), %s)",
+                (demographic_no, desc, reaction, ALLERGY_PROVIDER_NO),
+            )
+            added.append(desc)
+
+        conn.commit()
+        cursor.close()
+        logger.info(
+            "added %d allergy entries for demographic %s (%d already present)",
+            len(added), demographic_no, len(skipped),
+        )
+        return 200, {"ok": True, "added": added, "skipped": skipped}
     except Exception:
         conn.rollback()
         raise
@@ -431,6 +513,8 @@ class BridgeHandler(BaseHTTPRequestHandler):
                 status, payload = op_upsert(params)
             elif op == "check_elig":
                 status, payload = op_check_elig(params)
+            elif op == "add_allergies":
+                status, payload = op_add_allergies(params)
             else:
                 status, payload = 400, {"error": "unknown op"}
 
