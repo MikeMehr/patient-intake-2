@@ -18,6 +18,7 @@ Operations (POST, application/x-www-form-urlencoded, JSON response):
   op=upsert name= address= ...            -> create a pharmacyInfo row, return its recordID
   op=check_elig phn= dob=                 -> real-time MSP eligibility (Teleplan E45) for a BC PHN
   op=add_allergies demographicNo= allergies= -> record patient-reported allergies on the chart
+  op=set_family_doctor demographicNo= familyDoctor= -> fill the Master Record's Referral Doctor field
 
 Auth: shared secret in the X-MyMD-Pharmacy-Secret header, compared with hmac.compare_digest.
 The secret lives in /var/lib/OscarDocument/oscar/mymd_pharmacy_bridge.properties (root:tomcat
@@ -273,6 +274,68 @@ def op_add_allergies(params):
         conn.close()
 
 
+# demographic.family_doctor is varchar(80) holding XML fragments; the wrapper tags cost
+# 26 chars, leaving 54 for the name. Values considered "empty" and safe to overwrite:
+# NULL, '', and the bare skeleton OSCAR's own forms write.
+FAMILY_DOCTOR_NAME_MAX = 54
+FAMILY_DOCTOR_EMPTY = ("", "<rdohip></rdohip><rd></rd>")
+
+
+def op_set_family_doctor(params):
+    """
+    Fill the Master Record's Referral Doctor field (demographic.family_doctor) with the
+    family-doctor name a patient typed at online booking.
+
+    OSCAR's REST demographics create maps DemographicTo1.familyDoctor in its converter,
+    but the value does not survive to the row (verified live 2026-09-05: a create that
+    sent it produced the empty skeleton), so the booking app sets it here instead,
+    right after chart creation. Only an empty field is written — a name staff entered
+    is never overwritten — so retries and later bookings are safe.
+    """
+    demographic_no = (params.get("demographicNo") or [""])[0].strip()
+    name = (params.get("familyDoctor") or [""])[0].strip()
+    # The name becomes XML content: drop angle brackets, collapse whitespace, cap length.
+    name = re.sub(r"[<>]", "", name)
+    name = re.sub(r"\s+", " ", name).strip()[:FAMILY_DOCTOR_NAME_MAX]
+
+    if not NUMERIC_RE.match(demographic_no):
+        return 400, {"error": "demographicNo must be numeric"}
+    if not name:
+        return 400, {"error": "familyDoctor is required"}
+
+    conn = get_db()
+    try:
+        conn.autocommit = False
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT family_doctor FROM demographic WHERE demographic_no = %s",
+            (demographic_no,),
+        )
+        row = cursor.fetchone()
+        if row is None:
+            conn.rollback()
+            cursor.close()
+            return 404, {"error": "demographic not found"}
+        current = (row[0] or "").strip()
+        if current not in FAMILY_DOCTOR_EMPTY:
+            conn.rollback()
+            cursor.close()
+            return 200, {"ok": True, "updated": False, "reason": "field already set"}
+        cursor.execute(
+            "UPDATE demographic SET family_doctor = %s WHERE demographic_no = %s",
+            ("<rdohip></rdohip><rd>" + name + "</rd>", demographic_no),
+        )
+        conn.commit()
+        cursor.close()
+        logger.info("set family doctor for demographic %s", demographic_no)
+        return 200, {"ok": True, "updated": True}
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
 def op_upsert(params):
     """
     Add a pharmacy to OSCAR's shared directory and return its recordID.
@@ -515,6 +578,8 @@ class BridgeHandler(BaseHTTPRequestHandler):
                 status, payload = op_check_elig(params)
             elif op == "add_allergies":
                 status, payload = op_add_allergies(params)
+            elif op == "set_family_doctor":
+                status, payload = op_set_family_doctor(params)
             else:
                 status, payload = 400, {"error": "unknown op"}
 

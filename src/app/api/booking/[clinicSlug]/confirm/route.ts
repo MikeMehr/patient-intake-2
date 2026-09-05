@@ -36,6 +36,7 @@ import { query } from "@/lib/db";
 import { decryptString } from "@/lib/encrypted-field";
 import { createOscarAppointment, toClinicLocalParts } from "@/lib/oscar/appointments";
 import { addPatientReportedAllergies } from "@/lib/oscar/allergies";
+import { setOscarFamilyDoctor } from "@/lib/oscar/family-doctor";
 import { isPharmacyUpsertEnabled, linkOscarPharmacy, upsertOscarPharmacy } from "@/lib/oscar/pharmacy";
 import { findPharmacyByNameCity, getPharmacyFromDirectory } from "@/lib/pharmacy-directory";
 import { normalizePharmacySelection, type PharmacySelection } from "@/lib/pharmacy-selection";
@@ -346,6 +347,21 @@ async function handleConfirm(
     if (!allergyResult.ok) {
       console.error(
         `[confirm] allergy write to OSCAR failed for appointment ${result.appointmentId}: ${allergyResult.error}`,
+      );
+    }
+  }
+
+  // Best-effort: fill the Master Record's Referral Doctor field. Like allergies, text
+  // here means a chart this booking just created; the bridge only writes an empty field.
+  if (familyDoctorText && oscarDemographicNo) {
+    const fdResult = await setOscarFamilyDoctor(
+      clinic.id,
+      String(oscarDemographicNo),
+      familyDoctorText,
+    );
+    if (!fdResult.ok) {
+      console.error(
+        `[confirm] family-doctor write to OSCAR failed for appointment ${result.appointmentId}: ${fdResult.error}`,
       );
     }
   }
