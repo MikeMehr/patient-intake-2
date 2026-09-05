@@ -27,6 +27,8 @@ export type BookingSettings = {
   cancellationPolicy: string | null;
   bookingInstructions: string | null;
   emailFooter: string | null;
+  /** Where "booking not working? Tell us" forwards the patient to describe the problem. */
+  contactPageUrl: string | null;
   timezone: string;
   selfServeInterviewEnabled: boolean;
   selfServeInterviewPhysicianId: string | null;
@@ -136,6 +138,7 @@ export async function getClinicBySlug(slug: string): Promise<ClinicInfo | null> 
     cancellation_policy: string | null;
     booking_instructions: string | null;
     email_footer: string | null;
+    contact_page_url: string | null;
     timezone: string | null;
     self_serve_interview_enabled: boolean | null;
     self_serve_interview_physician_id: string | null;
@@ -156,6 +159,7 @@ export async function getClinicBySlug(slug: string): Promise<ClinicInfo | null> 
        bs.cancellation_policy,
        bs.booking_instructions,
        bs.email_footer,
+       bs.contact_page_url,
        bs.timezone,
        bs.self_serve_interview_enabled,
        bs.self_serve_interview_physician_id
@@ -193,6 +197,7 @@ export async function getClinicBySlug(slug: string): Promise<ClinicInfo | null> 
           cancellationPolicy: row.cancellation_policy,
           bookingInstructions: row.booking_instructions,
           emailFooter: row.email_footer,
+          contactPageUrl: row.contact_page_url,
           timezone: row.timezone ?? "America/Vancouver",
           selfServeInterviewEnabled: row.self_serve_interview_enabled ?? false,
           selfServeInterviewPhysicianId: row.self_serve_interview_physician_id ?? null,
@@ -257,6 +262,7 @@ export async function getBookingSettingsByOrgId(orgId: string): Promise<BookingS
     cancellation_policy: string | null;
     booking_instructions: string | null;
     email_footer: string | null;
+    contact_page_url: string | null;
     timezone: string;
     self_serve_interview_enabled: boolean;
     self_serve_interview_physician_id: string | null;
@@ -266,7 +272,7 @@ export async function getBookingSettingsByOrgId(orgId: string): Promise<BookingS
             enforce_booking_window, slot_interval_minutes,
             health_card_required, show_blocked_slots, appointment_modality,
             video_visits_enabled, patient_may_choose_modality,
-            cancellation_policy, booking_instructions, email_footer, timezone,
+            cancellation_policy, booking_instructions, email_footer, contact_page_url, timezone,
             self_serve_interview_enabled, self_serve_interview_physician_id
      FROM booking_settings WHERE organization_id = $1`,
     [orgId],
@@ -291,6 +297,7 @@ export async function getBookingSettingsByOrgId(orgId: string): Promise<BookingS
     cancellationPolicy: row.cancellation_policy,
     bookingInstructions: row.booking_instructions,
     emailFooter: row.email_footer,
+    contactPageUrl: row.contact_page_url,
     timezone: row.timezone,
     selfServeInterviewEnabled: row.self_serve_interview_enabled ?? false,
     selfServeInterviewPhysicianId: row.self_serve_interview_physician_id ?? null,
@@ -307,13 +314,14 @@ export async function upsertBookingSettings(
        health_card_required, show_blocked_slots, cancellation_policy,
        booking_instructions, timezone, email_footer,
        self_serve_interview_enabled, self_serve_interview_physician_id,
-       appointment_modality, video_visits_enabled, patient_may_choose_modality, updated_at)
+       appointment_modality, video_visits_enabled, patient_may_choose_modality,
+       contact_page_url, updated_at)
      VALUES ($1,
        COALESCE($2, FALSE), COALESCE($3, '07:00')::TIME, COALESCE($4, '22:00')::TIME,
        COALESCE($5, TRUE), COALESCE($6, 15), COALESCE($7, FALSE), COALESCE($8, FALSE),
        $9, $10, COALESCE($11, 'America/Vancouver'), $12,
        COALESCE($13, FALSE), $14, COALESCE($15, 'PHONE'),
-       COALESCE($16, FALSE), COALESCE($17, FALSE), NOW())
+       COALESCE($16, FALSE), COALESCE($17, FALSE), $18, NOW())
      ON CONFLICT (organization_id) DO UPDATE SET
        online_booking_enabled  = COALESCE($2, booking_settings.online_booking_enabled),
        public_booking_start    = COALESCE($3::TIME, booking_settings.public_booking_start),
@@ -331,6 +339,7 @@ export async function upsertBookingSettings(
        appointment_modality    = COALESCE($15, booking_settings.appointment_modality),
        video_visits_enabled       = COALESCE($16, booking_settings.video_visits_enabled),
        patient_may_choose_modality = COALESCE($17, booking_settings.patient_may_choose_modality),
+       contact_page_url        = COALESCE($18, booking_settings.contact_page_url),
        updated_at              = NOW()`,
     [
       orgId,
@@ -350,6 +359,7 @@ export async function upsertBookingSettings(
       updates.appointmentModality ?? null,
       updates.videoVisitsEnabled ?? null,
       updates.patientMayChooseModality ?? null,
+      updates.contactPageUrl ?? null,
     ],
   );
 }

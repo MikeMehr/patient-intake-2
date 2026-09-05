@@ -45,6 +45,7 @@ type Settings = {
   cancellationPolicy: string | null;
   bookingInstructions: string | null;
   emailFooter: string | null;
+  contactPageUrl: string | null;
   timezone: string;
   selfServeInterviewEnabled: boolean;
   selfServeInterviewPhysicianId: string | null;
@@ -85,6 +86,7 @@ export default function BookingSettingsPage() {
     cancellationPolicy: "",
     bookingInstructions: "",
     emailFooter: "",
+    contactPageUrl: "",
     timezone: "America/Vancouver",
     selfServeInterviewEnabled: false,
     selfServeInterviewPhysicianId: null,
@@ -264,6 +266,24 @@ export default function BookingSettingsPage() {
               <p className="text-xs text-gray-400 mt-1">
                 Your clinic&apos;s public website. The clinic name on the booking and interview
                 pages links here. Leave blank for no link.
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Contact page for problem reports
+              </label>
+              <input
+                type="text"
+                value={settings.contactPageUrl ?? ""}
+                onChange={(e) => set("contactPageUrl", e.target.value)}
+                placeholder="e.g. https://yourclinic.com/contact.php"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <p className="text-xs text-gray-400 mt-1">
+                When a patient clicks &ldquo;Online booking not working? Tell us&rdquo;, the clinic
+                is texted and the patient is taken to this page to describe what went wrong. Leave
+                blank to only send the text alert.
               </p>
             </div>
 

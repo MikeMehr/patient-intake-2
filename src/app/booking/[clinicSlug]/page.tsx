@@ -35,6 +35,7 @@ type ClinicSettings = {
   slotIntervalMinutes: number;
   cancellationPolicy: string | null;
   bookingInstructions: string | null;
+  contactPageUrl: string | null;
   healthCardRequired: boolean;
   appointmentModality: AppointmentModality;
 };
@@ -84,21 +85,39 @@ function toLocalTimeString(isoString: string, tz: string): string {
 type IssueState = "slot-failed" | "page-error" | "no-times" | "booking-closed" | "other";
 
 /**
- * "Online booking isn't working" — texts the clinic so someone can fix it.
+ * "Online booking isn't working" — texts the clinic so someone can fix it, then forwards the
+ * patient to the clinic's contact page (when configured) so they can describe what went wrong.
  * Deliberately reassures on any outcome: a patient staring at a broken page should not also be
  * told their complaint failed. The alert is best-effort and the server rate-limits it.
  */
 function ReportIssueButton({
   clinicSlug,
   state,
+  contactUrl,
 }: {
   clinicSlug: string;
   state: IssueState;
+  contactUrl?: string | null;
 }) {
   const [status, setStatus] = useState<"idle" | "sending" | "sent">("idle");
 
   async function report() {
     setStatus("sending");
+    if (contactUrl) {
+      // keepalive lets the alert finish sending after we navigate away.
+      try {
+        fetch(`/api/booking/${clinicSlug}/report-issue`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ state }),
+          keepalive: true,
+        }).catch(() => {});
+      } catch {
+        // Ignore — forwarding the patient matters more than the alert.
+      }
+      window.location.assign(contactUrl);
+      return;
+    }
     try {
       await fetch(`/api/booking/${clinicSlug}/report-issue`, {
         method: "POST",
@@ -269,7 +288,11 @@ export default function ClinicBookingPage({
           <button onClick={() => router.push("/booking")} className="text-blue-600 underline">
             Back to clinic list
           </button>
-          <ReportIssueButton clinicSlug={clinicSlug} state="page-error" />
+          <ReportIssueButton
+            clinicSlug={clinicSlug}
+            state="page-error"
+            contactUrl={settings?.contactPageUrl}
+          />
         </div>
       </div>
     );
@@ -439,7 +462,11 @@ export default function ClinicBookingPage({
         )}
 
         {/* Something's wrong — let the patient flag it */}
-        <ReportIssueButton clinicSlug={clinicSlug} state={issueState} />
+        <ReportIssueButton
+          clinicSlug={clinicSlug}
+          state={issueState}
+          contactUrl={settings?.contactPageUrl}
+        />
 
         {/* Cancellation policy */}
         {settings?.cancellationPolicy && (

@@ -166,6 +166,16 @@ export async function PATCH(request: NextRequest) {
       patientMayChooseModality: body.patientMayChooseModality,
       cancellationPolicy: body.cancellationPolicy,
       bookingInstructions: body.bookingInstructions,
+      contactPageUrl:
+        body.contactPageUrl === undefined
+          ? undefined
+          : (() => {
+              // Same normalization as websiteUrl; '' is stored as-is so the admin can clear it
+              // (the upsert's COALESCE keeps the old value on NULL).
+              const raw = String(body.contactPageUrl ?? "").trim();
+              if (!raw) return "";
+              return (/^https?:\/\//i.test(raw) ? raw : `https://${raw}`).substring(0, 300);
+            })(),
       emailFooter: body.emailFooter,
       timezone: body.timezone,
       selfServeInterviewEnabled: body.selfServeInterviewEnabled,
