@@ -3,6 +3,7 @@
 import { use, useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
+import DateOfBirthField from "@/components/DateOfBirthField";
 import { isWithinInterviewHours } from "@/lib/interview-hours";
 
 const PROVINCES = [
@@ -108,6 +109,12 @@ export default function SelfServeInterviewPage({
   // Step 1: start — OSCAR lookup + create invitation.
   async function handleStart(e: React.FormEvent) {
     e.preventDefault();
+    // Native `required` passes once all three DOB parts are filled, even for an impossible
+    // combination like Feb 31 — which composes to "" and must not reach the lookup.
+    if (!identity.dateOfBirth) {
+      setError("Please complete your date of birth — check the day and year.");
+      return;
+    }
     setSubmitting(true);
     setError(null);
     try {
@@ -373,11 +380,11 @@ export default function SelfServeInterviewPage({
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Date of birth *</label>
-                <input
-                  required type="date" value={identity.dateOfBirth}
-                  onChange={(e) => setId("dateOfBirth", e.target.value)}
-                  max={new Date().toISOString().substring(0, 10)}
-                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500"
+                <DateOfBirthField
+                  required
+                  value={identity.dateOfBirth}
+                  onChange={(v) => setId("dateOfBirth", v)}
+                  inputClassName="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-slate-500 disabled:opacity-50"
                 />
               </div>
               <div>

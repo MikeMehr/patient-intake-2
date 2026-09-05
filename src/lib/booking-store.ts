@@ -587,7 +587,7 @@ export async function holdSlot(
   slotId: string,
   orgId: string,
   sessionKey: string,
-  durationMinutes = 5,
+  durationMinutes = 10,
 ): Promise<boolean> {
   await releaseExpiredHolds();
 

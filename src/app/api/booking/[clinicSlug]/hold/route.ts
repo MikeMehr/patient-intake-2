@@ -1,6 +1,6 @@
 /**
  * POST /api/booking/[clinicSlug]/hold
- * Places a 5-minute hold on a slot. Returns a session key stored in an httpOnly cookie.
+ * Places a 10-minute hold on a slot. Returns a session key stored in an httpOnly cookie.
  *
  * Body: { slotId: string }
  */
@@ -9,7 +9,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { randomBytes } from "crypto";
 import { getClinicBySlug, holdSlot } from "@/lib/booking-store";
 
-const HOLD_MINUTES = 5;
+const HOLD_MINUTES = 10;
 const HOLD_COOKIE = "booking_hold_key";
 
 export async function POST(

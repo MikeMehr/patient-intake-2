@@ -2,6 +2,8 @@
 
 import { use, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import DateOfBirthField from "@/components/DateOfBirthField";
+import HoldCountdown from "@/components/HoldCountdown";
 import PharmacyPicker from "@/components/PharmacyPicker";
 import { MAX_FILE_BYTES, MAX_FILE_MB } from "@/lib/upload-validation";
 import {
@@ -89,6 +91,9 @@ export default function BookingConfirmPage({
   // Set by the slot picker when this slot's physician has no Doxy waiting room. The confirm
   // endpoint enforces the same rule against the database, so this only decides what is shown.
   const slotVideoAvailable = searchParams.get("video") !== "0";
+  // Absolute hold deadline set by the slot picker. Drives the visible countdown only —
+  // the server re-checks held_until on every gated endpoint.
+  const heldUntil = searchParams.get("heldUntil") ?? "";
 
   const [settings, setSettings]     = useState<ClinicSettings | null>(null);
   const [clinicName, setClinicName] = useState("");
@@ -150,6 +155,10 @@ export default function BookingConfirmPage({
   const [error, setError]               = useState<string | null>(null);
   const [success, setSuccess]           = useState<{ manageUrl: string } | null>(null);
   const [closeHint, setCloseHint]       = useState(false);
+  // Initializer covers reloading the page after the hold already lapsed.
+  const [holdExpired, setHoldExpired]   = useState(
+    () => Boolean(heldUntil) && new Date(heldUntil).getTime() <= Date.now(),
+  );
 
   // ---------------------------------------------------------------------------
   // Load clinic info
@@ -217,6 +226,12 @@ export default function BookingConfirmPage({
 
   async function handleLookup(e: React.FormEvent) {
     e.preventDefault();
+    // Native `required` passes once all three DOB parts are filled, even for an impossible
+    // combination like Feb 31 — which composes to "" and must not reach the lookup.
+    if (!identity.dateOfBirth) {
+      setError("Please complete your date of birth — check the day and year.");
+      return;
+    }
     setStep("looking-up");
     setError(null);
 
@@ -615,9 +630,13 @@ export default function BookingConfirmPage({
         <span aria-hidden>{MODALITY_ICON[modality]}</span> {MODALITY_LABEL[modality]} —{" "}
         <span className="text-blue-700">{MODALITY_NOTE[modality]}</span>
       </p>
-      <p className="text-xs text-blue-500 mt-2">
-        Your selected time is held for 5 minutes. Please complete this form promptly.
-      </p>
+      {heldUntil ? (
+        <HoldCountdown heldUntil={heldUntil} onExpire={() => setHoldExpired(true)} />
+      ) : (
+        <p className="text-xs text-blue-500 mt-2">
+          Your selected time is held for 10 minutes. Please complete this form promptly.
+        </p>
+      )}
     </div>
   );
 
@@ -742,6 +761,37 @@ export default function BookingConfirmPage({
   );
 
   // ---------------------------------------------------------------------------
+  // Render: hold expired — friendly restart instead of a 409 at submit
+  // ---------------------------------------------------------------------------
+
+  // `!submitting` lets a confirm request already in flight at second 0 finish: the
+  // server's transactional held_until check is the truth. Success renders above;
+  // a 409 sets submitting back to false and this panel replaces the raw error.
+  if (holdExpired && !submitting) {
+    return (
+      <main className="min-h-screen bg-gray-50 py-10 px-4">
+        <div className="max-w-lg mx-auto">
+          {appointmentSummary}
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-5 text-center">
+            <h2 className="text-lg font-bold text-gray-900 mb-2">Your time hold has ended</h2>
+            <p className="text-sm text-gray-700 mb-4">
+              We held this time for 10 minutes, but that time has passed. Don&apos;t worry —
+              just pick a time again. If it&apos;s still open you can select the same one.
+            </p>
+            <button
+              onClick={() => router.push(`/booking/${clinicSlug}`)}
+              className="w-full bg-blue-600 text-white py-3 rounded-lg font-semibold hover:bg-blue-700 transition"
+            >
+              Choose a time
+            </button>
+          </div>
+          <PoweredBy />
+        </div>
+      </main>
+    );
+  }
+
+  // ---------------------------------------------------------------------------
   // Render: Step 1 — identity form
   // ---------------------------------------------------------------------------
 
@@ -794,14 +844,11 @@ export default function BookingConfirmPage({
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Date of birth *</label>
-              <input
+              <DateOfBirthField
                 required
-                type="date"
                 value={identity.dateOfBirth}
-                onChange={(e) => setId("dateOfBirth", e.target.value)}
-                max={new Date().toISOString().substring(0, 10)}
+                onChange={(v) => setId("dateOfBirth", v)}
                 disabled={step === "looking-up"}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
               />
             </div>
 

@@ -243,7 +243,10 @@ export default function ClinicBookingPage({
       // video=0 hides the format picker for a physician with no Doxy room. Only a UI hint — the
       // confirm endpoint re-checks the slot's physician, so editing it in the URL changes nothing.
       const videoParam = slot.videoAvailable === false ? "&video=0" : "";
-      router.push(`/booking/${clinicSlug}/confirm?slotId=${slot.id}&startTime=${encodeURIComponent(slot.startTime)}&physician=${encodeURIComponent(slot.physicianName)}${videoParam}`);
+      // Absolute deadline for the confirm page's countdown. Advisory only — the server
+      // re-checks held_until on every gated endpoint, so editing it changes nothing.
+      const heldUntilParam = data.heldUntil ? `&heldUntil=${encodeURIComponent(data.heldUntil)}` : "";
+      router.push(`/booking/${clinicSlug}/confirm?slotId=${slot.id}&startTime=${encodeURIComponent(slot.startTime)}&physician=${encodeURIComponent(slot.physicianName)}${videoParam}${heldUntilParam}`);
     } catch {
       setError("Something went wrong. Please try again.");
       setHoldingSlotId(null);
